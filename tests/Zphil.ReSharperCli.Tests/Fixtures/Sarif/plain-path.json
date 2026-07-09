@@ -1,0 +1,28 @@
+{
+  "version": "2.1.0",
+  "runs": [
+    {
+      "results": [
+        {
+          "ruleId": "PossibleNullReferenceException",
+          "level": "warning",
+          "message": {
+            "text": "Possible 'System.NullReferenceException'"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/Models/Invoice.cs"
+                },
+                "region": {
+                  "startLine": 42
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

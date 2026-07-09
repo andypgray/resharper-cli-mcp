@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Zphil.ReSharperCli/Zphil.ReSharperCli.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Zphil.ReSharperCli.Tests/Zphil.ReSharperCli.Tests.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,152 @@
+{
+  "$schema": "https://schemastore.azurewebsites.net/schemas/json/sarif-2.1.0-rtm.6.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "results": [
+        {
+          "ruleId": "RedundantUsingDirective",
+          "ruleIndex": 0,
+          "level": "warning",
+          "message": {
+            "text": "Using directive is not required by the code and can be safely removed"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///C:/work/AppSample/HomeController.cs",
+                  "index": 0
+                },
+                "region": {
+                  "startLine": 1,
+                  "startColumn": 1,
+                  "endLine": 1,
+                  "endColumn": 19,
+                  "charOffset": 0,
+                  "charLength": 18
+                }
+              }
+            }
+          ],
+          "partialFingerprints": {
+            "contextRegionHash/v1": "1E1FAFD169D6109C7BE4A1CF01EAC30549611671E0E0D77EE5442E90E0D8AAF5"
+          },
+          "properties": {
+            "tags": ["C#", ".NET 10.0"]
+          }
+        },
+        {
+          "ruleId": "UnusedField.Compiler",
+          "ruleIndex": 1,
+          "level": "warning",
+          "message": {
+            "text": "Field 'unusedField' is never used"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///C:/work/AppSample/HomeController.cs",
+                  "index": 0
+                },
+                "region": {
+                  "startLine": 7,
+                  "startColumn": 17,
+                  "endLine": 7,
+                  "endColumn": 28,
+                  "charOffset": 80,
+                  "charLength": 11
+                }
+              }
+            }
+          ],
+          "partialFingerprints": {
+            "contextRegionHash/v1": "B86A815BEFCA2A416C23FDE1636FBA5C3E23C4F330E860E8858E6BFEC1C622EA"
+          },
+          "properties": {
+            "tags": ["C#", ".NET 10.0"]
+          }
+        },
+        {
+          "ruleId": "UnusedMember.Global",
+          "ruleIndex": 2,
+          "level": "note",
+          "message": {
+            "text": "Method 'Total' is never used"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///C:/work/AppSample/src/Models/Invoice.cs",
+                  "index": 1
+                },
+                "region": {
+                  "startLine": 9,
+                  "startColumn": 19,
+                  "endLine": 9,
+                  "endColumn": 24,
+                  "charOffset": 112,
+                  "charLength": 5
+                }
+              }
+            }
+          ],
+          "partialFingerprints": {
+            "contextRegionHash/v1": "514672969F716AE2B8AF6507D35A490630A7218C6955D0303F0CA1BEC8017D17"
+          },
+          "properties": {
+            "tags": ["C#", ".NET 10.0"]
+          }
+        }
+      ],
+      "tool": {
+        "driver": {
+          "name": "InspectCode",
+          "organization": "JetBrains, Inc",
+          "fullName": "JetBrains Inspect Code 2026.1.2",
+          "semanticVersion": "261.0.20260519.64707",
+          "informationUri": "http://www.jetbrains.com/resharper/features/command-line.html",
+          "rules": [
+            {
+              "id": "RedundantUsingDirective",
+              "shortDescription": {
+                "text": "Redundant using directive"
+              },
+              "defaultConfiguration": {
+                "level": "warning"
+              }
+            }
+          ]
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true
+        }
+      ],
+      "originalUriBaseIds": {
+        "solutionDir": {
+          "uri": "file:///C:/work/AppSample/",
+          "description": {
+            "text": "Solution Directory"
+          }
+        }
+      },
+      "artifacts": [
+        {
+          "location": {
+            "uri": "file:///C:/work/AppSample/HomeController.cs"
+          }
+        },
+        {
+          "location": {
+            "uri": "file:///C:/work/AppSample/src/Models/Invoice.cs"
+          }
+        }
+      ],
+      "columnKind": "utf16CodeUnits"
+    }
+  ]
+}

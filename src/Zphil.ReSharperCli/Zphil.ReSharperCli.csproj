@@ -1,0 +1,61 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <TargetFramework>net10.0</TargetFramework>
+        <RollForward>Major</RollForward>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+
+        <!-- Global tool + MCP server identity. PackAsTool applies the DotnetTool package type;
+             PackageType=McpServer additionally marks it for MCP Registry / NuGet MCP discovery.
+             The two coexist. -->
+        <PackAsTool>true</PackAsTool>
+        <ToolCommandName>resharper-cli-mcp</ToolCommandName>
+        <PackageId>Zphil.ReSharperCli</PackageId>
+        <Version>1.0.0</Version>
+        <PackageType>McpServer</PackageType>
+        <Description>An MCP server for JetBrains' ReSharper command-line tools (InspectCode and CleanupCode). It exposes headless C# inspection and code cleanup to MCP clients over stdio. Unofficial — not affiliated with or endorsed by JetBrains.</Description>
+        <Authors>Andrew Gray</Authors>
+        <Copyright>Copyright (c) 2026 Andrew Gray</Copyright>
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+        <!-- No PackageIcon in v1: shipping no JetBrains brand asset, and no own icon yet. -->
+        <PackageTags>resharper;inspectcode;cleanupcode;code-cleanup;static-analysis;code-quality;mcp;model-context-protocol;csharp;dotnet-tool;claude;cursor;copilot;ai</PackageTags>
+        <PackageProjectUrl>https://github.com/andypgray/resharper-cli-mcp</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/andypgray/resharper-cli-mcp</RepositoryUrl>
+        <RepositoryType>git</RepositoryType>
+        <PublishRepositoryUrl>true</PublishRepositoryUrl>
+        <EmbedUntrackedSources>true</EmbedUntrackedSources>
+        <IncludeSymbols>true</IncludeSymbols>
+        <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    </PropertyGroup>
+
+    <PropertyGroup Condition="'$(CI)' == 'true'">
+        <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+        <None Include="..\..\.mcp\server.json" Pack="true" PackagePath="\.mcp\" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="ModelContextProtocol" Version="1.4.1" />
+        <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.9" />
+        <PackageReference Include="Serilog.Extensions.Hosting" Version="10.0.0" />
+        <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <InternalsVisibleTo Include="Zphil.ReSharperCli.Tests" />
+        <!-- Lets NSubstitute (Castle DynamicProxy) mock the internal seams (e.g. IProcessRunner). -->
+        <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <EmbeddedResource Include="server-instructions.md" />
+        <EmbeddedResource Include="Prompts\derive-style-guide.md" LogicalName="Zphil.ReSharperCli.Prompts.derive-style-guide.md" />
+    </ItemGroup>
+
+</Project>

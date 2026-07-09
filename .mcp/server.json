@@ -1,0 +1,22 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.andypgray/resharper-cli-mcp",
+  "description": "An MCP server for JetBrains' ReSharper command-line tools (InspectCode and CleanupCode): headless C# inspection and code cleanup for coding agents. Unofficial — not affiliated with or endorsed by JetBrains.",
+  "version": "1.0.0",
+  "repository": {
+    "url": "https://github.com/andypgray/resharper-cli-mcp",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "nuget",
+      "registryBaseUrl": "https://api.nuget.org/v3/index.json",
+      "identifier": "Zphil.ReSharperCli",
+      "version": "1.0.0",
+      "runtimeHint": "dnx",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}

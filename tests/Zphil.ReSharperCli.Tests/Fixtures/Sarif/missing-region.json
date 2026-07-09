@@ -1,0 +1,25 @@
+{
+  "version": "2.1.0",
+  "runs": [
+    {
+      "results": [
+        {
+          "ruleId": "RedundantAssembly",
+          "level": "warning",
+          "message": {
+            "text": "Assembly reference is never used and can be removed"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///C:/work/AppSample/HomeController.cs"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

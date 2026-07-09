@@ -1,0 +1,109 @@
+# Publishes Zphil.ReSharperCli to NuGet and creates a GitHub release when a v* tag is pushed.
+#
+# Auth: NuGet trusted publishing (OIDC). The job trades a GitHub-signed OIDC token for
+# a short-lived (1-hour, single-use) nuget.org API key at run time via the NuGet/login
+# step — there is NO long-lived NUGET_API_KEY secret to store or rotate. This requires a
+# trusted-publishing policy on nuget.org (owner + repo + this workflow's file name) and
+# the `id-token: write` permission below.
+#
+# Why pack in CI rather than locally: packing here means SourceLink embeds a commit
+# that actually exists on GitHub, so debugger source-stepping resolves. The symbol
+# package (.snupkg) is produced alongside the .nupkg and `dotnet nuget push` uploads
+# it automatically. ContinuousIntegrationBuild engages via the csproj's `$(CI)`
+# condition (GitHub Actions sets CI=true), which normalizes embedded paths.
+#
+# Build/test scope: the test project is built and tested, which compiles src/
+# transitively via its ProjectReference — that is the whole solution here. The pack
+# step then rebuilds and packs src/ on its own so ContinuousIntegrationBuild applies.
+#
+# Provenance: after packing, actions/attest emits signed SLSA build provenance for the
+# .nupkg/.snupkg, and the Sigstore bundle ships as a release asset (offline verification,
+# plus Scorecard's Signed-Releases check). Permissions moved from the workflow level down
+# to the release job (top level is now contents: read) so the attestations: write and
+# id-token: write grants stay scoped to the single job that needs them.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write      # create the GitHub release
+      id-token: write      # OIDC: NuGet trusted publishing + Sigstore signing for attestations
+      attestations: write  # persist the build provenance attestation
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          dotnet-version: '10.0.x'
+
+      # The tag drives publication, so it must agree with every place the version is
+      # declared: the csproj <Version> and BOTH version fields in .mcp/server.json
+      # (the top-level `version` and the package entry's `version`). Any mismatch fails
+      # the release before anything is pushed. jq ships on the ubuntu-latest runner.
+      - name: Verify tag matches csproj and server.json versions
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          CSPROJ=$(grep -oP '(?<=<Version>)[^<]+' src/Zphil.ReSharperCli/Zphil.ReSharperCli.csproj)
+          SERVER_TOP=$(jq -r '.version' .mcp/server.json)
+          SERVER_PKG=$(jq -r '.packages[0].version' .mcp/server.json)
+          echo "tag=$TAG csproj=$CSPROJ server.json/.version=$SERVER_TOP server.json/.packages[0].version=$SERVER_PKG"
+          rc=0
+          [ "$CSPROJ" = "$TAG" ]     || { echo "::error::csproj <Version> ($CSPROJ) != tag ($TAG)"; rc=1; }
+          [ "$SERVER_TOP" = "$TAG" ] || { echo "::error::server.json .version ($SERVER_TOP) != tag ($TAG)"; rc=1; }
+          [ "$SERVER_PKG" = "$TAG" ] || { echo "::error::server.json .packages[0].version ($SERVER_PKG) != tag ($TAG)"; rc=1; }
+          exit $rc
+
+      - name: Build (test project builds src/ transitively)
+        run: dotnet build tests/Zphil.ReSharperCli.Tests/Zphil.ReSharperCli.Tests.csproj -c Release
+
+      - name: Test
+        run: dotnet test tests/Zphil.ReSharperCli.Tests/Zphil.ReSharperCli.Tests.csproj -c Release --no-build
+
+      - name: Pack (produces .nupkg + .snupkg)
+        run: dotnet pack src/Zphil.ReSharperCli/Zphil.ReSharperCli.csproj -c Release -o artifacts
+
+      # Signed SLSA build provenance for the exact bytes built here (actions/attest emits
+      # provenance by default when no predicate is given). Verify with:
+      #   gh attestation verify <file> --repo andypgray/resharper-cli-mcp
+      # Permissions: id-token + attestations only. Do NOT add artifact-metadata: write —
+      # that is for create-storage-record/push-to-registry, which file subjects don't use.
+      - name: Attest build provenance
+        id: attest
+        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
+        with:
+          subject-path: |
+            artifacts/*.nupkg
+            artifacts/*.snupkg
+
+      # Ship the Sigstore bundle as a release asset: enables offline verification
+      # (gh attestation verify --bundle) and is what Scorecard's Signed-Releases
+      # check looks for (it scans release assets for *.intoto.jsonl, not the API).
+      - name: Stage attestation bundle for the release
+        run: cp "${{ steps.attest.outputs.bundle-path }}" artifacts/attestation.intoto.jsonl
+
+      # Requested right before the push (not earlier) so the 1-hour, single-use key can't
+      # expire behind the slow build/test steps. `user` is the nuget.org profile name
+      # (not an email); the OIDC token is minted by the id-token: write permission above.
+      - name: NuGet login (OIDC → short-lived API key)
+        uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1.2.0
+        id: login
+        with:
+          user: andypgray
+
+      - name: Push to NuGet
+        run: dotnet nuget push "artifacts/*.nupkg" --api-key "${{ steps.login.outputs.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json --skip-duplicate
+
+      - name: Create GitHub release
+        run: gh release create "$GITHUB_REF_NAME" artifacts/*.nupkg artifacts/*.snupkg artifacts/attestation.intoto.jsonl --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}

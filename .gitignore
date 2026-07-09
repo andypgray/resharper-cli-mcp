@@ -1,0 +1,32 @@
+## .NET
+bin/
+obj/
+*.user
+*.suo
+*.cache
+*.dll
+*.exe
+*.pdb
+*.nupkg
+*.snupkg
+
+## IDE
+.vs/
+.idea/
+*.sln.DotSettings.user
+*.lscache
+
+## Build
+artifacts/
+nupkg/
+TestResults/
+
+## OS
+Thumbs.db
+.DS_Store
+
+## Local-only Claude tooling (dev aids, not imposed on the public repo)
+.claude/settings.local.json
+.claude/handoff.local.md
+.mcp.json
+CLAUDE.md

@@ -1,0 +1,35 @@
+{
+  "version": "2.1.0",
+  "runs": [
+    {
+      "results": [
+        {
+          "ruleId": "SolutionWideAnalysisSuppressed",
+          "level": "warning",
+          "message": {
+            "text": "A project-wide issue with no physical location"
+          }
+        },
+        {
+          "ruleId": "UnusedType.Global",
+          "level": "note",
+          "message": {
+            "text": "Class 'Invoice' is never used"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///C:/work/AppSample/src/Models/Invoice.cs"
+                },
+                "region": {
+                  "startLine": 5
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

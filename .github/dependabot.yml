@@ -1,0 +1,16 @@
+# Weekly dependency-update PRs: GitHub Actions pins and NuGet packages.
+# SHA-pinned action versions (see .github/workflows/) are kept current by the
+# github-actions ecosystem; the SECURITY.md pinning promise depends on this file.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: nuget
+    directories:
+      - /src/Zphil.ReSharperCli
+      - /tests/Zphil.ReSharperCli.Tests
+    schedule:
+      interval: weekly

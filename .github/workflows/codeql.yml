@@ -1,0 +1,38 @@
+# CodeQL static analysis for C#. Runs GitHub's semantic code-scanning engine and uploads results
+# to the repo's Security tab. build-mode: none does buildless analysis, so it does not depend on
+# CodeQL supporting the net10.0 build. Also satisfies OpenSSF Scorecard's SAST check, which credits
+# the presence of a github/codeql-action/analyze step.
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '30 3 * * 1'  # Mondays 03:30 UTC (offset from the Scorecard workflow's 02:30)
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze (C#)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write  # upload CodeQL findings to code scanning
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@99df26d4f13ea111d4ec1a7dddef6063f76b97e9 # v4.37.0
+        with:
+          languages: csharp
+          build-mode: none
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@99df26d4f13ea111d4ec1a7dddef6063f76b97e9 # v4.37.0
+        with:
+          category: '/language:csharp'

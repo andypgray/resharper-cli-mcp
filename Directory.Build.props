@@ -1,0 +1,19 @@
+<Project>
+
+    <!-- Supply-chain hardening: lock the full NuGet dependency graph.
+         RestorePackagesWithLockFile makes `dotnet restore` generate and maintain a
+         packages.lock.json (with content hashes) next to each project. In CI, RestoreLockedMode
+         makes restore fail if the resolved graph drifts from the committed lock file, giving
+         reproducible, tamper-evident restores. Local restores stay unlocked, so adding a package
+         updates the lock file naturally; Dependabot updates the lock file alongside each bump.
+         ($(CI) is set to 'true' by GitHub Actions, matching the ContinuousIntegrationBuild gate
+         in Zphil.ReSharperCli.csproj.) -->
+    <PropertyGroup>
+        <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    </PropertyGroup>
+
+    <PropertyGroup Condition="'$(CI)' == 'true'">
+        <RestoreLockedMode>true</RestoreLockedMode>
+    </PropertyGroup>
+
+</Project>

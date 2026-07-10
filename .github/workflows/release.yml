@@ -72,6 +72,22 @@ jobs:
       - name: Pack (produces .nupkg + .snupkg)
         run: dotnet pack src/Zphil.ReSharperCli/Zphil.ReSharperCli.csproj -c Release -o artifacts
 
+      # nuget.org generates the VS Code MCP config only if the package holds an entry at
+      # exactly `.mcp/server.json`. 1.0.0 shipped it as `.mcp//server.json` because the csproj
+      # PackagePath used a backslash and this runner is Linux — a bug Windows packs cannot
+      # reproduce, so this runner is the only place the path is truly verified. Fail here,
+      # before the immutable nuget push. -Z1 lists one entry per line; -Fxq is a whole-line
+      # literal match, so the double-slash form fails it. Capturing into a variable first
+      # avoids a SIGPIPE false-failure from a live unzip|grep pipe.
+      - name: Verify server.json is packed at .mcp/server.json
+        run: |
+          entries="$(unzip -Z1 artifacts/*.nupkg)"
+          grep -Fxq '.mcp/server.json' <<<"$entries" || {
+            echo "::error::MCP manifest missing or mis-pathed in the packed nupkg (need .mcp/server.json)"
+            printf '%s\n' "$entries" | grep -i 'server\.json' || true
+            exit 1
+          }
+
       # Signed SLSA build provenance for the exact bytes built here (actions/attest emits
       # provenance by default when no predicate is given). Verify with:
       #   gh attestation verify <file> --repo andypgray/resharper-cli-mcp

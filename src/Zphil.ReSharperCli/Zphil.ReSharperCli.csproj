@@ -13,7 +13,7 @@
         <PackAsTool>true</PackAsTool>
         <ToolCommandName>resharper-cli-mcp</ToolCommandName>
         <PackageId>Zphil.ReSharperCli</PackageId>
-        <Version>1.0.0</Version>
+        <Version>1.0.1</Version>
         <PackageType>McpServer</PackageType>
         <Description>An MCP server for JetBrains' ReSharper command-line tools (InspectCode and CleanupCode). It exposes headless C# inspection and code cleanup to MCP clients over stdio. Unofficial — not affiliated with or endorsed by JetBrains.</Description>
         <Authors>Andrew Gray</Authors>
@@ -36,8 +36,11 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <None Include="..\..\README.md" Pack="true" PackagePath="\" />
-        <None Include="..\..\.mcp\server.json" Pack="true" PackagePath="\.mcp\" />
+        <!-- PackagePath must use forward slashes: on the Linux release runner a backslash is not a
+             path separator, and 1.0.0 shipped the manifest at `.mcp//server.json`, which broke
+             nuget.org's VS Code MCP config detection (it wants exactly `.mcp/server.json`). -->
+        <None Include="..\..\README.md" Pack="true" PackagePath="/" />
+        <None Include="..\..\.mcp\server.json" Pack="true" PackagePath=".mcp/server.json" />
     </ItemGroup>
 
     <ItemGroup>

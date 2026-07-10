@@ -34,3 +34,30 @@ jobs:
 
       - name: Test
         run: dotnet test tests/Zphil.ReSharperCli.Tests/Zphil.ReSharperCli.Tests.csproj --no-build --logger "console;verbosity=normal"
+
+  # Packs on Linux and asserts the MCP manifest lands at exactly `.mcp/server.json` — the
+  # path nuget.org scans to generate the VS Code MCP config. A backslash PackagePath
+  # mis-packs only on non-Windows (1.0.0 shipped `.mcp//server.json`), so a single
+  # ubuntu job — not the 3-OS matrix — is the leg that catches it.
+  pack-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Pack
+        run: dotnet pack src/Zphil.ReSharperCli/Zphil.ReSharperCli.csproj -c Release -o artifacts
+
+      - name: Verify server.json is packed at .mcp/server.json
+        run: |
+          entries="$(unzip -Z1 artifacts/*.nupkg)"
+          grep -Fxq '.mcp/server.json' <<<"$entries" || {
+            echo "::error::MCP manifest missing or mis-pathed in the packed nupkg (need .mcp/server.json)"
+            printf '%s\n' "$entries" | grep -i 'server\.json' || true
+            exit 1
+          }

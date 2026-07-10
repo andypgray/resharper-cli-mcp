@@ -9,11 +9,12 @@ resharper-cli-mcp publishes from a git tag. Pushing a `v*` tag runs [`release.ym
 1. Fails immediately unless the tag (without its `v`) equals the csproj `<Version>` and both version fields in [`.mcp/server.json`](../.mcp/server.json) (`.version` and `.packages[0].version`).
 2. Builds and tests in `Release`.
 3. Packs the `.nupkg` and `.snupkg`.
-4. Emits signed SLSA build provenance with `actions/attest` and stages it as `attestation.intoto.jsonl`.
-5. Trades the workflow's OIDC token for a short-lived nuget.org key (`NuGet/login`), then runs `dotnet nuget push --skip-duplicate`.
-6. Creates a GitHub release carrying the `.nupkg`, `.snupkg`, and attestation bundle.
+4. Verifies the packed `.nupkg` holds the MCP manifest at exactly `.mcp/server.json` — the path nuget.org scans to generate the VS Code MCP configuration — and stops the release before anything is pushed if it is missing or mis-pathed. NuGet versions are immutable, so this is the last chance to catch a packaging fault.
+5. Emits signed SLSA build provenance with `actions/attest` and stages it as `attestation.intoto.jsonl`.
+6. Trades the workflow's OIDC token for a short-lived nuget.org key (`NuGet/login`), then runs `dotnet nuget push --skip-duplicate`.
+7. Creates a GitHub release carrying the `.nupkg`, `.snupkg`, and attestation bundle.
 
-Steps 4 to 6 need the one-time setup below to already be in place.
+Steps 5 to 7 need the one-time setup below to already be in place.
 
 ## One-time setup
 
@@ -48,14 +49,14 @@ grep -oP '(?<=<Version>)[^<]+' src/Zphil.ReSharperCli/Zphil.ReSharperCli.csproj
 jq -r '.version, .packages[0].version' .mcp/server.json
 ```
 
-Then, using `1.0.0` as the example version:
+Then, using `1.0.1` as the example version:
 
 1. If bumping, set the version in all three places (the csproj `<Version>`, and both `.version` and `.packages[0].version` in `.mcp/server.json`) and commit.
 2. Tag and push:
 
    ```bash
-   git tag v1.0.0
-   git push origin v1.0.0
+   git tag v1.0.1
+   git push origin v1.0.1
    ```
 
 3. Watch the run with `gh run watch` or the Actions tab. On success the package is on nuget.org and a GitHub release holds the three assets.
@@ -66,7 +67,7 @@ nuget.org takes a few minutes to index a new version. Poll until the readme retu
 
 ```bash
 curl -s -o /dev/null -w '%{http_code}\n' \
-  https://api.nuget.org/v3-flatcontainer/zphil.resharpercli/1.0.0/readme
+  https://api.nuget.org/v3-flatcontainer/zphil.resharpercli/1.0.1/readme
 ```
 
 Then register the server with the MCP registry. Run this after the package is live, because the registry validates the `<!-- mcp-name: ... -->` marker in the published NuGet readme:
@@ -92,7 +93,7 @@ Enable once, in repository settings:
 Confirm the bytes as built, per [SECURITY.md](../SECURITY.md):
 
 ```bash
-gh attestation verify Zphil.ReSharperCli.1.0.0.nupkg --repo andypgray/resharper-cli-mcp
+gh attestation verify Zphil.ReSharperCli.1.0.1.nupkg --repo andypgray/resharper-cli-mcp
 ```
 
 Verify the GitHub release asset, not the nuget.org download: nuget.org appends a repository signature after upload, which changes the file hash.

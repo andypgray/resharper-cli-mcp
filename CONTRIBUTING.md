@@ -48,7 +48,7 @@ SARIF fixtures live under `tests/Zphil.ReSharperCli.Tests/Fixtures/Sarif/` and a
 
 ## Versioning and releases
 
-The project follows semantic versioning from 1.0.0. Breaking changes to the tool surface bump the major version. Release notes live on [GitHub Releases](https://github.com/andypgray/resharper-cli-mcp/releases); there is no `CHANGELOG` file. A maintainer tags `v*` and CI publishes the package to NuGet.
+The project follows semantic versioning from 1.0.0. Breaking changes to the tool surface bump the major version. Release notes live on [GitHub Releases](https://github.com/andypgray/resharper-cli-mcp/releases) and in [CHANGELOG.md](CHANGELOG.md). A maintainer tags `v*` and CI publishes the package to NuGet.
 
 ## License
 

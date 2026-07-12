@@ -6,6 +6,7 @@ using Zphil.ReSharperCli.Execution;
 using Zphil.ReSharperCli.Infrastructure;
 using Zphil.ReSharperCli.Pipeline;
 using Zphil.ReSharperCli.Prompts;
+using Zphil.ReSharperCli.Resources;
 using Zphil.ReSharperCli.Services;
 
 if (args.Contains("--version"))
@@ -52,6 +53,7 @@ builder.Services
     .WithStdioServerTransport()
     .WithCoercingTools()
     .WithPrompts<ResharperPrompts>()
+    .WithResources<ResharperResources>()
     .WithGlobalCallToolFilter();
 
 IHost host = builder.Build();

@@ -9,9 +9,12 @@ using Zphil.ReSharperCli.Tests.TestDoubles;
 namespace Zphil.ReSharperCli.Tests.Services;
 
 /// <summary>
-///     <see cref="CleanupService" /> mutates files in place, so it validates concrete (non-wildcard) paths
-///     before invoking jb. These tests plant a real solution file and real targets under a temp directory
-///     so that validation is exercised against the filesystem rather than a fabricated path.
+///     <see cref="CleanupService" /> mutates files in place, validates concrete (non-wildcard) paths before
+///     invoking jb, and hashes each concrete file before and after the run to classify it. These tests plant
+///     real files under a per-instance temp directory (so the parallel run stays race-free) and assert on the
+///     structured <see cref="CleanupOutcome" /> — a far more robust contract than the old rendered string. The
+///     fake <see cref="IProcessRunner" /> never touches files, so a test that needs a <c>Changed</c> (or a
+///     deleted-file <c>StatusUnknown</c>) drives the mutation from a side-effecting jb stub.
 /// </summary>
 public sealed class CleanupServiceTests : IDisposable
 {
@@ -36,30 +39,112 @@ public sealed class CleanupServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task RunAsync_SuccessfulRun_ReturnsExactSummary()
+    public async Task RunAsync_FileRewritten_ClassifiesChanged()
     {
-        // Arrange
-        PlantFile("src/A.cs");
-        PlantFile("src/B.cs");
+        // Arrange — jb "cleans up" the file by writing different bytes during its run.
+        string path = PlantFile("src/A.cs", "original");
+        StubJbRunning(() => File.WriteAllText(path, "cleaned up"));
+        CleanupService service = new(_processRunner);
+
+        // Act
+        CleanupOutcome outcome = await service.RunAsync(_config, ["src/A.cs"], CleanupService.DefaultProfile, Ct);
+
+        // Assert
+        outcome.Profile.ShouldBe(CleanupService.DefaultProfile);
+        CleanupEntry entry = outcome.Entries.ShouldHaveSingleItem();
+        entry.Display.ShouldBe("src/A.cs");
+        entry.Status.ShouldBe(CleanupFileStatus.Changed);
+    }
+
+    [Fact]
+    public async Task RunAsync_RewrittenWithIdenticalBytes_ClassifiesUnchanged()
+    {
+        // Arrange — jb re-writes the file with byte-identical content (a new mtime, same bytes). Content
+        // hashing must call this Unchanged; a (length, mtime) heuristic would wrongly report Changed.
+        string path = PlantFile("src/A.cs", "same bytes");
+        StubJbRunning(() => File.WriteAllText(path, "same bytes"));
+        CleanupService service = new(_processRunner);
+
+        // Act
+        CleanupOutcome outcome = await service.RunAsync(_config, ["src/A.cs"], CleanupService.DefaultProfile, Ct);
+
+        // Assert
+        outcome.Entries.ShouldHaveSingleItem().Status.ShouldBe(CleanupFileStatus.Unchanged);
+    }
+
+    [Fact]
+    public async Task RunAsync_AfterReadFails_ClassifiesStatusUnknownWithoutThrowing()
+    {
+        // Arrange — jb deletes the file (exit 0), so the after-hash read fails. The run already succeeded, so
+        // the outcome must classify it StatusUnknown rather than letting the hash failure throw.
+        string path = PlantFile("src/A.cs", "content");
+        StubJbRunning(() => File.Delete(path));
+        CleanupService service = new(_processRunner);
+
+        // Act
+        CleanupOutcome outcome = await service.RunAsync(_config, ["src/A.cs"], CleanupService.DefaultProfile, Ct);
+
+        // Assert
+        outcome.Entries.ShouldHaveSingleItem().Status.ShouldBe(CleanupFileStatus.StatusUnknown);
+    }
+
+    [Fact]
+    public async Task RunAsync_MixedConcreteAndWildcard_ClassifiesEachInOrder()
+    {
+        // Arrange — one concrete file jb rewrites, plus a wildcard that stays a Pattern (never a single file).
+        string path = PlantFile("src/A.cs", "before");
+        StubJbRunning(() => File.WriteAllText(path, "after"));
+        CleanupService service = new(_processRunner);
+
+        // Act
+        CleanupOutcome outcome = await service.RunAsync(
+            _config, ["src/A.cs", "src/**/*.cs"], CleanupService.DefaultProfile, Ct);
+
+        // Assert — request order preserved; the wildcard is Pattern (excluded from the concrete denominator).
+        outcome.Entries.Count.ShouldBe(2);
+        outcome.Entries[0].Status.ShouldBe(CleanupFileStatus.Changed);
+        outcome.Entries[1].Display.ShouldBe("src/**/*.cs");
+        outcome.Entries[1].Status.ShouldBe(CleanupFileStatus.Pattern);
+    }
+
+    [Fact]
+    public async Task RunAsync_WildcardEntry_SkipsValidationAndClassifiesPattern()
+    {
+        // Arrange — a wildcard is handed to jb unvalidated even though nothing matches it on disk.
         StubExit(0);
         CleanupService service = new(_processRunner);
 
         // Act
-        string summary = await service.RunAsync(
-            _config, ["src/A.cs", "src/B.cs"], CleanupService.DefaultProfile, Ct);
+        CleanupOutcome outcome = await service.RunAsync(_config, ["src/**/*.cs"], CleanupService.DefaultProfile, Ct);
 
         // Assert
-        summary.ShouldBe(
-            "Cleanup completed for 2 file(s) with profile \"Built-in: Full Cleanup\":\n"
-            + "  - src/A.cs\n"
-            + "  - src/B.cs");
+        outcome.Entries.ShouldHaveSingleItem().Status.ShouldBe(CleanupFileStatus.Pattern);
+        await _processRunner.Received(1).RunAsync(
+            "jb", Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task RunAsync_AbsoluteExistingPathUntouched_ClassifiesUnchanged()
+    {
+        // Arrange — an absolute path jb does not modify.
+        string absolute = PlantFile("src/Real.cs", "x");
+        StubExit(0);
+        CleanupService service = new(_processRunner);
+
+        // Act
+        CleanupOutcome outcome = await service.RunAsync(_config, [absolute], CleanupService.DefaultProfile, Ct);
+
+        // Assert
+        CleanupEntry entry = outcome.Entries.ShouldHaveSingleItem();
+        entry.Display.ShouldBe(absolute);
+        entry.Status.ShouldBe(CleanupFileStatus.Unchanged);
     }
 
     [Fact]
     public async Task RunAsync_NonZeroExit_ThrowsUserErrorSurfacingStderr()
     {
-        // Arrange
-        PlantFile("A.cs");
+        // Arrange — a non-zero exit throws before any classification.
+        PlantFile("A.cs", "x");
         _processRunner
             .RunAsync("jb", Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
             .Returns(new ProcessResult(1, string.Empty, "Unknown profile 'No Such Profile'"));
@@ -75,7 +160,7 @@ public sealed class CleanupServiceTests : IDisposable
     [Fact]
     public async Task RunAsync_MissingPlainFile_ThrowsNamingItAndDoesNotInvokeJb()
     {
-        // Arrange — no file planted, so the concrete path does not exist.
+        // Arrange — no file planted, so the concrete path does not exist; validation runs before hashing.
         CleanupService service = new(_processRunner);
 
         // Act
@@ -87,44 +172,11 @@ public sealed class CleanupServiceTests : IDisposable
             Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>());
     }
 
-    [Fact]
-    public async Task RunAsync_WildcardEntry_SkipsValidationAndRunsJb()
-    {
-        // Arrange — a wildcard pattern is handed to jb unvalidated, even though nothing matches it on disk.
-        StubExit(0);
-        CleanupService service = new(_processRunner);
-
-        // Act
-        string summary = await service.RunAsync(_config, ["src/**/*.cs"], CleanupService.DefaultProfile, Ct);
-
-        // Assert
-        summary.ShouldContain("src/**/*.cs");
-        await _processRunner.Received(1).RunAsync(
-            "jb", Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>());
-    }
-
-    [Fact]
-    public async Task RunAsync_AbsoluteExistingPath_IsAccepted()
-    {
-        // Arrange
-        string absolute = PlantFile("src/Real.cs");
-        StubExit(0);
-        CleanupService service = new(_processRunner);
-
-        // Act
-        string summary = await service.RunAsync(_config, [absolute], CleanupService.DefaultProfile, Ct);
-
-        // Assert
-        summary.ShouldContain(absolute);
-        await _processRunner.Received(1).RunAsync(
-            "jb", Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>());
-    }
-
-    private string PlantFile(string relativePath)
+    private string PlantFile(string relativePath, string content = "")
     {
         string fullPath = Path.Combine(_solutionDirectory, relativePath);
         Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
-        File.WriteAllText(fullPath, string.Empty);
+        File.WriteAllText(fullPath, content);
         return fullPath;
     }
 
@@ -133,5 +185,17 @@ public sealed class CleanupServiceTests : IDisposable
         _processRunner
             .RunAsync("jb", Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
             .Returns(new ProcessResult(exitCode, string.Empty, string.Empty));
+    }
+
+    /// <summary>Stub jb to run <paramref name="duringRun" /> (a filesystem side effect) then exit 0.</summary>
+    private void StubJbRunning(Action duringRun)
+    {
+        _processRunner
+            .RunAsync("jb", Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                duringRun();
+                return new ProcessResult(0, string.Empty, string.Empty);
+            });
     }
 }

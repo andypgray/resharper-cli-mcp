@@ -59,6 +59,7 @@
     <ItemGroup>
         <EmbeddedResource Include="server-instructions.md" />
         <EmbeddedResource Include="Prompts\derive-style-guide.md" LogicalName="Zphil.ReSharperCli.Prompts.derive-style-guide.md" />
+        <EmbeddedResource Include="Resources\configuration-guide.md" LogicalName="Zphil.ReSharperCli.Resources.configuration-guide.md" />
     </ItemGroup>
 
 </Project>

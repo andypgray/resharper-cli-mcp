@@ -74,7 +74,7 @@ The `solutionPath` tool argument overrides `JB_SOLUTION_PATH` for a single call.
 
 **Solution discovery** tries, in order: the `solutionPath` argument, then `JB_SOLUTION_PATH`, then a single `.sln`/`.slnx` in the working directory (top level only, no parent walk). Zero or several without an override is an error that names the variable to set.
 
-**Settings discovery** tries, in order: `JB_SETTINGS_PATH` (a missing file logs a warning and falls through), then a `.DotSettings` file beside the solution, then `GlobalSettingsStorage.DotSettings` in the JetBrains shared directory, then none.
+**Settings discovery** tries, in order: `JB_SETTINGS_PATH` (a missing file logs a warning and falls through), then a `.DotSettings` file beside the solution, then `GlobalSettingsStorage.DotSettings` in the JetBrains shared directory, then none. On top of whichever it finds, `jb` also reads `.editorconfig` from the source tree automatically — no flag needed — so editorconfig style rules apply even with no `.DotSettings` at all.
 
 Logs roll daily under `%LOCALAPPDATA%\Zphil.ReSharperCli\logs` on Windows, and the platform-equivalent path elsewhere. Nothing leaves the machine.
 
@@ -99,6 +99,14 @@ If a teammate has ReSharper or Rider, prefer JetBrains' first-party [Detect Code
 - auto-properties, readonly fields, object-creation style, trailing commas, namespace style
 
 Keep the agent's editing effort on logic, types, naming, and architecture. For a legacy codebase where Full Cleanup would churn regions you did not touch, define a narrower profile (for example `Custom: No Reordering`) in the solution's `.sln.DotSettings` and pass its name as `profile`.
+
+`resharper_cleanup` reports which of the files it changed on disk, so an agent can see when a cleanup rewrote something it meant to leave alone rather than trusting a bare "completed". A small batch lists every file; a solution-wide run collapses the per-file detail toward counts to stay within the output budget.
+
+## Configuring what ReSharper enforces
+
+The two tools read two independent configuration axes: `resharper_inspect` obeys **inspection severities** (what gets reported), and `resharper_cleanup` enforces **code style** through its cleanup **profile** (what gets rewritten). They do not share a switch — setting a rule to `DO_NOT_SHOW` hides its inspection issue but does not stop cleanup from normalizing that style. Some styles are binary with no "leave alone" value (argument style is `positional` or `named`), so protecting one means narrowing the profile, excluding the file, or an in-source `// ReSharper disable` comment.
+
+Rather than carry that model in every session's context, the server advertises it as an on-demand MCP resource, `resharper://guides/configuration` — the two axes, how to protect a deliberate style, where settings and `.editorconfig` are read from, and the `.DotSettings` key shapes. A client that surfaces resources lets an agent load it exactly when it is about to change what ReSharper enforces.
 
 ## Cleanup reminder hook
 

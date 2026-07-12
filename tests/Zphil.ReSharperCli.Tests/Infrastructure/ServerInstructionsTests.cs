@@ -1,6 +1,8 @@
+using System.Text;
 using Shouldly;
 using Xunit;
 using Zphil.ReSharperCli.Infrastructure;
+using Zphil.ReSharperCli.Resources;
 
 namespace Zphil.ReSharperCli.Tests.Infrastructure;
 
@@ -24,5 +26,21 @@ public sealed class ServerInstructionsTests
         // Assert
         ServerInstructions.Text.ShouldContain("unofficial");
         ServerInstructions.Text.ShouldContain("not affiliated with or endorsed by JetBrains");
+    }
+
+    [Fact]
+    public void Text_StaysUnderClaudeCodeTruncationCap()
+    {
+        // Claude Code silently truncates server instructions past ~2 KB, which would drop the tail
+        // (including the configuration-guide signpost). Keep the whole thing under 2048 UTF-8 bytes.
+        Encoding.UTF8.GetByteCount(ServerInstructions.Text).ShouldBeLessThanOrEqualTo(2048);
+    }
+
+    [Fact]
+    public void Text_SignpostsTheConfigurationGuideResource()
+    {
+        // The detailed config model lives in an on-demand resource; the instructions only point at it.
+        // Guard the URI so the signpost can't be silently dropped, breaking on-demand discovery.
+        ServerInstructions.Text.ShouldContain(ResharperResources.ConfigurationGuideUri);
     }
 }

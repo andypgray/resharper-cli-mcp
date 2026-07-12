@@ -82,9 +82,10 @@ public sealed class ToolPipelineTests
     }
 
     [Fact]
-    public async Task CleanupAsync_ValidFiles_ReturnsSummaryWithProfileAndFiles()
+    public async Task CleanupAsync_ValidFiles_ReturnsFullSummaryClassifyingEachFile()
     {
-        // Arrange
+        // Arrange — the jb stub returns exit 0 without touching the files, so both hash identically before
+        // and after: a small batch renders at DetailLevel.Full, classifying each entry.
         using FakeEnvironment environment = new();
         PlantSolution(environment, "App.sln");
         PlantFile(environment, "src/A.cs");
@@ -97,9 +98,9 @@ public sealed class ToolPipelineTests
 
         // Assert
         result.ShouldBe(
-            "Cleanup completed for 2 file(s) with profile \"Built-in: Full Cleanup\":\n"
-            + "  - src/A.cs\n"
-            + "  - src/B.cs");
+            "Cleanup completed with profile \"Built-in: Full Cleanup\". 0 of 2 file(s) changed on disk:\n"
+            + "  - src/A.cs (unchanged)\n"
+            + "  - src/B.cs (unchanged)");
     }
 
     [Fact]

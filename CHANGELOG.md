@@ -5,6 +5,24 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `resharper://guides/configuration` MCP resource — an on-demand guide to how ReSharper configuration
+  works: inspection severities drive `resharper_inspect` while the cleanup profile drives
+  `resharper_cleanup` (two independent axes — hiding an inspection does not stop cleanup), how to protect
+  a deliberate style from cleanup, settings and `.editorconfig` discovery, and the `.DotSettings` key
+  shapes. The always-loaded server instructions carry only a short signpost pointing at it.
+
+### Changed
+
+- `resharper_cleanup` now reports which files it actually changed on disk, hashing each concrete file
+  before and after the run and classifying it as changed, unchanged, status-unknown, or a wildcard
+  pattern — instead of a bare "completed" line that hid whether cleanup rewrote a file. Solution-wide
+  runs degrade the per-file detail progressively to stay within the output budget. Purely observational:
+  the cleanup itself is unchanged.
+
 ## [1.0.1] - 2026-07-10
 
 ### Fixed
@@ -33,5 +51,6 @@ Unofficial; not affiliated with or endorsed by JetBrains.
 - Ships as a .NET global tool and MCP server (`PackAsTool` + `PackageType=McpServer`), published to
   NuGet with SLSA build provenance and registered on the MCP registry.
 
+[Unreleased]: https://github.com/andypgray/resharper-cli-mcp/compare/v1.0.1...HEAD
 [1.0.1]: https://github.com/andypgray/resharper-cli-mcp/releases/tag/v1.0.1
 [1.0.0]: https://github.com/andypgray/resharper-cli-mcp/releases/tag/v1.0.0

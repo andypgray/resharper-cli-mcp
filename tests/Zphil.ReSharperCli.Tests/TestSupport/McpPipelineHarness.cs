@@ -10,6 +10,7 @@ using Zphil.ReSharperCli.Execution;
 using Zphil.ReSharperCli.Infrastructure;
 using Zphil.ReSharperCli.Pipeline;
 using Zphil.ReSharperCli.Prompts;
+using Zphil.ReSharperCli.Resources;
 using Zphil.ReSharperCli.Services;
 using Zphil.ReSharperCli.Tests.TestDoubles;
 
@@ -115,6 +116,7 @@ internal sealed class McpPipelineHarness : IAsyncDisposable
             })
             .WithCoercingTools()
             .WithPrompts<ResharperPrompts>()
+            .WithResources<ResharperResources>()
             .WithGlobalCallToolFilter()
             .WithStreamServerTransport(clientToServer.Reader.AsStream(), serverToClient.Writer.AsStream());
 

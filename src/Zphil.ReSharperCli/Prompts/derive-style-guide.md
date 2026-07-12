@@ -69,8 +69,10 @@ conflicted, stop and ask the user. Present the observed split and offer two choi
 - **(a) Enforce a specific convention** — name the majority option and let them accept it or pick
   another. The `.editorconfig` rule (and its severity) will then flag the minority form as a cleanup
   target.
-- **(b) Leave this dimension unconfigured** — set no rule (or severity `none`) so ReSharper ignores
-  it and cleanup will not churn the codebase over a convention the team has not agreed on.
+- **(b) Leave this dimension unconfigured** — author no code-style rule for it, so `resharper_cleanup`
+  has nothing to enforce and will not churn the codebase over a convention the team has not agreed on.
+  Lowering the *inspection* severity to `none` is a separate lever: it silences the squiggle only and
+  does not stop cleanup, which reads the style rule, not the severity.
 
 Where the host supports interactive questions, use that mechanism; otherwise present a numbered
 decision list and wait. **Author nothing until every conflict is resolved.** Silently enforcing one

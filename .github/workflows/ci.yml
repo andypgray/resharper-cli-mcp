@@ -33,7 +33,9 @@ jobs:
         run: dotnet build tests/Zphil.ReSharperCli.Tests/Zphil.ReSharperCli.Tests.csproj --no-restore
 
       - name: Test
-        run: dotnet test tests/Zphil.ReSharperCli.Tests/Zphil.ReSharperCli.Tests.csproj --no-build --logger "console;verbosity=normal"
+        # Exclude the ExternalLinks network liveness test; it runs only on the weekly linkcheck.yml
+        # schedule. Keeps the every-PR suite fully offline, deterministic, and fast.
+        run: dotnet test tests/Zphil.ReSharperCli.Tests/Zphil.ReSharperCli.Tests.csproj --no-build --filter "Category!=ExternalLinks" --logger "console;verbosity=normal"
 
   # Packs on Linux and asserts the MCP manifest lands at exactly `.mcp/server.json` — the
   # path nuget.org scans to generate the VS Code MCP config. A backslash PackagePath

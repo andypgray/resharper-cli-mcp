@@ -1,0 +1,51 @@
+# Weekly liveness check of the curated third-party documentation links (JetBrains + StyleCop) that the
+# README and the embedded prompt/resource cite. Warn-only: a dead third-party page surfaces as a job
+# summary entry and a ::warning:: annotation, and never turns the run red — a JetBrains docs reorg is
+# not our build breaking. The offline test that guards the link set from drifting runs on every PR via
+# ci.yml; only the network liveness leg is gated here, behind the ExternalLinks trait.
+name: Doc link check
+
+on:
+  schedule:
+    - cron: '30 4 * * 1'   # Mondays 04:30 UTC (offset from Scorecard 02:30 / CodeQL 03:30)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linkcheck:
+    runs-on: ubuntu-latest
+    env:
+      LINKCHECK_REPORT: ${{ runner.temp }}/stale-links.md
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore tests/Zphil.ReSharperCli.Tests/Zphil.ReSharperCli.Tests.csproj
+
+      - name: Build
+        run: dotnet build tests/Zphil.ReSharperCli.Tests/Zphil.ReSharperCli.Tests.csproj --no-restore
+
+      - name: Check curated documentation links
+        run: dotnet test tests/Zphil.ReSharperCli.Tests/Zphil.ReSharperCli.Tests.csproj --no-build --filter "Category=ExternalLinks" --logger "console;verbosity=normal"
+
+      - name: Surface stale links as warnings
+        if: always()
+        run: |
+          if [ -s "$LINKCHECK_REPORT" ]; then
+            cat "$LINKCHECK_REPORT" >> "$GITHUB_STEP_SUMMARY"
+            while IFS= read -r line; do
+              case "$line" in
+                "- "*) echo "::warning::${line#- }" ;;
+              esac
+            done < "$LINKCHECK_REPORT"
+          else
+            echo "All curated documentation links are live." >> "$GITHUB_STEP_SUMMARY"
+          fi

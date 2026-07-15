@@ -1,0 +1,19 @@
+{
+  "name": "resharper-cli-mcp",
+  "description": "JetBrains ReSharper command-line inspection and cleanup for C#, over MCP. Unofficial — not affiliated with or endorsed by JetBrains.",
+  "version": "1.0.0",
+  "author": { "name": "Andrew Gray" },
+  "homepage": "https://github.com/andypgray/resharper-cli-mcp",
+  "repository": "https://github.com/andypgray/resharper-cli-mcp",
+  "license": "MIT",
+  "keywords": ["resharper", "inspectcode", "cleanupcode", "csharp", "dotnet", "code-quality", "static-analysis", "mcp"],
+  "mcpServers": {
+    "resharper": {
+      "command": "dotnet",
+      "args": ["dnx", "Zphil.ReSharperCli", "--source", "https://api.nuget.org/v3/index.json"],
+      "env": {
+        "JB_CACHE_HOME": "${CLAUDE_PLUGIN_DATA}/jb-cache"
+      }
+    }
+  }
+}

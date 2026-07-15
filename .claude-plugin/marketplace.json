@@ -1,0 +1,13 @@
+{
+  "name": "resharper-cli-mcp",
+  "description": "Single-plugin marketplace for resharper-cli-mcp: JetBrains ReSharper inspection and cleanup for C# coding agents, over MCP. Unofficial — not affiliated with or endorsed by JetBrains.",
+  "owner": { "name": "Andrew Gray" },
+  "renames": { "resharper": "resharper-cli-mcp" },
+  "plugins": [
+    {
+      "name": "resharper-cli-mcp",
+      "source": "./",
+      "description": "JetBrains ReSharper inspection and cleanup for C#, over MCP. Unofficial — not affiliated with or endorsed by JetBrains."
+    }
+  ]
+}

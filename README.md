@@ -35,6 +35,17 @@ VS Code and Cursor users can add the server in one click, once both tools are in
 
 [![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_Server-0098FF?style=flat-square&logo=visualstudiocode&logoColor=white)](https://insiders.vscode.dev/redirect/mcp/install?name=resharper&config=%7B%22type%22%3A%22stdio%22%2C%22command%22%3A%22resharper-cli-mcp%22%7D) [![Add to Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/en/install-mcp?name=resharper&config=eyJjb21tYW5kIjoicmVzaGFycGVyLWNsaS1tY3AifQ==)
 
+## Install as a Claude Code plugin
+
+Claude Code users can install everything in one step instead of editing `.mcp.json` by hand. This repository doubles as a single-plugin marketplace, so the two tools, the `derive_style_guide` prompt, and the configuration resource arrive together:
+
+```
+/plugin marketplace add andypgray/resharper-cli-mcp
+/plugin install resharper-cli-mcp@resharper-cli-mcp
+```
+
+The plugin starts the server with `dotnet dnx`, which fetches `Zphil.ReSharperCli` from NuGet on first use — so you skip `dotnet tool install` for the wrapper itself. You still need the .NET 10 SDK and JetBrains' ReSharper Command Line Tools (`dotnet tool install -g JetBrains.ReSharper.GlobalTools`), which this project never bundles. ReSharper's caches live in the plugin's own data directory, outside your source tree.
+
 ## Tools
 
 | Tool | Mutates files | What it does |
@@ -76,7 +87,7 @@ The `solutionPath` tool argument overrides `JB_SOLUTION_PATH` for a single call.
 
 **Settings discovery** tries, in order: `JB_SETTINGS_PATH` (a missing file logs a warning and falls through), then a `.DotSettings` file beside the solution, then `GlobalSettingsStorage.DotSettings` in the JetBrains shared directory, then none. On top of whichever it finds, `jb` also reads `.editorconfig` from the source tree automatically — no flag needed — so editorconfig style rules apply even with no `.DotSettings` at all.
 
-Logs roll daily under `%LOCALAPPDATA%\Zphil.ReSharperCli\logs` on Windows, and the platform-equivalent path elsewhere. Nothing leaves the machine.
+Logs roll daily under `%LOCALAPPDATA%\Zphil.ReSharperCli\logs` on Windows, and the platform-equivalent path elsewhere. Nothing leaves the machine; [PRIVACY.md](https://github.com/andypgray/resharper-cli-mcp/blob/main/PRIVACY.md) states that as policy.
 
 ## Deriving a style guide for a legacy codebase
 

@@ -16,8 +16,6 @@ permissions:
 jobs:
   linkcheck:
     runs-on: ubuntu-latest
-    env:
-      LINKCHECK_REPORT: ${{ runner.temp }}/stale-links.md
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -32,6 +30,12 @@ jobs:
 
       - name: Build
         run: dotnet build tests/Zphil.ReSharperCli.Tests/Zphil.ReSharperCli.Tests.csproj --no-restore
+
+      # runner.temp is unavailable in job-level env (contexts there are github/needs/strategy/matrix/
+      # vars/secrets/inputs — no runner), which invalidated the whole workflow. Resolve the report path
+      # here into $GITHUB_ENV: one definition, shared by the test that writes it and the reporter that reads it.
+      - name: Resolve report path
+        run: echo "LINKCHECK_REPORT=$RUNNER_TEMP/stale-links.md" >> "$GITHUB_ENV"
 
       - name: Check curated documentation links
         run: dotnet test tests/Zphil.ReSharperCli.Tests/Zphil.ReSharperCli.Tests.csproj --no-build --filter "Category=ExternalLinks" --logger "console;verbosity=normal"

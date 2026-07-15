@@ -13,7 +13,7 @@
         <PackAsTool>true</PackAsTool>
         <ToolCommandName>resharper-cli-mcp</ToolCommandName>
         <PackageId>Zphil.ReSharperCli</PackageId>
-        <Version>1.0.1</Version>
+        <Version>1.0.2</Version>
         <PackageType>McpServer</PackageType>
         <Description>An MCP server for JetBrains' ReSharper command-line tools (InspectCode and CleanupCode). It exposes headless C# inspection and code cleanup to MCP clients over stdio. Unofficial — not affiliated with or endorsed by JetBrains.</Description>
         <Authors>Andrew Gray</Authors>

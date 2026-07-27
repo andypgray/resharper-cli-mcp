@@ -7,6 +7,14 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    groups:
+      # codeql-action/init and codeql-action/analyze must run at the same version or analyze
+      # aborts on a config-version mismatch. Dependabot treats each entry point as its own
+      # dependency, so ungrouped it opens one PR per path and each lands a version skew that
+      # fails CodeQL. Grouping them means one PR that moves every entry point together.
+      codeql-action:
+        patterns:
+          - github/codeql-action*
 
   - package-ecosystem: nuget
     directories:

@@ -104,6 +104,60 @@ public sealed class ToolPipelineTests
     }
 
     [Fact]
+    public async Task CleanupAsync_SolutionDeclaresProfileAndCallerOmitsOne_UsesTheDeclaredProfile()
+    {
+        // Arrange — the whole point of the declared profile: a caller that does not know it exists still
+        // gets it. Without this, a repo that narrowed its cleanup silently gets Full Cleanup instead.
+        using FakeEnvironment environment = new();
+        PlantSolution(environment, "App.sln");
+        PlantSettingsDeclaringProfile(environment, "House: Keep Named Arguments");
+        PlantFile(environment, "src/A.cs");
+        StubJb();
+        ResharperTools tools = ToolHarness.Build(_processRunner, environment);
+
+        // Act
+        string result = await tools.CleanupAsync(["src/A.cs"], cancellationToken: Ct);
+
+        // Assert
+        result.ShouldStartWith("Cleanup completed with profile \"House: Keep Named Arguments\".");
+    }
+
+    [Fact]
+    public async Task CleanupAsync_CallerPassesProfile_OverridesTheDeclaredProfile()
+    {
+        // Arrange
+        using FakeEnvironment environment = new();
+        PlantSolution(environment, "App.sln");
+        PlantSettingsDeclaringProfile(environment, "House: Keep Named Arguments");
+        PlantFile(environment, "src/A.cs");
+        StubJb();
+        ResharperTools tools = ToolHarness.Build(_processRunner, environment);
+
+        // Act
+        string result = await tools.CleanupAsync(["src/A.cs"], "Built-in: Reformat Code", cancellationToken: Ct);
+
+        // Assert
+        result.ShouldStartWith("Cleanup completed with profile \"Built-in: Reformat Code\".");
+    }
+
+    [Fact]
+    public async Task CleanupAsync_SolutionDeclaresNoProfile_FallsBackToFullCleanup()
+    {
+        // Arrange
+        using FakeEnvironment environment = new();
+        PlantSolution(environment, "App.sln");
+        PlantFile(environment, "src/A.cs");
+        StubJb();
+        ResharperTools tools = ToolHarness.Build(_processRunner, environment);
+
+        // Act
+        string result = await tools.CleanupAsync(["src/A.cs"], cancellationToken: Ct);
+
+        // Assert
+        result.ShouldStartWith("Cleanup completed with profile \"Built-in: Full Cleanup\".");
+    }
+
+    [Fact]
     public async Task InspectAsync_NoSolutionInWorkingDirectory_ThrowsUserErrorMentioningJbSolutionPath()
     {
         // Arrange — the working directory is an empty temp dir, so discovery finds no solution.
@@ -121,6 +175,17 @@ public sealed class ToolPipelineTests
     private static void PlantSolution(FakeEnvironment environment, string fileName)
     {
         File.WriteAllText(Path.Combine(environment.CurrentDirectory, fileName), string.Empty);
+    }
+
+    private static void PlantSettingsDeclaringProfile(FakeEnvironment environment, string profileName)
+    {
+        File.WriteAllText(
+            Path.Combine(environment.CurrentDirectory, "App.sln.DotSettings"),
+            $"""
+             <wpf:ResourceDictionary xml:space="preserve" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:s="clr-namespace:System;assembly=mscorlib" xmlns:wpf="http://schemas.microsoft.com/winfx/2006/xaml/presentation">
+             	<s:String x:Key="/Default/CodeStyle/CodeCleanup/SilentCleanupProfile/@EntryValue">{profileName}</s:String>
+             </wpf:ResourceDictionary>
+             """);
     }
 
     private static void PlantFile(FakeEnvironment environment, string relativePath)

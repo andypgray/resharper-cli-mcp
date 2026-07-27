@@ -99,7 +99,7 @@ If a teammate has ReSharper or Rider, prefer JetBrains' first-party [Detect Code
 
 ## Cleanup is cosmetic
 
-`resharper_cleanup` never changes behavior. Its default `Built-in: Full Cleanup` profile fixes formatting and style only, so an agent should write correct logic and let the cleanup pass handle the polish. There is no need to re-inspect or rebuild after it. The default profile handles all of these:
+`resharper_cleanup` never changes behavior. Its fallback `Built-in: Full Cleanup` profile fixes formatting and style only, so an agent should write correct logic and let the cleanup pass handle the polish. There is no need to re-inspect or rebuild after it. That profile handles all of these:
 
 - unused usings, sorted and shortened qualified references
 - indentation, spacing, line breaks, and wrapping
@@ -109,7 +109,7 @@ If a teammate has ReSharper or Rider, prefer JetBrains' first-party [Detect Code
 - braces around single statements, per style
 - auto-properties, readonly fields, object-creation style, trailing commas, namespace style
 
-Keep the agent's editing effort on logic, types, naming, and architecture. For a legacy codebase where Full Cleanup would churn regions you did not touch, define a narrower profile (for example `Custom: No Reordering`) in the solution's `.sln.DotSettings` and pass its name as `profile`.
+Keep the agent's editing effort on logic, types, naming, and architecture. For a legacy codebase where Full Cleanup would churn regions you did not touch — or for a deliberate style it would normalize away — define a narrower profile (for example `Custom: No Reordering`) in the solution's `.sln.DotSettings`. Name it under `SilentCleanupProfile` there and every call uses it without a `profile` argument, including calls from an agent that does not know it exists; the `profile` argument overrides it per call.
 
 `resharper_cleanup` reports which of the files it changed on disk, so an agent can see when a cleanup rewrote something it meant to leave alone rather than trusting a bare "completed". A small batch lists every file; a solution-wide run collapses the per-file detail toward counts to stay within the output budget.
 

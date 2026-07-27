@@ -252,6 +252,84 @@ public sealed class ConfigResolverTests : IDisposable
         config.SettingsPath.ShouldBeNull();
     }
 
+    // ── Cleanup profile ───────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ResolveAsync_SettingsDeclareSilentCleanupProfile_ResolvesIt()
+    {
+        // Arrange
+        CreateSolutionInCurrentDirectory("App.sln");
+        WriteAdjacentSettings(SettingsDeclaring("House: Keep Named Arguments"));
+
+        // Act
+        ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
+
+        // Assert
+        config.CleanupProfile.ShouldBe("House: Keep Named Arguments");
+    }
+
+    [Fact]
+    public async Task ResolveAsync_SettingsWithoutSilentCleanupProfile_ResolvesNullProfile()
+    {
+        // Arrange — a settings file that tunes something else entirely.
+        CreateSolutionInCurrentDirectory("App.sln");
+        WriteAdjacentSettings(
+            """
+            <wpf:ResourceDictionary xml:space="preserve" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:s="clr-namespace:System;assembly=mscorlib" xmlns:wpf="http://schemas.microsoft.com/winfx/2006/xaml/presentation">
+            	<s:String x:Key="/Default/CodeInspection/Highlighting/InspectionSeverities/=RedundantCast/@EntryIndexedValue">DO_NOT_SHOW</s:String>
+            </wpf:ResourceDictionary>
+            """);
+
+        // Act
+        ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
+
+        // Assert
+        config.CleanupProfile.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task ResolveAsync_SilentCleanupProfileIsBlank_ResolvesNullProfile()
+    {
+        // Arrange — a blank name would reach jb as --profile= and fail the run; it must read as "unset".
+        CreateSolutionInCurrentDirectory("App.sln");
+        WriteAdjacentSettings(SettingsDeclaring("   "));
+
+        // Act
+        ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
+
+        // Assert
+        config.CleanupProfile.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task ResolveAsync_MalformedSettingsFile_ResolvesNullProfileWithoutThrowing()
+    {
+        // Arrange — a settings file this server cannot parse must degrade to the built-in default, not
+        // fail every cleanup call.
+        CreateSolutionInCurrentDirectory("App.sln");
+        WriteAdjacentSettings("<wpf:ResourceDictionary><unclosed>");
+
+        // Act
+        ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
+
+        // Assert
+        config.CleanupProfile.ShouldBeNull();
+        config.SettingsPath.ShouldNotBeNull(); // still passed to jb, which has its own opinion of it
+    }
+
+    [Fact]
+    public async Task ResolveAsync_NoSettingsAnywhere_ResolvesNullProfile()
+    {
+        // Arrange
+        CreateSolutionInCurrentDirectory("App.sln");
+
+        // Act
+        ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
+
+        // Assert
+        config.CleanupProfile.ShouldBeNull();
+    }
+
     // ── Cache home + extensions ───────────────────────────────────────────────
 
     [Fact]
@@ -374,6 +452,20 @@ public sealed class ConfigResolverTests : IDisposable
         second.ShouldNotBeSameAs(first);
         first.SolutionPath.ShouldEndWith("First.sln");
         second.SolutionPath.ShouldEndWith("Second.sln");
+    }
+
+    private void WriteAdjacentSettings(string content)
+    {
+        File.WriteAllText(Path.Combine(_environment.CurrentDirectory, "App.sln.DotSettings"), content);
+    }
+
+    private static string SettingsDeclaring(string profileName)
+    {
+        return $"""
+                <wpf:ResourceDictionary xml:space="preserve" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:s="clr-namespace:System;assembly=mscorlib" xmlns:wpf="http://schemas.microsoft.com/winfx/2006/xaml/presentation">
+                	<s:String x:Key="/Default/CodeStyle/CodeCleanup/SilentCleanupProfile/@EntryValue">{profileName}</s:String>
+                </wpf:ResourceDictionary>
+                """;
     }
 
     private string CreateSolutionInCurrentDirectory(string fileName)

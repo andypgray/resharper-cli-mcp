@@ -7,6 +7,7 @@ namespace Zphil.ReSharperCli.Discovery;
 internal sealed record ResolvedConfig(
     string SolutionPath,
     string? SettingsPath,
+    string? CleanupProfile,
     string CacheHome,
     string? Extensions,
     string? ExtensionSource,
@@ -32,10 +33,12 @@ internal sealed class ConfigResolver(JbLocator jbLocator, IEnvironment environme
         // jb first, then the solution: a missing toolchain surfaces before any solution-discovery error.
         JbInstallation installation = await jbLocator.LocateAsync(cancellationToken);
         string solutionPath = ResolveSolutionPath(solutionPathOverride);
+        string? settingsPath = ResolveSettingsPath(solutionPath);
 
         ResolvedConfig config = new(
             solutionPath,
-            ResolveSettingsPath(solutionPath),
+            settingsPath,
+            CleanupProfileReader.Read(settingsPath),
             ResolveCacheHome(),
             EmptyToNull(environment.GetVariable("JB_EXTENSIONS")),
             EmptyToNull(environment.GetVariable("JB_EXTENSION_SOURCE")),

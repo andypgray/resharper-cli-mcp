@@ -12,7 +12,7 @@ namespace Zphil.ReSharperCli.Tests.Services;
 public sealed class InspectServiceTests
 {
     private static readonly ResolvedConfig Config =
-        new("/sln/App.sln", null, "/cache", null, null, "jb");
+        new("/sln/App.sln", null, null, "/cache", null, null, "jb");
 
     private readonly IProcessRunner _processRunner = Substitute.For<IProcessRunner>();
 

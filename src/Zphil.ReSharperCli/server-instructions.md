@@ -1,7 +1,7 @@
 This server exposes JetBrains' ReSharper command-line tools over MCP. Two tools:
 
 - `resharper_inspect` — run ReSharper InspectCode and return the issues it finds, grouped by file. Read-only. Run it before editing to see existing issues, or after to catch regressions. Scope with the `files` glob (Ant-style, e.g. `src/**/*.cs`) and raise `severity` (`Suggestion`/`Warning`/`Error`) to cut noise — `Error` is compilation errors only, not high-priority warnings.
-- `resharper_cleanup` — run ReSharper CleanupCode to reformat and normalize files in place. Mutating. Call it **once**, at the end of a task, with every modified `.cs`/`.razor` file batched into a single call. `files` are solution-relative or absolute (a missing non-wildcard path fails fast). `profile` defaults to full cleanup; pass a custom profile from the solution's `.sln.DotSettings` (e.g. `Custom: No Reordering`) to narrow what it touches.
+- `resharper_cleanup` — run ReSharper CleanupCode to reformat and normalize files in place. Mutating. Call it **once**, at the end of a task, with every modified `.cs`/`.razor` file batched into a single call. `files` are solution-relative or absolute (a missing non-wildcard path fails fast). `profile` defaults to the profile the solution declares, else full cleanup; pass one from its `.sln.DotSettings` to narrow a single call.
 
 Cleanup is cosmetic: it fixes formatting, unused usings, `var` style, modifier order, redundant qualifiers, brace style, and similar. Do not spend edit effort on those by hand — write correct logic and naming and let cleanup do the polish. After a cleanup there is no need to re-inspect or re-build to check it: it never changes behavior.
 

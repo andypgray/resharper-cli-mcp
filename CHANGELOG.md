@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `resharper_cleanup` now takes its default profile from the solution instead of always falling back to
+  `Built-in: Full Cleanup`. With no `profile` argument it uses the profile named under
+  `/Default/CodeStyle/CodeCleanup/SilentCleanupProfile/@EntryValue` in the resolved settings file —
+  ReSharper's own "profile to use when nobody picks one" — and `Built-in: Full Cleanup` only when no
+  settings file declares one. This is what makes a repo-wide narrowing stick: a repo that defined a
+  profile to protect a deliberate style had to get every caller to pass its name, and an agent that did
+  not know the profile existed silently got Full Cleanup and the rewrite the profile was meant to
+  prevent. The `profile` argument still overrides, per call. An unreadable or malformed settings file
+  degrades to the built-in default with a warning rather than failing the call.
+- The `resharper://guides/configuration` resource gains the profile-resolution order, the fact that a
+  cleanup profile is a full enumeration rather than a diff against a built-in (an omitted task reads as
+  off), why an inspection severity provably cannot reach cleanup (cleanup overrides the severity of
+  every rule its enabled modules need), and that the trailing newline at EOF is an editorconfig-only
+  knob with no `.DotSettings` equivalent.
+
 ## [1.0.2] - 2026-07-15
 
 ### Added

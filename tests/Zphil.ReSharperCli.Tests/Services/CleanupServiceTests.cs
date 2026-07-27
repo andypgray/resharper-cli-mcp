@@ -28,7 +28,7 @@ public sealed class CleanupServiceTests : IDisposable
         _solutionDirectory = _environment.CurrentDirectory;
         string solutionPath = Path.Combine(_solutionDirectory, "App.sln");
         File.WriteAllText(solutionPath, string.Empty);
-        _config = new ResolvedConfig(solutionPath, null, "/cache", null, null, "jb");
+        _config = new ResolvedConfig(solutionPath, null, null, "/cache", null, null, "jb");
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;

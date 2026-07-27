@@ -70,15 +70,20 @@ internal sealed class ResharperTools(
     public async Task<string> CleanupAsync(
         [Description("File paths to clean up, relative to the solution root or absolute.")]
         string[] files,
-        [Description("ReSharper cleanup profile name.")]
-        string profile = CleanupService.DefaultProfile,
+        [Description("ReSharper cleanup profile name. Defaults to the profile the solution declares, else full cleanup.")]
+        string? profile = null,
         [Description(SolutionPathDescription)] string? solutionPath = null,
         CancellationToken cancellationToken = default)
     {
         if (files is null || files.Length == 0) throw new UserErrorException("At least one file must be specified.");
 
         ResolvedConfig config = await configResolver.ResolveAsync(solutionPath, cancellationToken);
-        CleanupOutcome outcome = await cleanupService.RunAsync(config, files, profile, cancellationToken);
+
+        // An unspecified profile resolves to the solution's own declared profile before the built-in
+        // default, so a repo that narrowed its cleanup gets that narrowing on every call — including the
+        // calls of an agent that does not know the profile exists.
+        string resolvedProfile = profile ?? config.CleanupProfile ?? CleanupService.DefaultProfile;
+        CleanupOutcome outcome = await cleanupService.RunAsync(config, files, resolvedProfile, cancellationToken);
 
         // Render at the highest DetailLevel that fits the client's output budget (a small batch fits at
         // Full, an unchanged plain per-file list); the GlobalCallToolFilter's truncator is the final backstop.

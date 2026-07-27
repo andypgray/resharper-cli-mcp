@@ -62,6 +62,7 @@ public sealed class CleanupServiceArgumentTests
         return new ResolvedConfig(
             "/sln/App.sln",
             settings,
+            null,
             "/cache",
             extensions,
             extensionSource,

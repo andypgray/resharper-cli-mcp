@@ -15,8 +15,9 @@ and expecting the other to change.
 They do not share a switch:
 
 - Setting an inspection to **`DO_NOT_SHOW`** (or editorconfig severity `none`) removes that issue from
-  `resharper_inspect` output. It does **not** stop `resharper_cleanup` from rewriting that style — cleanup
-  never consults inspection severities.
+  `resharper_inspect` output. It does **not** stop `resharper_cleanup` from rewriting that style. Cleanup
+  does not merely ignore your severity — it *overrides* it, raising every rule its enabled modules need
+  back to `SUGGESTION` for the duration of the run. `DO_NOT_SHOW` cannot reach it by construction.
 - Conversely, defining or narrowing a cleanup profile changes what cleanup rewrites but does **not** change
   what `resharper_inspect` reports.
 
@@ -36,9 +37,16 @@ tweak alone cannot make cleanup leave argument style as-authored.
 To leave a style as-authored, use one of these levers — **not** an inspection severity:
 
 1. **Narrow the profile.** Define a custom cleanup profile in the solution's `.sln.DotSettings` that
-   leaves the offending task off (e.g. no "Arrange argument style", no "Remove redundant arguments"), and
-   pass its name as `resharper_cleanup`'s `profile` argument (for example `Custom: No Reordering`). This is
-   the durable, repo-wide fix.
+   leaves the offending task off — for named arguments that task is `ArrangeArgumentsStyle` — and either
+   declare it as the solution's default (see below) or pass its name as `resharper_cleanup`'s `profile`
+   argument. This is the durable, repo-wide fix.
+
+   **A profile is not a diff against a built-in.** Any task the profile's XML omits reads back as that
+   task's own default, which is *off*. So "Full Cleanup minus one task" means enumerating every task Full
+   Cleanup turns on and setting the one you want skipped to `False` — copy the shape from an
+   IDE-generated profile rather than writing a short blob and expecting the rest to be inherited. After
+   authoring one, verify it: run both profiles over a deliberately messy scratch file and diff the two
+   results. They should differ only where you intended.
 2. **Exclude the file.** `resharper_cleanup` only rewrites the files you list in `files`; simply don't pass
    a file whose style you want frozen. Cleanup is opt-in per path — there is no "everything except this"
    mode.
@@ -81,9 +89,29 @@ entry rather than inventing one.
   for Roslyn analyzers, `dotnet_diagnostic.<id>.severity`.
 
 - **A cleanup profile** (style axis) lives in the same file under
-  `/Default/CodeStyle/CodeCleanup/Profiles/=<ProfileName>/…`. Its human name (for example
-  `Custom: No Reordering`) is exactly what you pass as the `profile` argument. `Built-in: Full Cleanup`
-  is the default and touches everything.
+  `/Default/CodeStyle/CodeCleanup/Profiles/=<ProfileName>/@EntryIndexedValue`, as a single XML-encoded
+  blob — one `<Profile name="…">` element enumerating the cleanup tasks, not a tree of sub-keys. The
+  `name` attribute inside the blob, not the settings key, is what you pass as the `profile` argument.
+  `Built-in: Full Cleanup` is the fallback and touches everything.
+
+## Which profile a call runs without a `profile` argument
+
+`resharper_cleanup` resolves its profile in this order:
+
+1. the `profile` argument on the call,
+2. `/Default/CodeStyle/CodeCleanup/SilentCleanupProfile/@EntryValue` in the resolved settings file —
+   ReSharper's own "profile to use when nobody picks one",
+3. `Built-in: Full Cleanup`.
+
+Declaring the profile in `.sln.DotSettings` is what makes a repo-wide narrowing stick: it travels with the
+repo and applies to callers who do not know the profile exists. Note that `jb cleanupcode` does **not**
+read that key — a direct CLI run always defaults to Full Cleanup and needs an explicit `--profile`.
+
+## What cannot be configured here
+
+The trailing newline at end of file is an **editorconfig-only** knob: `insert_final_newline` is an
+editorconfig standard property with no `.DotSettings` equivalent. A repo with no `.editorconfig` cannot
+stop cleanup stripping it from a settings file, only by adding one.
 
 ## Authoring a full style guide
 

@@ -7,8 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-07-27
+
 ### Added
 
+- Claude Code plugin install. This repository doubles as a single-plugin marketplace, so
+  `/plugin marketplace add andypgray/resharper-cli-mcp` followed by
+  `/plugin install resharper-cli-mcp@resharper-cli-mcp` brings up both tools, the
+  `derive_style_guide` prompt, and both guide resources without hand-editing `.mcp.json`. The plugin
+  starts the server with `dotnet dnx`, which fetches the package from NuGet on first use, so there
+  is no `dotnet tool install` step for the wrapper itself, and it points ReSharper's caches at the
+  plugin's own data directory rather than your source tree. A new
+  [PRIVACY.md](https://github.com/andypgray/resharper-cli-mcp/blob/main/PRIVACY.md) states what the
+  server does and does not send anywhere: nothing leaves the machine.
 - `resharper://guides/setup` MCP resource — an on-demand guide to *running* the server, as opposed to
   configuring ReSharper: installing and locating `jb` (`PATH`, then `~/.dotnet/tools`, because the child
   process an MCP client starts often does not inherit the shell's `PATH`), which solution a call runs
@@ -124,7 +135,8 @@ Unofficial; not affiliated with or endorsed by JetBrains.
 - Ships as a .NET global tool and MCP server (`PackAsTool` + `PackageType=McpServer`), published to
   NuGet with SLSA build provenance and registered on the MCP registry.
 
-[Unreleased]: https://github.com/andypgray/resharper-cli-mcp/compare/v1.0.2...HEAD
+[Unreleased]: https://github.com/andypgray/resharper-cli-mcp/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/andypgray/resharper-cli-mcp/releases/tag/v1.1.0
 [1.0.2]: https://github.com/andypgray/resharper-cli-mcp/releases/tag/v1.0.2
 [1.0.1]: https://github.com/andypgray/resharper-cli-mcp/releases/tag/v1.0.1
 [1.0.0]: https://github.com/andypgray/resharper-cli-mcp/releases/tag/v1.0.0

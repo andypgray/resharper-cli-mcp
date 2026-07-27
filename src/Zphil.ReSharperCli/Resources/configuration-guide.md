@@ -2,6 +2,10 @@
 
 > Unofficial wrapper: not affiliated with or endorsed by JetBrains.
 
+This guide covers what ReSharper *enforces* — which issues are reported and which styles are rewritten.
+It does not cover running the server: for a call that cannot find `jb` or the solution, times out, or
+comes back truncated, read the `resharper://guides/setup` resource instead.
+
 ## The two axes (the load-bearing fact)
 
 The two tools read two independent configuration axes; almost every surprise comes from tuning one axis

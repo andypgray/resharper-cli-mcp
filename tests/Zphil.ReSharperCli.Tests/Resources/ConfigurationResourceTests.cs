@@ -52,6 +52,7 @@ public sealed class ConfigurationResourceTests
         text.ShouldContain(".editorconfig"); // jb auto-honors it from the tree
         text.ShouldContain("InspectionSeverities"); // the DotSettings severity key shape
         text.ShouldContain("resharper_cleanup"); // the style axis
+        text.ShouldContain(ResharperResources.SetupGuideUri); // the onward cross-link to the setup guide
     }
 
     [Fact]

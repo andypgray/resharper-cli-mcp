@@ -7,8 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `resharper://guides/setup` MCP resource — an on-demand guide to *running* the server, as opposed to
+  configuring ReSharper: installing and locating `jb` (`PATH`, then `~/.dotnet/tools`, because the child
+  process an MCP client starts often does not inherit the shell's `PATH`), which solution a call runs
+  against and why discovery is top-level-only with no parent walk, why the first call is slow and what the
+  5-minute cap means, how `MAX_MCP_OUTPUT_TOKENS` caps output and why a truncated inspection is an
+  incomplete list of issues rather than a clean solution, every environment variable, and where logs go.
+  Two guides rather than one broadened one: each names a single routing condition, so a "why did this time
+  out?" pull does not also load 8 KB of `.DotSettings` prose, and vice versa.
+
 ### Changed
 
+- The always-loaded server instructions are down from 1,960 to 992 bytes (−49%) — a **measured 262 fewer
+  resident tokens in every session** that connects this server, including the majority that never call a
+  tool. Clients that defer tool schemas (Claude Code 2.1.220 and later) keep only tool *names* resident and
+  fetch each schema on demand, but server instructions still ride verbatim in every session's system
+  prompt, so the instructions now carry only the cross-tool routing that no single schema can state: which
+  tool is read-only, the call-cleanup-once-at-the-end batching rule, that cleanup cannot change behavior
+  and so needs no re-inspect or rebuild, and one conditional signpost per guide resource. The per-tool
+  restatements, the `files` glob syntax, the `severity` value list (already carried by the schema's `enum`
+  array), solution discovery, the cold-cache note, and the timeout all moved into the tool schemas and the
+  two guide resources. The unofficial-wrapper notice moved too: it stays where a human reads it — the
+  NuGet description, the README's first paragraph, and `.mcp/server.json` — and still travels to agents in
+  both guide resources and in the server title negotiated on `initialize`. No behavior change.
+- Tool parameter descriptions gained the gotchas that left the instructions, at per-fetch instead of
+  per-session cost: `solutionPath` now records that it overrides `JB_SOLUTION_PATH` and working-directory
+  discovery (and no longer says "to analyze", which was never right for the mutating tool),
+  `resharper_inspect`'s `files` shows the glob format, its `severity` warns that `Error` is ReSharper's
+  compilation-error level rather than a tier of high-priority warnings so raising to it usually reports
+  nothing, and `resharper_cleanup`'s `files` records that a non-wildcard path that does not exist fails the
+  whole call before anything is rewritten.
+- The `resharper://guides/configuration` resource and its description now scope themselves explicitly to
+  what ReSharper *enforces* and point onward to `resharper://guides/setup` for anything about running the
+  server.
 - `resharper_cleanup` now takes its default profile from the solution instead of always falling back to
   `Built-in: Full Cleanup`. With no `profile` argument it uses the profile named under
   `/Default/CodeStyle/CodeCleanup/SilentCleanupProfile/@EntryValue` in the resolved settings file —

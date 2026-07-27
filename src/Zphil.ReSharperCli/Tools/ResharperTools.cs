@@ -30,7 +30,11 @@ internal sealed class ResharperTools(
     private const string CleanupDescription =
         "Run ReSharper code cleanup to reformat and normalize files in place.";
 
-    private const string SolutionPathDescription = "Path to the .sln/.slnx to analyze.";
+    // Descriptions ride the deferred tool schema, which a client fetches only when it is about to call the
+    // tool, so a gotcha costs nothing until it is needed. Prefer this over the always-resident server
+    // instructions for anything that is per-argument rather than cross-call routing.
+    private const string SolutionPathDescription =
+        "Path to the .sln/.slnx to run against. Overrides JB_SOLUTION_PATH and working-directory discovery.";
 
     [McpServerTool(
         Name = InspectToolName,
@@ -41,9 +45,11 @@ internal sealed class ResharperTools(
         OpenWorld = false)]
     [Description(InspectDescription)]
     public async Task<string> InspectAsync(
-        [Description("Ant-style globs scoping the analysis to specific files.")]
+        [Description("Ant-style globs scoping the analysis to specific files, for example src/**/*.cs.")]
         string[]? files = null,
-        [Description("Minimum severity to report.")]
+        [Description(
+            "Minimum severity to report. Error is ReSharper's compilation-error level, not a tier of "
+            + "high-priority warnings; raising to it usually reports nothing.")]
         InspectSeverity severity = InspectSeverity.Warning,
         [Description(SolutionPathDescription)] string? solutionPath = null,
         CancellationToken cancellationToken = default)
@@ -68,7 +74,10 @@ internal sealed class ResharperTools(
         OpenWorld = false)]
     [Description(CleanupDescription)]
     public async Task<string> CleanupAsync(
-        [Description("File paths to clean up, relative to the solution root or absolute.")]
+        [Description(
+            "File paths to clean up, relative to the solution root or absolute. Wildcards are allowed and "
+            + "expanded by jb; a non-wildcard path that does not exist fails the whole call before anything "
+            + "is rewritten.")]
         string[] files,
         [Description("ReSharper cleanup profile name. Defaults to the profile the solution declares, else full cleanup.")]
         string? profile = null,

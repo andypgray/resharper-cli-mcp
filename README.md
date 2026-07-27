@@ -37,7 +37,7 @@ VS Code and Cursor users can add the server in one click, once both tools are in
 
 ## Install as a Claude Code plugin
 
-Claude Code users can install everything in one step instead of editing `.mcp.json` by hand. This repository doubles as a single-plugin marketplace, so the two tools, the `derive_style_guide` prompt, and the configuration resource arrive together:
+Claude Code users can install everything in one step instead of editing `.mcp.json` by hand. This repository doubles as a single-plugin marketplace, so the two tools, the `derive_style_guide` prompt, and both guide resources — `resharper://guides/configuration` for what ReSharper enforces and `resharper://guides/setup` for running the server — arrive together:
 
 ```
 /plugin marketplace add andypgray/resharper-cli-mcp
@@ -118,6 +118,8 @@ Keep the agent's editing effort on logic, types, naming, and architecture. For a
 The two tools read two independent configuration axes: `resharper_inspect` obeys **inspection severities** (what gets reported), and `resharper_cleanup` enforces **code style** through its cleanup **profile** (what gets rewritten). They do not share a switch — setting a rule to `DO_NOT_SHOW` hides its inspection issue but does not stop cleanup from normalizing that style. Some styles are binary with no "leave alone" value (argument style is `positional` or `named`), so protecting one means narrowing the profile, excluding the file, or an in-source `// ReSharper disable` comment.
 
 Rather than carry that model in every session's context, the server advertises it as an on-demand MCP resource, `resharper://guides/configuration` — the two axes, how to protect a deliberate style, where settings and `.editorconfig` are read from, and the `.DotSettings` key shapes. A client that surfaces resources lets an agent load it exactly when it is about to change what ReSharper enforces.
+
+A second resource, `resharper://guides/setup`, covers running the server rather than configuring ReSharper: how `jb` and the solution are discovered, why the first call is slow and what the 5-minute cap means, how output truncation works, the environment variables above, and where logs go. An agent loads it when a call cannot find `jb` or the solution, times out, or comes back truncated. Splitting the two keeps each pull small, and keeps the always-loaded server instructions down to the cross-tool rules that no schema can express.
 
 ## Cleanup reminder hook
 

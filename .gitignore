@@ -26,7 +26,6 @@ Thumbs.db
 .DS_Store
 
 ## Local-only Claude tooling (dev aids, not imposed on the public repo)
-.claude/settings.local.json
-.claude/handoff.local.md
+.claude/
 .mcp.json
 CLAUDE.md

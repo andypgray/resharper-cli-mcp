@@ -27,7 +27,11 @@ internal static class CleanupProfileReader
 
         try
         {
-            XDocument document = XDocument.Load(settingsPath);
+            // Read through a stream: XDocument.Load(string) resolves its argument as a URI, which is a layer
+            // of platform-dependent escaping semantics this path does not need — it is already known to be
+            // an existing file. Opening it directly keeps the failure modes to the IOException family below.
+            using FileStream stream = File.OpenRead(settingsPath);
+            XDocument document = XDocument.Load(stream);
 
             // Matched on the x:Key attribute's local name: .DotSettings is XAML, and the "x" prefix is
             // bound in the file itself, so keying off the declared namespace would be one more thing to
@@ -37,8 +41,7 @@ internal static class CleanupProfileReader
                 XAttribute? key = element.Attributes().FirstOrDefault(attribute => attribute.Name.LocalName == "Key");
                 if (key?.Value != SilentCleanupProfileKey) continue;
 
-                string profile = element.Value.Trim();
-                return profile.Length == 0 ? null : profile;
+                return Normalize(element.Value);
             }
         }
         catch (Exception exception) when (exception is XmlException or IOException or UnauthorizedAccessException)
@@ -50,5 +53,16 @@ internal static class CleanupProfileReader
         }
 
         return null;
+    }
+
+    /// <summary>
+    ///     Normalizes a profile name from either source — this settings entry or <c>resharper_cleanup</c>'s
+    ///     <c>profile</c> argument — to a usable name, or <see langword="null" /> for "nobody picked one".
+    ///     Blank is not a profile: it would reach jb as <c>--profile=</c> and fail the run, so it has to read
+    ///     as unset and fall through to the next source. Shared so the two entry points cannot drift apart.
+    /// </summary>
+    internal static string? Normalize(string? name)
+    {
+        return string.IsNullOrWhiteSpace(name) ? null : name.Trim();
     }
 }

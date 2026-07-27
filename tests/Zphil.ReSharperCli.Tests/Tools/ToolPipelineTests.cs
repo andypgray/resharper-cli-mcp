@@ -141,6 +141,43 @@ public sealed class ToolPipelineTests
     }
 
     [Fact]
+    public async Task CleanupAsync_BlankProfileArgument_FallsBackToTheDeclaredProfile()
+    {
+        // Arrange — a blank argument would reach jb as --profile= and fail the run. It has to read as
+        // "unspecified" and fall through, exactly as a blank declared profile does.
+        using FakeEnvironment environment = new();
+        PlantSolution(environment, "App.sln");
+        PlantSettingsDeclaringProfile(environment, "House: Keep Named Arguments");
+        PlantFile(environment, "src/A.cs");
+        StubJb();
+        ResharperTools tools = ToolHarness.Build(_processRunner, environment);
+
+        // Act
+        string result = await tools.CleanupAsync(["src/A.cs"], "   ", cancellationToken: Ct);
+
+        // Assert
+        result.ShouldStartWith("Cleanup completed with profile \"House: Keep Named Arguments\".");
+    }
+
+    [Fact]
+    public async Task CleanupAsync_ProfileArgumentPaddedWithWhitespace_IsTrimmed()
+    {
+        // Arrange
+        using FakeEnvironment environment = new();
+        PlantSolution(environment, "App.sln");
+        PlantFile(environment, "src/A.cs");
+        StubJb();
+        ResharperTools tools = ToolHarness.Build(_processRunner, environment);
+
+        // Act
+        string result = await tools.CleanupAsync(
+            ["src/A.cs"], "  Built-in: Reformat Code  ", cancellationToken: Ct);
+
+        // Assert
+        result.ShouldStartWith("Cleanup completed with profile \"Built-in: Reformat Code\".");
+    }
+
+    [Fact]
     public async Task CleanupAsync_SolutionDeclaresNoProfile_FallsBackToFullCleanup()
     {
         // Arrange

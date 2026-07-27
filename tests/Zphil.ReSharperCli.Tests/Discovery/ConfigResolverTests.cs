@@ -330,6 +330,25 @@ public sealed class ConfigResolverTests : IDisposable
         config.CleanupProfile.ShouldBeNull();
     }
 
+    [Fact]
+    public async Task ResolveAsync_SettingsPathContainsUriMetaCharacters_StillReadsTheProfile()
+    {
+        // Arrange — '%' and '#' are URI metacharacters and legal in a path. Reading the settings file
+        // through a stream keeps them a non-issue; this pins that, so a future switch back to a
+        // URI-resolving overload cannot make a declared profile silently read as unset on some platform.
+        string awkwardDirectory = Path.Combine(_environment.CreateTempDirectory(), "100%#done");
+        Directory.CreateDirectory(awkwardDirectory);
+        _environment.CurrentDirectory = awkwardDirectory;
+        CreateSolutionInCurrentDirectory("App.sln");
+        WriteAdjacentSettings(SettingsDeclaring("House: Keep Named Arguments"));
+
+        // Act
+        ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
+
+        // Assert
+        config.CleanupProfile.ShouldBe("House: Keep Named Arguments");
+    }
+
     // ── Cache home + extensions ───────────────────────────────────────────────
 
     [Fact]
@@ -418,24 +437,48 @@ public sealed class ConfigResolverTests : IDisposable
         config.ExtensionSource.ShouldBe("https://example.test/nuget");
     }
 
-    // ── Caching ───────────────────────────────────────────────────────────────
+    // ── Re-resolution ─────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task ResolveAsync_SameCurrentDirectoryTwice_ReturnsCachedInstance()
+    public async Task ResolveAsync_SettingsWrittenAfterAnEarlierResolve_AreSeenOnTheNextCall()
     {
-        // Arrange
+        // Arrange — the reason the resolver holds no cache. An agent that declares a cleanup profile
+        // mid-session (exactly what the configuration guide tells it to do) must not keep getting Full
+        // Cleanup — the very rewrite the profile was defined to prevent — until the client restarts us.
         CreateSolutionInCurrentDirectory("App.sln");
+        ResolvedConfig before = await _resolver.ResolveAsync(null, Ct);
+        before.CleanupProfile.ShouldBeNull();
+
+        WriteAdjacentSettings(SettingsDeclaring("House: Keep Named Arguments"));
 
         // Act
-        ResolvedConfig first = await _resolver.ResolveAsync(null, Ct);
-        ResolvedConfig second = await _resolver.ResolveAsync(null, Ct);
+        ResolvedConfig after = await _resolver.ResolveAsync(null, Ct);
 
         // Assert
-        second.ShouldBeSameAs(first);
+        after.CleanupProfile.ShouldBe("House: Keep Named Arguments");
+        after.SettingsPath.ShouldBe(after.SolutionPath + ".DotSettings");
     }
 
     [Fact]
-    public async Task ResolveAsync_DifferentCurrentDirectory_ReResolves()
+    public async Task ResolveAsync_CalledRepeatedly_ProbesJbOnlyOnce()
+    {
+        // Arrange — resolving fresh every call must not mean re-probing jb. That probe is the one
+        // genuinely expensive step, and JbLocator caches it for the process; the rest is a directory
+        // enumeration and a small XML read.
+        CreateSolutionInCurrentDirectory("App.sln");
+
+        // Act
+        await _resolver.ResolveAsync(null, Ct);
+        await _resolver.ResolveAsync(null, Ct);
+        await _resolver.ResolveAsync(null, Ct);
+
+        // Assert
+        await _processRunner.Received(1).RunAsync(
+            "jb", Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ResolveAsync_DifferentCurrentDirectory_ResolvesTheOtherSolution()
     {
         // Arrange
         CreateSolutionInCurrentDirectory("First.sln");
@@ -449,7 +492,6 @@ public sealed class ConfigResolverTests : IDisposable
         ResolvedConfig second = await _resolver.ResolveAsync(null, Ct);
 
         // Assert
-        second.ShouldNotBeSameAs(first);
         first.SolutionPath.ShouldEndWith("First.sln");
         second.SolutionPath.ShouldEndWith("Second.sln");
     }

@@ -38,7 +38,9 @@ the next level. Level 3 fails when the directory holds zero or several solution 
 `JB_SOLUTION_PATH`. So a solution one directory below the server's working directory, or a directory
 holding two `.sln` files, needs one of the first two levers — discovery will not find it on its own.
 
-The resolved configuration is cached per solution, so repeated calls do not re-probe.
+`jb` is located once per server process. Everything else — the solution, its settings file, and the cleanup
+profile that file declares — is resolved fresh on every call, so adding or editing a `.sln.DotSettings`
+takes effect on the next call rather than after a client restart.
 
 ## Why the first call is slow, and the timeout
 

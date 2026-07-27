@@ -90,6 +90,8 @@ internal sealed class CleanupService(IProcessRunner processRunner)
     ///     Return the entries in <paramref name="files" /> that do not resolve to an existing file. Wildcard
     ///     patterns (see <see cref="IsPattern" />) are left for jb to expand and are never reported; other
     ///     entries are resolved against <paramref name="solutionDirectory" /> (absolute entries ignore it).
+    ///     Entries are non-blank by contract — the tool method rejects a blank one before dispatching, so
+    ///     path resolution here cannot be handed the empty string.
     /// </summary>
     internal static List<string> FindMissingFiles(IReadOnlyList<string> files, string solutionDirectory)
     {

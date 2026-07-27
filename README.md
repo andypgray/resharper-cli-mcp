@@ -53,7 +53,7 @@ The plugin starts the server with `dotnet dnx`, which fetches `Zphil.ReSharperCl
 | `resharper_inspect` | no | Runs ReSharper InspectCode and returns the issues, grouped by file. |
 | `resharper_cleanup` | yes | Runs ReSharper CleanupCode to reformat and normalize the given files in place. |
 
-Scope `resharper_inspect` with the `files` glob and raise `severity` (`SUGGESTION`, `WARNING`, `ERROR`; default `WARNING`) to control how much comes back. Each issue carries a file, line, severity, rule ID, and message:
+Scope `resharper_inspect` with the `files` glob and raise `severity` (`Suggestion`, `Warning`, `Error`; default `Warning`) to control how much comes back. Each issue carries a file, line, severity, rule ID, and message:
 
 ```text
 Found 2 issue(s) across 1 file(s):

@@ -56,6 +56,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   off), why an inspection severity provably cannot reach cleanup (cleanup overrides the severity of
   every rule its enabled modules need), and that the trailing newline at EOF is an editorconfig-only
   knob with no `.DotSettings` equivalent.
+- Solution, settings, and cleanup-profile discovery now runs on every call instead of being cached per
+  solution for the life of the server process. Without this the declared-profile feature above could not
+  be adopted in the session that adopts it: an agent following the configuration guide would write the
+  `SilentCleanupProfile` entry, call `resharper_cleanup`, and still get Full Cleanup from the cached
+  pre-edit config — the exact rewrite the profile was defined to prevent — until the client restarted the
+  server. The `jb inspectcode --version` probe, the one genuinely expensive step, is still cached for the
+  process; what now repeats is a directory enumeration, a few existence checks, and a small XML read,
+  against a `jb` run that takes seconds to minutes.
+- The `derive_style_guide` prompt teaches declaring the profile under `SilentCleanupProfile` rather than
+  passing `profile` on every call, and warns that a profile is a full enumeration of tasks rather than a
+  diff against a built-in — it is the surface most likely to author the `.sln.DotSettings` the rest of
+  this release reads.
+
+### Fixed
+
+- A blank `profile` argument (`""` or whitespace) no longer reaches jb as `--profile=` and fails the run.
+  It now reads as unspecified and falls through to the solution's declared profile, matching how a blank
+  *declared* profile already read; a padded name is trimmed. The rule has one definition, shared by both
+  entry points.
+- A blank entry in `resharper_cleanup`'s `files` now fails as a user error naming the offending position,
+  instead of surfacing an `ArgumentException` from path resolution as an internal server error.
 
 ## [1.0.2] - 2026-07-15
 

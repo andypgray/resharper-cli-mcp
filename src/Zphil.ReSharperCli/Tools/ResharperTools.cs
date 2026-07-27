@@ -86,12 +86,22 @@ internal sealed class ResharperTools(
     {
         if (files is null || files.Length == 0) throw new UserErrorException("At least one file must be specified.");
 
+        // A blank entry names no file, and every downstream path resolution would throw on it. This tool
+        // rewrites what it is given, so a malformed list fails naming the offending position rather than
+        // quietly cleaning up whatever the rest of the list happens to name.
+        int blankIndex = Array.FindIndex(files, string.IsNullOrWhiteSpace);
+        if (blankIndex >= 0)
+            throw new UserErrorException($"File paths must not be blank (files[{blankIndex}] is empty).");
+
         ResolvedConfig config = await configResolver.ResolveAsync(solutionPath, cancellationToken);
 
         // An unspecified profile resolves to the solution's own declared profile before the built-in
         // default, so a repo that narrowed its cleanup gets that narrowing on every call — including the
-        // calls of an agent that does not know the profile exists.
-        string resolvedProfile = profile ?? config.CleanupProfile ?? CleanupService.DefaultProfile;
+        // calls of an agent that does not know the profile exists. A blank argument reads as unspecified,
+        // matching how a blank declared profile reads.
+        string resolvedProfile = CleanupProfileReader.Normalize(profile)
+                                 ?? config.CleanupProfile
+                                 ?? CleanupService.DefaultProfile;
         CleanupOutcome outcome = await cleanupService.RunAsync(config, files, resolvedProfile, cancellationToken);
 
         // Render at the highest DetailLevel that fits the client's output budget (a small batch fits at

@@ -108,14 +108,17 @@ entry rather than inventing one.
 3. `Built-in: Full Cleanup`.
 
 Declaring the profile in `.sln.DotSettings` is what makes a repo-wide narrowing stick: it travels with the
-repo and applies to callers who do not know the profile exists. Note that `jb cleanupcode` does **not**
-read that key — a direct CLI run always defaults to Full Cleanup and needs an explicit `--profile`.
+repo and applies to callers who do not know the profile exists. The settings file is re-read on every call,
+so a profile you declare now governs the next `resharper_cleanup` — no server restart. Note that
+`jb cleanupcode` does **not** read that key: a direct CLI run always defaults to Full Cleanup and needs an
+explicit `--profile`.
 
 ## What cannot be configured here
 
 The trailing newline at end of file is an **editorconfig-only** knob: `insert_final_newline` is an
-editorconfig standard property with no `.DotSettings` equivalent. A repo with no `.editorconfig` cannot
-stop cleanup stripping it from a settings file, only by adding one.
+editorconfig standard property with no `.DotSettings` equivalent. So in a repo with no `.editorconfig`
+there is no way to stop cleanup stripping that newline — no settings-file entry reaches it. Adding an
+`.editorconfig` with `insert_final_newline = true` is the only lever.
 
 ## Authoring a full style guide
 

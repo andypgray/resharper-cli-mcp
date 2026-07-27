@@ -93,8 +93,10 @@ Consult the ReSharper *EditorConfig properties* reference for exact keys — it 
 per-property source. Spill into `*.sln.DotSettings` **only** what `.editorconfig` cannot express:
 
 - ReSharper-only inspection severities and formatter knobs with no editorconfig key, and
-- **cleanup-profile definitions** — a named profile is required to pass as `resharper_cleanup`'s
-  `profile` argument.
+- **cleanup-profile definitions** — a cleanup profile can only be defined here. Declaring one under
+  `/Default/CodeStyle/CodeCleanup/SilentCleanupProfile/@EntryValue` also makes it the profile every
+  `resharper_cleanup` call uses by default, including calls from an agent that does not know it exists;
+  the tool's `profile` argument overrides it per call.
 
 JetBrains publishes **no formal `.DotSettings` XML schema** — the file is IDE-generated. Treat it as
 *generated, not hand-authored*: keep it minimal and adapt an existing `.DotSettings` example rather
@@ -118,9 +120,12 @@ A large legacy codebase will not be clean on day one, and that is fine. For each
 decide **fix-now vs accept-for-now**; for accepted ones, suppress or lower the severity **with a
 comment noting it is a baseline, not an endorsement**, so the debt is visible. To stop
 `resharper_cleanup` from churning code you did not touch (reordered members, rewritten usings across
-untouched files), define a **narrow profile** — e.g. `Custom: No Reordering` — in `*.sln.DotSettings`
-and pass its name as `profile`. **Never run a full cleanup across the whole legacy tree in one go**;
-clean per-change, batching only the files a task actually edited.
+untouched files), define a **narrow profile** — e.g. `Custom: No Reordering` — in `*.sln.DotSettings` and
+declare it there under `SilentCleanupProfile`, so it becomes the default for every call rather than
+something each caller has to remember to pass. Note that a profile is a full enumeration of cleanup tasks,
+not a diff against a built-in: any task its XML omits reads as *off*, so copy the shape from an
+IDE-generated profile rather than writing a short blob. **Never run a full cleanup across the whole legacy
+tree in one go**; clean per-change, batching only the files a task actually edited.
 
 ## 7. Report the outcome
 

@@ -15,27 +15,27 @@ internal sealed record ResolvedConfig(
 
 /// <summary>
 ///     Resolves the <see cref="ResolvedConfig" /> for a request: verifies <c>jb</c> is installed, then
-///     locates the solution, settings, cache home, and extension defaults from overrides, environment
-///     variables, and the current directory. A single-entry cache keyed by the solution override (or the
-///     current directory) avoids re-probing on every tool call.
+///     locates the solution, settings, declared cleanup profile, cache home, and extension defaults from
+///     overrides, environment variables, and the current directory.
 /// </summary>
+/// <remarks>
+///     Deliberately uncached. Every field but the <c>jb</c> path is re-read from disk on each call, so a
+///     settings file added or edited mid-session — notably one newly declaring a cleanup profile, which is
+///     exactly what the configuration guide tells an agent to do — takes effect on the next call instead of
+///     after a client restart. The one genuinely expensive step, the <c>jb inspectcode --version</c> probe,
+///     is cached for the process inside <see cref="JbLocator" />; what remains here is one directory
+///     enumeration, a few existence checks, and a small XML read — noise beside the jb run that follows.
+/// </remarks>
 internal sealed class ConfigResolver(JbLocator jbLocator, IEnvironment environment)
 {
-    // A record reference read/written atomically: a concurrent resolve can at worst redo the work, never
-    // observe a torn (Key, Config) pair.
-    private volatile CacheEntry? _cache;
-
     public async Task<ResolvedConfig> ResolveAsync(string? solutionPathOverride, CancellationToken cancellationToken)
     {
-        string cacheKey = solutionPathOverride ?? environment.CurrentDirectory;
-        if (_cache is { } cache && cache.Key == cacheKey) return cache.Config;
-
         // jb first, then the solution: a missing toolchain surfaces before any solution-discovery error.
         JbInstallation installation = await jbLocator.LocateAsync(cancellationToken);
         string solutionPath = ResolveSolutionPath(solutionPathOverride);
         string? settingsPath = ResolveSettingsPath(solutionPath);
 
-        ResolvedConfig config = new(
+        return new ResolvedConfig(
             solutionPath,
             settingsPath,
             CleanupProfileReader.Read(settingsPath),
@@ -43,9 +43,6 @@ internal sealed class ConfigResolver(JbLocator jbLocator, IEnvironment environme
             EmptyToNull(environment.GetVariable("JB_EXTENSIONS")),
             EmptyToNull(environment.GetVariable("JB_EXTENSION_SOURCE")),
             installation.ExecutablePath);
-
-        _cache = new CacheEntry(cacheKey, config);
-        return config;
     }
 
     private string ResolveSolutionPath(string? solutionPathOverride)
@@ -150,7 +147,4 @@ internal sealed class ConfigResolver(JbLocator jbLocator, IEnvironment environme
     {
         return string.IsNullOrEmpty(value) ? null : value;
     }
-
-    /// <summary>The cache key (solution override or current directory) paired with the config it resolved to.</summary>
-    private sealed record CacheEntry(string Key, ResolvedConfig Config);
 }

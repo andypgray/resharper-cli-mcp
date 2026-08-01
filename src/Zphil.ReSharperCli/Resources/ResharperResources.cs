@@ -11,8 +11,8 @@ namespace Zphil.ReSharperCli.Resources;
 ///     enforces (inspection severities drive <c>resharper_inspect</c>; the cleanup profile drives
 ///     <c>resharper_cleanup</c>, and the two never share a switch). <c>resharper://guides/setup</c> serves
 ///     <c>setup-guide.md</c> — how <c>jb</c> and the solution are discovered, the cold-cache slowness and the
-///     5-minute timeout, output truncation, the environment variables, and where logs go. Both bodies load on
-///     demand, keeping the always-resident server instructions short.
+///     5-minute timeout, how output is shortened to fit the budget, the environment variables, and where logs
+///     go. Both bodies load on demand, keeping the always-resident server instructions short.
 /// </summary>
 /// <remarks>
 ///     Mirrors <see cref="Prompts.ResharperPrompts" />: the class is non-static because
@@ -37,17 +37,17 @@ internal sealed class ResharperResources
         + "while the cleanup profile drives resharper_cleanup (they never share a switch), how to protect a "
         + "deliberate style from cleanup, where settings and .editorconfig are read from, and the DotSettings "
         + "key shapes. Load this before changing what ReSharper enforces. It does not cover running the "
-        + "server: for a call that cannot find the solution, times out, or comes back truncated, read "
+        + "server: for a call that cannot find the solution, times out, or comes back shortened, read "
         + SetupGuideUri + " instead.";
 
     private const string SetupGuideDescription =
         "How to run this server and diagnose a failing call: installing and locating jb (PATH, then "
         + "~/.dotnet/tools), which solution a call runs against (the solutionPath argument, JB_SOLUTION_PATH, "
         + "then a single .sln/.slnx in the working directory with no parent walk), why the first call is slow "
-        + "and the 5-minute timeout, how MAX_MCP_OUTPUT_TOKENS caps output and what a truncated result means, "
-        + "the JB_SETTINGS_PATH, JB_CACHE_HOME, JB_EXTENSIONS, JB_EXTENSION_SOURCE, and "
+        + "and the 5-minute timeout, how MAX_MCP_OUTPUT_TOKENS caps output and how a reduced result differs "
+        + "from a truncated one, the JB_SETTINGS_PATH, JB_CACHE_HOME, JB_EXTENSIONS, JB_EXTENSION_SOURCE, and "
         + "RESHARPER_MCP_LOG_LEVEL variables, and where logs go. Load this when a call cannot find jb or the "
-        + "solution, times out, or comes back truncated.";
+        + "solution, times out, or comes back shortened.";
 
     [McpServerResource(
         UriTemplate = ConfigurationGuideUri,

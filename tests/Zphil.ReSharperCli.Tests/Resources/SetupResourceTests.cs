@@ -51,6 +51,7 @@ public sealed class SetupResourceTests
         text.ShouldContain("no parent walk"); // solution discovery is top-level only
         text.ShouldContain("5 minutes"); // the per-run cap behind most timeouts
         text.ShouldContain("25,000"); // the output cap when the client sets no budget
+        text.ShouldContain("DETAIL REDUCED"); // the marker an agent actually sees on an over-budget result
         text.ShouldContain(ResharperResources.ConfigurationGuideUri); // the onward cross-link
     }
 

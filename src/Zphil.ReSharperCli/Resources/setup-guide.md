@@ -2,7 +2,7 @@
 
 > Unofficial wrapper: not affiliated with or endorsed by JetBrains.
 
-Read this when a call cannot find `jb` or the solution, times out, or comes back truncated. For what
+Read this when a call cannot find `jb` or the solution, times out, or comes back shortened. For what
 ReSharper *enforces* — inspection severities, cleanup profiles, `.editorconfig` — read the
 `resharper://guides/configuration` resource instead; the two guides do not overlap.
 
@@ -54,18 +54,37 @@ it still times out, narrow the work with `files` so `jb` analyses less. Your MCP
 its own, shorter tool-call timeout and give up before the server's cap; raise that on the client side (for
 Claude Code, the `MCP_TOOL_TIMEOUT` environment variable, in milliseconds).
 
-## Output size and truncation
+## Output size: reduction, and truncation as a last resort
 
 Responses are capped at the client's `MAX_MCP_OUTPUT_TOKENS` × 2.5 characters, or 25,000 characters when
-that variable is unset or non-positive. The two tools reach the cap differently:
+that variable is unset or non-positive. Both tools *degrade* rather than being cut: each re-renders its
+result at progressively lower detail until it fits, then appends a `DETAIL REDUCED` note naming the level
+it landed on and what that level gave up.
 
-- `resharper_inspect` is cut at the last line boundary before the cap and gains a `RESPONSE TRUNCATED`
-  footer stating how much was dropped. **A truncated result is an incomplete list of issues, not a clean
-  solution.** Re-run scoped with `files`, or raised to a higher `severity`, before concluding anything
-  about the remainder.
-- `resharper_cleanup` degrades instead of being cut: it re-renders its summary at progressively lower
-  detail — per-file statuses collapse toward counts — and appends a `DETAIL REDUCED` note. The cleanup
-  itself always ran in full; only the report shrank.
+**The distinction that carries the meaning: a truncated result is an incomplete list of issues; a reduced
+result is complete but less detailed.** Every issue is still counted and every file still named at every
+reduction level, so a `DETAIL REDUCED` response is safe to conclude from — unlike a truncated one.
+
+`resharper_inspect` steps down five levels:
+
+1. **Full** — every issue on its own line with file, line, severity, rule, and message. What a scoped scan
+   returns.
+2. **High** — issues repeating a rule within a file collapse to one line carrying their line numbers and
+   one example message (`` `NotAccessedPositionalProperty.Global` [WARNING] x30, lines 13-42 ``). This is
+   where a solution-wide run usually lands, and it drops nothing: the count is exact and every line number
+   is there.
+3. **Medium** — only the eight most-affected files are listed; the rest are counted.
+4. **Low** — the per-file listing is replaced by a rollup of the top rules and the top files.
+5. **Minimal** — one line: totals, severity counts, and the top rules.
+
+`resharper_cleanup` steps down the same ladder over its per-file statuses, collapsing them toward counts.
+The cleanup itself always ran in full; only the report shrank.
+
+A `RESPONSE TRUNCATED` footer survives only as a last-resort backstop, for when even the smallest
+rendering overflows the budget — a very small `MAX_MCP_OUTPUT_TOKENS`, essentially. It cuts at the last
+line boundary before the cap and states how much was dropped. If you see it, the results above it are
+incomplete: re-run scoped with `files`, or raised to a higher `severity`, before concluding anything about
+the remainder.
 
 ## Environment variables
 

@@ -4,7 +4,7 @@
 
 This guide covers what ReSharper *enforces* — which issues are reported and which styles are rewritten.
 It does not cover running the server: for a call that cannot find `jb` or the solution, times out, or
-comes back truncated, read the `resharper://guides/setup` resource instead.
+comes back shortened, read the `resharper://guides/setup` resource instead.
 
 ## The two axes (the load-bearing fact)
 

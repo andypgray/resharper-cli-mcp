@@ -1,5 +1,6 @@
 using Shouldly;
 using Xunit;
+using Zphil.ReSharperCli.Formatting;
 using Zphil.ReSharperCli.Pipeline;
 using Zphil.ReSharperCli.Tools;
 
@@ -108,8 +109,10 @@ public sealed class ResponseTruncatorTests
         // Act
         string result = ResponseTruncator.TruncateIfNeeded(text, ResharperTools.InspectToolName, 20);
 
-        // Assert
+        // Assert — the verbatim spec, plus the shared-const relationship: the same remedy reaches an agent
+        // from a truncation footer and from a progressive-reduction note, in one spelling.
         result.ShouldEndWith("Narrow the scan with the files parameter or raise severity.");
+        result.ShouldEndWith(IssueMarkdownFormatter.NarrowingHint);
     }
 
     [Fact]

@@ -33,8 +33,10 @@ public sealed class ToolPipelineTests
         // Act
         string result = await tools.InspectAsync(cancellationToken: Ct);
 
-        // Assert
+        // Assert — FakeEnvironment sets no MAX_MCP_OUTPUT_TOKENS, so the budget is the 25,000 default and
+        // this ~420-character result renders at Full: the small-batch case is unchanged by the ladder.
         result.ShouldStartWith("Found 3 issue(s)");
+        result.ShouldNotContain("--- DETAIL REDUCED ---");
     }
 
     // The enum is used as a body literal, not a public method parameter: the internal InspectSeverity

@@ -63,7 +63,11 @@ public sealed class GlobalCallToolFilterIntegrationTests
     [Fact]
     public async Task CallTool_SuccessOverBudget_TruncatesWithInspectHintAndLogsNothing()
     {
-        // Arrange — a 40-token budget (100-char cap) against the 3-issue fixture forces truncation.
+        // Arrange — a 40-token budget (100-char cap) against the 3-issue fixture forces truncation even
+        // after progressive reduction. It cannot be reduced into that budget by construction: the reduction
+        // note alone runs to roughly 215 characters and counts toward the fit check, so no reduced level can
+        // ever fit 100. The renderer therefore bottoms out at Minimal — a single line with no newline before
+        // the cap — and the truncator cuts at the cap itself.
         await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
         harness.Environment.SetVariable("MAX_MCP_OUTPUT_TOKENS", "40");
         PlantSolution(harness.Environment, "App.sln");
@@ -80,8 +84,39 @@ public sealed class GlobalCallToolFilterIntegrationTests
         // Assert — a successful result, truncated, carrying the inspect-only narrowing hint, unlogged.
         result.IsError.ShouldNotBe(true);
         string text = TextOf(result);
+        text.ShouldStartWith("Found 3 issue(s) across 2 file(s)."); // Minimal's header, cut at the cap not mid-word
         text.ShouldContain("--- RESPONSE TRUNCATED ---");
         text.ShouldContain("Narrow the scan");
+        harness.Logs.Warnings.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task CallTool_InspectOverBudget_ReducesDetailInsteadOfTruncating()
+    {
+        // Arrange — a 600-token budget (1,500-char cap) against a fixture shaped like the run that motivated
+        // the ladder: 24 issues of one rule with distinct messages across 2 files, plus 2 others. Listed in
+        // full that is ~3,000 characters; collapsing the repeated rule to one line per file brings it inside
+        // the budget. This is the only end-to-end proof of the tool -> renderer -> filter wiring.
+        await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
+        harness.Environment.SetVariable("MAX_MCP_OUTPUT_TOKENS", "600");
+        PlantSolution(harness.Environment, "App.sln");
+        string sarif = Fixtures.ReadSarif("inspect-repetitive.json");
+        RouteJb(harness.ProcessRunner, arguments =>
+        {
+            File.WriteAllText(OutputPathFrom(arguments), sarif);
+            return new ProcessResult(0, string.Empty, string.Empty);
+        });
+
+        // Act
+        CallToolResult result = await harness.Client.CallToolAsync("resharper_inspect", cancellationToken: Ct);
+
+        // Assert — reduced, not chopped: every issue still counted, every file still named, nothing logged.
+        result.IsError.ShouldNotBe(true);
+        string text = TextOf(result);
+        text.ShouldStartWith("Found 26 issue(s) across 2 file(s):");
+        text.ShouldContain("--- DETAIL REDUCED ---");
+        text.ShouldContain("x12, lines 13-24");
+        text.ShouldNotContain("--- RESPONSE TRUNCATED ---");
         harness.Logs.Warnings.ShouldBeEmpty();
     }
 

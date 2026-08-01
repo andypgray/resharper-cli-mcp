@@ -63,6 +63,8 @@ Found 2 issue(s) across 1 file(s):
 - **Line 24** [SUGGESTION] `FieldCanBeMadeReadOnly.Local`: Field can be made readonly.
 ```
 
+A solution-wide run comes back more compactly: once it would overflow the output budget, issues repeating a rule within a file collapse to a single line — ``- **`NotAccessedPositionalProperty.Global`** [WARNING] x30, lines 13-42`` — so the count stays exact and every line number is still there. See [Configuration](#configuration) for the rest of that ladder.
+
 Call `resharper_cleanup` once, at the end of a task, with every file you changed batched into the one call.
 
 The first run on a solution is slow while ReSharper builds its caches under `--caches-home`; later runs reuse them and finish in seconds. The server caps each run at 5 minutes. If your MCP client's own tool-call timeout is shorter than a cold run needs, the client gives up first. In Claude Code, raise it with a per-server `"timeout"` in milliseconds in `.mcp.json`, or the `MCP_TOOL_TIMEOUT` environment variable; raising it past 5 minutes has no effect, since the server's own cap binds first.
@@ -81,7 +83,7 @@ Set these in the MCP client config's `env` block. All are optional.
 | `RESHARPER_MCP_LOG_LEVEL` | Level for the rolling file log (default `Warning`). |
 | `MAX_MCP_OUTPUT_TOKENS` | Client output budget; caps large inspection results. |
 
-The `solutionPath` tool argument overrides `JB_SOLUTION_PATH` for a single call. When a result would exceed `MAX_MCP_OUTPUT_TOKENS` (2.5 characters per token, or 25,000 characters when unset), the server truncates at a line boundary and appends a note saying how much it dropped.
+The `solutionPath` tool argument overrides `JB_SOLUTION_PATH` for a single call. When a result would exceed `MAX_MCP_OUTPUT_TOKENS` (2.5 characters per token, or 25,000 characters when unset), both tools re-render it at progressively lower detail until it fits, then append a `DETAIL REDUCED` note naming the level and what that level gave up. Inspection steps down five: every issue listed, then repeated rules collapsed per file, then only the eight most-affected files listed, then a rules-and-files rollup, then a one-line summary. Every issue is still counted and every file still named at each step — a reduced result is complete but less detailed, unlike a truncated one. Truncation at a line boundary remains only as a last-resort backstop for when even the one-line summary overflows.
 
 **Solution discovery** tries, in order: the `solutionPath` argument, then `JB_SOLUTION_PATH`, then a single `.sln`/`.slnx` in the working directory (top level only, no parent walk). Zero or several without an override is an error that names the variable to set.
 
@@ -119,7 +121,7 @@ The two tools read two independent configuration axes: `resharper_inspect` obeys
 
 Rather than carry that model in every session's context, the server advertises it as an on-demand MCP resource, `resharper://guides/configuration` — the two axes, how to protect a deliberate style, where settings and `.editorconfig` are read from, and the `.DotSettings` key shapes. A client that surfaces resources lets an agent load it exactly when it is about to change what ReSharper enforces.
 
-A second resource, `resharper://guides/setup`, covers running the server rather than configuring ReSharper: how `jb` and the solution are discovered, why the first call is slow and what the 5-minute cap means, how output truncation works, the environment variables above, and where logs go. An agent loads it when a call cannot find `jb` or the solution, times out, or comes back truncated. Splitting the two keeps each pull small, and keeps the always-loaded server instructions down to the cross-tool rules that no schema can express.
+A second resource, `resharper://guides/setup`, covers running the server rather than configuring ReSharper: how `jb` and the solution are discovered, why the first call is slow and what the 5-minute cap means, how a large result is shortened to fit the output budget, the environment variables above, and where logs go. An agent loads it when a call cannot find `jb` or the solution, times out, or comes back shortened. Splitting the two keeps each pull small, and keeps the always-loaded server instructions down to the cross-tool rules that no schema can express.
 
 ## Cleanup reminder hook
 

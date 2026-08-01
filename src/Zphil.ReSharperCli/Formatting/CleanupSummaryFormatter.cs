@@ -13,6 +13,10 @@ namespace Zphil.ReSharperCli.Formatting;
 /// </summary>
 internal static class CleanupSummaryFormatter
 {
+    // Closes every reduction note. A shrinking report is the one place an agent could read "less was
+    // listed" as "less was done", and the whole point of this tool is that it already rewrote the files.
+    private const string CleanupRanInFull = "The cleanup itself ran in full; only the report shrank.";
+
     // The order trailing collapsed counts are emitted in (lowest signal last). A category appears here only
     // when this level does not list it individually and its count is non-zero.
     private static readonly CleanupFileStatus[] CollapseOrder =
@@ -50,6 +54,23 @@ internal static class CleanupSummaryFormatter
         }
 
         return string.Join("\n", lines);
+    }
+
+    /// <summary>
+    ///     Which categories stopped being listed individually at <paramref name="level" />, for
+    ///     <c>ProgressiveRenderer</c>'s reduction note. Mirrors <see cref="IsListed" /> — keep the two in step.
+    /// </summary>
+    public static string DescribeReduction(DetailLevel level)
+    {
+        return level switch
+        {
+            DetailLevel.High => $"unchanged files are counted rather than listed. {CleanupRanInFull}",
+            DetailLevel.Medium =>
+                $"unchanged files and wildcard patterns are counted rather than listed. {CleanupRanInFull}",
+            DetailLevel.Low =>
+                $"only the files cleanup changed are listed; every other category is counted. {CleanupRanInFull}",
+            _ => $"counts only, with no per-file listing. {CleanupRanInFull}"
+        };
     }
 
     /// <summary>

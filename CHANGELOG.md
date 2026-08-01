@@ -7,7 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.1.1] - 2026-08-01
+### Changed
+
+- A solution-wide `resharper_inspect` now comes back complete instead of cut off. Previously a result
+  over the output budget was chopped at a line boundary, so the tail of the list simply vanished and the
+  only remedy was to re-run more narrowly — and the budget was usually spent on near-duplicates: one real
+  run returned 150 issues across 24 files, **120 of them the same rule** repeated across four DTO files,
+  each message naming a different property. That run now returns complete at about 30% of its former size,
+  every issue counted and every file named. Issues repeating a rule within a file collapse to one line
+  carrying their line numbers and one example message
+  (`` `NotAccessedPositionalProperty.Global` [WARNING] x30, lines 13-42 ``), and if that is still too
+  large the response steps down further — the eight most-affected files, then a rules-and-files rollup,
+  then a one-line summary — each step naming itself in a `DETAIL REDUCED` note. **A truncated result was
+  an incomplete list of issues; a reduced one is complete but less detailed**, so it is safe to conclude
+  from. A scan already within budget is byte-for-byte unchanged, and hard truncation remains only as a
+  last-resort backstop. `resharper_cleanup`, which has degraded this way since 1.0.2, now describes its own
+  reduction per level in the same note rather than a generic one.
 
 ### Changed
 

@@ -124,10 +124,13 @@ public sealed class CleanupSummaryFormatterTests
     [Fact]
     public void Render_ManyEntriesSmallBudget_DegradesGracefullyInsteadOfMidListChop()
     {
-        // Arrange — a solution-wide outcome too large to list in full. Sizing the budget to the Low rendering
-        // plus headroom for the reduction note (but less than Medium's five extra "status unknown" lines)
-        // proves ProgressiveRenderer walks Full -> High -> Medium (each too large) down to Low (fits) with the
-        // real formatter, appending the DETAIL REDUCED note rather than hard-chopping a listing mid-line.
+        // Arrange — a solution-wide outcome too large to list in full, against a budget one character short
+        // of the Medium rendering: Medium provably cannot fit, and Low plus its reduction note does. That
+        // proves ProgressiveRenderer walks Full -> High -> Medium (each too large) down to Low (fits) with
+        // the real formatter, appending the DETAIL REDUCED note rather than hard-chopping a listing mid-line.
+        // The budget is sized from the renderings rather than a fixed headroom because the note counts
+        // toward the fit check — a fixed number silently retunes this test to a lower level when the note's
+        // wording changes.
         List<CleanupEntry> entries = [];
         for (var i = 0; i < 20; i++) entries.Add(new CleanupEntry($"src/very/long/path/to/Changed{i:D3}.cs", CleanupFileStatus.Changed));
         for (var i = 0; i < 20; i++) entries.Add(new CleanupEntry($"src/very/long/path/to/Unchanged{i:D3}.cs", CleanupFileStatus.Unchanged));
@@ -136,10 +139,11 @@ public sealed class CleanupSummaryFormatterTests
         CleanupOutcome outcome = new("Built-in: Full Cleanup", entries);
 
         string full = CleanupSummaryFormatter.Format(outcome, DetailLevel.Full);
-        int maxChars = CleanupSummaryFormatter.Format(outcome, DetailLevel.Low).Length + 200;
+        int maxChars = CleanupSummaryFormatter.Format(outcome, DetailLevel.Medium).Length - 1;
 
         // Act
-        string result = ProgressiveRenderer.Render(outcome, CleanupSummaryFormatter.Format, maxChars);
+        string result = ProgressiveRenderer.Render(
+            outcome, CleanupSummaryFormatter.Format, maxChars, CleanupSummaryFormatter.DescribeReduction);
 
         // Assert
         full.Length.ShouldBeGreaterThan(maxChars); // precondition: Full genuinely did not fit
@@ -147,8 +151,20 @@ public sealed class CleanupSummaryFormatterTests
         result.ShouldStartWith("Cleanup completed with profile \"Built-in: Full Cleanup\"."); // header intact, no mid-line chop
         result.ShouldContain("--- DETAIL REDUCED ---");
         result.ShouldContain("Reduced to Low");
+        result.ShouldContain("only the files cleanup changed are listed"); // this domain's own description
         result.ShouldContain("  - src/very/long/path/to/Changed000.cs (changed)"); // changed files still listed
         result.ShouldContain("(+20 unchanged, not listed)"); // low-signal categories collapsed to counts
         result.ShouldNotContain("(unchanged)"); // no unchanged entry listed individually at Low
+    }
+
+    [Fact]
+    public void DescribeReduction_EveryLevel_SaysTheCleanupItselfStillRanInFull()
+    {
+        // A shrinking report is the one place an agent could read "fewer files listed" as "fewer files
+        // cleaned". Looped in a [Fact] because the internal DetailLevel cannot appear in a public test
+        // method's signature (CS0051).
+        foreach (DetailLevel level in Enum.GetValues<DetailLevel>())
+            CleanupSummaryFormatter.DescribeReduction(level)
+                .ShouldEndWith("The cleanup itself ran in full; only the report shrank.");
     }
 }

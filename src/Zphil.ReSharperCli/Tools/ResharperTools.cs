@@ -4,6 +4,7 @@ using Zphil.ReSharperCli.Discovery;
 using Zphil.ReSharperCli.Formatting;
 using Zphil.ReSharperCli.Infrastructure;
 using Zphil.ReSharperCli.Pipeline;
+using Zphil.ReSharperCli.Sarif;
 using Zphil.ReSharperCli.Services;
 
 namespace Zphil.ReSharperCli.Tools;
@@ -60,9 +61,18 @@ internal sealed class ResharperTools(
         string cliSeverity = severity.ToString().ToUpperInvariant();
 
         ResolvedConfig config = await configResolver.ResolveAsync(solutionPath, cancellationToken);
-        var issues = await inspectService.RunAsync(config, files, cliSeverity, cancellationToken);
 
-        return IssueMarkdownFormatter.Format(issues);
+        // Widened from the service's List<T> so ProgressiveRenderer's T infers to the formatter's own
+        // parameter type.
+        IReadOnlyList<InspectIssue> issues =
+            await inspectService.RunAsync(config, files, cliSeverity, cancellationToken);
+
+        // Render at the highest DetailLevel that fits the client's output budget: a scoped scan fits at
+        // Full (today's per-issue listing), while a solution-wide run collapses repeated rules rather than
+        // being chopped mid-list. The GlobalCallToolFilter's truncator is the final backstop.
+        int maxChars = ResponseTruncator.ComputeMaxChars(environment.GetVariable("MAX_MCP_OUTPUT_TOKENS"));
+        return ProgressiveRenderer.Render(
+            issues, IssueMarkdownFormatter.Format, maxChars, IssueMarkdownFormatter.DescribeReduction);
     }
 
     [McpServerTool(
@@ -107,6 +117,7 @@ internal sealed class ResharperTools(
         // Render at the highest DetailLevel that fits the client's output budget (a small batch fits at
         // Full, an unchanged plain per-file list); the GlobalCallToolFilter's truncator is the final backstop.
         int maxChars = ResponseTruncator.ComputeMaxChars(environment.GetVariable("MAX_MCP_OUTPUT_TOKENS"));
-        return ProgressiveRenderer.Render(outcome, CleanupSummaryFormatter.Format, maxChars);
+        return ProgressiveRenderer.Render(
+            outcome, CleanupSummaryFormatter.Format, maxChars, CleanupSummaryFormatter.DescribeReduction);
     }
 }

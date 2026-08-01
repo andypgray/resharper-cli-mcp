@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Moved to version 2.0.0 of the MCP C# SDK, which implements the 2026-07-28 protocol revision. A client
+  that speaks it discovers the server through `server/discover` rather than the `initialize` handshake
+  and holds no session, reaching the same two tools, prompt, and guide resources with the same schemas
+  and the same argument handling. Clients on earlier revisions are unaffected: an `initialize` handshake
+  returns exactly what it returned before.
+
 ## [1.1.0] - 2026-07-27
 
 ### Added

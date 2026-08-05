@@ -9,11 +9,8 @@ namespace Zphil.ReSharperCli.Services;
 ///     Runs <c>jb inspectcode</c> into a throwaway temp directory, then parses its SARIF into
 ///     <see cref="InspectIssue" /> records. Read-only: it never touches the user's files.
 /// </summary>
-internal sealed class InspectService(IProcessRunner processRunner)
+internal sealed class InspectService(JbRunner jbRunner)
 {
-    private const int StandardErrorTailLength = 2000;
-    private static readonly TimeSpan Timeout = TimeSpan.FromMinutes(5);
-
     public async Task<List<InspectIssue>> RunAsync(
         ResolvedConfig config,
         IReadOnlyList<string>? files,
@@ -26,16 +23,11 @@ internal sealed class InspectService(IProcessRunner processRunner)
             string outputFile = Path.Combine(tempDirectory.FullName, "results.json");
             var arguments = BuildArguments(config, outputFile, files, severity);
 
-            ProcessResult result = await processRunner.RunAsync(
-                config.JbExecutablePath, arguments, Timeout, cancellationToken);
-
-            if (result.ExitCode != 0)
-                throw new UserErrorException(
-                    $"jb inspectcode exited with code {result.ExitCode}.\n{StandardErrorTail(result.StandardError)}");
+            ProcessResult result = await jbRunner.RunAsync(config, arguments, cancellationToken);
 
             if (!File.Exists(outputFile))
                 throw new UserErrorException(
-                    $"jb inspectcode did not produce an output file.\n{StandardErrorTail(result.StandardError)}");
+                    $"jb inspectcode did not produce an output file.\n{JbRunner.StandardErrorTail(result.StandardError)}");
 
             string content = await File.ReadAllTextAsync(outputFile, cancellationToken);
             try
@@ -82,12 +74,6 @@ internal sealed class InspectService(IProcessRunner processRunner)
         if (!string.IsNullOrEmpty(config.ExtensionSource)) arguments.Add($"--source={config.ExtensionSource}");
 
         return arguments;
-    }
-
-    private static string StandardErrorTail(string standardError)
-    {
-        string trimmed = standardError.TrimEnd();
-        return trimmed.Length <= StandardErrorTailLength ? trimmed : trimmed[^StandardErrorTailLength..];
     }
 
     private static void TryDelete(DirectoryInfo directory)

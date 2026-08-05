@@ -1,6 +1,5 @@
 using System.Security.Cryptography;
 using Zphil.ReSharperCli.Discovery;
-using Zphil.ReSharperCli.Execution;
 
 namespace Zphil.ReSharperCli.Services;
 
@@ -9,17 +8,13 @@ namespace Zphil.ReSharperCli.Services;
 ///     <see cref="CleanupOutcome" />: the profile plus a per-entry <see cref="CleanupFileStatus" />
 ///     classification computed by hashing each concrete file before and after the run, so the caller can see
 ///     which files cleanup actually rewrote. Formatting lives in <c>CleanupSummaryFormatter</c>. Mutating: a
-///     non-zero exit (e.g. an unknown profile) is surfaced as a <see cref="UserErrorException" /> rather than
-///     silently swallowed.
+///     non-zero exit (e.g. an unknown profile) surfaces from <see cref="JbRunner" /> as a
+///     <see cref="UserErrorException" /> rather than being silently swallowed.
 /// </summary>
-internal sealed class CleanupService(IProcessRunner processRunner)
+internal sealed class CleanupService(JbRunner jbRunner)
 {
     /// <summary>The profile applied when the caller does not specify one.</summary>
     public const string DefaultProfile = "Built-in: Full Cleanup";
-
-    private const int StandardErrorTailLength = 2000;
-
-    private static readonly TimeSpan Timeout = TimeSpan.FromMinutes(5);
 
     public async Task<CleanupOutcome> RunAsync(
         ResolvedConfig config,
@@ -45,12 +40,7 @@ internal sealed class CleanupService(IProcessRunner processRunner)
 
         var arguments = BuildArguments(config, files, profile);
 
-        ProcessResult result = await processRunner.RunAsync(
-            config.JbExecutablePath, arguments, Timeout, cancellationToken);
-
-        if (result.ExitCode != 0)
-            throw new UserErrorException(
-                $"jb cleanupcode exited with code {result.ExitCode}.\n{StandardErrorTail(result.StandardError)}");
+        await jbRunner.RunAsync(config, arguments, cancellationToken);
 
         // jb has exited (ProcessRunner awaits WaitForExitAsync), so re-hash and classify. This is pure
         // observability: a hash-read failure must never turn a cleanup jb already performed into an error.
@@ -154,11 +144,5 @@ internal sealed class CleanupService(IProcessRunner processRunner)
         {
             return null;
         }
-    }
-
-    private static string StandardErrorTail(string standardError)
-    {
-        string trimmed = standardError.TrimEnd();
-        return trimmed.Length <= StandardErrorTailLength ? trimmed : trimmed[^StandardErrorTailLength..];
     }
 }

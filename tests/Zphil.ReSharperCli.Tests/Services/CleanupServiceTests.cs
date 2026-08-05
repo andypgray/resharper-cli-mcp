@@ -21,6 +21,7 @@ public sealed class CleanupServiceTests : IDisposable
     private readonly ResolvedConfig _config;
     private readonly FakeEnvironment _environment = new();
     private readonly IProcessRunner _processRunner = Substitute.For<IProcessRunner>();
+    private readonly CleanupService _service;
     private readonly string _solutionDirectory;
 
     public CleanupServiceTests()
@@ -28,7 +29,11 @@ public sealed class CleanupServiceTests : IDisposable
         _solutionDirectory = _environment.CurrentDirectory;
         string solutionPath = Path.Combine(_solutionDirectory, "App.sln");
         File.WriteAllText(solutionPath, string.Empty);
-        _config = new ResolvedConfig(solutionPath, null, null, "/cache", null, null, "jb");
+
+        // The cache home is a real directory: JbRunLock creates it and takes its lock file there, so a
+        // literal like "/cache" would leave a stray folder at the drive root.
+        _config = new ResolvedConfig(solutionPath, null, null, _environment.CreateTempDirectory(), null, null, "jb");
+        _service = new CleanupService(new JbRunner(_processRunner, new JbRunLock()));
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -44,10 +49,9 @@ public sealed class CleanupServiceTests : IDisposable
         // Arrange — jb "cleans up" the file by writing different bytes during its run.
         string path = PlantFile("src/A.cs", "original");
         StubJbRunning(() => File.WriteAllText(path, "cleaned up"));
-        CleanupService service = new(_processRunner);
 
         // Act
-        CleanupOutcome outcome = await service.RunAsync(_config, ["src/A.cs"], CleanupService.DefaultProfile, Ct);
+        CleanupOutcome outcome = await _service.RunAsync(_config, ["src/A.cs"], CleanupService.DefaultProfile, Ct);
 
         // Assert
         outcome.Profile.ShouldBe(CleanupService.DefaultProfile);
@@ -63,10 +67,9 @@ public sealed class CleanupServiceTests : IDisposable
         // hashing must call this Unchanged; a (length, mtime) heuristic would wrongly report Changed.
         string path = PlantFile("src/A.cs", "same bytes");
         StubJbRunning(() => File.WriteAllText(path, "same bytes"));
-        CleanupService service = new(_processRunner);
 
         // Act
-        CleanupOutcome outcome = await service.RunAsync(_config, ["src/A.cs"], CleanupService.DefaultProfile, Ct);
+        CleanupOutcome outcome = await _service.RunAsync(_config, ["src/A.cs"], CleanupService.DefaultProfile, Ct);
 
         // Assert
         outcome.Entries.ShouldHaveSingleItem().Status.ShouldBe(CleanupFileStatus.Unchanged);
@@ -79,10 +82,9 @@ public sealed class CleanupServiceTests : IDisposable
         // the outcome must classify it StatusUnknown rather than letting the hash failure throw.
         string path = PlantFile("src/A.cs", "content");
         StubJbRunning(() => File.Delete(path));
-        CleanupService service = new(_processRunner);
 
         // Act
-        CleanupOutcome outcome = await service.RunAsync(_config, ["src/A.cs"], CleanupService.DefaultProfile, Ct);
+        CleanupOutcome outcome = await _service.RunAsync(_config, ["src/A.cs"], CleanupService.DefaultProfile, Ct);
 
         // Assert
         outcome.Entries.ShouldHaveSingleItem().Status.ShouldBe(CleanupFileStatus.StatusUnknown);
@@ -94,10 +96,9 @@ public sealed class CleanupServiceTests : IDisposable
         // Arrange — one concrete file jb rewrites, plus a wildcard that stays a Pattern (never a single file).
         string path = PlantFile("src/A.cs", "before");
         StubJbRunning(() => File.WriteAllText(path, "after"));
-        CleanupService service = new(_processRunner);
 
         // Act
-        CleanupOutcome outcome = await service.RunAsync(
+        CleanupOutcome outcome = await _service.RunAsync(
             _config, ["src/A.cs", "src/**/*.cs"], CleanupService.DefaultProfile, Ct);
 
         // Assert — request order preserved; the wildcard is Pattern (excluded from the concrete denominator).
@@ -112,10 +113,9 @@ public sealed class CleanupServiceTests : IDisposable
     {
         // Arrange — a wildcard is handed to jb unvalidated even though nothing matches it on disk.
         StubExit(0);
-        CleanupService service = new(_processRunner);
 
         // Act
-        CleanupOutcome outcome = await service.RunAsync(_config, ["src/**/*.cs"], CleanupService.DefaultProfile, Ct);
+        CleanupOutcome outcome = await _service.RunAsync(_config, ["src/**/*.cs"], CleanupService.DefaultProfile, Ct);
 
         // Assert
         outcome.Entries.ShouldHaveSingleItem().Status.ShouldBe(CleanupFileStatus.Pattern);
@@ -129,10 +129,9 @@ public sealed class CleanupServiceTests : IDisposable
         // Arrange — an absolute path jb does not modify.
         string absolute = PlantFile("src/Real.cs", "x");
         StubExit(0);
-        CleanupService service = new(_processRunner);
 
         // Act
-        CleanupOutcome outcome = await service.RunAsync(_config, [absolute], CleanupService.DefaultProfile, Ct);
+        CleanupOutcome outcome = await _service.RunAsync(_config, [absolute], CleanupService.DefaultProfile, Ct);
 
         // Assert
         CleanupEntry entry = outcome.Entries.ShouldHaveSingleItem();
@@ -148,10 +147,9 @@ public sealed class CleanupServiceTests : IDisposable
         _processRunner
             .RunAsync("jb", Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
             .Returns(new ProcessResult(1, string.Empty, "Unknown profile 'No Such Profile'"));
-        CleanupService service = new(_processRunner);
 
         // Act
-        var exception = await Should.ThrowAsync<UserErrorException>(() => service.RunAsync(_config, ["A.cs"], "No Such Profile", Ct));
+        var exception = await Should.ThrowAsync<UserErrorException>(() => _service.RunAsync(_config, ["A.cs"], "No Such Profile", Ct));
 
         // Assert
         exception.Message.ShouldContain("Unknown profile 'No Such Profile'");
@@ -161,10 +159,9 @@ public sealed class CleanupServiceTests : IDisposable
     public async Task RunAsync_MissingPlainFile_ThrowsNamingItAndDoesNotInvokeJb()
     {
         // Arrange — no file planted, so the concrete path does not exist; validation runs before hashing.
-        CleanupService service = new(_processRunner);
 
         // Act
-        var exception = await Should.ThrowAsync<UserErrorException>(() => service.RunAsync(_config, ["src/Missing.cs"], CleanupService.DefaultProfile, Ct));
+        var exception = await Should.ThrowAsync<UserErrorException>(() => _service.RunAsync(_config, ["src/Missing.cs"], CleanupService.DefaultProfile, Ct));
 
         // Assert
         exception.Message.ShouldContain("src/Missing.cs");

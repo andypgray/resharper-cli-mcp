@@ -32,6 +32,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the same argument handling. Clients on earlier revisions are unaffected: an `initialize` handshake
   returns exactly what it returned before.
 
+### Fixed
+
+- Two sessions working on one solution no longer make each other slow, or leave stale caches behind.
+  ReSharper lets only one `jb` at a time use a solution's cache, and a second one that tries does not
+  wait — it silently forks an empty copy of the cache and starts from cold. Both runs then pay the
+  cold-cache cost, and the one that lost the race usually times out: in a measured case it had covered 79
+  of a solution's 208 files by the time the run holding the warm cache had finished all 208. The forked
+  copy is permanent, too, at a few hundred megabytes each. Calls against one solution now queue for the
+  warm cache instead of forking, across every client on the machine, since it is the cache that is
+  contended rather than the server. A call waits up to 5 minutes for a run already in flight before
+  starting its own 5-minute run; if that wait runs out, the error says a run against that solution is
+  already going rather than starting a second one. Nothing changes when only one call is running.
+
 ## [1.1.0] - 2026-07-27
 
 ### Added

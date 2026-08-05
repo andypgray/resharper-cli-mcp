@@ -67,7 +67,9 @@ A solution-wide run comes back more compactly: once it would overflow the output
 
 Call `resharper_cleanup` once, at the end of a task, with every file you changed batched into the one call.
 
-The first run on a solution is slow while ReSharper builds its caches under `--caches-home`; later runs reuse them and finish in seconds. The server caps each run at 5 minutes. If your MCP client's own tool-call timeout is shorter than a cold run needs, the client gives up first. In Claude Code, raise it with a per-server `"timeout"` in milliseconds in `.mcp.json`, or the `MCP_TOOL_TIMEOUT` environment variable; raising it past 5 minutes has no effect, since the server's own cap binds first.
+The first run on a solution is slow while ReSharper builds its caches under `--caches-home`; later runs reuse them and finish in seconds. The server caps each run at 5 minutes.
+
+Calls against one solution are serialized, across every client on the machine: only one `jb` at a time can use a solution's cache, and a second one that tries silently forks a cold copy instead of waiting — so two sessions inspecting one solution would otherwise make each other slow and leave a stale cache behind. A call therefore waits up to 5 minutes for a run already in flight before starting its own 5-minute run, and says so if that wait runs out. If your MCP client's own tool-call timeout is shorter than a cold run needs, the client gives up first. In Claude Code, raise it with a per-server `"timeout"` in milliseconds in `.mcp.json`, or the `MCP_TOOL_TIMEOUT` environment variable.
 
 ## Configuration
 
@@ -121,7 +123,7 @@ The two tools read two independent configuration axes: `resharper_inspect` obeys
 
 Rather than carry that model in every session's context, the server advertises it as an on-demand MCP resource, `resharper://guides/configuration` — the two axes, how to protect a deliberate style, where settings and `.editorconfig` are read from, and the `.DotSettings` key shapes. A client that surfaces resources lets an agent load it exactly when it is about to change what ReSharper enforces.
 
-A second resource, `resharper://guides/setup`, covers running the server rather than configuring ReSharper: how `jb` and the solution are discovered, why the first call is slow and what the 5-minute cap means, how a large result is shortened to fit the output budget, the environment variables above, and where logs go. An agent loads it when a call cannot find `jb` or the solution, times out, or comes back shortened. Splitting the two keeps each pull small, and keeps the always-loaded server instructions down to the cross-tool rules that no schema can express.
+A second resource, `resharper://guides/setup`, covers running the server rather than configuring ReSharper: how `jb` and the solution are discovered, why the first call is slow, what the 5-minute caps mean and why calls against one solution queue, how a large result is shortened to fit the output budget, the environment variables above, and where logs go. An agent loads it when a call cannot find `jb` or the solution, times out, or comes back shortened. Splitting the two keeps each pull small, and keeps the always-loaded server instructions down to the cross-tool rules that no schema can express.
 
 ## Cleanup reminder hook
 

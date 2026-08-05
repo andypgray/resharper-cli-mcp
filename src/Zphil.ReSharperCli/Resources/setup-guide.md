@@ -42,17 +42,28 @@ holding two `.sln` files, needs one of the first two levers — discovery will n
 profile that file declares — is resolved fresh on every call, so adding or editing a `.sln.DotSettings`
 takes effect on the next call rather than after a client restart.
 
-## Why the first call is slow, and the timeout
+## Why the first call is slow, the timeout, and the queue
 
 Both tools run `jb` with `--no-build` against a ReSharper cache directory — `~/.jb-cache` unless
 `JB_CACHE_HOME` overrides it. The first inspection or cleanup on a solution populates that cache and can
 take minutes; later calls reuse it and finish in seconds. Each `jb` run is capped at **5 minutes**, after
 which the process tree is killed and the call fails with a timeout message.
 
-A timeout is almost always the cold run. Retry once — the second attempt starts from a warm cache — and if
-it still times out, narrow the work with `files` so `jb` analyses less. Your MCP client may also enforce
-its own, shorter tool-call timeout and give up before the server's cap; raise that on the client side (for
-Claude Code, the `MCP_TOOL_TIMEOUT` environment variable, in milliseconds).
+**Only one `jb` at a time may use a solution's cache**, so calls against one solution queue rather than
+run together. This is not politeness: a second concurrent `jb` cannot open the warm cache, and instead of
+waiting it silently forks a new, *empty* one — so both runs do cold-cache work, the slower one usually
+past the timeout, and the fork is left behind taking up disk. Queueing costs a wait and nothing else. The
+queue is shared by every client on the machine, since it is the cache that is contended, not the server.
+
+So a call is bounded by its wait plus its run. A call waits up to **5 minutes** for a run already in
+flight, and only then starts its own 5-minute run; if the wait runs out the error says a run against that
+solution is already going, and retrying shortly after is the right response. The wait is invisible when
+nothing else is running, which is the normal case.
+
+A timeout with nothing else running is almost always the cold run: retry once, and if it still times out,
+narrow the work with `files` so `jb` analyses less. Your MCP client may also enforce its own, shorter
+tool-call timeout and give up before the server's caps; raise that on the client side (for Claude Code,
+the `MCP_TOOL_TIMEOUT` environment variable, in milliseconds).
 
 ## Output size: reduction, and truncation as a last resort
 

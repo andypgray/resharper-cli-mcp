@@ -5,18 +5,32 @@ using Xunit;
 using Zphil.ReSharperCli.Discovery;
 using Zphil.ReSharperCli.Execution;
 using Zphil.ReSharperCli.Services;
+using Zphil.ReSharperCli.Tests.TestDoubles;
 using Zphil.ReSharperCli.Tests.TestSupport;
 
 namespace Zphil.ReSharperCli.Tests.Services;
 
-public sealed class InspectServiceTests
+public sealed class InspectServiceTests : IDisposable
 {
-    private static readonly ResolvedConfig Config =
-        new("/sln/App.sln", null, null, "/cache", null, null, "jb");
-
+    private readonly ResolvedConfig _config;
+    private readonly FakeEnvironment _environment = new();
     private readonly IProcessRunner _processRunner = Substitute.For<IProcessRunner>();
+    private readonly InspectService _service;
+
+    public InspectServiceTests()
+    {
+        // The cache home is a real directory: JbRunLock creates it and takes its lock file there, so a
+        // literal like "/cache" would leave a stray folder at the drive root.
+        _config = new ResolvedConfig("/sln/App.sln", null, null, _environment.CreateTempDirectory(), null, null, "jb");
+        _service = new InspectService(new JbRunner(_processRunner, new JbRunLock()));
+    }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
+
+    public void Dispose()
+    {
+        _environment.Dispose();
+    }
 
     [Fact]
     public async Task RunAsync_SuccessfulRun_ParsesSarifAndCleansUpTempDirectory()
@@ -30,10 +44,9 @@ public sealed class InspectServiceTests
             File.WriteAllText(outputPath, sarif);
             return new ProcessResult(0, string.Empty, string.Empty);
         });
-        InspectService service = new(_processRunner);
 
         // Act
-        var issues = await service.RunAsync(Config, null, "WARNING", Ct);
+        var issues = await _service.RunAsync(_config, null, "WARNING", Ct);
 
         // Assert
         issues.Count.ShouldBe(3);
@@ -51,10 +64,9 @@ public sealed class InspectServiceTests
             outputPath = OutputPathFrom(callInfo.ArgAt<IReadOnlyList<string>>(1));
             return new ProcessResult(5, string.Empty, "boom: analysis failed");
         });
-        InspectService service = new(_processRunner);
 
         // Act
-        var exception = await Should.ThrowAsync<UserErrorException>(() => service.RunAsync(Config, null, "WARNING", Ct));
+        var exception = await Should.ThrowAsync<UserErrorException>(() => _service.RunAsync(_config, null, "WARNING", Ct));
 
         // Assert
         exception.Message.ShouldContain("5");
@@ -68,10 +80,9 @@ public sealed class InspectServiceTests
     {
         // Arrange
         StubRun(_ => new ProcessResult(0, string.Empty, "jb produced no output"));
-        InspectService service = new(_processRunner);
 
         // Act
-        var exception = await Should.ThrowAsync<UserErrorException>(() => service.RunAsync(Config, null, "WARNING", Ct));
+        var exception = await Should.ThrowAsync<UserErrorException>(() => _service.RunAsync(_config, null, "WARNING", Ct));
 
         // Assert
         exception.Message.ShouldContain("did not produce an output file");
@@ -87,10 +98,9 @@ public sealed class InspectServiceTests
             File.WriteAllText(outputPath, "{ this is not valid SARIF json");
             return new ProcessResult(0, string.Empty, string.Empty);
         });
-        InspectService service = new(_processRunner);
 
         // Act
-        var exception = await Should.ThrowAsync<UserErrorException>(() => service.RunAsync(Config, null, "WARNING", Ct));
+        var exception = await Should.ThrowAsync<UserErrorException>(() => _service.RunAsync(_config, null, "WARNING", Ct));
 
         // Assert
         exception.Message.ShouldContain("SARIF");

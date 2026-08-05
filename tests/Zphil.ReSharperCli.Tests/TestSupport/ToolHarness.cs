@@ -17,8 +17,9 @@ internal static class ToolHarness
     {
         JbLocator jbLocator = new(processRunner, environment);
         ConfigResolver configResolver = new(jbLocator, environment);
-        InspectService inspectService = new(processRunner);
-        CleanupService cleanupService = new(processRunner);
+        JbRunner jbRunner = new(processRunner, new JbRunLock());
+        InspectService inspectService = new(jbRunner);
+        CleanupService cleanupService = new(jbRunner);
         return new ResharperTools(configResolver, inspectService, cleanupService, environment);
     }
 }

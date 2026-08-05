@@ -100,6 +100,8 @@ internal sealed class McpPipelineHarness : IAsyncDisposable
         builder.Services.AddSingleton(processRunner);
         builder.Services.AddSingleton<JbLocator>();
         builder.Services.AddSingleton<ConfigResolver>();
+        builder.Services.AddSingleton(_ => new JbRunLock());
+        builder.Services.AddSingleton<JbRunner>();
         builder.Services.AddSingleton<InspectService>();
         builder.Services.AddSingleton<CleanupService>();
 

@@ -41,6 +41,11 @@ builder.Services.AddSingleton<JbRunner>();
 builder.Services.AddSingleton<InspectService>();
 builder.Services.AddSingleton<CleanupService>();
 
+// The factory overload is required: the generic AddHostedService<T> would build a *second* CacheWarmer, and
+// the one whose run has to be drained at shutdown is the one the notification handler below started.
+builder.Services.AddSingleton<CacheWarmer>();
+builder.Services.AddHostedService(provider => provider.GetRequiredService<CacheWarmer>());
+
 builder.Services
     .AddMcpServer(options =>
     {
@@ -56,7 +61,8 @@ builder.Services
     .WithCoercingTools()
     .WithPrompts<ResharperPrompts>()
     .WithResources<ResharperResources>()
-    .WithGlobalCallToolFilter();
+    .WithGlobalCallToolFilter()
+    .WithPreWarmTrigger();
 
 IHost host = builder.Build();
 await host.RunAsync();

@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The server now warms the ReSharper cache in the background as soon as a client connects, so the cold
+  run a session's first call would otherwise pay for happens during the idle minutes before it. It targets
+  exactly the solution a call with no `solutionPath` would find and does nothing when there is none, runs
+  at most once per session, and is skipped when any `jb` run against that solution's cache succeeded within
+  the last hour — a real tool call refreshes that just as a pre-warm does, so working in a repo does not
+  earn its next session a redundant analysis. A tool call arriving while one is in flight **cancels** it and
+  takes the cache, waiting only for `jb` to be killed and reaped rather than for the run to finish, so
+  within one server process pre-warming can never make a call slower. Across processes it can: a pre-warm in
+  another server cannot be cancelled, so a call there queues behind it exactly as it queues behind another
+  session's real call. It is a full solution analysis, and `RESHARPER_MCP_PREWARM=off` turns it off. Being
+  honest about the size of this: it does not make warm runs faster — 1.1.1's run serialization did that —
+  it moves the cold cost off the first call and onto session start.
+
 ### Changed
 
 - A solution-wide `resharper_inspect` now comes back complete instead of cut off. Previously a result

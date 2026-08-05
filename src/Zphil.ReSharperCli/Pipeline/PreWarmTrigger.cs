@@ -1,0 +1,45 @@
+using Microsoft.Extensions.DependencyInjection;
+using Zphil.ReSharperCli.Services;
+
+namespace Zphil.ReSharperCli.Pipeline;
+
+/// <summary>
+///     Starts the background cache pre-warm as soon as a client says anything at all. A session usually
+///     idles for minutes between connecting and its first tool call, and a cold <c>jb</c> run costs minutes,
+///     so that window is the one worth spending.
+/// </summary>
+/// <remarks>
+///     <para>
+///         An incoming-message filter rather than a handler for a named handshake method, because MCP has
+///         more than one handshake and is gaining more: the 2025-11-25 flow is
+///         <c>initialize</c> + <c>notifications/initialized</c>, while 2026-07-28 replaced both with
+///         <c>server/discover</c> — and a server on the newer version <em>rejects</em>
+///         <c>notifications/initialized</c> outright. Triggering on the message rather than on its method
+///         means the next revision cannot silently switch this feature off.
+///     </para>
+///     <para>
+///         The filter costs one already-taken flag per message and returns before awaiting anything, because
+///         <see cref="CacheWarmer.Start" /> only queues work. It fires at most once per process, so even the
+///         degenerate case — a client whose very first message is a tool call — costs nothing: the
+///         speculative run and the real one meet at the run lock, where the real one always wins.
+///     </para>
+/// </remarks>
+internal static class PreWarmTrigger
+{
+    /// <summary>
+    ///     Wire the pre-warm to the arrival of the session's first message. Resolving the warmer per message
+    ///     from <c>context.Server.Services</c> — the host's own provider — keeps this a single registration
+    ///     with no captured instance, matching how <see cref="GlobalCallToolFilter" /> reaches its services.
+    /// </summary>
+    public static IMcpServerBuilder WithPreWarmTrigger(this IMcpServerBuilder builder)
+    {
+        return builder.WithMessageFilters(filters =>
+        {
+            filters.AddIncomingFilter(next => (context, cancellationToken) =>
+            {
+                context.Server.Services?.GetService<CacheWarmer>()?.Start();
+                return next(context, cancellationToken);
+            });
+        });
+    }
+}

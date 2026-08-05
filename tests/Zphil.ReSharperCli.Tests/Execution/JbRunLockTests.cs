@@ -209,6 +209,132 @@ public sealed class JbRunLockTests : IDisposable
     }
 
     [Fact]
+    public async Task TryAcquire_LockFileHeldByAnotherProcess_SkipsWithoutWaiting()
+    {
+        // Arrange — the *default* five-minute cap on purpose. If the zero-wait were a shorter promise rather
+        // than structural, this test would hang instead of failing, which is the distinction worth pinning.
+        JbRunLock runLock = new();
+        await using FileStream otherProcess = OpenLockFileExclusively();
+        var waited = Stopwatch.StartNew();
+
+        // Act
+        IDisposable? lease = runLock.TryAcquire(SolutionPath, _cacheHome);
+
+        // Assert
+        lease.ShouldBeNull();
+        waited.Elapsed.ShouldBeLessThan(ShortWait);
+    }
+
+    [Fact]
+    public async Task TryAcquire_WhileACallerInThisProcessHoldsTheLease_SkipsWithoutWaiting()
+    {
+        // Arrange — the in-process half: the speculative caller never queues behind a real one.
+        JbRunLock runLock = new();
+        using IDisposable foreground = await runLock.AcquireAsync(SolutionPath, _cacheHome, Ct);
+        var waited = Stopwatch.StartNew();
+
+        // Act
+        IDisposable? lease = runLock.TryAcquire(SolutionPath, _cacheHome);
+
+        // Assert
+        lease.ShouldBeNull();
+        waited.Elapsed.ShouldBeLessThan(ShortWait);
+    }
+
+    [Fact]
+    public void TryAcquire_Granted_HoldsBothHalvesUntilDisposed()
+    {
+        // Arrange
+        JbRunLock runLock = new();
+
+        // Act
+        IDisposable? lease = runLock.TryAcquire(SolutionPath, _cacheHome);
+
+        // Assert — a lease that did not really take the *file* would let another server process onto the
+        // cache generation, which is the whole failure this lock exists to prevent.
+        lease.ShouldNotBeNull();
+        Should.Throw<IOException>(() => OpenLockFileExclusively().Dispose());
+        lease.Dispose();
+        OpenLockFileExclusively().Dispose();
+    }
+
+    [Fact]
+    public async Task TryAcquire_OnceDisposed_ReadmitsAForegroundCaller()
+    {
+        // Arrange
+        JbRunLock runLock = new(ShortWait);
+        IDisposable? lease = runLock.TryAcquire(SolutionPath, _cacheHome);
+        lease.ShouldNotBeNull();
+        lease.Dispose();
+        var waited = Stopwatch.StartNew();
+
+        // Act
+        using IDisposable foreground = await runLock.AcquireAsync(SolutionPath, _cacheHome, Ct);
+
+        // Assert
+        waited.Elapsed.ShouldBeLessThan(ShortWait);
+    }
+
+    [Fact]
+    public async Task TryAcquire_CacheHomeCannotBeCreated_SkipsInsteadOfDegrading()
+    {
+        // Arrange — a *file* where the cache home should be. AcquireAsync degrades here and runs anyway,
+        // because a call the user asked for outranks the optimisation; a speculative run has no such claim,
+        // and running it unserialized would fork the cold cache the lock exists to prevent.
+        JbRunLock runLock = new(ShortWait);
+        string blocked = Path.Combine(_environment.CreateTempDirectory(), "not-a-directory");
+        await File.WriteAllTextAsync(blocked, string.Empty, Ct);
+
+        // Act
+        IDisposable? lease = runLock.TryAcquire(SolutionPath, blocked);
+
+        // Assert — and the gate it took on the way to that decision is handed back.
+        lease.ShouldBeNull();
+        using IDisposable foreground = await runLock.AcquireAsync(SolutionPath, blocked, Ct).WaitAsync(Generous, Ct);
+    }
+
+    [Fact]
+    public void TryAcquire_LockFilePathUnusable_SkipsInsteadOfDegrading()
+    {
+        // Arrange — a *directory* sitting where the lock file goes: the cache home is fine, the file can
+        // never be opened.
+        JbRunLock runLock = new(ShortWait);
+        Directory.CreateDirectory(LockFilePath());
+
+        // Act & Assert
+        runLock.TryAcquire(SolutionPath, _cacheHome).ShouldBeNull();
+    }
+
+    [Fact]
+    public void TryAcquire_CacheHomeIsNotAValidPath_SkipsInsteadOfDegrading()
+    {
+        // Arrange — a cache home no path API will accept, so even the lock's key cannot be derived.
+        JbRunLock runLock = new(ShortWait);
+
+        // Act & Assert
+        runLock.TryAcquire(SolutionPath, _cacheHome + "\0invalid").ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task TryAcquire_ThatCouldNotProveExclusivity_StillLetsTheNextCallerIn()
+    {
+        // Arrange — the gate-leak guard. TryAcquire takes the in-process semaphore, then discovers it cannot
+        // open the lock file and *returns* null rather than throwing, so AcquireAsync's release-on-throw does
+        // not cover it. A leak here would be paid by a real call: it would queue against nothing, burn the
+        // whole wait cap, and fail with a contention error naming a run that never existed.
+        JbRunLock runLock = new(ShortWait);
+        Directory.CreateDirectory(LockFilePath());
+        runLock.TryAcquire(SolutionPath, _cacheHome).ShouldBeNull();
+        var waited = Stopwatch.StartNew();
+
+        // Act
+        using IDisposable foreground = await runLock.AcquireAsync(SolutionPath, _cacheHome, Ct);
+
+        // Assert
+        waited.Elapsed.ShouldBeLessThan(ShortWait);
+    }
+
+    [Fact]
     public void ComputeKey_FoldsPathsThatNameTheSameCacheGeneration()
     {
         // Assert — a trailing separator must not fork one generation's lock into two...

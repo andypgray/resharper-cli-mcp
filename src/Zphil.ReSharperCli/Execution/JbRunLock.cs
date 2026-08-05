@@ -27,7 +27,8 @@ namespace Zphil.ReSharperCli.Execution;
 ///     </para>
 ///     <para>
 ///         The lock is an optimisation, never a dependency: anything that goes wrong other than genuine
-///         contention degrades to a weaker lock (or none) and lets the run proceed.
+///         contention degrades to a weaker lock (or none) and lets the run proceed. <see cref="TryAcquire" />
+///         is the one deliberate exception, and inverts that rule for the reason given on it.
 ///     </para>
 /// </remarks>
 internal sealed class JbRunLock(TimeSpan? maxWait = null)
@@ -93,6 +94,66 @@ internal sealed class JbRunLock(TimeSpan? maxWait = null)
     }
 
     /// <summary>
+    ///     Take exclusive use of the cache generation without waiting for it, returning the handle whose
+    ///     disposal releases it, or <see langword="null" /> when it could not be taken outright. For
+    ///     speculative work only — a caller that must run uses <see cref="AcquireAsync" />.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         Synchronous because every step of a zero-wait acquire is: an <c>async</c> signature here would
+    ///         have nothing to await, and would promise a wait that must never happen.
+    ///     </para>
+    ///     <para>
+    ///         This inverts the degradation rule the rest of the class follows. <see cref="AcquireAsync" />
+    ///         falls back to a weaker lock and runs anyway, because a call the user asked for must not fail
+    ///         over a missing optimisation. Here the calculus reverses: a <em>background</em> run that cannot
+    ///         prove exclusivity and starts regardless causes exactly the cold-cache fork this lock exists to
+    ///         prevent, for nobody's benefit. So every degradation — an underivable key, an unusable cache
+    ///         home, a lock file that will not open for any reason at all — returns <see langword="null" />
+    ///         and the speculative run is simply skipped.
+    ///     </para>
+    /// </remarks>
+    public IDisposable? TryAcquire(string solutionPath, string cacheHome)
+    {
+        string key;
+        string lockFilePath;
+        try
+        {
+            key = ComputeKey(solutionPath, cacheHome);
+            lockFilePath = LockFilePathFor(cacheHome, key);
+        }
+        catch (Exception exception) when (exception is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return null;
+        }
+
+        SemaphoreSlim gate = _gates.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
+        if (!gate.Wait(0)) return null;
+
+        FileStream? file;
+        try
+        {
+            file = TryPrepareCacheHome(cacheHome) ? TryOpenExclusiveOnce(lockFilePath) : null;
+        }
+        catch
+        {
+            gate.Release();
+            throw;
+        }
+
+        // Unlike AcquireAsync, "could not prove exclusivity" is a *return* rather than a throw, so releasing
+        // in the catch above is not enough: leaving the gate taken here would wedge every later caller of
+        // this generation — foreground ones included — until the process ended.
+        if (file is null)
+        {
+            gate.Release();
+            return null;
+        }
+
+        return new Holder(gate, file);
+    }
+
+    /// <summary>
     ///     Identifies one cache generation: a short hash of the normalised (solution, cache home) pair.
     ///     Both paths are absolute by contract — <c>ResolvedConfig</c> resolves them — so normalising here
     ///     only folds separators and Windows casing, and never consults the process working directory.
@@ -145,6 +206,23 @@ internal sealed class JbRunLock(TimeSpan? maxWait = null)
                 Log.Warning(exception, "Could not take the jb run lock file {LockFilePath}; concurrent runs against this solution will not be serialized", lockFilePath);
                 return null;
             }
+    }
+
+    /// <summary>
+    ///     One attempt at the lock file and no retry: for <see cref="TryAcquire" />, contention and a
+    ///     permanently unusable path are the same answer — do not run. Nothing is logged, because a
+    ///     speculative run stepping aside is the design working, not a fault.
+    /// </summary>
+    private static FileStream? TryOpenExclusiveOnce(string lockFilePath)
+    {
+        try
+        {
+            return new FileStream(lockFilePath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or NotSupportedException)
+        {
+            return null;
+        }
     }
 
     /// <summary>

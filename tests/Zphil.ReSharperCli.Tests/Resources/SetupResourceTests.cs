@@ -66,6 +66,7 @@ public sealed class SetupResourceTests
     [InlineData("JB_CACHE_HOME")]
     [InlineData("JB_EXTENSIONS")]
     [InlineData("JB_EXTENSION_SOURCE")]
+    [InlineData("RESHARPER_MCP_PREWARM")]
     [InlineData("RESHARPER_MCP_LOG_LEVEL")]
     [InlineData("MAX_MCP_OUTPUT_TOKENS")]
     public void SetupGuide_DocumentsEveryEnvironmentVariable(string variable)

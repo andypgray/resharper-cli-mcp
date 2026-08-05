@@ -65,6 +65,25 @@ narrow the work with `files` so `jb` analyses less. Your MCP client may also enf
 tool-call timeout and give up before the server's caps; raise that on the client side (for Claude Code,
 the `MCP_TOOL_TIMEOUT` environment variable, in milliseconds).
 
+### The background pre-warm
+
+To spend that cold run on idle time instead of yours, the server starts one speculative
+`jb inspectcode` as soon as a client connects — long before the first tool call, usually. It targets
+exactly the solution a call with no `solutionPath` would find, and does nothing at all when there is none,
+so a server started somewhere without a solution simply never pre-warms. Nothing about it is visible in a
+tool result.
+
+It is never allowed to cost you anything **in this server process**: a tool call arriving mid-pre-warm
+*cancels* it and takes the cache for itself, so the call waits for `jb` to be killed and reaped — a second
+or two — rather than for the run to finish. **A pre-warm in another server process cannot be cancelled**,
+though, so a call there queues behind it exactly as it queues behind another session's real call. That is
+the one case where pre-warming can make a first call slower than it would have been.
+
+It runs **at most once per session**, and is skipped when any `jb` run against that solution's cache
+succeeded within the last hour — a tool call counts, so working in a repo does not earn its next session a
+redundant analysis. It is a full solution analysis when it does run (`--include` does not make `jb` do less
+work), so set `RESHARPER_MCP_PREWARM=off` if you would rather not spend the CPU.
+
 ## Output size: reduction, and truncation as a last resort
 
 Responses are capped at the client's `MAX_MCP_OUTPUT_TOKENS` × 2.5 characters, or 25,000 characters when
@@ -109,6 +128,7 @@ so a change takes effect once the client restarts the server. All are optional.
 | `JB_CACHE_HOME` | ReSharper cache directory (default `~/.jb-cache`). |
 | `JB_EXTENSIONS` | Semicolon-separated ReSharper plugin IDs to load. |
 | `JB_EXTENSION_SOURCE` | Custom NuGet source for those plugins. |
+| `RESHARPER_MCP_PREWARM` | Set to `off` to stop the background pre-warm above. Anything else, including unset, leaves it on. |
 | `RESHARPER_MCP_LOG_LEVEL` | Minimum level for the file log (default `Warning`). Accepts Serilog or Microsoft level names; anything unrecognised falls back to `Warning`. |
 | `MAX_MCP_OUTPUT_TOKENS` | Set by the MCP client, not by you — the output budget above. |
 
@@ -118,6 +138,9 @@ One daily-rolling file under `%LOCALAPPDATA%\Zphil.ReSharperCli\logs` on Windows
 equivalent elsewhere, keeping the last 7 days. It records unexpected failures only: an expected error —
 a missing `jb`, an undiscoverable solution, a bad path, a non-zero `jb` exit — is returned to you in the
 tool result and never written to the log.
+
+A pre-warm that was skipped, cancelled, or failed is not log-worthy either — it costs the session nothing
+beyond what it would have cost anyway — so it appears only at `Debug`.
 
 Nothing is written to stdout, because that channel carries the MCP JSON-RPC stream and any stray write
 would corrupt the protocol; diagnostics go to stderr and the file. Nothing leaves the machine.

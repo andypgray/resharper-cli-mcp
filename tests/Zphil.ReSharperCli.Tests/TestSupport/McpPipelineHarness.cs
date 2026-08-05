@@ -34,13 +34,15 @@ internal sealed class McpPipelineHarness : IAsyncDisposable
         McpClient client,
         FakeEnvironment environment,
         IProcessRunner processRunner,
-        CapturingLoggerProvider logs)
+        CapturingLoggerProvider logs,
+        CacheWarmer warmer)
     {
         _host = host;
         Client = client;
         Environment = environment;
         ProcessRunner = processRunner;
         Logs = logs;
+        Warmer = warmer;
     }
 
     /// <summary>The connected client, past the <c>initialize</c> handshake — call <c>ListTools</c>/<c>CallTool</c> on it.</summary>
@@ -57,6 +59,12 @@ internal sealed class McpPipelineHarness : IAsyncDisposable
 
     /// <summary>Everything the server logged through its <see cref="ILoggerFactory" /> during the session.</summary>
     public CapturingLoggerProvider Logs { get; }
+
+    /// <summary>
+    ///     The server's background cache pre-warm — the same instance the <c>initialized</c> notification
+    ///     triggers. Await its <c>Finished</c> to make a test that opted in deterministic.
+    /// </summary>
+    public CacheWarmer Warmer { get; }
 
     public async ValueTask DisposeAsync()
     {
@@ -77,11 +85,29 @@ internal sealed class McpPipelineHarness : IAsyncDisposable
     ///     <c>AddMcpServer</c> + <c>WithCoercingTools</c> + <c>WithGlobalCallToolFilter</c> composition in
     ///     <c>Program.cs</c>, swapping the stdio transport for a stream transport over in-memory pipes.
     /// </summary>
-    public static async Task<McpPipelineHarness> StartAsync(CancellationToken cancellationToken)
+    /// <param name="cancellationToken">The test's cancellation token.</param>
+    /// <param name="preWarm">
+    ///     Whether the background cache pre-warm is left on. It defaults to <em>off</em> because the first
+    ///     message of the client's handshake triggers it, which would otherwise start a speculative <c>jb</c>
+    ///     run in every test in the suite — racing whatever the test arranges afterwards, and logging a
+    ///     warning of its own against the unstubbed substitute process runner, which breaks the "exactly one
+    ///     warning" assertions this harness exists to make. Tests about the pre-warm itself opt in, and
+    ///     everything else gets a deterministic session and exercises the off switch for free.
+    /// </param>
+    /// <param name="arrange">
+    ///     Runs against the two seams before the host starts, so a test that opted into the pre-warm can plant
+    ///     its solution and stub <c>jb</c> before the client's first message reaches the server.
+    /// </param>
+    public static async Task<McpPipelineHarness> StartAsync(
+        CancellationToken cancellationToken,
+        bool preWarm = false,
+        Action<FakeEnvironment, IProcessRunner>? arrange = null)
     {
         FakeEnvironment environment = new();
         var processRunner = Substitute.For<IProcessRunner>();
         CapturingLoggerProvider logs = new();
+
+        if (!preWarm) environment.SetVariable(CacheWarmer.EnableVariable, "off");
 
         // Two unidirectional pipes: client -> server and server -> client. Created before
         // WithStreamServerTransport, which constructs the server transport eagerly at registration.
@@ -104,6 +130,8 @@ internal sealed class McpPipelineHarness : IAsyncDisposable
         builder.Services.AddSingleton<JbRunner>();
         builder.Services.AddSingleton<InspectService>();
         builder.Services.AddSingleton<CleanupService>();
+        builder.Services.AddSingleton<CacheWarmer>();
+        builder.Services.AddHostedService(provider => provider.GetRequiredService<CacheWarmer>());
 
         builder.Services
             .AddMcpServer(options =>
@@ -120,14 +148,21 @@ internal sealed class McpPipelineHarness : IAsyncDisposable
             .WithPrompts<ResharperPrompts>()
             .WithResources<ResharperResources>()
             .WithGlobalCallToolFilter()
+            .WithPreWarmTrigger()
             .WithStreamServerTransport(clientToServer.Reader.AsStream(), serverToClient.Writer.AsStream());
 
         IHost host = builder.Build();
+
+        // Before the host starts, and so before the client's `initialized` can reach the server: a pre-warm
+        // test has to have its solution planted and its jb stubbed by then.
+        arrange?.Invoke(environment, processRunner);
+
         await host.StartAsync(cancellationToken);
 
         StreamClientTransport clientTransport = new(clientToServer.Writer.AsStream(), serverToClient.Reader.AsStream());
         var client = await McpClient.CreateAsync(clientTransport, cancellationToken: cancellationToken);
 
-        return new McpPipelineHarness(host, client, environment, processRunner, logs);
+        return new McpPipelineHarness(
+            host, client, environment, processRunner, logs, host.Services.GetRequiredService<CacheWarmer>());
     }
 }

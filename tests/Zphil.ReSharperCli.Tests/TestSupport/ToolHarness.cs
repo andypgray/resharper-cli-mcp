@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Zphil.ReSharperCli.Discovery;
 using Zphil.ReSharperCli.Execution;
 using Zphil.ReSharperCli.Infrastructure;
@@ -21,5 +22,23 @@ internal static class ToolHarness
         InspectService inspectService = new(jbRunner);
         CleanupService cleanupService = new(jbRunner);
         return new ResharperTools(configResolver, inspectService, cleanupService, environment);
+    }
+
+    /// <summary>
+    ///     The same graph as far as <see cref="InspectService" />, topped with the background
+    ///     <see cref="CacheWarmer" />, so its tests drive the real discovery → lock → process path rather than
+    ///     a stubbed one. The lock is private to the returned warmer: a test that needs the cache generation
+    ///     held takes the lock <em>file</em>, which is what another server process looks like anyway.
+    /// </summary>
+    public static CacheWarmer BuildCacheWarmer(
+        IProcessRunner processRunner,
+        IEnvironment environment,
+        ILogger<CacheWarmer> logger)
+    {
+        JbLocator jbLocator = new(processRunner, environment);
+        ConfigResolver configResolver = new(jbLocator, environment);
+        JbRunner jbRunner = new(processRunner, new JbRunLock());
+        InspectService inspectService = new(jbRunner);
+        return new CacheWarmer(configResolver, inspectService, environment, logger);
     }
 }

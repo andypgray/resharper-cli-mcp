@@ -177,11 +177,13 @@ internal sealed class JbRunner(IProcessRunner processRunner, JbRunLock runLock)
     /// <summary>
     ///     The last <see cref="StandardErrorTailLength" /> characters of <paramref name="standardError" />,
     ///     trailing whitespace trimmed — enough of a failed run's output to diagnose it without flooding
-    ///     the response.
+    ///     the response. A null tolerated for the same reason <see cref="JbLocator" /> tolerates a null
+    ///     standard output: a defaulted <see cref="ProcessResult" /> carries one, and the paths that quote a
+    ///     tail exist to report a failure, not to add one.
     /// </summary>
-    internal static string StandardErrorTail(string standardError)
+    internal static string StandardErrorTail(string? standardError)
     {
-        string trimmed = standardError.TrimEnd();
+        string trimmed = standardError?.TrimEnd() ?? string.Empty;
         return trimmed.Length <= StandardErrorTailLength ? trimmed : trimmed[^StandardErrorTailLength..];
     }
 }

@@ -71,6 +71,18 @@ public sealed class JbRunnerTests : IDisposable
     }
 
     [Fact]
+    public void StandardErrorTail_NoStandardErrorAtAll_IsEmptyRatherThanThrowing()
+    {
+        // Arrange & Act — a defaulted ProcessResult carries a null standard error, and the paths that quote
+        // a tail (a non-zero exit, a missing SARIF file) are already reporting a failure. Adding a
+        // NullReferenceException on top of one would replace the diagnosis with a crash.
+        string tail = JbRunner.StandardErrorTail(null);
+
+        // Assert
+        tail.ShouldBeEmpty();
+    }
+
+    [Fact]
     public async Task RunAsync_SucceedingRun_StampsTheWarmMarker()
     {
         // Arrange — a real call warms the cache generation just as thoroughly as a pre-warm does, so it has

@@ -54,7 +54,14 @@ internal sealed class JbLocator(IProcessRunner processRunner, IEnvironment envir
                 continue;
             }
 
-            JbInstallation installation = new(candidate, ParseVersion(result.StandardOutput));
+            string version = ParseVersion(result.StandardOutput);
+            if (string.IsNullOrWhiteSpace(version))
+            {
+                failures.Add($"  {candidate}: exited with code 0 but reported no version");
+                continue;
+            }
+
+            JbInstallation installation = new(candidate, version);
             _cached = installation;
             return installation;
         }
@@ -70,8 +77,15 @@ internal sealed class JbLocator(IProcessRunner processRunner, IEnvironment envir
         yield return Path.Combine(environment.HomeDirectory, ".dotnet", "tools", $"jb{extension}");
     }
 
-    private static string ParseVersion(string standardOutput)
+    /// <summary>
+    ///     The version a probe reported, or an empty string when it reported nothing usable — including the
+    ///     null a defaulted <see cref="ProcessResult" /> carries, which reaches here only through a test
+    ///     double but must read as "no version" rather than crash the whole discovery path.
+    /// </summary>
+    private static string ParseVersion(string? standardOutput)
     {
+        if (string.IsNullOrWhiteSpace(standardOutput)) return string.Empty;
+
         // Parse "Version: 2026.1.2" from the multi-line output; fall back to the trimmed whole output.
         foreach (string line in standardOutput.Split('\n'))
             if (line.StartsWith("Version:", StringComparison.Ordinal))

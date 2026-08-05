@@ -73,6 +73,44 @@ public sealed class JbLocatorTests : IDisposable
         installation.Version.ShouldBe("ReSharper CLI build 12345");
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   \n")]
+    [InlineData("Version:   \n")]
+    public async Task LocateAsync_ProbeExitsZeroWithoutAVersion_TreatsCandidateAsFailed(string? standardOutput)
+    {
+        // Arrange — jb that exits cleanly and reports nothing identifiable is not a jb worth running. The
+        // null row is the shape a defaulted ProcessResult carries, which is how this was found.
+        _processRunner
+            .RunAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns(new ProcessResult(0, standardOutput!, string.Empty));
+        JbLocator locator = new(_processRunner, _environment);
+
+        // Act
+        var exception = await Should.ThrowAsync<UserErrorException>(() => locator.LocateAsync(Ct));
+
+        // Assert
+        exception.Message.ShouldStartWith("JetBrains ReSharper CLI tools not found.");
+        exception.Message.ShouldContain("exited with code 0 but reported no version");
+    }
+
+    [Fact]
+    public async Task LocateAsync_FirstCandidateReportsNoVersion_FallsBackToNextCandidate()
+    {
+        // Arrange
+        Probe("jb").Returns(new ProcessResult(0, string.Empty, string.Empty));
+        Probe(DotnetToolsCandidate).Returns(new ProcessResult(0, VersionOutput, string.Empty));
+        JbLocator locator = new(_processRunner, _environment);
+
+        // Act
+        JbInstallation installation = await locator.LocateAsync(Ct);
+
+        // Assert
+        installation.ExecutablePath.ShouldBe(DotnetToolsCandidate);
+        installation.Version.ShouldBe("2026.1.2");
+    }
+
     [Fact]
     public async Task LocateAsync_FirstCandidateExitsNonZero_FallsBackToNextCandidate()
     {

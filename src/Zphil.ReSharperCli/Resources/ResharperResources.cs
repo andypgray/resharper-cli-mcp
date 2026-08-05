@@ -47,9 +47,9 @@ internal sealed class ResharperResources
         + "then a single .sln/.slnx in the working directory with no parent walk), why the first call is slow, "
         + "the 5-minute run cap and why calls against one solution queue, how MAX_MCP_OUTPUT_TOKENS caps "
         + "output and how a reduced result differs from a truncated one, the JB_SETTINGS_PATH, JB_CACHE_HOME, "
-        + "JB_EXTENSIONS, JB_EXTENSION_SOURCE, and RESHARPER_MCP_LOG_LEVEL variables, and where logs go. Load "
-        + "this when a call cannot find jb or the solution, times out, reports another run already in flight, "
-        + "or comes back shortened.";
+        + "JB_EXTENSIONS, JB_EXTENSION_SOURCE, RESHARPER_MCP_PREWARM, and RESHARPER_MCP_LOG_LEVEL variables, "
+        + "and where logs go. Load this when a call cannot find jb or the solution, times out, reports "
+        + "another run already in flight, or comes back shortened.";
 
     [McpServerResource(
         UriTemplate = ConfigurationGuideUri,

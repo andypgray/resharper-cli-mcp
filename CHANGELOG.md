@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-08-05
+
 ### Added
 
 - The server now warms the ReSharper cache in the background as soon as a client connects, so the cold
@@ -39,14 +41,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   last-resort backstop. `resharper_cleanup`, which has degraded this way since 1.0.2, now describes its own
   reduction per level in the same note rather than a generic one.
 
-### Changed
-
-- Moved to version 2.0.0 of the MCP C# SDK, which implements the 2026-07-28 protocol revision. A client
-  that speaks it discovers the server through `server/discover` rather than the `initialize` handshake
-  and holds no session, reaching the same two tools, prompt, and guide resources with the same schemas
-  and the same argument handling. Clients on earlier revisions are unaffected: an `initialize` handshake
-  returns exactly what it returned before.
-
 ### Fixed
 
 - Two sessions working on one solution no longer make each other slow, or leave stale caches behind.
@@ -59,6 +53,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   contended rather than the server. A call waits up to 5 minutes for a run already in flight before
   starting its own 5-minute run; if that wait runs out, the error says a run against that solution is
   already going rather than starting a second one. Nothing changes when only one call is running.
+- A broken `jb` installation is no longer mistaken for a working one, and no longer stops the search.
+  An installation was accepted on the strength of its probe exiting cleanly, so one that exited 0 without
+  printing a version was adopted and then failed on the first real call; worse, one that printed nothing
+  at all ended discovery with an unhandled error rather than moving on. Both now count as a failed
+  candidate, so the search continues to the next location and, when none work, ends at the same message
+  naming everything it tried and how to install the ReSharper command line tools.
+
+## [1.1.1] - 2026-08-01
+
+### Changed
+
+- Moved to version 2.0.0 of the MCP C# SDK, which implements the 2026-07-28 protocol revision. A client
+  that speaks it discovers the server through `server/discover` rather than the `initialize` handshake
+  and holds no session, reaching the same two tools, prompt, and guide resources with the same schemas
+  and the same argument handling. Clients on earlier revisions are unaffected: an `initialize` handshake
+  returns exactly what it returned before.
 
 ## [1.1.0] - 2026-07-27
 
@@ -188,7 +198,8 @@ Unofficial; not affiliated with or endorsed by JetBrains.
 - Ships as a .NET global tool and MCP server (`PackAsTool` + `PackageType=McpServer`), published to
   NuGet with SLSA build provenance and registered on the MCP registry.
 
-[Unreleased]: https://github.com/andypgray/resharper-cli-mcp/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/andypgray/resharper-cli-mcp/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/andypgray/resharper-cli-mcp/releases/tag/v1.2.0
 [1.1.1]: https://github.com/andypgray/resharper-cli-mcp/releases/tag/v1.1.1
 [1.1.0]: https://github.com/andypgray/resharper-cli-mcp/releases/tag/v1.1.0
 [1.0.2]: https://github.com/andypgray/resharper-cli-mcp/releases/tag/v1.0.2

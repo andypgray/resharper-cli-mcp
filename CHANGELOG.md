@@ -26,6 +26,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   case, `JB_SETTINGS_PATH` naming a file that does not exist, drops the settings from the run entirely and
   so is reported by both tools. The warning is charged to the output budget before the result is rendered,
   so it survives every step of detail reduction and the total stays within budget as before.
+- A `files` element that joins several paths — `["a.cs, b.cs"]` where `["a.cs", "b.cs"]` was meant — now
+  works on both tools instead of throwing the call away. It is a mistake the array parameter invites, and it
+  failed in two different ways: `resharper_cleanup` rejected the joined string as a file that does not exist,
+  while `resharper_inspect` handed it to `jb` as one pattern, matched nothing, and reported "No issues
+  found." — a clean bill of health for a scan that never looked at the files asked for. Elements are now
+  split on `;` and `,` at the tool edge, with surrounding whitespace trimmed. An element that names a file
+  that really is on disk is never reinterpreted, so a legitimate `Foo,Bar.cs` still cleans up and splitting
+  can only rescue a call that was otherwise certain to fail; and when a fragment does not exist, the error
+  names that fragment rather than the whole joined string.
 
 ## [1.2.0] - 2026-08-05
 

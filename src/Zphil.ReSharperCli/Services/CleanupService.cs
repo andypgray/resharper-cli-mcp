@@ -24,7 +24,7 @@ internal sealed class CleanupService(JbRunner jbRunner)
     {
         // This tool mutates files in place, so verify concrete paths exist before invoking jb — a typo
         // should fail fast and name the offending path, not silently clean up nothing.
-        string solutionDirectory = Path.GetDirectoryName(config.SolutionPath)!;
+        string solutionDirectory = config.SolutionDirectory;
         var missing = FindMissingFiles(files, solutionDirectory);
         if (missing.Count > 0)
             throw new UserErrorException(
@@ -90,8 +90,7 @@ internal sealed class CleanupService(JbRunner jbRunner)
         {
             if (IsPattern(entry)) continue;
 
-            string resolved = Path.GetFullPath(entry, solutionDirectory);
-            if (!File.Exists(resolved)) missing.Add(entry);
+            if (!FilePathList.ResolvesToExistingFile(entry, solutionDirectory)) missing.Add(entry);
         }
 
         return missing;

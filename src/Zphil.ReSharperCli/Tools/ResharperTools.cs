@@ -37,6 +37,9 @@ internal sealed class ResharperTools(
     private const string SolutionPathDescription =
         "Path to the .sln/.slnx to run against. Overrides JB_SOLUTION_PATH and working-directory discovery.";
 
+    private const string JoinedPathsNote =
+        " An element joining several paths with ; or , is split into separate paths.";
+
     [McpServerTool(
         Name = InspectToolName,
         Title = "ReSharper Inspect Code",
@@ -46,7 +49,9 @@ internal sealed class ResharperTools(
         OpenWorld = false)]
     [Description(InspectDescription)]
     public async Task<string> InspectAsync(
-        [Description("Ant-style globs scoping the analysis to specific files, for example src/**/*.cs.")]
+        [Description(
+            "Ant-style globs scoping the analysis to specific files, for example src/**/*.cs."
+            + JoinedPathsNote)]
         string[]? files = null,
         [Description(
             "Minimum severity to report. Error is ReSharper's compilation-error level, not a tier of "
@@ -62,10 +67,14 @@ internal sealed class ResharperTools(
 
         ResolvedConfig config = await configResolver.ResolveAsync(solutionPath, cancellationToken);
 
+        // An entry joining several paths would reach jb as one --include pattern that matches nothing, and
+        // this tool would report "No issues found." for a scan that never looked at the files asked for.
+        var scope = FilePathList.Split(files, config.SolutionDirectory);
+
         // Widened from the service's List<T> so ProgressiveRenderer's T infers to the formatter's own
         // parameter type.
         IReadOnlyList<InspectIssue> issues =
-            await inspectService.RunAsync(config, files, cliSeverity, cancellationToken);
+            await inspectService.RunAsync(config, scope, cliSeverity, cancellationToken);
 
         // Render at the highest DetailLevel that fits the client's output budget: a scoped scan fits at
         // Full (today's per-issue listing), while a solution-wide run collapses repeated rules rather than
@@ -95,7 +104,8 @@ internal sealed class ResharperTools(
         [Description(
             "File paths to clean up, relative to the solution root or absolute. Wildcards are allowed and "
             + "expanded by jb; a non-wildcard path that does not exist fails the whole call before anything "
-            + "is rewritten.")]
+            + "is rewritten."
+            + JoinedPathsNote)]
         string[] files,
         [Description("ReSharper cleanup profile name. Defaults to the profile the solution declares, else full cleanup.")]
         string? profile = null,
@@ -113,6 +123,12 @@ internal sealed class ResharperTools(
 
         ResolvedConfig config = await configResolver.ResolveAsync(solutionPath, cancellationToken);
 
+        // Splitting an entry that joins several paths runs after the checks above, so a malformed list still
+        // reports the caller's own indices, and before the service, whose contract is an already-validated
+        // list. An entry that names a real file is never reinterpreted, so this can only rescue a call that
+        // was going to fail — the bar a tool that rewrites files has to clear.
+        var paths = FilePathList.Split(files, config.SolutionDirectory);
+
         // An unspecified profile resolves to the solution's own declared profile before the built-in
         // default, so a repo that narrowed its cleanup gets that narrowing on every call — including the
         // calls of an agent that does not know the profile exists. A blank argument reads as unspecified,
@@ -120,7 +136,7 @@ internal sealed class ResharperTools(
         string resolvedProfile = CleanupProfileReader.Normalize(profile)
                                  ?? config.CleanupProfile
                                  ?? CleanupService.DefaultProfile;
-        CleanupOutcome outcome = await cleanupService.RunAsync(config, files, resolvedProfile, cancellationToken);
+        CleanupOutcome outcome = await cleanupService.RunAsync(config, paths, resolvedProfile, cancellationToken);
 
         // Render at the highest DetailLevel that fits the client's output budget (a small batch fits at
         // Full, an unchanged plain per-file list); the GlobalCallToolFilter's truncator is the final backstop.

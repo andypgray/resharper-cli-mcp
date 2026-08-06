@@ -22,7 +22,14 @@ internal sealed record ResolvedConfig(
     string? Extensions,
     string? ExtensionSource,
     string JbExecutablePath,
-    ConfigWarnings? Warnings = null);
+    ConfigWarnings? Warnings = null)
+{
+    /// <summary>
+    ///     The directory holding the solution — the root a relative <c>files</c> entry resolves against.
+    ///     <see cref="SolutionPath" /> is always a resolved path to an existing file, so it always has one.
+    /// </summary>
+    public string SolutionDirectory => Path.GetDirectoryName(SolutionPath)!;
+}
 
 /// <summary>
 ///     Resolves the <see cref="ResolvedConfig" /> for a request: verifies <c>jb</c> is installed, then

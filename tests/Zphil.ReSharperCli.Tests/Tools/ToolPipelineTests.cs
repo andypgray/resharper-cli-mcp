@@ -106,6 +106,77 @@ public sealed class ToolPipelineTests
     }
 
     [Fact]
+    public async Task CleanupAsync_EntryJoiningSeveralPaths_IsSplitIntoSeparatePaths()
+    {
+        // Arrange — the measured caller mistake: several paths joined into one array element. It used to fail
+        // the whole call as a missing file, wasting a round trip on a list every path of which is real.
+        using FakeEnvironment environment = new();
+        PlantSolution(environment, "App.sln");
+        PlantFile(environment, "src/A.cs");
+        PlantFile(environment, "src/B.cs");
+        List<string>? cleanupArguments = null;
+        StubJb(onCleanup: args => cleanupArguments = [.. args]);
+        ResharperTools tools = ToolHarness.Build(_processRunner, environment);
+
+        // Act
+        string result = await tools.CleanupAsync(["src/A.cs, src/B.cs"], cancellationToken: Ct);
+
+        // Assert — jb is asked to clean both files, and both are classified and reported.
+        cleanupArguments.ShouldNotBeNull();
+        cleanupArguments.ShouldContain("--include=src/A.cs;src/B.cs");
+        result.ShouldBe(
+            "Cleanup completed with profile \"Built-in: Full Cleanup\". 0 of 2 file(s) changed on disk:\n"
+            + "  - src/A.cs (unchanged)\n"
+            + "  - src/B.cs (unchanged)");
+    }
+
+    [Fact]
+    public async Task InspectAsync_EntryJoiningSeveralGlobs_IsSplitIntoSeparatePatterns()
+    {
+        // Arrange — the same mistake is worse here: the joined string reaches jb as one pattern that matches
+        // nothing, and the tool reports "No issues found." for a scan that never looked at the files asked for.
+        using FakeEnvironment environment = new();
+        PlantSolution(environment, "App.sln");
+        List<string>? inspectArguments = null;
+        StubJb(
+            Fixtures.ReadSarif("inspect-sample.json"),
+            args => inspectArguments = [.. args]);
+        ResharperTools tools = ToolHarness.Build(_processRunner, environment);
+
+        // Act
+        await tools.InspectAsync(["src/**/*.cs,tests/**/*.cs"], cancellationToken: Ct);
+
+        // Assert — jb's own separator is ";", so the two patterns arrive as two.
+        inspectArguments.ShouldNotBeNull();
+        inspectArguments.ShouldContain("--include=src/**/*.cs;tests/**/*.cs");
+    }
+
+    [Fact]
+    public async Task CleanupAsync_JoinedEntryWithAMissingFragment_NamesTheFragmentAndDoesNotRunJb()
+    {
+        // Arrange — splitting must not blur which path is wrong: the error names the fragment that does not
+        // exist, not the joined string the caller sent, and nothing is rewritten.
+        using FakeEnvironment environment = new();
+        PlantSolution(environment, "App.sln");
+        PlantFile(environment, "src/A.cs");
+        StubJb();
+        ResharperTools tools = ToolHarness.Build(_processRunner, environment);
+
+        // Act
+        var exception = await Should.ThrowAsync<UserErrorException>(() => tools.CleanupAsync(["src/A.cs,src/Missing.cs"], cancellationToken: Ct));
+
+        // Assert
+        exception.Message.ShouldContain("The following files were not found");
+        exception.Message.ShouldContain("- src/Missing.cs");
+        exception.Message.ShouldNotContain("src/A.cs,src/Missing.cs");
+        await _processRunner.DidNotReceive().RunAsync(
+            Arg.Any<string>(),
+            Arg.Is<IReadOnlyList<string>>(args => args != null && args.Count > 0 && args[0] == "cleanupcode"),
+            Arg.Any<TimeSpan>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task CleanupAsync_SolutionDeclaresProfileAndCallerOmitsOne_UsesTheDeclaredProfile()
     {
         // Arrange — the whole point of the declared profile: a caller that does not know it exists still
@@ -370,7 +441,10 @@ public sealed class ToolPipelineTests
     ///     inspectcode run (which writes <paramref name="inspectSarif" /> to its <c>-o=</c> path), or a
     ///     cleanupcode run. All succeed with exit code 0.
     /// </summary>
-    private void StubJb(string inspectSarif = "", Action<IReadOnlyList<string>>? onInspect = null)
+    private void StubJb(
+        string inspectSarif = "",
+        Action<IReadOnlyList<string>>? onInspect = null,
+        Action<IReadOnlyList<string>>? onCleanup = null)
     {
         _processRunner
             .RunAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
@@ -389,6 +463,8 @@ public sealed class ToolPipelineTests
                 onInspect?.Invoke(arguments);
                 File.WriteAllText(OutputPathFrom(arguments), inspectSarif);
             }
+
+            if (arguments.Count > 0 && arguments[0] == "cleanupcode") onCleanup?.Invoke(arguments);
 
             return new ProcessResult(0, string.Empty, string.Empty);
         }

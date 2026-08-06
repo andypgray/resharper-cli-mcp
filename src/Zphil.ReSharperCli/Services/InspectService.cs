@@ -18,18 +18,16 @@ internal sealed class InspectService(JbRunner jbRunner)
     ///     no real call opens and the whole feature would silently do nothing, with no signal. An identical
     ///     argument list to the commonest real call removes the question, and a test pins the two together.
     /// </summary>
-    internal const string WarmUpSeverity = "WARNING";
+    internal const InspectSeverity WarmUpSeverity = InspectSeverity.Warning;
 
-    public async Task<List<InspectIssue>> RunAsync(
+    public async Task<IReadOnlyList<InspectIssue>> RunAsync(
         ResolvedConfig config,
         IReadOnlyList<string>? files,
-        string severity,
+        InspectSeverity severity,
         CancellationToken cancellationToken)
     {
-        DirectoryInfo tempDirectory = Directory.CreateTempSubdirectory("resharper-inspect-");
-        try
+        return await WithSarifScratchAsync("resharper-inspect-", async outputFile =>
         {
-            string outputFile = Path.Combine(tempDirectory.FullName, "results.json");
             var arguments = BuildArguments(config, outputFile, files, severity);
 
             ProcessResult result = await jbRunner.RunAsync(config, arguments, cancellationToken);
@@ -38,21 +36,17 @@ internal sealed class InspectService(JbRunner jbRunner)
                 throw new UserErrorException(
                     $"jb inspectcode did not produce an output file.\n{JbRunner.StandardErrorTail(result.StandardError)}");
 
-            string content = await File.ReadAllTextAsync(outputFile, cancellationToken);
             try
             {
-                return SarifParser.Parse(content);
+                await using FileStream sarif = File.OpenRead(outputFile);
+                return (IReadOnlyList<InspectIssue>)await SarifParser.ParseAsync(sarif, cancellationToken);
             }
             catch (JsonException ex)
             {
                 throw new UserErrorException(
                     $"jb inspectcode produced unparseable SARIF output: {ex.Message}", ex);
             }
-        }
-        finally
-        {
-            TryDelete(tempDirectory);
-        }
+        });
     }
 
     /// <summary>
@@ -70,20 +64,14 @@ internal sealed class InspectService(JbRunner jbRunner)
     ///     <em>when</em>; the warmer never sees a jb argument. Note that <c>--include</c> does not shrink jb's
     ///     work, so a warm-up is inherently a full-solution run.
     /// </remarks>
-    public async Task<ProcessResult?> WarmCacheAsync(ResolvedConfig config, CancellationToken cancellationToken)
+    public Task<ProcessResult?> WarmCacheAsync(ResolvedConfig config, CancellationToken cancellationToken)
     {
-        DirectoryInfo tempDirectory = Directory.CreateTempSubdirectory("resharper-warmup-");
-        try
+        return WithSarifScratchAsync("resharper-warmup-", outputFile =>
         {
-            string outputFile = Path.Combine(tempDirectory.FullName, "results.json");
             var arguments = BuildArguments(config, outputFile, null, WarmUpSeverity);
 
-            return await jbRunner.TryRunAsync(config, arguments, cancellationToken);
-        }
-        finally
-        {
-            TryDelete(tempDirectory);
-        }
+            return jbRunner.TryRunAsync(config, arguments, cancellationToken);
+        });
     }
 
     /// <summary>Build the <c>jb inspectcode</c> argument list. Order is pinned by tests.</summary>
@@ -91,29 +79,44 @@ internal sealed class InspectService(JbRunner jbRunner)
         ResolvedConfig config,
         string outputFile,
         IReadOnlyList<string>? files,
-        string severity)
+        InspectSeverity severity)
     {
         List<string> arguments =
         [
             "inspectcode",
             config.SolutionPath,
             $"-o={outputFile}",
-            $"--severity={severity}",
+            $"--severity={severity.ToString().ToUpperInvariant()}",
             "--swea",
             "--no-build",
-            "--absolute-paths",
-            $"--caches-home={config.CacheHome}"
+            "--absolute-paths"
         ];
 
-        if (config.SettingsPath is not null) arguments.Add($"--settings={config.SettingsPath}");
+        if (files is { Count: > 0 }) arguments.Add(JbRunner.IncludeArgument(files));
 
-        if (files is { Count: > 0 }) arguments.Add($"--include={string.Join(";", files)}");
-
-        if (!string.IsNullOrEmpty(config.Extensions)) arguments.Add($"-x={config.Extensions}");
-
-        if (!string.IsNullOrEmpty(config.ExtensionSource)) arguments.Add($"--source={config.ExtensionSource}");
+        JbRunner.AppendConfigArguments(arguments, config);
 
         return arguments;
+    }
+
+    /// <summary>
+    ///     One scratch directory per run, holding jb's <c>results.json</c>, deleted best-effort when the run
+    ///     is over. Shared by the real call and the warm-up so the output-file lifecycle cannot drift between
+    ///     them. The <paramref name="prefix" /> stays distinct per caller: the path rides jb's command line,
+    ///     which is how an operator tells a pre-warm process from a real one.
+    /// </summary>
+    private static async Task<T> WithSarifScratchAsync<T>(string prefix, Func<string, Task<T>> run)
+    {
+        DirectoryInfo tempDirectory = Directory.CreateTempSubdirectory(prefix);
+        try
+        {
+            string outputFile = Path.Combine(tempDirectory.FullName, "results.json");
+            return await run(outputFile);
+        }
+        finally
+        {
+            TryDelete(tempDirectory);
+        }
     }
 
     private static void TryDelete(DirectoryInfo directory)

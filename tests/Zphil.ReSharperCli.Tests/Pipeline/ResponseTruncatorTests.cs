@@ -12,7 +12,7 @@ public sealed class ResponseTruncatorTests
     public void ComputeMaxChars_NullValue_ReturnsDefault()
     {
         // Act
-        int result = ResponseTruncator.ComputeMaxChars(null);
+        int result = ResponseTruncator.ComputeMaxChars((string?)null);
 
         // Assert
         result.ShouldBe(25_000);
@@ -52,7 +52,7 @@ public sealed class ResponseTruncatorTests
         const string text = "short output";
 
         // Act
-        string result = ResponseTruncator.TruncateIfNeeded(text, ResharperTools.InspectToolName, 100);
+        string result = ResponseTruncator.TruncateIfNeeded(text, IssueMarkdownFormatter.NarrowingHint, 100);
 
         // Assert
         result.ShouldBe(text);
@@ -65,7 +65,7 @@ public sealed class ResponseTruncatorTests
         const string text = "line1\nline2\nline3-and-a-long-tail-past-the-cap";
 
         // Act
-        string result = ResponseTruncator.TruncateIfNeeded(text, null, 12);
+        string result = ResponseTruncator.TruncateIfNeeded(text, "", 12);
 
         // Assert
         result.ShouldStartWith("line1\nline2\n\n--- RESPONSE TRUNCATED ---");
@@ -78,7 +78,7 @@ public sealed class ResponseTruncatorTests
         const string text = "abcdefghijklmnopqrstuvwxyz";
 
         // Act
-        string result = ResponseTruncator.TruncateIfNeeded(text, null, 8);
+        string result = ResponseTruncator.TruncateIfNeeded(text, "", 8);
 
         // Assert
         result.ShouldStartWith("abcdefgh\n\n--- RESPONSE TRUNCATED ---");
@@ -91,7 +91,7 @@ public sealed class ResponseTruncatorTests
         string text = new('x', 50);
 
         // Act
-        string result = ResponseTruncator.TruncateIfNeeded(text, null, 20);
+        string result = ResponseTruncator.TruncateIfNeeded(text, "", 20);
 
         // Assert
         result.ShouldContain("--- RESPONSE TRUNCATED ---");
@@ -101,13 +101,13 @@ public sealed class ResponseTruncatorTests
     }
 
     [Fact]
-    public void TruncateIfNeeded_InspectTool_AppendsNarrowingHint()
+    public void TruncateIfNeeded_WithHint_AppendsItAfterTheFooter()
     {
         // Arrange
         string text = new('x', 50);
 
         // Act
-        string result = ResponseTruncator.TruncateIfNeeded(text, ResharperTools.InspectToolName, 20);
+        string result = ResponseTruncator.TruncateIfNeeded(text, IssueMarkdownFormatter.NarrowingHint, 20);
 
         // Assert — the verbatim spec, plus the shared-const relationship: the same remedy reaches an agent
         // from a truncation footer and from a progressive-reduction note, in one spelling.
@@ -116,16 +116,32 @@ public sealed class ResponseTruncatorTests
     }
 
     [Fact]
-    public void TruncateIfNeeded_NonInspectTool_NoNarrowingHint()
+    public void TruncateIfNeeded_EmptyHint_FooterEndsAtIncomplete()
     {
         // Arrange
         string text = new('x', 50);
 
         // Act
-        string result = ResponseTruncator.TruncateIfNeeded(text, ResharperTools.CleanupToolName, 20);
+        string result = ResponseTruncator.TruncateIfNeeded(text, "", 20);
 
         // Assert
         result.ShouldEndWith("The results above are incomplete.");
-        result.ShouldNotContain("Narrow the scan");
+    }
+
+    [Fact]
+    public void TruncationHintFor_KnownTools_MapEachToItsOwnRemedy()
+    {
+        // Assert — inspect's remedy is a narrower next scan; cleanup's is the reassurance its formatter
+        // closes every reduction note with, so a chopped report cannot read as a chopped cleanup.
+        ResharperTools.TruncationHintFor(ResharperTools.InspectToolName).ShouldBe(IssueMarkdownFormatter.NarrowingHint);
+        ResharperTools.TruncationHintFor(ResharperTools.CleanupToolName).ShouldBe(CleanupSummaryFormatter.CleanupRanInFull);
+    }
+
+    [Fact]
+    public void TruncationHintFor_UnknownTool_ReturnsEmpty()
+    {
+        // Assert
+        ResharperTools.TruncationHintFor("some_other_tool").ShouldBe("");
+        ResharperTools.TruncationHintFor(null).ShouldBe("");
     }
 }

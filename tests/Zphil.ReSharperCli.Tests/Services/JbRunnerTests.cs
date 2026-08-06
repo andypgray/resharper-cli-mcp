@@ -23,12 +23,13 @@ public sealed class JbRunnerTests : IDisposable
     private readonly ResolvedConfig _config;
     private readonly FakeEnvironment _environment = new();
     private readonly IProcessRunner _processRunner = Substitute.For<IProcessRunner>();
-    private readonly JbRunLock _runLock = new();
+    private readonly JbRunLock _runLock = new(JbRunner.Timeout);
     private readonly JbRunner _runner;
 
     public JbRunnerTests()
     {
-        _config = new ResolvedConfig("/sln/App.sln", null, null, _environment.CreateTempDirectory(), null, null, "jb");
+        _config = new ResolvedConfig(
+            "/sln/App.sln", null, null, _environment.CreateTempDirectory(), null, null, "jb", ConfigWarnings.None);
         _runner = new JbRunner(_processRunner, _runLock);
     }
 

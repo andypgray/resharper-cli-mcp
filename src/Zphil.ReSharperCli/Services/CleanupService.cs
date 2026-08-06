@@ -19,9 +19,18 @@ internal sealed class CleanupService(JbRunner jbRunner)
     public async Task<CleanupOutcome> RunAsync(
         ResolvedConfig config,
         IReadOnlyList<string> files,
-        string profile,
+        string? profile,
         CancellationToken cancellationToken)
     {
+        // An unspecified profile resolves to the solution's own declared profile before the built-in
+        // default, so a repo that narrowed its cleanup gets that narrowing on every call — including the
+        // calls of an agent that does not know the profile exists. A blank argument reads as unspecified,
+        // matching how a blank declared profile reads. Resolved here rather than by the caller so every
+        // entry into cleanup gets the same chain, and the profile this run reports is the one it used.
+        string resolvedProfile = CleanupProfileReader.Normalize(profile)
+                                 ?? config.CleanupProfile
+                                 ?? DefaultProfile;
+
         // This tool mutates files in place, so verify concrete paths exist before invoking jb — a typo
         // should fail fast and name the offending path, not silently clean up nothing.
         string solutionDirectory = config.SolutionDirectory;
@@ -36,9 +45,9 @@ internal sealed class CleanupService(JbRunner jbRunner)
         // stay aligned). Wildcards get no snapshot — jb expands them, so they are never a single file.
         var beforeHashes = new List<byte[]?>(files.Count);
         foreach (string entry in files)
-            beforeHashes.Add(IsPattern(entry) ? null : HashFile(Path.GetFullPath(entry, solutionDirectory)));
+            beforeHashes.Add(IsPattern(entry) ? null : HashFile(FilePathList.Resolve(entry, solutionDirectory)));
 
-        var arguments = BuildArguments(config, files, profile);
+        var arguments = BuildArguments(config, files, resolvedProfile);
 
         await jbRunner.RunAsync(config, arguments, cancellationToken);
 
@@ -48,7 +57,7 @@ internal sealed class CleanupService(JbRunner jbRunner)
         for (var i = 0; i < files.Count; i++)
             entries.Add(new CleanupEntry(files[i], Classify(files[i], beforeHashes[i], solutionDirectory)));
 
-        return new CleanupOutcome(profile, entries);
+        return new CleanupOutcome(resolvedProfile, entries);
     }
 
     /// <summary>Build the <c>jb cleanupcode</c> argument list. Order is pinned by tests.</summary>
@@ -63,15 +72,10 @@ internal sealed class CleanupService(JbRunner jbRunner)
             config.SolutionPath,
             $"--profile={profile}",
             "--no-build",
-            $"--include={string.Join(";", files)}",
-            $"--caches-home={config.CacheHome}"
+            JbRunner.IncludeArgument(files)
         ];
 
-        if (config.SettingsPath is not null) arguments.Add($"--settings={config.SettingsPath}");
-
-        if (!string.IsNullOrEmpty(config.Extensions)) arguments.Add($"-x={config.Extensions}");
-
-        if (!string.IsNullOrEmpty(config.ExtensionSource)) arguments.Add($"--source={config.ExtensionSource}");
+        JbRunner.AppendConfigArguments(arguments, config);
 
         return arguments;
     }
@@ -117,7 +121,7 @@ internal sealed class CleanupService(JbRunner jbRunner)
     {
         if (IsPattern(entry)) return CleanupFileStatus.Pattern;
 
-        byte[]? afterHash = HashFile(Path.GetFullPath(entry, solutionDirectory));
+        byte[]? afterHash = HashFile(FilePathList.Resolve(entry, solutionDirectory));
         if (beforeHash is null || afterHash is null) return CleanupFileStatus.StatusUnknown;
 
         return beforeHash.AsSpan().SequenceEqual(afterHash)

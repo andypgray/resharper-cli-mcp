@@ -11,7 +11,11 @@ namespace Zphil.ReSharperCli.Discovery;
 ///     <see cref="SettingsRead" /> means <c>jb</c> got the file and parsed it fine and only this server's
 ///     own profile lookup failed, so cleanup silently fell back to a broader profile.
 /// </summary>
-internal sealed record ConfigWarnings(string? MissingSettingsPath, SettingsReadFailure? SettingsRead);
+internal sealed record ConfigWarnings(string? MissingSettingsPath, SettingsReadFailure? SettingsRead)
+{
+    /// <summary>Nothing to report — the one spelling of "no warnings", so consumers never meet a null.</summary>
+    public static readonly ConfigWarnings None = new(null, null);
+}
 
 /// <summary>Everything needed to shell out to <c>jb</c>: the solution, optional settings, cache home, and extensions.</summary>
 internal sealed record ResolvedConfig(
@@ -22,7 +26,7 @@ internal sealed record ResolvedConfig(
     string? Extensions,
     string? ExtensionSource,
     string JbExecutablePath,
-    ConfigWarnings? Warnings = null)
+    ConfigWarnings Warnings)
 {
     /// <summary>
     ///     The directory holding the solution — the root a relative <c>files</c> entry resolves against.

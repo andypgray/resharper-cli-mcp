@@ -34,7 +34,7 @@ internal static class JbWarmMarker
     internal static string PathFor(string solutionPath, string cacheHome)
     {
         string key = JbRunLock.ComputeKey(solutionPath, cacheHome);
-        return Path.Combine(Path.GetFullPath(cacheHome), $".resharper-cli-mcp-{key}.warm");
+        return JbRunLock.SidecarPathFor(cacheHome, key, "warm");
     }
 
     /// <summary>

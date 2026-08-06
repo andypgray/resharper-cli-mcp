@@ -31,14 +31,13 @@ namespace Zphil.ReSharperCli.Execution;
 ///         is the one deliberate exception, and inverts that rule for the reason given on it.
 ///     </para>
 /// </remarks>
-internal sealed class JbRunLock(TimeSpan? maxWait = null)
+/// <param name="maxWait">
+///     How long a caller queues for a run in flight before giving up. The composition root wires it to
+///     the run cap in <see cref="Services.JbRunner" /> — one constant, so a queued call is bounded by
+///     wait + run and the two caps cannot drift apart.
+/// </param>
+internal sealed class JbRunLock(TimeSpan maxWait)
 {
-    /// <summary>
-    ///     How long a caller queues for a run in flight before giving up. Symmetric with the run cap in
-    ///     <see cref="Services.JbRunner" />, so a queued call is bounded by wait + run.
-    /// </summary>
-    private static readonly TimeSpan DefaultMaxWait = TimeSpan.FromMinutes(5);
-
     private static readonly TimeSpan RetryInterval = TimeSpan.FromMilliseconds(250);
 
     /// <summary>
@@ -48,7 +47,7 @@ internal sealed class JbRunLock(TimeSpan? maxWait = null)
     /// </summary>
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _gates = new(StringComparer.Ordinal);
 
-    private readonly TimeSpan _maxWait = maxWait ?? DefaultMaxWait;
+    private readonly TimeSpan _maxWait = maxWait;
 
     /// <summary>
     ///     Wait for exclusive use of the cache generation behind <paramref name="solutionPath" /> and
@@ -172,7 +171,17 @@ internal sealed class JbRunLock(TimeSpan? maxWait = null)
     /// </summary>
     internal static string LockFilePathFor(string cacheHome, string key)
     {
-        return Path.Combine(Path.GetFullPath(cacheHome), $".resharper-cli-mcp-{key}.lock");
+        return SidecarPathFor(cacheHome, key, "lock");
+    }
+
+    /// <summary>
+    ///     The path of a per-generation sidecar file in the cache home. One spelling of the naming scheme,
+    ///     shared with <see cref="JbWarmMarker" />, so the lock file and the warm marker always sit side by
+    ///     side under the same key — a scheme change moves both or neither.
+    /// </summary>
+    internal static string SidecarPathFor(string cacheHome, string key, string extension)
+    {
+        return Path.Combine(Path.GetFullPath(cacheHome), $".resharper-cli-mcp-{key}.{extension}");
     }
 
     /// <summary>

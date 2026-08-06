@@ -18,16 +18,6 @@ namespace Zphil.ReSharperCli.Pipeline;
 ///         </item>
 ///         <item>
 ///             <description>
-///                 <see cref="EnumArrayCoercerFactory" /> — enum-array analog of
-///                 <see cref="StringArrayCoercerFactory" />: silently coerces a stringified
-///                 array (<c>"[\"Warning\",\"Error\"]"</c>) and a bare string (<c>"Warning"</c>)
-///                 into the enum array the model intended, validating each element via
-///                 <see cref="Enum.IsDefined" /> with the same valid-values message as
-///                 <see cref="EnumValidationConverterFactory" />.
-///             </description>
-///         </item>
-///         <item>
-///             <description>
 ///                 <see cref="StringArrayCoercerFactory" /> — silently coerces stringified arrays
 ///                 (<c>"[\"A\",\"B\"]"</c>) and bare strings (<c>"A"</c>) into the
 ///                 <c>string[]</c> the model intended, instead of failing with a byte-position
@@ -58,7 +48,6 @@ internal static class ToolInputSerializerOptions
         Converters =
         {
             new EnumValidationConverterFactory(),
-            new EnumArrayCoercerFactory(),
             new StringArrayCoercerFactory(),
             new StringCoercerFactory()
         }

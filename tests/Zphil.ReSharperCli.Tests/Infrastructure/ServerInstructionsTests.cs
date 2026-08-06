@@ -3,7 +3,7 @@ using Shouldly;
 using Xunit;
 using Zphil.ReSharperCli.Infrastructure;
 using Zphil.ReSharperCli.Resources;
-using Zphil.ReSharperCli.Tools;
+using Zphil.ReSharperCli.Services;
 
 namespace Zphil.ReSharperCli.Tests.Infrastructure;
 

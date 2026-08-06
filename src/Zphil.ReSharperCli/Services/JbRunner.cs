@@ -175,6 +175,30 @@ internal sealed class JbRunner(IProcessRunner processRunner, JbRunLock runLock)
     }
 
     /// <summary>
+    ///     Append the config-derived options every <c>jb</c> subcommand takes — <c>--caches-home</c>,
+    ///     <c>--settings</c>, <c>-x</c>, <c>--source</c> — in one place. Inspect and cleanup must pass
+    ///     identical configuration to open the same cache generation, so a new axis added here reaches
+    ///     both builders at once instead of landing in one and silently missing the other. The optional
+    ///     values are null-or-meaningful by <c>ConfigResolver</c>'s contract, so presence is a null check.
+    /// </summary>
+    internal static void AppendConfigArguments(List<string> arguments, ResolvedConfig config)
+    {
+        arguments.Add($"--caches-home={config.CacheHome}");
+
+        if (config.SettingsPath is not null) arguments.Add($"--settings={config.SettingsPath}");
+
+        if (config.Extensions is not null) arguments.Add($"-x={config.Extensions}");
+
+        if (config.ExtensionSource is not null) arguments.Add($"--source={config.ExtensionSource}");
+    }
+
+    /// <summary>The <c>--include</c> flag: jb takes one argument joining the patterns with <c>;</c>.</summary>
+    internal static string IncludeArgument(IReadOnlyList<string> files)
+    {
+        return $"--include={string.Join(";", files)}";
+    }
+
+    /// <summary>
     ///     The last <see cref="StandardErrorTailLength" /> characters of <paramref name="standardError" />,
     ///     trailing whitespace trimmed — enough of a failed run's output to diagnose it without flooding
     ///     the response. A null tolerated for the same reason <see cref="JbLocator" /> tolerates a null

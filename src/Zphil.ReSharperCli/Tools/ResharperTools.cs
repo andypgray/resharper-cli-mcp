@@ -4,7 +4,6 @@ using Zphil.ReSharperCli.Discovery;
 using Zphil.ReSharperCli.Formatting;
 using Zphil.ReSharperCli.Infrastructure;
 using Zphil.ReSharperCli.Pipeline;
-using Zphil.ReSharperCli.Sarif;
 using Zphil.ReSharperCli.Services;
 
 namespace Zphil.ReSharperCli.Tools;
@@ -60,36 +59,19 @@ internal sealed class ResharperTools(
         [Description(SolutionPathDescription)] string? solutionPath = null,
         CancellationToken cancellationToken = default)
     {
-        // Validation happens at the binding layer (EnumValidationConverterFactory); here we only
-        // map the enum to jb's CLI token. --severity is a CLI-flag concern, so InspectService stays
-        // string-based and its pinned argument-order tests are untouched.
-        string cliSeverity = severity.ToString().ToUpperInvariant();
-
         ResolvedConfig config = await configResolver.ResolveAsync(solutionPath, cancellationToken);
 
         // An entry joining several paths would reach jb as one --include pattern that matches nothing, and
         // this tool would report "No issues found." for a scan that never looked at the files asked for.
         var scope = FilePathList.Split(files, config.SolutionDirectory);
 
-        // Widened from the service's List<T> so ProgressiveRenderer's T infers to the formatter's own
-        // parameter type.
-        IReadOnlyList<InspectIssue> issues =
-            await inspectService.RunAsync(config, scope, cliSeverity, cancellationToken);
+        var issues = await inspectService.RunAsync(config, scope, severity, cancellationToken);
 
-        // Render at the highest DetailLevel that fits the client's output budget: a scoped scan fits at
-        // Full (today's per-issue listing), while a solution-wide run collapses repeated rules rather than
-        // being chopped mid-list. The GlobalCallToolFilter's truncator is the final backstop. The banner
-        // leads and is charged to the budget, so it outlives every reduction step — an empty result is
-        // exactly where "no settings were applied" must not be mistaken for "nothing to report".
-        string banner = ConfigWarningBanner.ForInspect(config.Warnings);
-        int maxChars = ResponseTruncator.ComputeMaxChars(environment.GetVariable("MAX_MCP_OUTPUT_TOKENS"));
-        string body = ProgressiveRenderer.Render(
+        return RenderWithBanner(
+            ConfigWarningBanner.ForInspect(config.Warnings),
             issues,
             IssueMarkdownFormatter.Format,
-            ResponseTruncator.BudgetForBody(maxChars, banner),
             IssueMarkdownFormatter.DescribeReduction);
-
-        return banner + body;
     }
 
     [McpServerTool(
@@ -129,27 +111,53 @@ internal sealed class ResharperTools(
         // was going to fail — the bar a tool that rewrites files has to clear.
         var paths = FilePathList.Split(files, config.SolutionDirectory);
 
-        // An unspecified profile resolves to the solution's own declared profile before the built-in
-        // default, so a repo that narrowed its cleanup gets that narrowing on every call — including the
-        // calls of an agent that does not know the profile exists. A blank argument reads as unspecified,
-        // matching how a blank declared profile reads.
-        string resolvedProfile = CleanupProfileReader.Normalize(profile)
-                                 ?? config.CleanupProfile
-                                 ?? CleanupService.DefaultProfile;
-        CleanupOutcome outcome = await cleanupService.RunAsync(config, paths, resolvedProfile, cancellationToken);
+        CleanupOutcome outcome = await cleanupService.RunAsync(config, paths, profile, cancellationToken);
 
-        // Render at the highest DetailLevel that fits the client's output budget (a small batch fits at
-        // Full, an unchanged plain per-file list); the GlobalCallToolFilter's truncator is the final backstop.
-        // The banner leads and is charged to the budget so it survives every reduction step: it reports the
-        // profile the files were *not* cleaned with, and the files are already rewritten by this point.
-        string banner = ConfigWarningBanner.ForCleanup(config.Warnings);
-        int maxChars = ResponseTruncator.ComputeMaxChars(environment.GetVariable("MAX_MCP_OUTPUT_TOKENS"));
-        string body = ProgressiveRenderer.Render(
+        return RenderWithBanner(
+            ConfigWarningBanner.ForCleanup(config.Warnings),
             outcome,
             CleanupSummaryFormatter.Format,
-            ResponseTruncator.BudgetForBody(maxChars, banner),
             CleanupSummaryFormatter.DescribeReduction);
+    }
+
+    /// <summary>
+    ///     The one response-shaping tail both tools share: render <paramref name="data" /> at the highest
+    ///     <see cref="DetailLevel" /> that fits the client's output budget (the GlobalCallToolFilter's
+    ///     truncator is the final backstop), led by <paramref name="banner" />. The banner is charged to the
+    ///     budget <em>before</em> rendering, which is what puts it outside the reduction ladder: it survives
+    ///     every step down to Minimal without making truncation any likelier. Inspect must not let an empty
+    ///     result read as "nothing to report" when settings were dropped; cleanup must report the profile the
+    ///     files were <em>not</em> cleaned with once they are already rewritten.
+    /// </summary>
+    private string RenderWithBanner<T>(
+        string banner,
+        T data,
+        Func<T, DetailLevel, string> format,
+        Func<DetailLevel, string> describeReduction)
+    {
+        int maxChars = ResponseTruncator.ComputeMaxChars(environment);
+        string body = ProgressiveRenderer.Render(
+            data,
+            format,
+            ResponseTruncator.BudgetForBody(maxChars, banner),
+            describeReduction);
 
         return banner + body;
+    }
+
+    /// <summary>
+    ///     The domain remedy <c>ResponseTruncator</c> closes a hard-truncated response with, keyed by tool:
+    ///     inspect points at narrowing the next scan, cleanup at the fact that shrinking the report did not
+    ///     shrink the cleanup. Lives with the tools so the generic backstop needs no per-tool knowledge and
+    ///     a new tool contributes its hint here.
+    /// </summary>
+    internal static string TruncationHintFor(string? toolName)
+    {
+        return toolName switch
+        {
+            InspectToolName => IssueMarkdownFormatter.NarrowingHint,
+            CleanupToolName => CleanupSummaryFormatter.CleanupRanInFull,
+            _ => ""
+        };
     }
 }

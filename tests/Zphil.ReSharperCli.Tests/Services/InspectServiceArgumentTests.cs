@@ -20,7 +20,7 @@ public sealed class InspectServiceArgumentTests
     public void BuildArguments_MinimalConfig_ProducesExactFixedOrder()
     {
         // Act
-        var arguments = InspectService.BuildArguments(Config(), OutputFile, null, "WARNING");
+        var arguments = InspectService.BuildArguments(Config(), OutputFile, null, InspectSeverity.Warning);
 
         // Assert
         arguments.ShouldBe(
@@ -44,9 +44,10 @@ public sealed class InspectServiceArgumentTests
             Config("/sln/App.sln.DotSettings", "Cfg.Ext", "cfg-source"),
             OutputFile,
             ["src/A.cs", "src/B.cs"],
-            "ERROR");
+            InspectSeverity.Error);
 
-        // Assert
+        // Assert — --include precedes the shared config tail (jb is flag-order-insensitive; the pin moved
+        // when the tail was extracted so inspect and cleanup append configuration through one helper).
         arguments.ShouldBe(
         [
             "inspectcode",
@@ -56,9 +57,9 @@ public sealed class InspectServiceArgumentTests
             "--swea",
             "--no-build",
             "--absolute-paths",
+            "--include=src/A.cs;src/B.cs",
             "--caches-home=/cache",
             "--settings=/sln/App.sln.DotSettings",
-            "--include=src/A.cs;src/B.cs",
             "-x=Cfg.Ext",
             "--source=cfg-source"
         ]);
@@ -69,7 +70,7 @@ public sealed class InspectServiceArgumentTests
     {
         // Act
         var arguments = InspectService.BuildArguments(
-            Config(), OutputFile, ["A.cs", "B.cs", "C.cs"], "WARNING");
+            Config(), OutputFile, ["A.cs", "B.cs", "C.cs"], InspectSeverity.Warning);
 
         // Assert
         arguments.ShouldContain("--include=A.cs;B.cs;C.cs");
@@ -79,7 +80,7 @@ public sealed class InspectServiceArgumentTests
     public void BuildArguments_EmptyFiles_OmitsIncludeFlag()
     {
         // Act
-        var arguments = InspectService.BuildArguments(Config(), OutputFile, [], "WARNING");
+        var arguments = InspectService.BuildArguments(Config(), OutputFile, [], InspectSeverity.Warning);
 
         // Assert
         arguments.Any(a => a.StartsWith("--include", StringComparison.Ordinal)).ShouldBeFalse();
@@ -89,7 +90,7 @@ public sealed class InspectServiceArgumentTests
     public void BuildArguments_NullSettings_OmitsSettingsFlag()
     {
         // Act
-        var arguments = InspectService.BuildArguments(Config(), OutputFile, null, "WARNING");
+        var arguments = InspectService.BuildArguments(Config(), OutputFile, null, InspectSeverity.Warning);
 
         // Assert
         arguments.Any(a => a.StartsWith("--settings", StringComparison.Ordinal)).ShouldBeFalse();
@@ -100,7 +101,7 @@ public sealed class InspectServiceArgumentTests
     {
         // Act
         var arguments = InspectService.BuildArguments(
-            Config(extensions: "Cfg.Ext", extensionSource: "cfg-source"), OutputFile, null, "WARNING");
+            Config(extensions: "Cfg.Ext", extensionSource: "cfg-source"), OutputFile, null, InspectSeverity.Warning);
 
         // Assert
         arguments.ShouldContain("-x=Cfg.Ext");
@@ -120,7 +121,7 @@ public sealed class InspectServiceArgumentTests
 
         // Assert — this is the pin that keeps a pre-warm warming the generation a real call opens. If the
         // two argument lists ever diverge, the feature silently warms a cache nothing reads and says nothing.
-        InspectService.WarmUpSeverity.ShouldBe(toolDefault.ToString().ToUpperInvariant());
+        InspectService.WarmUpSeverity.ShouldBe(toolDefault);
     }
 
     [Fact]
@@ -129,7 +130,8 @@ public sealed class InspectServiceArgumentTests
         // Arrange
         using FakeEnvironment environment = new();
         ResolvedConfig config = new(
-            "/sln/App.sln", "/sln/App.sln.DotSettings", null, environment.CreateTempDirectory(), "Cfg.Ext", "cfg-source", "jb");
+            "/sln/App.sln", "/sln/App.sln.DotSettings", null, environment.CreateTempDirectory(), "Cfg.Ext", "cfg-source", "jb",
+            ConfigWarnings.None);
         var processRunner = Substitute.For<IProcessRunner>();
         IReadOnlyList<string>? captured = null;
         processRunner
@@ -139,7 +141,7 @@ public sealed class InspectServiceArgumentTests
                 captured = call.Arg<IReadOnlyList<string>>();
                 return new ProcessResult(0, string.Empty, string.Empty);
             });
-        InspectService service = new(new JbRunner(processRunner, new JbRunLock()));
+        InspectService service = new(new JbRunner(processRunner, new JbRunLock(JbRunner.Timeout)));
 
         // Act
         await service.WarmCacheAsync(config, Ct);
@@ -161,6 +163,7 @@ public sealed class InspectServiceArgumentTests
             "/cache",
             extensions,
             extensionSource,
-            "jb");
+            "jb",
+            ConfigWarnings.None);
     }
 }

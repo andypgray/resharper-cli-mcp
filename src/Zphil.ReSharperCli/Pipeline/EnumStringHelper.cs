@@ -3,8 +3,7 @@ using System.Numerics;
 namespace Zphil.ReSharperCli.Pipeline;
 
 /// <summary>
-///     Helpers for enum tool-input coercion shared by <see cref="EnumArrayCoercerFactory" /> and
-///     <see cref="EnumValidationConverterFactory" />.
+///     Helpers for enum tool-input coercion, used by <see cref="EnumValidationConverterFactory" />.
 /// </summary>
 internal static class EnumStringHelper
 {

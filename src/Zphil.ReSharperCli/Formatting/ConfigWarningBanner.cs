@@ -18,7 +18,7 @@ namespace Zphil.ReSharperCli.Formatting;
 internal static class ConfigWarningBanner
 {
     /// <summary>The banner for <c>resharper_inspect</c>: only what affects which issues are reported.</summary>
-    public static string ForInspect(ConfigWarnings? warnings)
+    public static string ForInspect(ConfigWarnings warnings)
     {
         return Build(MissingSettingsWarning(warnings));
     }
@@ -28,22 +28,22 @@ internal static class ConfigWarningBanner
     ///     server could not read — the caller has to know the declared profile was not the one applied,
     ///     because the fallback has already rewritten the code that profile existed to protect.
     /// </summary>
-    public static string ForCleanup(ConfigWarnings? warnings)
+    public static string ForCleanup(ConfigWarnings warnings)
     {
         return Build(MissingSettingsWarning(warnings), UnreadableSettingsWarning(warnings));
     }
 
-    private static string? MissingSettingsWarning(ConfigWarnings? warnings)
+    private static string? MissingSettingsWarning(ConfigWarnings warnings)
     {
-        if (warnings?.MissingSettingsPath is not { } path) return null;
+        if (warnings.MissingSettingsPath is not { } path) return null;
 
         return $"WARNING: JB_SETTINGS_PATH is set to \"{path}\" but no such file exists, so the ReSharper "
                + "settings it names were not applied to this run.";
     }
 
-    private static string? UnreadableSettingsWarning(ConfigWarnings? warnings)
+    private static string? UnreadableSettingsWarning(ConfigWarnings warnings)
     {
-        if (warnings?.SettingsRead is not { } failure) return null;
+        if (warnings.SettingsRead is not { } failure) return null;
 
         return $"WARNING: could not read ReSharper settings \"{failure.Path}\" ({SingleLine(failure.Reason)}). "
                + "Any cleanup profile the file declares was ignored, so this run may have used a broader "

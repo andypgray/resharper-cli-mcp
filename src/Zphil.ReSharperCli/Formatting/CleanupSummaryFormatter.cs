@@ -13,9 +13,12 @@ namespace Zphil.ReSharperCli.Formatting;
 /// </summary>
 internal static class CleanupSummaryFormatter
 {
-    // Closes every reduction note. A shrinking report is the one place an agent could read "less was
-    // listed" as "less was done", and the whole point of this tool is that it already rewrote the files.
-    private const string CleanupRanInFull = "The cleanup itself ran in full; only the report shrank.";
+    /// <summary>
+    ///     Closes every reduction note, and the truncation footer too (via <c>ResharperTools.TruncationHintFor</c>).
+    ///     A shrinking report is the one place an agent could read "less was listed" as "less was done", and the
+    ///     whole point of this tool is that it already rewrote the files.
+    /// </summary>
+    internal const string CleanupRanInFull = "The cleanup itself ran in full; only the report shrank.";
 
     // The order trailing collapsed counts are emitted in (lowest signal last). A category appears here only
     // when this level does not list it individually and its count is non-zero.
@@ -28,10 +31,11 @@ internal static class CleanupSummaryFormatter
 
     public static string Format(CleanupOutcome outcome, DetailLevel level)
     {
-        int changed = Count(outcome, CleanupFileStatus.Changed);
-        int unchanged = Count(outcome, CleanupFileStatus.Unchanged);
-        int unknown = Count(outcome, CleanupFileStatus.StatusUnknown);
-        int pattern = Count(outcome, CleanupFileStatus.Pattern);
+        var counts = outcome.Entries.CountBy(entry => entry.Status).ToDictionary();
+        int changed = counts.GetValueOrDefault(CleanupFileStatus.Changed);
+        int unchanged = counts.GetValueOrDefault(CleanupFileStatus.Unchanged);
+        int unknown = counts.GetValueOrDefault(CleanupFileStatus.StatusUnknown);
+        int pattern = counts.GetValueOrDefault(CleanupFileStatus.Pattern);
         int concrete = changed + unchanged + unknown;
 
         if (level == DetailLevel.Minimal)
@@ -49,7 +53,7 @@ internal static class CleanupSummaryFormatter
 
         foreach (CleanupFileStatus status in CollapseOrder)
         {
-            int count = Count(outcome, status);
+            int count = counts.GetValueOrDefault(status);
             if (!IsListed(status, level) && count > 0) lines.Add($"  ({CollapsePhrase(status, count)})");
         }
 
@@ -107,15 +111,5 @@ internal static class CleanupSummaryFormatter
             CleanupFileStatus.StatusUnknown => $"+{count} status unknown, not listed",
             _ => $"+{count} pattern(s), not listed"
         };
-    }
-
-    private static int Count(CleanupOutcome outcome, CleanupFileStatus status)
-    {
-        var count = 0;
-        foreach (CleanupEntry entry in outcome.Entries)
-            if (entry.Status == status)
-                count++;
-
-        return count;
     }
 }

@@ -3,6 +3,7 @@ using NSubstitute.Core;
 using Shouldly;
 using Xunit;
 using Zphil.ReSharperCli.Execution;
+using Zphil.ReSharperCli.Services;
 using Zphil.ReSharperCli.Tests.TestDoubles;
 using Zphil.ReSharperCli.Tests.TestSupport;
 using Zphil.ReSharperCli.Tools;

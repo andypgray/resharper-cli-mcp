@@ -21,8 +21,9 @@ public sealed class InspectServiceTests : IDisposable
     {
         // The cache home is a real directory: JbRunLock creates it and takes its lock file there, so a
         // literal like "/cache" would leave a stray folder at the drive root.
-        _config = new ResolvedConfig("/sln/App.sln", null, null, _environment.CreateTempDirectory(), null, null, "jb");
-        _service = new InspectService(new JbRunner(_processRunner, new JbRunLock()));
+        _config = new ResolvedConfig(
+            "/sln/App.sln", null, null, _environment.CreateTempDirectory(), null, null, "jb", ConfigWarnings.None);
+        _service = new InspectService(new JbRunner(_processRunner, new JbRunLock(JbRunner.Timeout)));
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -46,7 +47,7 @@ public sealed class InspectServiceTests : IDisposable
         });
 
         // Act
-        var issues = await _service.RunAsync(_config, null, "WARNING", Ct);
+        var issues = await _service.RunAsync(_config, null, InspectSeverity.Warning, Ct);
 
         // Assert
         issues.Count.ShouldBe(3);
@@ -66,7 +67,7 @@ public sealed class InspectServiceTests : IDisposable
         });
 
         // Act
-        var exception = await Should.ThrowAsync<UserErrorException>(() => _service.RunAsync(_config, null, "WARNING", Ct));
+        var exception = await Should.ThrowAsync<UserErrorException>(() => _service.RunAsync(_config, null, InspectSeverity.Warning, Ct));
 
         // Assert
         exception.Message.ShouldContain("5");
@@ -82,7 +83,7 @@ public sealed class InspectServiceTests : IDisposable
         StubRun(_ => new ProcessResult(0, string.Empty, "jb produced no output"));
 
         // Act
-        var exception = await Should.ThrowAsync<UserErrorException>(() => _service.RunAsync(_config, null, "WARNING", Ct));
+        var exception = await Should.ThrowAsync<UserErrorException>(() => _service.RunAsync(_config, null, InspectSeverity.Warning, Ct));
 
         // Assert
         exception.Message.ShouldContain("did not produce an output file");
@@ -100,7 +101,7 @@ public sealed class InspectServiceTests : IDisposable
         });
 
         // Act
-        var exception = await Should.ThrowAsync<UserErrorException>(() => _service.RunAsync(_config, null, "WARNING", Ct));
+        var exception = await Should.ThrowAsync<UserErrorException>(() => _service.RunAsync(_config, null, InspectSeverity.Warning, Ct));
 
         // Assert
         exception.Message.ShouldContain("SARIF");

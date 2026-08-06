@@ -1,17 +1,20 @@
 using Zphil.ReSharperCli.Formatting;
-using Zphil.ReSharperCli.Tools;
+using Zphil.ReSharperCli.Infrastructure;
 
 namespace Zphil.ReSharperCli.Pipeline;
 
 /// <summary>
 ///     Caps a tool response's character count so a large inspection result can't exhaust the client's
 ///     context window. Truncation cuts at the last line boundary before the cap and appends a footer
-///     saying how much was dropped, plus a tool-specific hint on how to get a smaller result. It is the
+///     saying how much was dropped, plus a caller-supplied hint on how to get a smaller result. It is the
 ///     last-resort backstop: both tools render through <see cref="ProgressiveRenderer" /> first, so a
 ///     response only reaches here when even the smallest rendering overflows.
 /// </summary>
 internal static class ResponseTruncator
 {
+    /// <summary>The client-set token budget this server's output must fit inside.</summary>
+    internal const string MaxTokensVariable = "MAX_MCP_OUTPUT_TOKENS";
+
     private const int DefaultMaxChars = 25_000;
     private const double CharsPerToken = 2.5;
 
@@ -32,6 +35,15 @@ internal static class ResponseTruncator
     }
 
     /// <summary>
+    ///     <see cref="ComputeMaxChars(string?)" /> over the <see cref="MaxTokensVariable" /> read from
+    ///     <paramref name="environment" /> — the one spelling of that lookup, shared by every call site.
+    /// </summary>
+    internal static int ComputeMaxChars(IEnvironment? environment)
+    {
+        return ComputeMaxChars(environment?.GetVariable(MaxTokensVariable));
+    }
+
+    /// <summary>
     ///     The budget left for the rendered body when <paramref name="prefix" /> is prepended to it. Charging
     ///     a warning banner to the budget before rendering is what puts it <em>outside</em>
     ///     <see cref="ProgressiveRenderer" />'s reduction ladder: it survives every step down to
@@ -48,9 +60,11 @@ internal static class ResponseTruncator
 
     /// <summary>
     ///     Returns <paramref name="text" /> unchanged when it fits within <paramref name="maxChars" />;
-    ///     otherwise returns a truncated copy with a "RESPONSE TRUNCATED" footer.
+    ///     otherwise returns a truncated copy with a "RESPONSE TRUNCATED" footer. The footer closes with
+    ///     <paramref name="hint" /> when one is given — the domain's own advice on getting a smaller
+    ///     result, which this generic backstop cannot know itself.
     /// </summary>
-    public static string TruncateIfNeeded(string text, string? toolName, int maxChars)
+    public static string TruncateIfNeeded(string text, string hint, int maxChars)
     {
         if (text.Length <= maxChars) return text;
 
@@ -59,8 +73,8 @@ internal static class ResponseTruncator
 
         string truncated = text[..cutPoint];
         int droppedChars = text.Length - cutPoint;
-        string hint = toolName == ResharperTools.InspectToolName ? $" {IssueMarkdownFormatter.NarrowingHint}" : "";
+        string suffix = hint.Length > 0 ? $" {hint}" : "";
 
-        return $"{truncated}\n\n--- RESPONSE TRUNCATED ---\nOutput was {text.Length:N0} characters, limit is {maxChars:N0} ({droppedChars:N0} characters omitted).\nThe results above are incomplete.{hint}";
+        return $"{truncated}\n\n--- RESPONSE TRUNCATED ---\nOutput was {text.Length:N0} characters, limit is {maxChars:N0} ({droppedChars:N0} characters omitted).\nThe results above are incomplete.{suffix}";
     }
 }

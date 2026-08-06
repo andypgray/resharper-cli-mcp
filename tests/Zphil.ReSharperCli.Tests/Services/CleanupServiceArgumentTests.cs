@@ -66,6 +66,7 @@ public sealed class CleanupServiceArgumentTests
             "/cache",
             extensions,
             extensionSource,
-            "jb");
+            "jb",
+            ConfigWarnings.None);
     }
 }

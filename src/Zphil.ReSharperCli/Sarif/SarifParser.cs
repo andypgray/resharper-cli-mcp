@@ -10,16 +10,38 @@ internal static class SarifParser
 {
     private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web);
 
+    /// <summary>
+    ///     Parse SARIF JSON from <paramref name="sarif" /> into structured issues (empty list if there are
+    ///     none). Deserializing straight off the stream matters at this input's scale: a solution-wide run's
+    ///     SARIF is multi-megabyte, and reading it into a string first would transiently hold the bytes, the
+    ///     UTF-16 copy, and the transcode back to UTF-8 all at once.
+    /// </summary>
+    public static async Task<List<InspectIssue>> ParseAsync(Stream sarif, CancellationToken cancellationToken)
+    {
+        var report = await JsonSerializer.DeserializeAsync<SarifReport>(sarif, Options, cancellationToken);
+
+        return ExtractIssues(report);
+    }
+
     /// <summary>Parse SARIF JSON content into structured issues (empty list if there are none).</summary>
     public static List<InspectIssue> Parse(string json)
     {
         var report = JsonSerializer.Deserialize<SarifReport>(json, Options);
 
+        return ExtractIssues(report);
+    }
+
+    private static List<InspectIssue> ExtractIssues(SarifReport? report)
+    {
+        // Issues repeat the same few hundred file URIs thousands of times; converting each distinct URI once
+        // also lets every issue in a file share one path string instance.
+        Dictionary<string, string> fileByUri = new(StringComparer.Ordinal);
+
         List<InspectIssue> issues = [];
         foreach (SarifRun run in report?.Runs ?? [])
         foreach (SarifResult result in run.Results ?? [])
         {
-            InspectIssue? issue = ParseResult(result);
+            InspectIssue? issue = ParseResult(result, fileByUri);
             if (issue is not null) issues.Add(issue);
         }
 
@@ -38,7 +60,7 @@ internal static class SarifParser
         };
     }
 
-    private static InspectIssue? ParseResult(SarifResult result)
+    private static InspectIssue? ParseResult(SarifResult result, Dictionary<string, string> fileByUri)
     {
         SarifPhysicalLocation? location = result.Locations is [{ PhysicalLocation: { } physical }, ..]
             ? physical
@@ -46,9 +68,11 @@ internal static class SarifParser
 
         if (location?.ArtifactLocation?.Uri is not { } uri) return null;
 
-        string file = uri.StartsWith("file://", StringComparison.Ordinal)
-            ? new Uri(uri).LocalPath
-            : uri;
+        if (!fileByUri.TryGetValue(uri, out string? file))
+        {
+            file = uri.StartsWith("file://", StringComparison.Ordinal) ? new Uri(uri).LocalPath : uri;
+            fileByUri[uri] = file;
+        }
 
         return new InspectIssue(
             file,

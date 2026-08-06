@@ -34,7 +34,7 @@ public sealed class ConfigWarningBannerTests
     {
         // Act — ResolvedConfig can be built without warnings (the service-level tests do), so null is a
         // shape this has to tolerate rather than throw on.
-        string banner = ConfigWarningBanner.ForInspect(null);
+        string banner = ConfigWarningBanner.ForInspect(ConfigWarnings.None);
 
         // Assert
         banner.ShouldBe("");

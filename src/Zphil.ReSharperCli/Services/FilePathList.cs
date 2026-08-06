@@ -50,8 +50,18 @@ internal static class FilePathList
     }
 
     /// <summary>
-    ///     Whether <paramref name="entry" /> names a file that exists, resolved against
-    ///     <paramref name="solutionDirectory" /> (an absolute entry ignores it). Shared with
+    ///     The absolute path <paramref name="entry" /> resolves to against
+    ///     <paramref name="solutionDirectory" /> (an absolute entry ignores it). The one spelling of the
+    ///     resolution rule — validation and cleanup's before/after hashing all resolve through here, so a
+    ///     change to how an entry maps to a file cannot leave them pointing at different paths.
+    /// </summary>
+    public static string Resolve(string entry, string solutionDirectory)
+    {
+        return Path.GetFullPath(entry, solutionDirectory);
+    }
+
+    /// <summary>
+    ///     Whether <paramref name="entry" /> names a file that exists, per <see cref="Resolve" />. Shared with
     ///     <see cref="CleanupService.FindMissingFiles" /> so the "is this a real file" rule that decides
     ///     whether to split cannot drift from the one that decides whether to fail the call.
     /// </summary>
@@ -59,7 +69,7 @@ internal static class FilePathList
     {
         try
         {
-            return File.Exists(Path.GetFullPath(entry, solutionDirectory));
+            return File.Exists(Resolve(entry, solutionDirectory));
         }
         catch (ArgumentException)
         {

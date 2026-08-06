@@ -44,9 +44,9 @@ public sealed class UnknownParameterGuardTests
         // test, forcing a matching update here and in UnknownParameterGuard.
         List<string> failures = [];
 
-        foreach (MethodInfo method in ToolAttributeDiscovery.GetToolMethods())
+        foreach ((MethodInfo method, McpServerToolAttribute attribute) in ToolAttributeDiscovery.GetToolMethods())
         {
-            if (method.GetCustomAttribute<McpServerToolAttribute>()?.Name is not { } toolName) continue;
+            if (attribute.Name is not { } toolName) continue;
 
             var arguments = method.GetParameters()
                 .Where(IsJsonBound)

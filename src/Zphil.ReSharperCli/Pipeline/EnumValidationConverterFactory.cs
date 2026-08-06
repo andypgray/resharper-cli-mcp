@@ -18,7 +18,7 @@ namespace Zphil.ReSharperCli.Pipeline;
 ///     </para>
 ///     <para>
 ///         Covers every <c>T : struct, Enum</c> in tool parameters. Today the only such parameter is
-///         <c>resharper_inspect</c>'s <c>severity</c> (<see cref="Tools.InspectSeverity" />); the factory
+///         <c>resharper_inspect</c>'s <c>severity</c> (<see cref="Services.InspectSeverity" />); the factory
 ///         is generic so any future enum parameter is validated the same way.
 ///     </para>
 /// </remarks>

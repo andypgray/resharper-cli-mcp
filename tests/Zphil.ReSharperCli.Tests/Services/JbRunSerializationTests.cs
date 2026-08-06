@@ -28,8 +28,9 @@ public sealed class JbRunSerializationTests : IDisposable
         _solutionDirectory = _environment.CurrentDirectory;
         string solutionPath = Path.Combine(_solutionDirectory, "App.sln");
         File.WriteAllText(solutionPath, string.Empty);
-        _config = new ResolvedConfig(solutionPath, null, null, _environment.CreateTempDirectory(), null, null, "jb");
-        _runner = new JbRunner(_probe, new JbRunLock());
+        _config = new ResolvedConfig(
+            solutionPath, null, null, _environment.CreateTempDirectory(), null, null, "jb", ConfigWarnings.None);
+        _runner = new JbRunner(_probe, new JbRunLock(JbRunner.Timeout));
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -47,8 +48,8 @@ public sealed class JbRunSerializationTests : IDisposable
 
         // Act
         await Task.WhenAll(
-            service.RunAsync(_config, null, "WARNING", Ct),
-            service.RunAsync(_config, null, "WARNING", Ct));
+            service.RunAsync(_config, null, InspectSeverity.Warning, Ct),
+            service.RunAsync(_config, null, InspectSeverity.Warning, Ct));
 
         // Assert
         _probe.Runs.ShouldBe(2);
@@ -81,7 +82,7 @@ public sealed class JbRunSerializationTests : IDisposable
         PlantFile("src/A.cs");
 
         // Act
-        Task inspectRun = inspect.RunAsync(_config, null, "WARNING", Ct);
+        Task inspectRun = inspect.RunAsync(_config, null, InspectSeverity.Warning, Ct);
         Task cleanupRun = cleanup.RunAsync(_config, ["src/A.cs"], CleanupService.DefaultProfile, Ct);
         await Task.WhenAll(inspectRun, cleanupRun);
 

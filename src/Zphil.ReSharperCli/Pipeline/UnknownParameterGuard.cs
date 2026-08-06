@@ -71,9 +71,9 @@ internal static class UnknownParameterGuard
     {
         Dictionary<string, ToolParamInfo> map = new(StringComparer.OrdinalIgnoreCase);
 
-        foreach (MethodInfo method in ToolAttributeDiscovery.GetToolMethods())
+        foreach ((MethodInfo method, McpServerToolAttribute attribute) in ToolAttributeDiscovery.GetToolMethods())
         {
-            if (method.GetCustomAttribute<McpServerToolAttribute>()?.Name is not { } toolName) continue;
+            if (attribute.Name is not { } toolName) continue;
 
             string[] orderedNames = method.GetParameters()
                 .Where(IsJsonBoundParameter)

@@ -2,7 +2,7 @@ using System.Text.Json;
 using Shouldly;
 using Xunit;
 using Zphil.ReSharperCli.Pipeline;
-using Zphil.ReSharperCli.Tools;
+using Zphil.ReSharperCli.Services;
 
 namespace Zphil.ReSharperCli.Tests.Pipeline;
 

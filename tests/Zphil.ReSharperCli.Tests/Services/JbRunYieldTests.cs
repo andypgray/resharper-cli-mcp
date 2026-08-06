@@ -28,7 +28,8 @@ public sealed class JbRunYieldTests : IDisposable
 
     public JbRunYieldTests()
     {
-        _config = new ResolvedConfig("/sln/App.sln", null, null, _environment.CreateTempDirectory(), null, null, "jb");
+        _config = new ResolvedConfig(
+            "/sln/App.sln", null, null, _environment.CreateTempDirectory(), null, null, "jb", ConfigWarnings.None);
 
         // A short wait cap so a regression that stopped the pre-warm yielding fails these tests promptly
         // instead of hanging them out to the five-minute production cap.

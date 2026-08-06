@@ -3,6 +3,7 @@ using Microsoft.Win32.SafeHandles;
 using Shouldly;
 using Xunit;
 using Zphil.ReSharperCli.Execution;
+using Zphil.ReSharperCli.Services;
 using Zphil.ReSharperCli.Tests.TestDoubles;
 
 namespace Zphil.ReSharperCli.Tests.Execution;
@@ -43,7 +44,7 @@ public sealed class JbRunLockTests : IDisposable
     public async Task AcquireAsync_SecondCallerInSameProcess_WaitsUntilTheFirstReleases()
     {
         // Arrange
-        JbRunLock runLock = new();
+        JbRunLock runLock = new(JbRunner.Timeout);
         IDisposable first = await runLock.AcquireAsync(SolutionPath, _cacheHome, Ct);
 
         // Act
@@ -62,7 +63,7 @@ public sealed class JbRunLockTests : IDisposable
     {
         // Arrange — a handle taken outside this JbRunLock instance, standing in for another server process.
         // Without the file half of the lock this test fails: the in-process semaphore is uncontended here.
-        JbRunLock runLock = new();
+        JbRunLock runLock = new(JbRunner.Timeout);
         FileStream otherProcess = OpenLockFileExclusively();
 
         // Act
@@ -211,9 +212,9 @@ public sealed class JbRunLockTests : IDisposable
     [Fact]
     public async Task TryAcquire_LockFileHeldByAnotherProcess_SkipsWithoutWaiting()
     {
-        // Arrange — the *default* five-minute cap on purpose. If the zero-wait were a shorter promise rather
+        // Arrange — the full five-minute run cap on purpose. If the zero-wait were a shorter promise rather
         // than structural, this test would hang instead of failing, which is the distinction worth pinning.
-        JbRunLock runLock = new();
+        JbRunLock runLock = new(JbRunner.Timeout);
         await using FileStream otherProcess = OpenLockFileExclusively();
         var waited = Stopwatch.StartNew();
 
@@ -229,7 +230,7 @@ public sealed class JbRunLockTests : IDisposable
     public async Task TryAcquire_WhileACallerInThisProcessHoldsTheLease_SkipsWithoutWaiting()
     {
         // Arrange — the in-process half: the speculative caller never queues behind a real one.
-        JbRunLock runLock = new();
+        JbRunLock runLock = new(JbRunner.Timeout);
         using IDisposable foreground = await runLock.AcquireAsync(SolutionPath, _cacheHome, Ct);
         var waited = Stopwatch.StartNew();
 
@@ -245,7 +246,7 @@ public sealed class JbRunLockTests : IDisposable
     public void TryAcquire_Granted_HoldsBothHalvesUntilDisposed()
     {
         // Arrange
-        JbRunLock runLock = new();
+        JbRunLock runLock = new(JbRunner.Timeout);
 
         // Act
         IDisposable? lease = runLock.TryAcquire(SolutionPath, _cacheHome);

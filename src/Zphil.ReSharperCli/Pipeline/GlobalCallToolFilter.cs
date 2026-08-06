@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 using Zphil.ReSharperCli.Infrastructure;
+using Zphil.ReSharperCli.Tools;
 
 namespace Zphil.ReSharperCli.Pipeline;
 
@@ -61,12 +62,11 @@ internal static class GlobalCallToolFilter
 
                 if (result.IsError is not true)
                 {
-                    int maxChars = ResponseTruncator.ComputeMaxChars(
-                        context.Server.Services?.GetService<IEnvironment>()?.GetVariable("MAX_MCP_OUTPUT_TOKENS"));
-                    string toolName = context.Params.Name;
+                    int maxChars = ResponseTruncator.ComputeMaxChars(context.Server.Services?.GetService<IEnvironment>());
+                    string hint = ResharperTools.TruncationHintFor(context.Params.Name);
                     foreach (ContentBlock contentBlock in result.Content)
                         if (contentBlock is TextContentBlock textBlock)
-                            textBlock.Text = ResponseTruncator.TruncateIfNeeded(textBlock.Text, toolName, maxChars);
+                            textBlock.Text = ResponseTruncator.TruncateIfNeeded(textBlock.Text, hint, maxChars);
                 }
 
                 return result;

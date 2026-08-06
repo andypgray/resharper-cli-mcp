@@ -45,10 +45,8 @@ internal static class CoercingToolRegistration
     /// </summary>
     public static IMcpServerBuilder WithCoercingTools(this IMcpServerBuilder builder)
     {
-        foreach (MethodInfo toolMethod in ToolAttributeDiscovery.GetToolMethods())
+        foreach ((MethodInfo toolMethod, _) in ToolAttributeDiscovery.GetToolMethods())
         {
-            if (toolMethod.GetCustomAttribute<McpServerToolAttribute>() is null) continue;
-
             Type toolType = toolMethod.DeclaringType
                             ?? throw new InvalidOperationException(
                                 $"Tool method '{toolMethod.Name}' has no declaring type.");
@@ -82,7 +80,7 @@ internal static class CoercingToolRegistration
 
     /// <summary>
     ///     Re-injects the shape the custom converters erased to <c>{}</c>, reading it back from the
-    ///     underlying CLR type: array + <c>items</c> for string/enum arrays, <c>string</c> for scalars,
+    ///     underlying CLR type: array + <c>items</c> for the string array, <c>string</c> for scalars,
     ///     and — for enum parameters — the <c>enum</c> value list. The value list is otherwise lost
     ///     entirely (the converter hides the enum from the exporter), so restoring it here is what lets
     ///     the allowed values travel in the schema rather than being duplicated into the description
@@ -94,16 +92,11 @@ internal static class CoercingToolRegistration
         if (node is JsonObject obj)
         {
             Type t = Nullable.GetUnderlyingType(context.TypeInfo.Type) ?? context.TypeInfo.Type;
-            if (t == typeof(string[]) || (t.IsArray && t.GetElementType() is { IsEnum: true }))
+            if (t == typeof(string[]))
             {
                 if (!obj.ContainsKey("type")) obj["type"] = "array";
 
-                if (!obj.ContainsKey("items"))
-                {
-                    JsonObject items = new() { ["type"] = "string" };
-                    if (t.GetElementType() is { IsEnum: true } elementType) items["enum"] = EnumNames(elementType);
-                    obj["items"] = items;
-                }
+                if (!obj.ContainsKey("items")) obj["items"] = new JsonObject { ["type"] = "string" };
             }
             else if (t.IsEnum && !obj.ContainsKey("type"))
             {

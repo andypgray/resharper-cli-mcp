@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A `.DotSettings` file that ReSharper reads happily no longer turns the declared-cleanup-profile feature
+  off. The profile a solution declares was read with a strict XML parser, and ReSharper's own settings
+  reader is more forgiving than the XML spec — most visibly about comment content, where a `--` inside
+  `<!-- … -->` is illegal XML that ReSharper and `jb` accept without complaint. One such comment in a
+  settings file meant every `resharper_cleanup` call that omitted `profile` silently applied
+  `Built-in: Full Cleanup` instead of the profile the repo had declared — measured in the field, and the
+  broader profile strips exactly the named arguments a narrowed profile is usually defined to protect. A
+  file that fails a strict parse is now retried with its comments discarded, so it reads as `jb` reads it.
+  A well-formed file takes the same path it always did and cannot be affected by the retry.
+- Configuration that was silently dropped is now reported in the tool result instead of only in a log file.
+  A settings file this server cannot read at all makes `resharper_cleanup` lead with a warning naming the
+  file and the fault: the fallback profile has already rewritten the files by the time the result is
+  rendered, so it is not something to leave in a log. `resharper_inspect` stays quiet about that one — `jb`
+  received the settings file and parses it itself, so inspection severities are unaffected. The other
+  case, `JB_SETTINGS_PATH` naming a file that does not exist, drops the settings from the run entirely and
+  so is reported by both tools. The warning is charged to the output budget before the result is rendered,
+  so it survives every step of detail reduction and the total stays within budget as before.
+
 ## [1.2.0] - 2026-08-05
 
 ### Added

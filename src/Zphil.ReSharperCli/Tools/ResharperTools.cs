@@ -69,10 +69,18 @@ internal sealed class ResharperTools(
 
         // Render at the highest DetailLevel that fits the client's output budget: a scoped scan fits at
         // Full (today's per-issue listing), while a solution-wide run collapses repeated rules rather than
-        // being chopped mid-list. The GlobalCallToolFilter's truncator is the final backstop.
+        // being chopped mid-list. The GlobalCallToolFilter's truncator is the final backstop. The banner
+        // leads and is charged to the budget, so it outlives every reduction step — an empty result is
+        // exactly where "no settings were applied" must not be mistaken for "nothing to report".
+        string banner = ConfigWarningBanner.ForInspect(config.Warnings);
         int maxChars = ResponseTruncator.ComputeMaxChars(environment.GetVariable("MAX_MCP_OUTPUT_TOKENS"));
-        return ProgressiveRenderer.Render(
-            issues, IssueMarkdownFormatter.Format, maxChars, IssueMarkdownFormatter.DescribeReduction);
+        string body = ProgressiveRenderer.Render(
+            issues,
+            IssueMarkdownFormatter.Format,
+            ResponseTruncator.BudgetForBody(maxChars, banner),
+            IssueMarkdownFormatter.DescribeReduction);
+
+        return banner + body;
     }
 
     [McpServerTool(
@@ -116,8 +124,16 @@ internal sealed class ResharperTools(
 
         // Render at the highest DetailLevel that fits the client's output budget (a small batch fits at
         // Full, an unchanged plain per-file list); the GlobalCallToolFilter's truncator is the final backstop.
+        // The banner leads and is charged to the budget so it survives every reduction step: it reports the
+        // profile the files were *not* cleaned with, and the files are already rewritten by this point.
+        string banner = ConfigWarningBanner.ForCleanup(config.Warnings);
         int maxChars = ResponseTruncator.ComputeMaxChars(environment.GetVariable("MAX_MCP_OUTPUT_TOKENS"));
-        return ProgressiveRenderer.Render(
-            outcome, CleanupSummaryFormatter.Format, maxChars, CleanupSummaryFormatter.DescribeReduction);
+        string body = ProgressiveRenderer.Render(
+            outcome,
+            CleanupSummaryFormatter.Format,
+            ResponseTruncator.BudgetForBody(maxChars, banner),
+            CleanupSummaryFormatter.DescribeReduction);
+
+        return banner + body;
     }
 }

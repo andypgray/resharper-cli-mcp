@@ -4,6 +4,7 @@ using Xunit;
 using Zphil.ReSharperCli.Discovery;
 using Zphil.ReSharperCli.Execution;
 using Zphil.ReSharperCli.Tests.TestDoubles;
+using Zphil.ReSharperCli.Tests.TestSupport;
 
 namespace Zphil.ReSharperCli.Tests.Discovery;
 
@@ -259,7 +260,7 @@ public sealed class ConfigResolverTests : IDisposable
     {
         // Arrange
         CreateSolutionInCurrentDirectory("App.sln");
-        WriteAdjacentSettings(SettingsDeclaring("House: Keep Named Arguments"));
+        WriteAdjacentSettings(DotSettingsFixtures.Declaring("House: Keep Named Arguments"));
 
         // Act
         ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
@@ -292,7 +293,7 @@ public sealed class ConfigResolverTests : IDisposable
     {
         // Arrange — a blank name would reach jb as --profile= and fail the run; it must read as "unset".
         CreateSolutionInCurrentDirectory("App.sln");
-        WriteAdjacentSettings(SettingsDeclaring("   "));
+        WriteAdjacentSettings(DotSettingsFixtures.Declaring("   "));
 
         // Act
         ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
@@ -307,7 +308,7 @@ public sealed class ConfigResolverTests : IDisposable
         // Arrange — a settings file this server cannot parse must degrade to the built-in default, not
         // fail every cleanup call.
         CreateSolutionInCurrentDirectory("App.sln");
-        WriteAdjacentSettings("<wpf:ResourceDictionary><unclosed>");
+        WriteAdjacentSettings(DotSettingsFixtures.Unparseable());
 
         // Act
         ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
@@ -315,6 +316,22 @@ public sealed class ConfigResolverTests : IDisposable
         // Assert
         config.CleanupProfile.ShouldBeNull();
         config.SettingsPath.ShouldNotBeNull(); // still passed to jb, which has its own opinion of it
+    }
+
+    [Fact]
+    public async Task ResolveAsync_SettingsDeclareProfileBehindAnIllegalComment_StillResolvesIt()
+    {
+        // Arrange — the field failure: a comment containing `--` is illegal XML but ReSharper and jb read
+        // the file happily, so rejecting it here turned the declared-profile feature off without a word.
+        CreateSolutionInCurrentDirectory("App.sln");
+        WriteAdjacentSettings(DotSettingsFixtures.DeclaringBehindIllegalComment("House: Keep Named Arguments"));
+
+        // Act
+        ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
+
+        // Assert
+        config.CleanupProfile.ShouldBe("House: Keep Named Arguments");
+        config.Warnings?.SettingsRead.ShouldBeNull(); // recovered, so there is nothing to report
     }
 
     [Fact]
@@ -340,13 +357,86 @@ public sealed class ConfigResolverTests : IDisposable
         Directory.CreateDirectory(awkwardDirectory);
         _environment.CurrentDirectory = awkwardDirectory;
         CreateSolutionInCurrentDirectory("App.sln");
-        WriteAdjacentSettings(SettingsDeclaring("House: Keep Named Arguments"));
+        WriteAdjacentSettings(DotSettingsFixtures.Declaring("House: Keep Named Arguments"));
 
         // Act
         ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
 
         // Assert
         config.CleanupProfile.ShouldBe("House: Keep Named Arguments");
+    }
+
+    // ── Warnings ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ResolveAsync_UnreadableSettingsFile_RecordsTheReadFailureAsAWarning()
+    {
+        // Arrange — the fallback to Full Cleanup rewrites the code the declared profile was protecting, so
+        // the failure has to reach the caller and not just the log.
+        CreateSolutionInCurrentDirectory("App.sln");
+        WriteAdjacentSettings(DotSettingsFixtures.Unparseable());
+
+        // Act
+        ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
+
+        // Assert
+        config.Warnings.ShouldNotBeNull();
+        config.Warnings.SettingsRead.ShouldNotBeNull();
+        config.Warnings.SettingsRead.Path.ShouldBe(config.SettingsPath);
+        config.Warnings.MissingSettingsPath.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task ResolveAsync_JbSettingsPathEnvMissing_RecordsThePathAsAWarning()
+    {
+        // Arrange
+        CreateSolutionInCurrentDirectory("App.sln");
+        string missing = Path.Combine(_environment.CurrentDirectory, "missing.DotSettings");
+        _environment.SetVariable("JB_SETTINGS_PATH", missing);
+
+        // Act
+        ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
+
+        // Assert — the value as set, matching the log line and what the user has to go and fix.
+        config.Warnings.ShouldNotBeNull();
+        config.Warnings.MissingSettingsPath.ShouldBe(missing);
+        config.Warnings.SettingsRead.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task ResolveAsync_JbSettingsPathEnvMissingButAdjacentSettingsExist_StillWarnsAboutTheEnvPath()
+    {
+        // Arrange — a bad env path does not stop the chain, so the run is configured by a file the user did
+        // not name. Silently substituting one settings file for another is still worth saying out loud.
+        CreateSolutionInCurrentDirectory("App.sln");
+        WriteAdjacentSettings(DotSettingsFixtures.Declaring("House: Keep Named Arguments"));
+        string missing = Path.Combine(_environment.CurrentDirectory, "missing.DotSettings");
+        _environment.SetVariable("JB_SETTINGS_PATH", missing);
+
+        // Act
+        ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
+
+        // Assert
+        config.SettingsPath.ShouldBe(config.SolutionPath + ".DotSettings");
+        config.CleanupProfile.ShouldBe("House: Keep Named Arguments");
+        config.Warnings.ShouldNotBeNull();
+        config.Warnings.MissingSettingsPath.ShouldBe(missing);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_EverythingResolvesCleanly_RecordsNoWarnings()
+    {
+        // Arrange
+        CreateSolutionInCurrentDirectory("App.sln");
+        WriteAdjacentSettings(DotSettingsFixtures.Declaring("House: Keep Named Arguments"));
+
+        // Act
+        ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
+
+        // Assert — the ordinary case must stay silent; a banner on every call would train an agent to skip it.
+        config.Warnings.ShouldNotBeNull();
+        config.Warnings.MissingSettingsPath.ShouldBeNull();
+        config.Warnings.SettingsRead.ShouldBeNull();
     }
 
     // ── Cache home + extensions ───────────────────────────────────────────────
@@ -449,7 +539,7 @@ public sealed class ConfigResolverTests : IDisposable
         ResolvedConfig before = await _resolver.ResolveAsync(null, Ct);
         before.CleanupProfile.ShouldBeNull();
 
-        WriteAdjacentSettings(SettingsDeclaring("House: Keep Named Arguments"));
+        WriteAdjacentSettings(DotSettingsFixtures.Declaring("House: Keep Named Arguments"));
 
         // Act
         ResolvedConfig after = await _resolver.ResolveAsync(null, Ct);
@@ -499,15 +589,6 @@ public sealed class ConfigResolverTests : IDisposable
     private void WriteAdjacentSettings(string content)
     {
         File.WriteAllText(Path.Combine(_environment.CurrentDirectory, "App.sln.DotSettings"), content);
-    }
-
-    private static string SettingsDeclaring(string profileName)
-    {
-        return $"""
-                <wpf:ResourceDictionary xml:space="preserve" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:s="clr-namespace:System;assembly=mscorlib" xmlns:wpf="http://schemas.microsoft.com/winfx/2006/xaml/presentation">
-                	<s:String x:Key="/Default/CodeStyle/CodeCleanup/SilentCleanupProfile/@EntryValue">{profileName}</s:String>
-                </wpf:ResourceDictionary>
-                """;
     }
 
     private string CreateSolutionInCurrentDirectory(string fileName)

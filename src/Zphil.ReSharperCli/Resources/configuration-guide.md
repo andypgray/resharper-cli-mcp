@@ -113,6 +113,16 @@ so a profile you declare now governs the next `resharper_cleanup` — no server 
 `jb cleanupcode` does **not** read that key: a direct CLI run always defaults to Full Cleanup and needs an
 explicit `--profile`.
 
+**If step 2 cannot be read, the cleanup result says so.** ReSharper's settings reader is more forgiving than
+the XML spec — most visibly about comment content, where a `--` inside `<!-- … -->` is illegal XML that
+ReSharper reads without complaint — so this server tolerates the same thing rather than losing a profile
+`jb` itself would have honored. When a settings file is broken past that, the `resharper_cleanup` result
+leads with a `WARNING:` naming the file and the fault, because the fallback to `Built-in: Full Cleanup` has
+already rewritten the code the declared profile existed to protect. `resharper_inspect` stays quiet about
+it: `jb` still received `--settings` and parses that file perfectly well, so inspection severities are
+unaffected. The other warning — `JB_SETTINGS_PATH` naming a file that does not exist — appears on **both**
+tools, since it drops the settings file from the run entirely.
+
 ## What cannot be configured here
 
 The trailing newline at end of file is an **editorconfig-only** knob: `insert_final_newline` is an

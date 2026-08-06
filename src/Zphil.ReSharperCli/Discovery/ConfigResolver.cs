@@ -3,6 +3,16 @@ using Zphil.ReSharperCli.Infrastructure;
 
 namespace Zphil.ReSharperCli.Discovery;
 
+/// <summary>
+///     What went wrong while resolving configuration, in a form a tool can report rather than only log.
+///     Neither of these fails a call — both degrade it silently, which is exactly why they have to be said
+///     out loud, and their blast radii differ: <see cref="MissingSettingsPath" /> means the settings file
+///     the user named was never applied, taking inspection severities and cleanup profiles with it, while
+///     <see cref="SettingsRead" /> means <c>jb</c> got the file and parsed it fine and only this server's
+///     own profile lookup failed, so cleanup silently fell back to a broader profile.
+/// </summary>
+internal sealed record ConfigWarnings(string? MissingSettingsPath, SettingsReadFailure? SettingsRead);
+
 /// <summary>Everything needed to shell out to <c>jb</c>: the solution, optional settings, cache home, and extensions.</summary>
 internal sealed record ResolvedConfig(
     string SolutionPath,
@@ -11,7 +21,8 @@ internal sealed record ResolvedConfig(
     string CacheHome,
     string? Extensions,
     string? ExtensionSource,
-    string JbExecutablePath);
+    string JbExecutablePath,
+    ConfigWarnings? Warnings = null);
 
 /// <summary>
 ///     Resolves the <see cref="ResolvedConfig" /> for a request: verifies <c>jb</c> is installed, then
@@ -33,16 +44,18 @@ internal sealed class ConfigResolver(JbLocator jbLocator, IEnvironment environme
         // jb first, then the solution: a missing toolchain surfaces before any solution-discovery error.
         JbInstallation installation = await jbLocator.LocateAsync(cancellationToken);
         string solutionPath = ResolveSolutionPath(solutionPathOverride);
-        string? settingsPath = ResolveSettingsPath(solutionPath);
+        SettingsResolution settings = ResolveSettingsPath(solutionPath);
+        DeclaredCleanupProfile declaredProfile = CleanupProfileReader.Read(settings.Path);
 
         return new ResolvedConfig(
             solutionPath,
-            settingsPath,
-            CleanupProfileReader.Read(settingsPath),
+            settings.Path,
+            declaredProfile.Name,
             ResolveCacheHome(),
             EmptyToNull(environment.GetVariable("JB_EXTENSIONS")),
             EmptyToNull(environment.GetVariable("JB_EXTENSION_SOURCE")),
-            installation.ExecutablePath);
+            installation.ExecutablePath,
+            new ConfigWarnings(settings.MissingEnvPath, declaredProfile.Failure));
     }
 
     private string ResolveSolutionPath(string? solutionPathOverride)
@@ -90,27 +103,31 @@ internal sealed class ConfigResolver(JbLocator jbLocator, IEnvironment environme
             + "Set the JB_SOLUTION_PATH environment variable to specify which one to use.");
     }
 
-    private string? ResolveSettingsPath(string solutionPath)
+    private SettingsResolution ResolveSettingsPath(string solutionPath)
     {
+        string? missingEnvPath = null;
+
         string? envPath = environment.GetVariable("JB_SETTINGS_PATH");
         if (!string.IsNullOrEmpty(envPath))
         {
             string resolved = Path.GetFullPath(envPath, environment.CurrentDirectory);
-            if (File.Exists(resolved)) return resolved;
+            if (File.Exists(resolved)) return new SettingsResolution(resolved, null);
 
-            // Never throw on a bad settings path — warn and fall through to the other sources.
+            // Never throw on a bad settings path — warn and fall through to the other sources. Recorded as
+            // well as logged: it silently drops both configuration axes, so the caller has to be told.
             Log.Warning("JB_SETTINGS_PATH is set to \"{EnvPath}\" but the file does not exist. Skipping.", envPath);
+            missingEnvPath = envPath;
         }
 
         // Project-level {solution}.DotSettings next to the solution file.
         string solutionSettings = solutionPath + ".DotSettings";
-        if (File.Exists(solutionSettings)) return solutionSettings;
+        if (File.Exists(solutionSettings)) return new SettingsResolution(solutionSettings, missingEnvPath);
 
         // OS-specific JetBrains shared settings.
         string globalSettings = Path.Combine(SharedSettingsDirectory(), "GlobalSettingsStorage.DotSettings");
-        if (File.Exists(globalSettings)) return globalSettings;
+        if (File.Exists(globalSettings)) return new SettingsResolution(globalSettings, missingEnvPath);
 
-        return null;
+        return new SettingsResolution(null, missingEnvPath);
     }
 
     private string SharedSettingsDirectory()
@@ -147,4 +164,11 @@ internal sealed class ConfigResolver(JbLocator jbLocator, IEnvironment environme
     {
         return string.IsNullOrEmpty(value) ? null : value;
     }
+
+    /// <summary>
+    ///     The settings file the chain landed on, plus the <c>JB_SETTINGS_PATH</c> value that named a file
+    ///     that does not exist. Both travel together because a bad env path does not stop the chain: it can
+    ///     fall through to an adjacent or shared settings file, and the caller is owed the warning either way.
+    /// </summary>
+    private sealed record SettingsResolution(string? Path, string? MissingEnvPath);
 }

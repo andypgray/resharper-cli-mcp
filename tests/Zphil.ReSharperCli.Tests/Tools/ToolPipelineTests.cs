@@ -197,6 +197,138 @@ public sealed class ToolPipelineTests
     }
 
     [Fact]
+    public async Task CleanupAsync_SettingsDeclareProfileBehindAnIllegalComment_AppliesItAndSaysNothing()
+    {
+        // Arrange — end to end over the field failure: `--` inside a comment is illegal XML, so this file
+        // used to resolve no profile at all and silently clean up with Full Cleanup instead.
+        using FakeEnvironment environment = new();
+        PlantSolution(environment, "App.sln");
+        PlantSettings(environment, DotSettingsFixtures.DeclaringBehindIllegalComment("House: Keep Named Arguments"));
+        PlantFile(environment, "src/A.cs");
+        StubJb();
+        ResharperTools tools = ToolHarness.Build(_processRunner, environment);
+
+        // Act
+        string result = await tools.CleanupAsync(["src/A.cs"], cancellationToken: Ct);
+
+        // Assert — recovered, so the caller gets the profile and no warning about it.
+        result.ShouldStartWith("Cleanup completed with profile \"House: Keep Named Arguments\".");
+        result.ShouldNotContain("WARNING:");
+    }
+
+    [Fact]
+    public async Task CleanupAsync_UnreadableSettings_LeadsWithAWarningBeforeTheSummary()
+    {
+        // Arrange — the destructive case. The files are already rewritten by the time this is rendered, and
+        // they were rewritten with a broader profile than the solution declares, so the result has to say so
+        // rather than leaving it in a log nobody reads.
+        using FakeEnvironment environment = new();
+        PlantSolution(environment, "App.sln");
+        PlantSettings(environment, DotSettingsFixtures.Unparseable());
+        PlantFile(environment, "src/A.cs");
+        StubJb();
+        ResharperTools tools = ToolHarness.Build(_processRunner, environment);
+
+        // Act
+        string result = await tools.CleanupAsync(["src/A.cs"], cancellationToken: Ct);
+
+        // Assert
+        result.ShouldStartWith("WARNING: could not read ReSharper settings ");
+        result.ShouldContain("may have used a broader profile than the solution intends.");
+        result.ShouldContain("Cleanup completed with profile \"Built-in: Full Cleanup\".");
+    }
+
+    [Fact]
+    public async Task InspectAsync_UnreadableSettings_SaysNothingAboutIt()
+    {
+        // Arrange — the blast radii differ. jb still received --settings and parses that file perfectly well,
+        // so inspection severities are unaffected; only this server's own profile lookup failed. Warning here
+        // would report a consequence that does not exist.
+        using FakeEnvironment environment = new();
+        PlantSolution(environment, "App.sln");
+        PlantSettings(environment, DotSettingsFixtures.Unparseable());
+        StubJb(Fixtures.ReadSarif("inspect-sample.json"));
+        ResharperTools tools = ToolHarness.Build(_processRunner, environment);
+
+        // Act
+        string result = await tools.InspectAsync(cancellationToken: Ct);
+
+        // Assert — "WARNING" alone would match the severity label on an issue line, so this asserts on the
+        // banner's own wording.
+        result.ShouldNotContain("could not read ReSharper settings");
+        result.ShouldStartWith("Found 3 issue(s)");
+    }
+
+    [Fact]
+    public async Task InspectAsync_JbSettingsPathNamesAMissingFile_LeadsWithAWarning()
+    {
+        // Arrange — this one does reach inspect: no --settings is passed at all, so the severities the file
+        // was supposed to carry are absent. On an empty result especially, a bare "No issues found." would
+        // read as a clean bill of health for a scan that ran unconfigured.
+        using FakeEnvironment environment = new();
+        PlantSolution(environment, "App.sln");
+        string missing = Path.Combine(environment.CurrentDirectory, "missing.DotSettings");
+        environment.SetVariable("JB_SETTINGS_PATH", missing);
+        StubJb(Fixtures.ReadSarif("empty-runs.json"));
+        ResharperTools tools = ToolHarness.Build(_processRunner, environment);
+
+        // Act
+        string result = await tools.InspectAsync(cancellationToken: Ct);
+
+        // Assert
+        result.ShouldBe(
+            $"WARNING: JB_SETTINGS_PATH is set to \"{missing}\" but no such file exists, so the ReSharper "
+            + "settings it names were not applied to this run.\n\n"
+            + "No issues found.");
+    }
+
+    [Fact]
+    public async Task CleanupAsync_JbSettingsPathNamesAMissingFile_LeadsWithTheSameWarning()
+    {
+        // Arrange — the other half of the split: this failure drops both configuration axes, so both tools
+        // report it.
+        using FakeEnvironment environment = new();
+        PlantSolution(environment, "App.sln");
+        string missing = Path.Combine(environment.CurrentDirectory, "missing.DotSettings");
+        environment.SetVariable("JB_SETTINGS_PATH", missing);
+        PlantFile(environment, "src/A.cs");
+        StubJb();
+        ResharperTools tools = ToolHarness.Build(_processRunner, environment);
+
+        // Act
+        string result = await tools.CleanupAsync(["src/A.cs"], cancellationToken: Ct);
+
+        // Assert
+        result.ShouldStartWith($"WARNING: JB_SETTINGS_PATH is set to \"{missing}\"");
+        result.ShouldContain("Cleanup completed with profile \"Built-in: Full Cleanup\".");
+    }
+
+    [Fact]
+    public async Task CleanupAsync_UnreadableSettingsAndASqueezedBudget_KeepsTheWarningAndStaysWithinBudget()
+    {
+        // Arrange — the wiring the banner depends on: it is charged to the output budget before the body is
+        // rendered, so the body reduces around it instead of the pair overflowing into the truncator. A
+        // 400-token client budget is 1,000 characters, and 20 files do not list in full inside what is left.
+        using FakeEnvironment environment = new();
+        environment.SetVariable("MAX_MCP_OUTPUT_TOKENS", "400");
+        PlantSolution(environment, "App.sln");
+        PlantSettings(environment, DotSettingsFixtures.Unparseable());
+        string[] files = [.. Enumerable.Range(0, 20).Select(i => $"src/very/long/path/to/File{i:D3}.cs")];
+        foreach (string file in files) PlantFile(environment, file);
+
+        StubJb();
+        ResharperTools tools = ToolHarness.Build(_processRunner, environment);
+
+        // Act
+        string result = await tools.CleanupAsync(files, cancellationToken: Ct);
+
+        // Assert
+        result.ShouldStartWith("WARNING: could not read ReSharper settings ");
+        result.ShouldContain("--- DETAIL REDUCED ---"); // the body genuinely had to reduce
+        result.Length.ShouldBeLessThanOrEqualTo(1_000); // banner included, so the truncator never bites
+    }
+
+    [Fact]
     public async Task InspectAsync_NoSolutionInWorkingDirectory_ThrowsUserErrorMentioningJbSolutionPath()
     {
         // Arrange — the working directory is an empty temp dir, so discovery finds no solution.
@@ -218,13 +350,12 @@ public sealed class ToolPipelineTests
 
     private static void PlantSettingsDeclaringProfile(FakeEnvironment environment, string profileName)
     {
-        File.WriteAllText(
-            Path.Combine(environment.CurrentDirectory, "App.sln.DotSettings"),
-            $"""
-             <wpf:ResourceDictionary xml:space="preserve" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:s="clr-namespace:System;assembly=mscorlib" xmlns:wpf="http://schemas.microsoft.com/winfx/2006/xaml/presentation">
-             	<s:String x:Key="/Default/CodeStyle/CodeCleanup/SilentCleanupProfile/@EntryValue">{profileName}</s:String>
-             </wpf:ResourceDictionary>
-             """);
+        PlantSettings(environment, DotSettingsFixtures.Declaring(profileName));
+    }
+
+    private static void PlantSettings(FakeEnvironment environment, string content)
+    {
+        File.WriteAllText(Path.Combine(environment.CurrentDirectory, "App.sln.DotSettings"), content);
     }
 
     private static void PlantFile(FakeEnvironment environment, string relativePath)

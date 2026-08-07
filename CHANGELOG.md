@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-08-07
+
 ### Fixed
 
 - A `.DotSettings` file that ReSharper reads happily no longer turns the declared-cleanup-profile feature
@@ -227,7 +229,8 @@ Unofficial; not affiliated with or endorsed by JetBrains.
 - Ships as a .NET global tool and MCP server (`PackAsTool` + `PackageType=McpServer`), published to
   NuGet with SLSA build provenance and registered on the MCP registry.
 
-[Unreleased]: https://github.com/andypgray/resharper-cli-mcp/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/andypgray/resharper-cli-mcp/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/andypgray/resharper-cli-mcp/releases/tag/v1.2.1
 [1.2.0]: https://github.com/andypgray/resharper-cli-mcp/releases/tag/v1.2.0
 [1.1.1]: https://github.com/andypgray/resharper-cli-mcp/releases/tag/v1.1.1
 [1.1.0]: https://github.com/andypgray/resharper-cli-mcp/releases/tag/v1.1.0

@@ -37,7 +37,7 @@ VS Code and Cursor users can add the server in one click, once both tools are in
 
 ## Install as a Claude Code plugin
 
-Claude Code users can install everything in one step instead of editing `.mcp.json` by hand. This repository doubles as a single-plugin marketplace, so the two tools, the `derive_style_guide` prompt, and both guide resources — `resharper://guides/configuration` for what ReSharper enforces and `resharper://guides/setup` for running the server — arrive together:
+Claude Code users can install everything in one step instead of editing `.mcp.json` by hand. This repository doubles as a single-plugin marketplace, so the tools, the `derive_style_guide` prompt, and both guide resources — `resharper://guides/configuration` for what ReSharper enforces and `resharper://guides/setup` for running the server — arrive together:
 
 ```
 /plugin marketplace add andypgray/resharper-cli-mcp
@@ -52,6 +52,7 @@ The plugin starts the server with `dotnet dnx`, which fetches `Zphil.ReSharperCl
 |---|---|---|
 | `resharper_inspect` | no | Runs ReSharper InspectCode and returns the issues, grouped by file. |
 | `resharper_cleanup` | yes | Runs ReSharper CleanupCode to reformat and normalize the given files in place. |
+| `resharper_reset_cache` | no (deletes caches) | Drops the solution's ReSharper cache so the next run rebuilds its analysis from cold. |
 
 Scope `resharper_inspect` with the `files` glob and raise `severity` (`Suggestion`, `Warning`, `Error`; default `Warning`) to control how much comes back. Each issue carries a file, line, severity, rule ID, and message:
 
@@ -73,6 +74,14 @@ To spend that cold run on idle time rather than yours, the server starts one spe
 
 Calls against one solution are serialized, across every client on the machine: only one `jb` at a time can use a solution's cache, and a second one that tries silently forks a cold copy instead of waiting — so two sessions inspecting one solution would otherwise make each other slow and leave a stale cache behind. A call therefore waits up to 5 minutes for a run already in flight before starting its own 5-minute run, and says so if that wait runs out. If your MCP client's own tool-call timeout is shorter than a cold run needs, the client gives up first. In Claude Code, raise it with a per-server `"timeout"` in milliseconds in `.mcp.json`, or the `MCP_TOOL_TIMEOUT` environment variable.
 
+### When ReSharper reports errors your compiler does not
+
+ReSharper's solution-wide analysis keeps its own index in that cache, and it can miss invalidating the consumers of a declaration you reshaped. The result is `.CSharpErrors` issues — `Cannot resolve symbol 'Foo'` — in files you never edited, while the build and the tests stay green. It does not self-heal: re-running returns the identical set until the cache generation is dropped.
+
+An inspection that reports any compilation error therefore leads with a note saying so, and `resharper_reset_cache` is the cure. It deletes the solution's cache generation directories, taking the same queue lock the analysis tools take so it never deletes a cache out from under a running `jb`, and the next call rebuilds from cold. It refuses rather than guessing in one case: when the cache home holds generations for two solutions with the same file name, since `jb` names those directories with a hash of the solution path rather than the path.
+
+The ReSharper CLI exposes no cache-invalidation option of its own — `--caches-home` only chooses where caches live — which is why this operation lives in the wrapper.
+
 ## Configuration
 
 Set these in the MCP client config's `env` block. All are optional.
@@ -88,7 +97,7 @@ Set these in the MCP client config's `env` block. All are optional.
 | `RESHARPER_MCP_LOG_LEVEL` | Level for the rolling file log (default `Warning`). |
 | `MAX_MCP_OUTPUT_TOKENS` | Client output budget; caps large inspection results. |
 
-The `solutionPath` tool argument overrides `JB_SOLUTION_PATH` for a single call. When a result would exceed `MAX_MCP_OUTPUT_TOKENS` (2.5 characters per token, or 25,000 characters when unset), both tools re-render it at progressively lower detail until it fits, then append a `DETAIL REDUCED` note naming the level and what that level gave up. Inspection steps down five: every issue listed, then repeated rules collapsed per file, then only the eight most-affected files listed, then a rules-and-files rollup, then a one-line summary. Every issue is still counted and every file still named at each step — a reduced result is complete but less detailed, unlike a truncated one. Truncation at a line boundary remains only as a last-resort backstop for when even the one-line summary overflows.
+The `solutionPath` tool argument overrides `JB_SOLUTION_PATH` for a single call. When a result would exceed `MAX_MCP_OUTPUT_TOKENS` (2.5 characters per token, or 25,000 characters when unset), the two analysis tools re-render it at progressively lower detail until it fits, then append a `DETAIL REDUCED` note naming the level and what that level gave up. Inspection steps down five: every issue listed, then repeated rules collapsed per file, then only the eight most-affected files listed, then a rules-and-files rollup, then a one-line summary. Every issue is still counted and every file still named at each step — a reduced result is complete but less detailed, unlike a truncated one. Truncation at a line boundary remains only as a last-resort backstop for when even the one-line summary overflows.
 
 **Solution discovery** tries, in order: the `solutionPath` argument, then `JB_SOLUTION_PATH`, then a single `.sln`/`.slnx` in the working directory (top level only, no parent walk). Zero or several without an override is an error that names the variable to set.
 

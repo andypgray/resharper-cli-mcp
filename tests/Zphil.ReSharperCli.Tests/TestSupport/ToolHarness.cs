@@ -18,10 +18,16 @@ internal static class ToolHarness
     {
         JbLocator jbLocator = new(processRunner, environment);
         ConfigResolver configResolver = new(jbLocator, environment);
-        JbRunner jbRunner = new(processRunner, new JbRunLock(JbRunner.Timeout));
+
+        // One lock for the whole graph, exactly as the composition root registers it: a cache reset that took
+        // a lock of its own would serialize against nothing and could delete a generation mid-run.
+        JbRunLock runLock = new(JbRunner.Timeout);
+        JbRunner jbRunner = new(processRunner, runLock);
+
         InspectService inspectService = new(jbRunner);
         CleanupService cleanupService = new(jbRunner);
-        return new ResharperTools(configResolver, inspectService, cleanupService, environment);
+        CacheResetService cacheResetService = new(runLock);
+        return new ResharperTools(configResolver, inspectService, cleanupService, cacheResetService, environment);
     }
 
     /// <summary>

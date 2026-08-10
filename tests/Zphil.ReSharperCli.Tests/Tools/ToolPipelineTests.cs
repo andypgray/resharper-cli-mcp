@@ -1,3 +1,4 @@
+using System.Text.Json;
 using NSubstitute;
 using NSubstitute.Core;
 using Shouldly;
@@ -401,6 +402,107 @@ public sealed class ToolPipelineTests
     }
 
     [Fact]
+    public async Task InspectAsync_ResultCarriesCompilationErrors_LeadsWithTheStaleCacheNote()
+    {
+        // Arrange — the incident's shape reaching a real tool result: the note has to be joined onto the
+        // banner inside the tool method, or it exists and nobody ever sees it.
+        using FakeEnvironment environment = new();
+        string cacheHome = environment.CreateTempDirectory();
+        environment.SetVariable("JB_CACHE_HOME", cacheHome);
+        PlantSolution(environment, "App.sln");
+        StubJb(Fixtures.ReadSarif("inspect-phantom-errors.json"));
+        ResharperTools tools = ToolHarness.Build(_processRunner, environment);
+
+        // Act
+        string result = await tools.InspectAsync(cancellationToken: Ct);
+
+        // Assert — the discriminator, the cure, and the resolved cache home the caller could not derive.
+        result.ShouldStartWith("NOTE: 2 of these issue(s) are compilation errors (`.CSharpErrors`).");
+        result.ShouldContain(ResharperTools.ResetCacheToolName);
+        result.ShouldContain($"under \"{cacheHome}\"");
+        result.ShouldContain("Found 3 issue(s) across 2 file(s)");
+    }
+
+    [Fact]
+    public async Task InspectAsync_CompilationErrorsAndASqueezedBudget_KeepsTheNoteDownToMinimal()
+    {
+        // Arrange — the case the note exists for is a wall of phantom errors, which is exactly the result too
+        // big to render in full. Charging the note to the budget before rendering is what makes it survive
+        // every reduction step instead of vanishing at the level that fires.
+        using FakeEnvironment environment = new();
+        environment.SetVariable("MAX_MCP_OUTPUT_TOKENS", "300"); // 750 characters
+        string cacheHome = environment.CreateTempDirectory();
+        environment.SetVariable("JB_CACHE_HOME", cacheHome);
+        PlantSolution(environment, "App.sln");
+        StubJb(ManyIssuesSarif(200));
+        ResharperTools tools = ToolHarness.Build(_processRunner, environment);
+
+        // Act
+        string result = await tools.InspectAsync(cancellationToken: Ct);
+
+        // Assert — reduced all the way to the one-liner with the note whole, both ends of it. At a budget this
+        // small ResponseTruncator's MinimumBodyChars floor engages and the pair can run a few characters over
+        // the cap; that is the backstop's business, and it cuts from the tail, so the note is the last thing
+        // that could ever be lost.
+        result.ShouldStartWith("NOTE: 1 of these issue(s) are compilation errors");
+        result.ShouldContain("See the resharper://guides/setup resource.");
+        result.ShouldContain("totals, severity counts, and the top rules only.");
+        result.ShouldContain("Found 201 issue(s) across 201 file(s)");
+    }
+
+    [Fact]
+    public async Task ResetCacheAsync_SolutionWithACachedGeneration_DropsItAndReportsTheColdNextCall()
+    {
+        // Arrange — end to end through the tool method, including the discovery it shares with the other two.
+        using FakeEnvironment environment = new();
+        string cacheHome = environment.CreateTempDirectory();
+        environment.SetVariable("JB_CACHE_HOME", cacheHome);
+        PlantSolution(environment, "App.sln");
+        Directory.CreateDirectory(Path.Combine(cacheHome, "_App.1344362500.00"));
+        Directory.CreateDirectory(Path.Combine(cacheHome, "_Other.99.00"));
+        StubJb();
+        ResharperTools tools = ToolHarness.Build(_processRunner, environment);
+
+        // Act
+        string result = await tools.ResetCacheAsync(cancellationToken: Ct);
+
+        // Assert
+        result.ShouldContain("Dropped 1 ReSharper cache generation(s)");
+        result.ShouldContain("  - _App.1344362500.00");
+        result.ShouldEndWith("rebuilds the cache from cold, which can take minutes.");
+        Directory.Exists(Path.Combine(cacheHome, "_App.1344362500.00")).ShouldBeFalse();
+        Directory.Exists(Path.Combine(cacheHome, "_Other.99.00")).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task ResetCacheAsync_RunsNoJbBeyondTheVersionProbe()
+    {
+        // Arrange — a reset is a directory delete, not an analysis. Spending a cold jb run here would double
+        // the cost of the very situation the tool exists to get out of.
+        using FakeEnvironment environment = new();
+        string cacheHome = environment.CreateTempDirectory();
+        environment.SetVariable("JB_CACHE_HOME", cacheHome);
+        PlantSolution(environment, "App.sln");
+        StubJb();
+        ResharperTools tools = ToolHarness.Build(_processRunner, environment);
+
+        // Act
+        await tools.ResetCacheAsync(cancellationToken: Ct);
+
+        // Assert — the version probe (which is itself an "inspectcode" invocation) and nothing else.
+        await _processRunner.Received(1).RunAsync(
+            Arg.Any<string>(),
+            Arg.Is<IReadOnlyList<string>>(args => args != null && args.Contains("--version")),
+            Arg.Any<TimeSpan>(),
+            Arg.Any<CancellationToken>());
+        await _processRunner.DidNotReceive().RunAsync(
+            Arg.Any<string>(),
+            Arg.Is<IReadOnlyList<string>>(args => args != null && !args.Contains("--version")),
+            Arg.Any<TimeSpan>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task InspectAsync_NoSolutionInWorkingDirectory_ThrowsUserErrorMentioningJbSolutionPath()
     {
         // Arrange — the working directory is an empty temp dir, so discovery finds no solution.
@@ -468,6 +570,48 @@ public sealed class ToolPipelineTests
             if (arguments.Count > 0 && arguments[0] == "cleanupcode") onCleanup?.Invoke(arguments);
 
             return new ProcessResult(0, string.Empty, string.Empty);
+        }
+    }
+
+    /// <summary>
+    ///     A SARIF document with one compilation error and <paramref name="warnings" /> ordinary warnings, each
+    ///     in its own long-pathed file — enough files that the issue listing cannot fit a squeezed budget at
+    ///     any level above Minimal. Generated rather than a fixture: the only thing that matters about it is
+    ///     its size, and a 200-result JSON file would be unreadable to a maintainer.
+    /// </summary>
+    private static string ManyIssuesSarif(int warnings)
+    {
+        List<object> results =
+        [
+            Result("CSharpErrors", "error", "Cannot resolve symbol 'DllPath'", "src/very/long/path/to/Consumer.cs", 12)
+        ];
+
+        for (var i = 0; i < warnings; i++)
+            results.Add(Result(
+                "RedundantUsingDirective", "warning", "Using directive is not required by the code",
+                $"src/very/long/path/to/generated/File{i:D3}.cs", i + 1));
+
+        return JsonSerializer.Serialize(new { version = "2.1.0", runs = new[] { new { results } } });
+
+        static object Result(string ruleId, string level, string message, string path, int line)
+        {
+            return new
+            {
+                ruleId,
+                level,
+                message = new { text = message },
+                locations = new[]
+                {
+                    new
+                    {
+                        physicalLocation = new
+                        {
+                            artifactLocation = new { uri = $"file:///C:/work/AppSample/{path}" },
+                            region = new { startLine = line }
+                        }
+                    }
+                }
+            };
         }
     }
 

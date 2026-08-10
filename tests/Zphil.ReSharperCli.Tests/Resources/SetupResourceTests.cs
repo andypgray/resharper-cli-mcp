@@ -3,6 +3,7 @@ using Shouldly;
 using Xunit;
 using Zphil.ReSharperCli.Resources;
 using Zphil.ReSharperCli.Tests.TestSupport;
+using Zphil.ReSharperCli.Tools;
 
 namespace Zphil.ReSharperCli.Tests.Resources;
 
@@ -53,6 +54,8 @@ public sealed class SetupResourceTests
         text.ShouldContain("queue"); // why a concurrent call waits rather than forking a cold cache
         text.ShouldContain("25,000"); // the output cap when the client sets no budget
         text.ShouldContain("DETAIL REDUCED"); // the marker an agent actually sees on an over-budget result
+        text.ShouldContain("CSharpErrors"); // the rule that identifies a stale solution-wide index
+        text.ShouldContain(ResharperTools.ResetCacheToolName); // and the tool that clears it
         text.ShouldContain(ResharperResources.ConfigurationGuideUri); // the onward cross-link
     }
 

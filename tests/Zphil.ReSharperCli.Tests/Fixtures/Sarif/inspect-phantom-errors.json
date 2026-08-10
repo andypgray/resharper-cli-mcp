@@ -1,0 +1,129 @@
+{
+  "$schema": "https://schemastore.azurewebsites.net/schemas/json/sarif-2.1.0-rtm.6.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "results": [
+        {
+          "ruleId": ".CSharpErrors",
+          "ruleIndex": 0,
+          "level": "error",
+          "message": {
+            "text": "Cannot resolve symbol 'DllPath'"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///C:/work/AppSample/src/SpecConsumer.cs",
+                  "index": 0
+                },
+                "region": {
+                  "startLine": 12,
+                  "startColumn": 24,
+                  "endLine": 12,
+                  "endColumn": 31
+                }
+              }
+            }
+          ],
+          "properties": {
+            "tags": ["C#", ".NET 10.0"]
+          }
+        },
+        {
+          "ruleId": ".CSharpErrors",
+          "ruleIndex": 0,
+          "level": "error",
+          "message": {
+            "text": "Ambiguous invocation: Path.GetFileName"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///C:/work/AppSample/src/SpecConsumer.cs",
+                  "index": 0
+                },
+                "region": {
+                  "startLine": 12,
+                  "startColumn": 9,
+                  "endLine": 12,
+                  "endColumn": 23
+                }
+              }
+            }
+          ],
+          "properties": {
+            "tags": ["C#", ".NET 10.0"]
+          }
+        },
+        {
+          "ruleId": "RedundantUsingDirective",
+          "ruleIndex": 1,
+          "level": "warning",
+          "message": {
+            "text": "Using directive is not required by the code and can be safely removed"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///C:/work/AppSample/HomeController.cs",
+                  "index": 1
+                },
+                "region": {
+                  "startLine": 1,
+                  "startColumn": 1,
+                  "endLine": 1,
+                  "endColumn": 19
+                }
+              }
+            }
+          ],
+          "properties": {
+            "tags": ["C#", ".NET 10.0"]
+          }
+        }
+      ],
+      "tool": {
+        "driver": {
+          "name": "InspectCode",
+          "organization": "JetBrains, Inc",
+          "fullName": "JetBrains Inspect Code 2026.1.2",
+          "semanticVersion": "261.0.20260519.64707",
+          "informationUri": "http://www.jetbrains.com/resharper/features/command-line.html",
+          "rules": [
+            {
+              "id": ".CSharpErrors",
+              "shortDescription": {
+                "text": "Errors in C# code"
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            }
+          ]
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true
+        }
+      ],
+      "artifacts": [
+        {
+          "location": {
+            "uri": "file:///C:/work/AppSample/src/SpecConsumer.cs"
+          }
+        },
+        {
+          "location": {
+            "uri": "file:///C:/work/AppSample/HomeController.cs"
+          }
+        }
+      ],
+      "columnKind": "utf16CodeUnits"
+    }
+  ]
+}

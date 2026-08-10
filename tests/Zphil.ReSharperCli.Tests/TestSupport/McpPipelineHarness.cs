@@ -130,6 +130,7 @@ internal sealed class McpPipelineHarness : IAsyncDisposable
         builder.Services.AddSingleton<JbRunner>();
         builder.Services.AddSingleton<InspectService>();
         builder.Services.AddSingleton<CleanupService>();
+        builder.Services.AddSingleton<CacheResetService>();
         builder.Services.AddSingleton<CacheWarmer>();
         builder.Services.AddHostedService(provider => provider.GetRequiredService<CacheWarmer>());
 

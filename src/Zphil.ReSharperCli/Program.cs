@@ -40,6 +40,7 @@ builder.Services.AddSingleton(_ => new JbRunLock(JbRunner.Timeout));
 builder.Services.AddSingleton<JbRunner>();
 builder.Services.AddSingleton<InspectService>();
 builder.Services.AddSingleton<CleanupService>();
+builder.Services.AddSingleton<CacheResetService>();
 
 // The factory overload is required: the generic AddHostedService<T> would build a *second* CacheWarmer, and
 // the one whose run has to be drained at shutdown is the one the notification handler below started.

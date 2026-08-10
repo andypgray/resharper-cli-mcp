@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `resharper_reset_cache` drops the solution's ReSharper cache generations, so the next inspection or
+  cleanup rebuilds its analysis from cold. ReSharper's solution-wide index can miss invalidating the
+  consumers of a declaration you reshaped, and it then reports `Cannot resolve symbol` in files nobody
+  edited while the compiler and the test suite stay green — indefinitely, because re-running returns the
+  identical set. The ReSharper CLI exposes no cache-invalidation option of its own (`--caches-home` only
+  chooses where caches live), and this server picks that directory, so the operation belongs here. It takes
+  the same queue lock the analysis tools take, and holds it across the delete: a reset waits for a `jb` run
+  in flight rather than deleting the cache underneath it, and a run starting meanwhile waits for the reset —
+  which deleting the directories by hand cannot do. It also reclaims the cold generations a concurrent `jb`
+  forks and abandons. In one case it refuses instead of guessing: when the cache home holds generations for
+  two solutions with the same file name, `jb`'s directory names record a hash of the solution path rather
+  than the path, so the error names the candidates and leaves them alone.
+- An inspection result that contains compilation errors now leads with a note saying how to read them:
+  build the solution, and if the compiler accepts the code the index is stale and the errors are phantoms
+  that will repeat on every re-run. It names the resolved cache directory, which the caller cannot derive,
+  and the tool that clears it. The note states the discriminator rather than a conclusion — this server
+  cannot tell a phantom from a genuine compilation error, and an agent mid-edit usually has the real kind.
+  Like the configuration warnings, it is charged to the output budget before the result is rendered, so it
+  survives every step of detail reduction.
+- The `resharper://guides/setup` resource gains a "Phantom compilation errors" section covering the same
+  ground at length: the signature, the build test that identifies it, the cure, and why `--no-build` is not
+  the cause — `jb` builds its solution model from source for a solution's own projects and resolves
+  declarations added since the last build without one.
+
 ## [1.2.1] - 2026-08-07
 
 ### Fixed

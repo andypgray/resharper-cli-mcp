@@ -57,6 +57,25 @@ internal static class JbWarmMarker
     }
 
     /// <summary>
+    ///     Forget that a run against this cache generation ever succeeded — for a caller that has just dropped
+    ///     the generation the marker describes, leaving the claim behind untrue. Swallows failures like
+    ///     <see cref="Stamp" /> does, and deleting a marker that was never there is not one: the cost of a
+    ///     marker that will not go is a redundant pre-warm, which is the direction this file is always
+    ///     allowed to fail in.
+    /// </summary>
+    internal static void Clear(string solutionPath, string cacheHome)
+    {
+        try
+        {
+            File.Delete(PathFor(solutionPath, cacheHome));
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or NotSupportedException or ArgumentException)
+        {
+            Log.Debug(exception, "Could not clear the jb warm marker for solution {SolutionPath} in cache home {CacheHome}", solutionPath, cacheHome);
+        }
+    }
+
+    /// <summary>
     ///     Whether a run against this cache generation succeeded within <paramref name="window" />. A missing
     ///     marker reads as stale for free: <see cref="File.GetLastWriteTimeUtc(string)" /> returns 1601-01-01
     ///     rather than throwing. A future-dated one — a moved clock, or a cache home copied between machines —

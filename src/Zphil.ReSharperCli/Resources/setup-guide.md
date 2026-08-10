@@ -44,10 +44,11 @@ takes effect on the next call rather than after a client restart.
 
 ## Why the first call is slow, the timeout, and the queue
 
-Both tools run `jb` with `--no-build` against a ReSharper cache directory — `~/.jb-cache` unless
-`JB_CACHE_HOME` overrides it. The first inspection or cleanup on a solution populates that cache and can
-take minutes; later calls reuse it and finish in seconds. Each `jb` run is capped at **5 minutes**, after
-which the process tree is killed and the call fails with a timeout message.
+`resharper_inspect` and `resharper_cleanup` both run `jb` with `--no-build` against a ReSharper cache
+directory — `~/.jb-cache` unless `JB_CACHE_HOME` overrides it. The first inspection or cleanup on a
+solution populates that cache and can take minutes; later calls reuse it and finish in seconds. Each `jb`
+run is capped at **5 minutes**, after which the process tree is killed and the call fails with a timeout
+message.
 
 **Only one `jb` at a time may use a solution's cache**, so calls against one solution queue rather than
 run together. This is not politeness: a second concurrent `jb` cannot open the warm cache, and instead of
@@ -84,12 +85,41 @@ succeeded within the last hour — a tool call counts, so working in a repo does
 redundant analysis. It is a full solution analysis when it does run (`--include` does not make `jb` do less
 work), so set `RESHARPER_MCP_PREWARM=off` if you would rather not spend the CPU.
 
+## Phantom compilation errors, and resetting the cache
+
+**The signature.** `resharper_inspect` reports `.CSharpErrors` issues — `Cannot resolve symbol 'Foo'`, and
+knock-on "Ambiguous invocation" where an unresolved symbol was an argument — in files you did not edit,
+naming symbols declared in a file you *did*. Often a whole cluster of them at once.
+
+**The discriminator, and it is decisive: build the solution.** If the compiler and your tests are green,
+those errors do not exist. ReSharper's solution-wide analysis keeps its own index in the cache, and that
+index can miss invalidating the consumers of a declaration you reshaped. Once it is wrong it stays wrong:
+re-running the inspection returns the identical set, scoping it with `files` returns the same, and nothing
+you do in the editor clears it. Only a real compilation error survives the build test — fix that instead.
+
+**The cure.** Call `resharper_reset_cache`. It deletes the solution's cache generation directories under
+the cache home, and the next inspect or cleanup rebuilds the index from cold. It takes the same queue lock
+the analysis tools take, so it waits for a run in flight rather than deleting the cache underneath it, and
+a run that starts meanwhile waits for the reset. That cold rebuild costs minutes and can hit the 5-minute
+run cap on a large solution, so the retry after a reset is the one call most worth expecting to be slow.
+
+It refuses in one case rather than guessing: when the cache home holds generations for **two solutions with
+the same file name**, since `jb` names those directories with a hash of the solution path and not the path
+itself. The error names the candidates so you can delete the right one yourself.
+
+The stale index originates in the ReSharper CLI's incremental invalidation, not in this wrapper, so
+nothing here can fix it — and `jb` exposes no cache-invalidation option of its own (`--caches-home` only
+chooses *where* caches live), which is why the operation lives here at all. A `--no-build` solution model
+is *not* the cause: `jb` builds its model from source for a solution's own projects, and resolves
+declarations added since the last build without one.
+
 ## Output size: reduction, and truncation as a last resort
 
 Responses are capped at the client's `MAX_MCP_OUTPUT_TOKENS` × 2.5 characters, or 25,000 characters when
-that variable is unset or non-positive. Both tools *degrade* rather than being cut: each re-renders its
-result at progressively lower detail until it fits, then appends a `DETAIL REDUCED` note naming the level
-it landed on and what that level gave up.
+that variable is unset or non-positive. The two analysis tools *degrade* rather than being cut: each
+re-renders its result at progressively lower detail until it fits, then appends a `DETAIL REDUCED` note
+naming the level it landed on and what that level gave up. (`resharper_reset_cache` has nothing to
+degrade — its report is a line per cache generation.)
 
 **The distinction that carries the meaning: a truncated result is an incomplete list of issues; a reduced
 result is complete but less detailed.** Every issue is still counted and every file still named at every

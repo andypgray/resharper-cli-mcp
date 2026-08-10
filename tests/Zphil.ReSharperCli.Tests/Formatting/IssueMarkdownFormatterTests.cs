@@ -158,7 +158,7 @@ public sealed class IssueMarkdownFormatterTests
             + $"- **Line 3** [WARNING] `RedundantUsingDirective`: {RedundantUsingMessage}\n"
             + "\n"
             + $"### {RepositoryPath}\n"
-            + "- **Line 12** [ERROR] `CSharpErrors`: Cannot resolve symbol 'OrderDto'\n"
+            + "- **Line 12** [ERROR] `.CSharpErrors`: Cannot resolve symbol 'OrderDto'\n"
             + $"- **Line 5** [WARNING] `PossibleNullReferenceException`: {NullReferenceMessage}\n"
             + $"- **Line 5** [WARNING] `PossibleNullReferenceException`: {NullReferenceMessage}\n");
     }
@@ -185,7 +185,7 @@ public sealed class IssueMarkdownFormatterTests
             + $"  - {RedundantUsingMessage}\n"
             + "\n"
             + $"### {RepositoryPath}\n"
-            + "- **Line 12** [ERROR] `CSharpErrors`: Cannot resolve symbol 'OrderDto'\n"
+            + "- **Line 12** [ERROR] `.CSharpErrors`: Cannot resolve symbol 'OrderDto'\n"
             + "- **`PossibleNullReferenceException`** [WARNING] x2, lines 5\n"
             + $"  - {NullReferenceMessage}\n");
     }
@@ -254,7 +254,7 @@ public sealed class IssueMarkdownFormatterTests
             + "  `NotAccessedPositionalProperty.Global` [WARNING]: 4 issue(s) in 1 file(s)\n"
             + "  `RedundantUsingDirective` [WARNING]: 3 issue(s) in 1 file(s)\n"
             + "  `PossibleNullReferenceException` [WARNING]: 2 issue(s) in 1 file(s)\n"
-            + "  `CSharpErrors` [ERROR]: 1 issue(s) in 1 file(s)\n"
+            + "  `.CSharpErrors` [ERROR]: 1 issue(s) in 1 file(s)\n"
             + "  `UnusedMember.Global` [SUGGESTION]: 1 issue(s) in 1 file(s)\n"
             + "\n"
             + "By file (3 of 3):\n"
@@ -405,7 +405,7 @@ public sealed class IssueMarkdownFormatterTests
             new InspectIssue(ControllerPath, 1, null, "WARNING", "RedundantUsingDirective", RedundantUsingMessage),
             new InspectIssue(ControllerPath, 2, null, "WARNING", "RedundantUsingDirective", RedundantUsingMessage),
             new InspectIssue(ControllerPath, 3, null, "WARNING", "RedundantUsingDirective", RedundantUsingMessage),
-            new InspectIssue(RepositoryPath, 12, null, "ERROR", "CSharpErrors", "Cannot resolve symbol 'OrderDto'"),
+            new InspectIssue(RepositoryPath, 12, null, "ERROR", ".CSharpErrors", "Cannot resolve symbol 'OrderDto'"),
             new InspectIssue(RepositoryPath, 5, null, "WARNING", "PossibleNullReferenceException", NullReferenceMessage),
             new InspectIssue(RepositoryPath, 5, null, "WARNING", "PossibleNullReferenceException", NullReferenceMessage)
         ];

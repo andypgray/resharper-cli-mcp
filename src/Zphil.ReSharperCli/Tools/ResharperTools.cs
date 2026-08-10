@@ -9,26 +9,35 @@ using Zphil.ReSharperCli.Services;
 namespace Zphil.ReSharperCli.Tools;
 
 /// <summary>
-///     The MCP tool surface: <c>resharper_inspect</c> (read-only C# inspection) and
-///     <c>resharper_cleanup</c> (in-place code cleanup). Both methods validate their inputs and then
-///     delegate to a service; they never <c>try/catch</c> — <see cref="GlobalCallToolFilter" />
-///     turns any thrown <see cref="UserErrorException" /> into an error result for the client.
+///     The MCP tool surface: <c>resharper_inspect</c> (read-only C# inspection), <c>resharper_cleanup</c>
+///     (in-place code cleanup), and <c>resharper_reset_cache</c> (drop the solution's analysis cache). Every
+///     method validates its inputs and then delegates to a service; they never <c>try/catch</c> —
+///     <see cref="GlobalCallToolFilter" /> turns any thrown <see cref="UserErrorException" /> into an error
+///     result for the client.
 /// </summary>
 [McpServerToolType]
 internal sealed class ResharperTools(
     ConfigResolver configResolver,
     InspectService inspectService,
     CleanupService cleanupService,
+    CacheResetService cacheResetService,
     IEnvironment environment)
 {
     internal const string InspectToolName = "resharper_inspect";
     internal const string CleanupToolName = "resharper_cleanup";
+    internal const string ResetCacheToolName = "resharper_reset_cache";
 
     private const string InspectDescription =
         "Run ReSharper static analysis on the solution and return the code issues it finds.";
 
     private const string CleanupDescription =
         "Run ReSharper code cleanup to reformat and normalize files in place.";
+
+    private const string ResetCacheDescription =
+        "Delete this solution's ReSharper analysis cache so the next inspect or cleanup rebuilds it from "
+        + "cold. The cure for inspect reporting compilation errors the compiler itself does not: a stale "
+        + "index serves those until the cache is dropped. Costs the next call a full cold analysis, so it "
+        + "is not routine maintenance.";
 
     // Descriptions ride the deferred tool schema, which a client fetches only when it is about to call the
     // tool, so a gotcha costs nothing until it is needed. Prefer this over the always-resident server
@@ -67,8 +76,14 @@ internal sealed class ResharperTools(
 
         var issues = await inspectService.RunAsync(config, scope, severity, cancellationToken);
 
+        // Two independent preambles, concatenated: configuration that was dropped before the run, then how to
+        // read compilation errors in what came back. Either can be empty, and both ride outside the reduction
+        // ladder.
+        string banner = ConfigWarningBanner.ForInspect(config.Warnings)
+                        + CompilationErrorNote.For(issues, config.CacheHome);
+
         return RenderWithBanner(
-            ConfigWarningBanner.ForInspect(config.Warnings),
+            banner,
             issues,
             IssueMarkdownFormatter.Format,
             IssueMarkdownFormatter.DescribeReduction);
@@ -120,8 +135,29 @@ internal sealed class ResharperTools(
             CleanupSummaryFormatter.DescribeReduction);
     }
 
+    [McpServerTool(
+        Name = ResetCacheToolName,
+        Title = "ReSharper Reset Cache",
+        ReadOnly = false,
+        Destructive = true,
+        Idempotent = true,
+        OpenWorld = false)]
+    [Description(ResetCacheDescription)]
+    public async Task<string> ResetCacheAsync(
+        [Description(SolutionPathDescription)] string? solutionPath = null,
+        CancellationToken cancellationToken = default)
+    {
+        ResolvedConfig config = await configResolver.ResolveAsync(solutionPath, cancellationToken);
+
+        CacheResetOutcome outcome = await cacheResetService.RunAsync(config, cancellationToken);
+
+        // No banner and no reduction ladder, unlike the two tools above. The config warnings both describe
+        // settings that shape a jb run, and this call makes none; the ladder is answered on the formatter.
+        return CacheResetFormatter.Format(outcome);
+    }
+
     /// <summary>
-    ///     The one response-shaping tail both tools share: render <paramref name="data" /> at the highest
+    ///     The one response-shaping tail both analysis tools share: render <paramref name="data" /> at the highest
     ///     <see cref="DetailLevel" /> that fits the client's output budget (the GlobalCallToolFilter's
     ///     truncator is the final backstop), led by <paramref name="banner" />. The banner is charged to the
     ///     budget <em>before</em> rendering, which is what puts it outside the reduction ladder: it survives
@@ -157,6 +193,7 @@ internal sealed class ResharperTools(
         {
             InspectToolName => IssueMarkdownFormatter.NarrowingHint,
             CleanupToolName => CleanupSummaryFormatter.CleanupRanInFull,
+            ResetCacheToolName => CacheResetFormatter.ResetRanInFull,
             _ => ""
         };
     }

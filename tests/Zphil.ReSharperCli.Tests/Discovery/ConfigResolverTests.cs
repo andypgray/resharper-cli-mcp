@@ -331,7 +331,7 @@ public sealed class ConfigResolverTests : IDisposable
 
         // Assert
         config.CleanupProfile.ShouldBe("House: Keep Named Arguments");
-        config.Warnings?.SettingsRead.ShouldBeNull(); // recovered, so there is nothing to report
+        config.Warnings.SettingsRead.ShouldBeNull(); // recovered, so there is nothing to report
     }
 
     [Fact]

@@ -22,6 +22,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   names record a hash of the solution's full path, which the server reproduces, so a cache home shared by two
   checkouts of one repository is ordinary — the generations carrying another path's hash are named in the
   report and left where they are, and a hash matching nothing deletes nothing.
+- A solution with no ReSharper cache is now seeded from a warm one belonging to another copy of the same
+  solution, before the run that would otherwise build it from cold. `jb` keys a cache generation by the
+  solution's absolute path, so every fresh `git worktree` — or clone, or copied directory — is cold however
+  much analysis of the same code sits beside it in the cache home, and the pre-warm cannot cover it: it warms
+  whatever solution the *server's* directory resolves, while a session working in a worktree passes its own
+  `solutionPath` on every call. That leaves the one case where a cold run is guaranteed as also the one most
+  likely to exceed the cap and come back as a timeout. Nothing inside a cache binds it to a path — `jb`
+  validates a generation against its own format version and rebuilds it in place when that does not match —
+  so the copy is either accepted and re-keyed by the run that opens it or discarded exactly as an absent
+  cache would be. Re-keying is not free: it costs `jb` about a minute, near enough the same on a small
+  solution as on a large one, in exchange for the difference between a cold analysis and a warm one. That
+  makes this a decisive win where a cold run would have passed the cap and a poor trade on a solution that
+  goes cold in a minute anyway, which is worth knowing before reading the copy as free speed. Two guardrails
+  keep it honest. The generation to copy is named by the marker a successful run writes rather than derived
+  from `jb`'s undocumented directory naming, so if that naming ever changes there is no name to record, no
+  donor to find, and the feature switches itself off instead of copying to a directory nothing will read.
+  And a reset still means cold: `resharper_reset_cache` leaves a record that suppresses seeding entirely
+  until a run against that solution succeeds, so the tool for getting rid of a bad index cannot be undone by
+  an optimisation. Everything else about it is best-effort and silent — no donor, a donor another `jb`
+  currently holds, a copy that fails part way, or a generation already in place (a stunted one included)
+  all end in the cold run the call was going to have.
 - An inspection result that contains compilation errors now leads with a note saying how to read them:
   build the solution, and if the compiler accepts the code the index is stale and the errors are phantoms
   that will repeat on every re-run. It names the resolved cache directory, which the caller cannot derive,

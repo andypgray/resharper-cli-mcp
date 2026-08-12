@@ -34,7 +34,8 @@ public sealed class JbRunYieldTests : IDisposable
         // A short wait cap so a regression that stopped the pre-warm yielding fails these tests promptly
         // instead of hanging them out to the production cap.
         TimeSpan shortCap = TimeSpan.FromSeconds(10);
-        _runner = new JbRunner(_probe, new JbRunLock(shortCap), shortCap);
+        JbRunLock runLock = new(shortCap);
+        _runner = new JbRunner(_probe, runLock, new CacheTransplanter(runLock), shortCap);
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;

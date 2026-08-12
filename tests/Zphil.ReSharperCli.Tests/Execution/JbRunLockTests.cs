@@ -335,6 +335,93 @@ public sealed class JbRunLockTests : IDisposable
     }
 
     [Fact]
+    public async Task TryAcquireByKeyAsync_TheSameGenerationAsAPathedCaller_ContendsWithIt()
+    {
+        // Arrange — the key-addressed entry point exists for a caller holding only a cache home and a sidecar
+        // file name. If it did not land on the same gate and the same lock file as the pathed ones, it would
+        // serialize against nothing and copy from a generation a live jb was writing.
+        JbRunLock runLock = new(ShortWait);
+        using IDisposable pathed = await runLock.AcquireAsync(SolutionPath, _cacheHome, Ct);
+
+        // Act
+        IDisposable? byKey = await runLock.TryAcquireByKeyAsync(
+            _cacheHome, JbRunLock.ComputeKey(SolutionPath, _cacheHome), ShortWait, Ct);
+
+        // Assert
+        byKey.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task TryAcquireByKeyAsync_HeldByAnotherProcess_GivesUpWithinItsPatienceInsteadOfThrowing()
+    {
+        // Arrange — the production wait cap on the lock, and a short patience for this acquire: a caller that
+        // already holds another lease must not be able to sit on it for the run cap, and must not fail either.
+        JbRunLock runLock = new(JbRunTimeout.Default);
+        await using FileStream otherProcess = OpenLockFileExclusively();
+        var waited = Stopwatch.StartNew();
+
+        // Act
+        IDisposable? lease = await runLock.TryAcquireByKeyAsync(
+            _cacheHome, JbRunLock.ComputeKey(SolutionPath, _cacheHome), TimeSpan.FromMilliseconds(300), Ct);
+
+        // Assert
+        lease.ShouldBeNull();
+        waited.Elapsed.ShouldBeLessThan(Generous);
+    }
+
+    [Fact]
+    public async Task TryAcquireByKeyAsync_ReleasedPartWayThroughThePatience_TakesIt()
+    {
+        // Arrange — the reason it waits at all rather than trying once: a donor is normally free within a
+        // moment, and the run it was busy with is exactly what made it worth copying.
+        JbRunLock runLock = new(JbRunTimeout.Default);
+        FileStream otherProcess = OpenLockFileExclusively();
+        Task release = Task.Run(async () =>
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(200), Ct);
+            await otherProcess.DisposeAsync();
+        }, Ct);
+
+        // Act
+        IDisposable? lease = await runLock.TryAcquireByKeyAsync(
+            _cacheHome, JbRunLock.ComputeKey(SolutionPath, _cacheHome), Generous, Ct);
+
+        // Assert
+        await release;
+        lease.ShouldNotBeNull();
+        lease.Dispose();
+    }
+
+    [Fact]
+    public async Task TryAcquireByKeyAsync_ThatCouldNotProveExclusivity_StillLetsTheNextCallerIn()
+    {
+        // Arrange — the gate-leak guard, in the form this entry point can fail in: the cache home is usable,
+        // the lock file can never be opened, and the answer is a return rather than a throw.
+        JbRunLock runLock = new(ShortWait);
+        Directory.CreateDirectory(LockFilePath());
+        string key = JbRunLock.ComputeKey(SolutionPath, _cacheHome);
+        (await runLock.TryAcquireByKeyAsync(_cacheHome, key, ShortWait, Ct)).ShouldBeNull();
+        var waited = Stopwatch.StartNew();
+
+        // Act
+        using IDisposable foreground = await runLock.AcquireAsync(SolutionPath, _cacheHome, Ct);
+
+        // Assert
+        waited.Elapsed.ShouldBeLessThan(ShortWait);
+    }
+
+    [Fact]
+    public async Task TryAcquireByKeyAsync_CacheHomeIsNotAValidPath_SkipsInsteadOfThrowing()
+    {
+        // Arrange — a cache home no path API will accept. This runs on the way into a copy nobody asked for,
+        // so there is nothing here worth failing a call over.
+        JbRunLock runLock = new(ShortWait);
+
+        // Act & Assert
+        (await runLock.TryAcquireByKeyAsync(_cacheHome + "\0invalid", "abc123", ShortWait, Ct)).ShouldBeNull();
+    }
+
+    [Fact]
     public void ComputeKey_FoldsPathsThatNameTheSameCacheGeneration()
     {
         // Assert — a trailing separator must not fork one generation's lock into two...

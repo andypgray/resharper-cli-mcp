@@ -73,9 +73,10 @@ public sealed class JbColdTombstoneTests : IDisposable
         // opposite one: a question that could not be answered must not be read as permission to seed.
         string invalid = _cacheHome + "\0invalid";
 
-        // Assert
+        // Assert — including the discharge, which runs at the end of a jb run that has already succeeded.
         Should.NotThrow(() => JbColdTombstone.Write(SolutionPath, invalid));
         JbColdTombstone.Exists(SolutionPath, invalid).ShouldBeTrue();
+        Should.NotThrow(() => JbColdTombstone.Clear(SolutionPath, invalid));
     }
 
     [Fact]

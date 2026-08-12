@@ -24,13 +24,24 @@ namespace Zphil.ReSharperCli.Services;
 ///         reports rather than throws. Both go through <see cref="SpawnAsync" />, which keeps this class the
 ///         sole place a <c>jb</c> process starts.
 ///     </para>
+///     <para>
+///         Both also give <see cref="CacheTransplanter" /> its one chance to seed the cache, in the window
+///         between holding the generation's lease and starting <c>jb</c> — the only moment at which the
+///         directory is known to be nobody else's and not yet open. It is placed here rather than at the two
+///         service call sites for the same reason the lock is: inspect and cleanup share one cache
+///         generation, and a rule kept by convention at two call sites is a rule until someone adds a third.
+///     </para>
 /// </remarks>
 /// <param name="runTimeout">
 ///     Wall-clock cap on one <c>jb</c> run, after which its process tree is killed. Resolved from
 ///     <see cref="JbRunTimeout" /> at the composition root, which hands the same value to
 ///     <see cref="JbRunLock" /> so wait and run stay one number.
 /// </param>
-internal sealed class JbRunner(IProcessRunner processRunner, JbRunLock runLock, TimeSpan runTimeout)
+internal sealed class JbRunner(
+    IProcessRunner processRunner,
+    JbRunLock runLock,
+    CacheTransplanter transplanter,
+    TimeSpan runTimeout)
 {
     private const int StandardErrorTailLength = 2000;
 
@@ -85,6 +96,8 @@ internal sealed class JbRunner(IProcessRunner processRunner, JbRunLock runLock, 
 
         using IDisposable runLease = await runLock.AcquireAsync(config.SolutionPath, config.CacheHome, cancellationToken);
 
+        await transplanter.TryTransplantAsync(config, cancellationToken);
+
         ProcessResult result;
         try
         {
@@ -127,6 +140,8 @@ internal sealed class JbRunner(IProcessRunner processRunner, JbRunLock runLock, 
 
             using IDisposable? runLease = runLock.TryAcquire(config.SolutionPath, config.CacheHome);
             if (runLease is null) return null;
+
+            await transplanter.TryTransplantAsync(config, mine.Token);
 
             return await SpawnAsync(config, arguments, mine.Token);
         }

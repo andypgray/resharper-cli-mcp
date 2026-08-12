@@ -187,9 +187,11 @@ public sealed class JbWarmMarkerTests : IDisposable
         // Arrange — the same cache home the lock degrades on, so both layers agree about what is unusable.
         string invalid = _cacheHome + "\0invalid";
 
-        // Assert
+        // Assert — every entry point, including the one a cache reset calls once it has already deleted
+        // directories, where throwing would fail a call whose work is done.
         Should.NotThrow(() => JbWarmMarker.Stamp(SolutionPath, invalid));
         JbWarmMarker.IsFreshWithin(SolutionPath, invalid, OneHour).ShouldBeFalse();
+        Should.NotThrow(() => JbWarmMarker.Clear(SolutionPath, invalid));
     }
 
     [Fact]

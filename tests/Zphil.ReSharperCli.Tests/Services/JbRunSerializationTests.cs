@@ -30,7 +30,8 @@ public sealed class JbRunSerializationTests : IDisposable
         File.WriteAllText(solutionPath, string.Empty);
         _config = new ResolvedConfig(
             solutionPath, null, null, _environment.CreateTempDirectory(), null, null, "jb", ConfigWarnings.None);
-        _runner = new JbRunner(_probe, new JbRunLock(JbRunTimeout.Default), JbRunTimeout.Default);
+        JbRunLock runLock = new(JbRunTimeout.Default);
+        _runner = new JbRunner(_probe, runLock, new CacheTransplanter(runLock), JbRunTimeout.Default);
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;

@@ -6,6 +6,7 @@ using Zphil.ReSharperCli.Discovery;
 using Zphil.ReSharperCli.Execution;
 using Zphil.ReSharperCli.Services;
 using Zphil.ReSharperCli.Tests.TestDoubles;
+using Zphil.ReSharperCli.Tests.TestSupport;
 
 namespace Zphil.ReSharperCli.Tests.Services;
 
@@ -30,7 +31,7 @@ public sealed class JbRunnerTests : IDisposable
     {
         _config = new ResolvedConfig(
             "/sln/App.sln", null, null, _environment.CreateTempDirectory(), null, null, "jb", ConfigWarnings.None);
-        _runner = new JbRunner(_processRunner, _runLock, JbRunTimeout.Default);
+        _runner = new JbRunner(_processRunner, _runLock, new CacheTransplanter(_runLock), JbRunTimeout.Default);
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -156,6 +157,38 @@ public sealed class JbRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task RunAsync_ColdSolutionWithAWarmSibling_SeedsTheCacheBeforeJbStarts()
+    {
+        // Arrange — the ordering is the whole contract: a copy landing after jb opened the generation is worse
+        // than none, so the check is made from inside the spawn rather than after the call returns.
+        CacheHomes.PlantWarmDonor(_config.CacheHome, SiblingSolutionPath());
+        var seededAtSpawn = false;
+        StubExit(0, string.Empty, () => seededAtSpawn = Directory.Exists(SeededGenerationPath()));
+
+        // Act
+        await _runner.RunAsync(_config, ["inspectcode", _config.SolutionPath], Ct);
+
+        // Assert
+        seededAtSpawn.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task TryRunAsync_ColdSolutionWithAWarmSibling_SeedsTheCacheBeforeJbStarts()
+    {
+        // Arrange — the speculative entry point too: a server launched inside a worktree pre-warms that
+        // worktree, and the pre-warm is the very run most likely to be the cold one worth seeding.
+        CacheHomes.PlantWarmDonor(_config.CacheHome, SiblingSolutionPath());
+        var seededAtSpawn = false;
+        StubExit(0, string.Empty, () => seededAtSpawn = Directory.Exists(SeededGenerationPath()));
+
+        // Act
+        await _runner.TryRunAsync(_config, ["inspectcode", _config.SolutionPath], Ct);
+
+        // Assert
+        seededAtSpawn.ShouldBeTrue();
+    }
+
+    [Fact]
     public async Task RunAsync_RunHitsTheCap_SaysWhoseCapItIsAndNamesTheLever()
     {
         // Arrange — ProcessRunner reports the mechanical fact and stops there, because it does not know
@@ -181,7 +214,7 @@ public sealed class JbRunnerTests : IDisposable
         // raise it reads as though nothing happened the first time. 455 seconds and not a round number of
         // minutes on purpose: the variable is configured in seconds, so a cap must never be reported back
         // rounded to a value the user did not choose.
-        JbRunner runner = new(_processRunner, _runLock, TimeSpan.FromSeconds(455));
+        JbRunner runner = new(_processRunner, _runLock, new CacheTransplanter(_runLock), TimeSpan.FromSeconds(455));
         StubTimeout();
 
         // Act
@@ -266,10 +299,27 @@ public sealed class JbRunnerTests : IDisposable
             .ThrowsAsync(new ProcessTimeoutException("'jb' timed out."));
     }
 
-    private void StubExit(int exitCode, string standardError)
+    private void StubExit(int exitCode, string standardError, Action? whileRunning = null)
     {
         _processRunner
             .RunAsync("jb", Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
-            .Returns(new ProcessResult(exitCode, string.Empty, standardError));
+            .Returns(_ =>
+            {
+                whileRunning?.Invoke();
+                return new ProcessResult(exitCode, string.Empty, standardError);
+            });
+    }
+
+    /// <summary>Another checkout of the same solution file, which is what makes a donor a donor.</summary>
+    private string SiblingSolutionPath()
+    {
+        return Path.Combine(_environment.CreateTempDirectory(), Path.GetFileName(_config.SolutionPath));
+    }
+
+    /// <summary>Where a cache seeded for this runner's own solution would land.</summary>
+    private string SeededGenerationPath()
+    {
+        return Path.Combine(
+            _config.CacheHome, JbSolutionCacheHash.FirstGenerationDirectoryName(_config.SolutionPath));
     }
 }

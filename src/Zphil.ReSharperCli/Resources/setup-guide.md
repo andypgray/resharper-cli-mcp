@@ -97,6 +97,34 @@ succeeded within the last hour — a tool call counts, so working in a repo does
 redundant analysis. It is a full solution analysis when it does run (`--include` does not make `jb` do less
 work), so set `RESHARPER_MCP_PREWARM=off` if you would rather not spend the CPU.
 
+### Worktrees, clones, and copies of one repository
+
+`jb` keys a cache generation by the solution's **absolute path**, so a fresh `git worktree` — or a clone, or
+a copied directory — starts cold no matter how much analysis of the same code already sits in the cache
+home. It is also the case least likely to survive: a cold whole-solution run is the one that reaches the
+cap, and the pre-warm cannot help, because it warms the solution the *server's* directory resolves while a
+session in a worktree passes its own `solutionPath` on every call.
+
+So when a call finds no cache generation for its solution, and a **same-named** solution's last successful
+run recorded one, the server copies that generation under the name `jb` will look for before starting the
+run. Nothing needs configuring and nothing reports it.
+
+**It is a trade, not a free win.** A copied cache carries the donor's absolute paths, and `jb` re-keys it on
+the run that opens it — measured at roughly a minute of extra work, fairly independent of solution size.
+What that buys is the difference between a cold analysis and a warm one. On a solution large enough for
+cold to run past the cap, that difference is many minutes and the trade is overwhelming — a result instead
+of a timeout. On a small solution, where a cold run finishes in a minute or two anyway, the re-key can cost
+more than the rebuild it replaced. It is aimed squarely at the first case.
+
+It gives up at the first doubt, silently, and the call proceeds exactly as it would have: no donor recorded,
+a donor a run currently holds, a copy that fails part way. It takes the same queue lock for the donor that
+it holds for the target, so it never reads a cache another `jb` is writing. It never replaces a generation
+that already exists — including the stunted remnant of a run that was killed, which is what
+`resharper_reset_cache` is for — and it never runs after a reset, because a reset is a request for a cold
+rebuild and is honoured until a run against that solution succeeds. `jb` remains the judge of what it was
+handed: it validates a cache it opens against its own format and rebuilds in place when it does not like
+it, so a copy it rejects costs the copy and nothing more.
+
 ## Phantom compilation errors, and resetting the cache
 
 **The signature.** `resharper_inspect` reports `.CSharpErrors` issues — `Cannot resolve symbol 'Foo'`, and

@@ -27,8 +27,9 @@ namespace Zphil.ReSharperCli.Execution;
 ///     </para>
 ///     <para>
 ///         The lock is an optimisation, never a dependency: anything that goes wrong other than genuine
-///         contention degrades to a weaker lock (or none) and lets the run proceed. <see cref="TryAcquire" />
-///         is the one deliberate exception, and inverts that rule for the reason given on it.
+///         contention degrades to a weaker lock (or none) and lets the run proceed. The two speculative
+///         entry points — <see cref="TryAcquire" /> and <see cref="TryAcquireByKeyAsync" /> — invert that
+///         rule deliberately, for the reason given on the first of them.
 ///     </para>
 /// </remarks>
 /// <param name="maxWait">
@@ -39,6 +40,13 @@ namespace Zphil.ReSharperCli.Execution;
 /// </param>
 internal sealed class JbRunLock(TimeSpan maxWait)
 {
+    /// <summary>
+    ///     What every file this server writes into a cache home is called before its key: enough to be
+    ///     obviously not <c>jb</c>'s, and enough for the sidecars to be found again by something that knows
+    ///     only the cache home.
+    /// </summary>
+    internal const string SidecarPrefix = ".resharper-cli-mcp-";
+
     private static readonly TimeSpan RetryInterval = TimeSpan.FromMilliseconds(250);
 
     /// <summary>
@@ -154,6 +162,76 @@ internal sealed class JbRunLock(TimeSpan maxWait)
     }
 
     /// <summary>
+    ///     Take exclusive use of the cache generation behind a lock key, waiting no longer than
+    ///     <paramref name="patience" /> for it, or <see langword="null" /> when it could not be taken. For a
+    ///     caller holding another generation's lease already, which is why the wait is a small explicit
+    ///     budget rather than the run cap: the outer lease is held throughout, so this one must be short and
+    ///     must always end.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         Keyed rather than pathed because the caller has no solution path to key from. The keys are the
+    ///         cache home's own sidecar file names, so a generation belonging to a solution this process has
+    ///         never resolved — another checkout, analysed by another session — can still be locked before it
+    ///         is read from. <see cref="ComputeKey" /> produces the same key from the pair, so the two entry
+    ///         points contend with each other exactly as they should.
+    ///     </para>
+    ///     <para>
+    ///         Follows <see cref="TryAcquire" />'s inverted degradation rule for the same reason: this serves
+    ///         speculative work, and every failure — an unusable path, a cache home that will not open, a
+    ///         holder that outlasts the patience — answers <see langword="null" /> so the caller steps aside.
+    ///         The bounded wait plus skip-on-failure is also what makes taking it <em>inside</em> another
+    ///         lease safe: nested acquisition cannot deadlock when the inner wait always ends and failing to
+    ///         get it is an ordinary outcome.
+    ///     </para>
+    /// </remarks>
+    public async Task<IDisposable?> TryAcquireByKeyAsync(
+        string cacheHome,
+        string key,
+        TimeSpan patience,
+        CancellationToken cancellationToken)
+    {
+        var waited = Stopwatch.StartNew();
+
+        string lockFilePath;
+        try
+        {
+            lockFilePath = LockFilePathFor(cacheHome, key);
+        }
+        catch (Exception exception) when (exception is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return null;
+        }
+
+        SemaphoreSlim gate = _gates.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
+        if (!await gate.WaitAsync(Remaining(patience, waited), cancellationToken).ConfigureAwait(false)) return null;
+
+        FileStream? file;
+        try
+        {
+            file = TryPrepareCacheHome(cacheHome)
+                ? await TryOpenExclusiveWithin(lockFilePath, patience, waited, cancellationToken).ConfigureAwait(false)
+                : null;
+        }
+        catch
+        {
+            gate.Release();
+            throw;
+        }
+
+        // The gate is handed back on the way out for the same reason TryAcquire does it: this returns rather
+        // than throwing when exclusivity cannot be proved, so leaving it taken would wedge every later caller
+        // of this generation — foreground ones included — for the life of the process.
+        if (file is null)
+        {
+            gate.Release();
+            return null;
+        }
+
+        return new Holder(gate, file);
+    }
+
+    /// <summary>
     ///     Identifies one cache generation: a short hash of the normalised (solution, cache home) pair.
     ///     Both paths are absolute by contract — <c>ResolvedConfig</c> resolves them — so normalising here
     ///     only folds separators and Windows casing, and never consults the process working directory.
@@ -182,7 +260,7 @@ internal sealed class JbRunLock(TimeSpan maxWait)
     /// </summary>
     internal static string SidecarPathFor(string cacheHome, string key, string extension)
     {
-        return Path.Combine(Path.GetFullPath(cacheHome), $".resharper-cli-mcp-{key}.{extension}");
+        return Path.Combine(Path.GetFullPath(cacheHome), $"{SidecarPrefix}{key}.{extension}");
     }
 
     /// <summary>
@@ -214,6 +292,33 @@ internal sealed class JbRunLock(TimeSpan maxWait)
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or NotSupportedException)
             {
                 Log.Warning(exception, "Could not take the jb run lock file {LockFilePath}; concurrent runs against this solution will not be serialized", lockFilePath);
+                return null;
+            }
+    }
+
+    /// <summary>
+    ///     Open the lock file exclusively, retrying while another holder has it until
+    ///     <paramref name="patience" /> is spent, then <see langword="null" />. The difference from
+    ///     <see cref="OpenExclusiveAsync" /> is what happens at the cap: this returns rather than throwing,
+    ///     because its caller has somewhere to go without the lock and a foreground run does not.
+    /// </summary>
+    private static async Task<FileStream?> TryOpenExclusiveWithin(
+        string lockFilePath,
+        TimeSpan patience,
+        Stopwatch waited,
+        CancellationToken cancellationToken)
+    {
+        while (true)
+            try
+            {
+                return new FileStream(lockFilePath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+            }
+            catch (IOException exception) when (IsContention(exception) && waited.Elapsed < patience)
+            {
+                await Task.Delay(Shorter(RetryInterval, Remaining(patience, waited)), cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or NotSupportedException)
+            {
                 return null;
             }
     }
@@ -272,7 +377,12 @@ internal sealed class JbRunLock(TimeSpan maxWait)
 
     private TimeSpan Remaining(Stopwatch waited)
     {
-        TimeSpan remaining = _maxWait - waited.Elapsed;
+        return Remaining(_maxWait, waited);
+    }
+
+    private static TimeSpan Remaining(TimeSpan budget, Stopwatch waited)
+    {
+        TimeSpan remaining = budget - waited.Elapsed;
         return remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
     }
 

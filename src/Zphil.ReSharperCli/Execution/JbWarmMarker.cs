@@ -23,8 +23,17 @@ namespace Zphil.ReSharperCli.Execution;
 ///     <para>
 ///         Every filesystem failure is swallowed, because a marker that cannot be written or read is not a
 ///         reason to fail — or to log against — a run the user asked for. Every failure mode also reads as
-///         "not warm": a missing file, an unreadable one, and a future-dated one all report stale. So the
-///         marker can only ever permit a redundant pre-warm, never permanently suppress one.
+///         the least useful answer: a missing file, an unreadable one, and a future-dated one all report
+///         stale, and anything short of a directory this server can name reports no generation. So the marker
+///         can only ever permit a redundant pre-warm or forgo a copy, never suppress the one or misdirect the
+///         other.
+///     </para>
+///     <para>
+///         The single exception to the silence is <see cref="WarnOnceAboutUnrecognisedNaming" />, and it is
+///         not a filesystem failure: it says the derivation this server makes from <c>jb</c>'s directory
+///         naming has stopped matching what <c>jb</c> writes. Nothing breaks when it fires — the features
+///         reading the name switch themselves off — but nothing else would ever say so, which is why it is a
+///         warning, and why it is said once.
 ///     </para>
 /// </remarks>
 internal static class JbWarmMarker

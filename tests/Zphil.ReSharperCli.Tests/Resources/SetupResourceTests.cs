@@ -56,6 +56,7 @@ public sealed class SetupResourceTests
         text.ShouldContain("DETAIL REDUCED"); // the marker an agent actually sees on an over-budget result
         text.ShouldContain("CSharpErrors"); // the rule that identifies a stale solution-wide index
         text.ShouldContain(ResharperTools.ResetCacheToolName); // and the tool that clears it
+        text.ShouldContain("worktree"); // the always-cold case, and the only place the seeding is described
         text.ShouldContain(ResharperResources.ConfigurationGuideUri); // the onward cross-link
     }
 

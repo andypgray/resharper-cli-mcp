@@ -41,9 +41,14 @@ builder.Services.AddSingleton<IProcessRunner, ProcessRunner>();
 builder.Services.AddSingleton<JbLocator>();
 builder.Services.AddSingleton<ConfigResolver>();
 builder.Services.AddSingleton(_ => new JbRunLock(runTimeout));
+
+// Both by factory rather than by type: each has one constructor parameter the container cannot supply — a
+// timeout the composition root owns, and an optional patience only tests ever set.
+builder.Services.AddSingleton(provider => new CacheTransplanter(provider.GetRequiredService<JbRunLock>()));
 builder.Services.AddSingleton(provider => new JbRunner(
     provider.GetRequiredService<IProcessRunner>(),
     provider.GetRequiredService<JbRunLock>(),
+    provider.GetRequiredService<CacheTransplanter>(),
     runTimeout));
 builder.Services.AddSingleton<InspectService>();
 builder.Services.AddSingleton<CleanupService>();

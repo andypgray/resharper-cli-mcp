@@ -153,6 +153,30 @@ public sealed class CacheResetServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task RunAsync_GenerationThatWillNotDelete_ReportsItRatherThanFailingTheCall()
+    {
+        // Arrange — a file inside the generation held open, which is what a jb this server does not know
+        // about looks like from here. A partly-deleted cache jb rebuilds is a better outcome than a call that
+        // throws having already removed most of one, so the failure is reported and the tool stays idempotent.
+        string cacheHome = _environment.CreateTempDirectory();
+        ResolvedConfig config = ConfigFor("App.sln", cacheHome);
+        string ours = CacheHomes.PlantGenerationFor(cacheHome, config.SolutionPath);
+        await using FileStream held = new(
+            Path.Combine(ours, "Db", "CURRENT"), FileMode.Open, FileAccess.Read, FileShare.None);
+        CacheResetService service = new(new JbRunLock(TimeSpan.FromSeconds(1)));
+
+        // Act
+        CacheResetOutcome outcome = await service.RunAsync(config, Ct);
+
+        // Assert — named, with the filesystem's own reason flattened onto the one line the report gives it.
+        outcome.Dropped.ShouldBeEmpty();
+        CacheResetFailure failure = outcome.Failures.ShouldHaveSingleItem();
+        failure.Name.ShouldBe(Path.GetFileName(ours));
+        failure.Reason.ShouldNotBeEmpty();
+        failure.Reason.ShouldNotContain("\n");
+    }
+
+    [Fact]
     public async Task RunAsync_AJbRunHoldsTheCacheGeneration_WaitsAndThenRefusesWithoutDeleting()
     {
         // Arrange — the whole reason this is a server-side tool rather than advice to delete a glob. The held

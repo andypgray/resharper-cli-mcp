@@ -116,9 +116,11 @@ a run that starts meanwhile waits for the reset. That cold rebuild costs minutes
 on a large solution, so the call after a reset is the one most worth expecting to be slow — and the one
 most worth raising `RESHARPER_MCP_TIMEOUT_SECS` for ahead of time.
 
-It refuses in one case rather than guessing: when the cache home holds generations for **two solutions with
-the same file name**, since `jb` names those directories with a hash of the solution path and not the path
-itself. The error names the candidates so you can delete the right one yourself.
+It deletes only what provably belongs to this solution. `jb` names a generation directory with a hash of the
+solution's **full path**, which this server reproduces, so a cache home shared by two checkouts of one
+repository — or by two unrelated solutions with the same file name — is ordinary rather than an obstacle: the
+generations carrying another path's hash are named in the report and left where they are, and a hash matching
+nothing deletes nothing at all.
 
 The stale index originates in the ReSharper CLI's incremental invalidation, not in this wrapper, so
 nothing here can fix it — and `jb` exposes no cache-invalidation option of its own (`--caches-home` only

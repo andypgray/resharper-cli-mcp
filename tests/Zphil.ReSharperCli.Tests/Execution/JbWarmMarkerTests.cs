@@ -2,16 +2,18 @@ using Shouldly;
 using Xunit;
 using Zphil.ReSharperCli.Execution;
 using Zphil.ReSharperCli.Tests.TestDoubles;
+using Zphil.ReSharperCli.Tests.TestSupport;
 
 namespace Zphil.ReSharperCli.Tests.Execution;
 
 /// <summary>
-///     <see cref="JbWarmMarker" /> is the debounce behind the background pre-warm: it answers "did a
-///     <c>jb</c> run against this cache generation succeed recently?" so a session start does not re-analyse
-///     an already-warm solution. It is a hint, never a dependency, so the invariant these tests guard is
-///     one-sided — every failure mode must read as <em>not</em> warm, so the marker can permit a redundant
-///     pre-warm but never suppress one forever — plus the structural fact that a marker bug can never
-///     clobber the lock file it sits beside.
+///     <see cref="JbWarmMarker" /> answers two questions about one cache generation: "did a <c>jb</c> run
+///     against it succeed recently?", which debounces the background pre-warm, and "which directory did that
+///     run leave warm?", which is how one solution's cache becomes findable by another. It is a hint, never a
+///     dependency, so the invariant these tests guard is one-sided — every failure mode must read as
+///     <em>not</em> warm and <em>no</em> name, so the marker can permit a redundant pre-warm or a skipped
+///     copy but never suppress one forever or point at the wrong directory — plus the structural fact that a
+///     marker bug can never clobber the lock file it sits beside.
 /// </summary>
 public sealed class JbWarmMarkerTests : IDisposable
 {
@@ -45,9 +47,100 @@ public sealed class JbWarmMarkerTests : IDisposable
         // Act
         JbWarmMarker.Stamp(SolutionPath, _cacheHome);
 
-        // Assert — and the marker carries its meaning entirely in its mtime.
+        // Assert — the debounce reads the mtime alone, so a marker with nothing in it is still a fresh one.
+        JbWarmMarker.IsFreshWithin(SolutionPath, _cacheHome, OneHour).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void Stamp_WithTheSolutionsGenerationOnDisk_RecordsWhichDirectoryItWarmed()
+    {
+        // Arrange — the marker's file name is a one-way key, so a solution that wants to know what another
+        // solution left warm can only learn it from the content. This is where that content comes from.
+        string generation = CacheHomes.PlantGenerationFor(_cacheHome, SolutionPath);
+
+        // Act
+        JbWarmMarker.Stamp(SolutionPath, _cacheHome);
+
+        // Assert
+        JbWarmMarker.TryReadGenerationName(JbWarmMarker.PathFor(SolutionPath, _cacheHome), _cacheHome)
+            .ShouldBe(Path.GetFileName(generation));
+    }
+
+    [Fact]
+    public void Stamp_SolutionWithAForkedGeneration_RecordsTheOneWrittenMostRecently()
+    {
+        // Arrange — a concurrent jb forks ".01" off the same hash, and both are this solution's. The one the
+        // run that just succeeded actually used is the one it has only just closed, and the ordinal-latest
+        // name is aged here on purpose so a name-ordered pick would fail.
+        string first = CacheHomes.PlantGenerationFor(_cacheHome, SolutionPath);
+        string fork = CacheHomes.PlantGeneration(_cacheHome, Path.GetFileName(first).Replace(".00", ".01"));
+        Directory.SetLastWriteTimeUtc(fork, DateTime.UtcNow - TimeSpan.FromHours(2));
+        Directory.SetLastWriteTimeUtc(first, DateTime.UtcNow);
+
+        // Act
+        JbWarmMarker.Stamp(SolutionPath, _cacheHome);
+
+        // Assert
+        JbWarmMarker.TryReadGenerationName(JbWarmMarker.PathFor(SolutionPath, _cacheHome), _cacheHome)
+            .ShouldBe(Path.GetFileName(first));
+    }
+
+    [Fact]
+    public void Stamp_NoDirectoryMatchingTheComputedHash_LeavesTheMarkerEmptyAndTheNameUnavailable()
+    {
+        // Arrange — what jb changing its directory naming looks like from here: the run succeeded, and
+        // nothing on disk answers to the hash this server computes.
+        CacheHomes.PlantGeneration(_cacheHome, "_App.999.00");
+
+        // Act
+        JbWarmMarker.Stamp(SolutionPath, _cacheHome);
+
+        // Assert — the debounce still works, and every feature that needs a name is told there is none rather
+        // than being handed the nearest-looking directory. That is the self-disable, not a degradation.
         JbWarmMarker.IsFreshWithin(SolutionPath, _cacheHome, OneHour).ShouldBeTrue();
         new FileInfo(JbWarmMarker.PathFor(SolutionPath, _cacheHome)).Length.ShouldBe(0);
+        JbWarmMarker.TryReadGenerationName(JbWarmMarker.PathFor(SolutionPath, _cacheHome), _cacheHome).ShouldBeNull();
+    }
+
+    [Fact]
+    public void TryReadGenerationName_MarkerThatIsNotThere_IsNullRatherThanThrowing()
+    {
+        // Assert — nothing has ever warmed this generation, which is an answer and not a fault.
+        JbWarmMarker.TryReadGenerationName(JbWarmMarker.PathFor(SolutionPath, _cacheHome), _cacheHome).ShouldBeNull();
+    }
+
+    [Fact]
+    public void TryReadGenerationName_GenerationDeletedSinceTheMarkerWasWritten_IsNull()
+    {
+        // Arrange — a cache reset, or jb's own stale-cache collection, between the stamp and the read. The
+        // name is still true about the past and useless about now.
+        string generation = CacheHomes.PlantGenerationFor(_cacheHome, SolutionPath);
+        JbWarmMarker.Stamp(SolutionPath, _cacheHome);
+        Directory.Delete(generation, true);
+
+        // Assert
+        JbWarmMarker.TryReadGenerationName(JbWarmMarker.PathFor(SolutionPath, _cacheHome), _cacheHome).ShouldBeNull();
+    }
+
+    [Theory]
+    // A parent reference, and a name carrying a separator: both resolve outside the cache home, which is
+    // where a caller would otherwise copy from.
+    [InlineData("..")]
+    [InlineData(".")]
+    [InlineData("../_App.999.00")]
+    [InlineData("sub/_App.999.00")]
+    [InlineData(@"sub\_App.999.00")]
+    // A rooted path ignores the cache home entirely.
+    [InlineData(@"C:\Windows")]
+    public void TryReadGenerationName_ContentThatIsNotABareDirectoryName_IsRefused(string content)
+    {
+        // Arrange — the marker is a file in a shared cache home, so its content is untrusted input to the
+        // path a transplant reads from.
+        string markerPath = JbWarmMarker.PathFor(SolutionPath, _cacheHome);
+        File.WriteAllText(markerPath, content);
+
+        // Assert
+        JbWarmMarker.TryReadGenerationName(markerPath, _cacheHome).ShouldBeNull();
     }
 
     [Fact]

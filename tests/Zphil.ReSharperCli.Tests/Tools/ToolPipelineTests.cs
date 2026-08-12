@@ -458,8 +458,8 @@ public sealed class ToolPipelineTests
         string cacheHome = environment.CreateTempDirectory();
         environment.SetVariable("JB_CACHE_HOME", cacheHome);
         PlantSolution(environment, "App.sln");
-        Directory.CreateDirectory(Path.Combine(cacheHome, "_App.1344362500.00"));
-        Directory.CreateDirectory(Path.Combine(cacheHome, "_Other.99.00"));
+        string ours = CacheHomes.PlantGenerationFor(cacheHome, Path.Combine(environment.CurrentDirectory, "App.sln"));
+        CacheHomes.PlantGeneration(cacheHome, "_Other.99.00");
         StubJb();
         ResharperTools tools = ToolHarness.Build(_processRunner, environment);
 
@@ -468,9 +468,9 @@ public sealed class ToolPipelineTests
 
         // Assert
         result.ShouldContain("Dropped 1 ReSharper cache generation(s)");
-        result.ShouldContain("  - _App.1344362500.00");
+        result.ShouldContain($"  - {Path.GetFileName(ours)}");
         result.ShouldEndWith("rebuilds the cache from cold, which can take minutes.");
-        Directory.Exists(Path.Combine(cacheHome, "_App.1344362500.00")).ShouldBeFalse();
+        Directory.Exists(ours).ShouldBeFalse();
         Directory.Exists(Path.Combine(cacheHome, "_Other.99.00")).ShouldBeTrue();
     }
 

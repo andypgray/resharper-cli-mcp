@@ -27,9 +27,8 @@ internal static class CacheResetFormatter
 
     public static string Format(CacheResetOutcome outcome)
     {
-        if (outcome.Dropped.Count == 0 && outcome.Failures.Count == 0)
-            return $"No ReSharper cache generation for \"{outcome.SolutionPath}\" was found under \"{outcome.CacheHome}\". "
-                   + "Nothing to drop, so the next inspect or cleanup builds the cache from cold anyway.";
+        if (outcome.Dropped.Count == 0 && outcome.Failures.Count == 0 && outcome.LeftAlone.Count == 0)
+            return NothingFound(outcome);
 
         List<string> lines = [];
 
@@ -37,6 +36,12 @@ internal static class CacheResetFormatter
         {
             lines.Add($"Dropped {outcome.Dropped.Count} ReSharper cache generation(s) for \"{outcome.SolutionPath}\" under \"{outcome.CacheHome}\":");
             lines.AddRange(outcome.Dropped.Select(name => $"  - {name}"));
+        }
+        else if (outcome.Failures.Count == 0)
+        {
+            // Only neighbours were found. Reporting that as an empty cache home would be a different claim
+            // from the true one, which is that nothing here was this solution's to drop.
+            lines.Add(NothingFound(outcome));
         }
 
         if (outcome.Failures.Count > 0)
@@ -48,11 +53,25 @@ internal static class CacheResetFormatter
                 + "finished; this tool is safe to run again.");
         }
 
+        if (outcome.LeftAlone.Count > 0)
+        {
+            lines.Add(
+                $"Left {outcome.LeftAlone.Count} generation(s) alone, whose names hash to a different solution path "
+                + "— another checkout or copy of a solution with this file name:");
+            lines.AddRange(outcome.LeftAlone.Select(name => $"  - {name}"));
+        }
+
         // Only true if something actually went: a reset that dropped nothing left the cache exactly as warm
         // (or as stale) as it found it, and saying otherwise would send the caller to wait out a cold run
         // that is not going to happen.
         if (outcome.Dropped.Count > 0) lines.Add(ColdNextCall);
 
         return string.Join("\n", lines);
+    }
+
+    private static string NothingFound(CacheResetOutcome outcome)
+    {
+        return $"No ReSharper cache generation for \"{outcome.SolutionPath}\" was found under \"{outcome.CacheHome}\". "
+               + "Nothing to drop, so the next inspect or cleanup builds the cache from cold anyway.";
     }
 }

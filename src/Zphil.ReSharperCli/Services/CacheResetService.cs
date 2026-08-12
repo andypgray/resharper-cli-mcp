@@ -7,13 +7,15 @@ namespace Zphil.ReSharperCli.Services;
 internal sealed record CacheResetFailure(string Name, string Reason);
 
 /// <summary>
-///     What a reset did: the generation directory names it dropped and the ones it could not, under the
-///     cache home it looked in. Formatting lives in <c>CacheResetFormatter</c>.
+///     What a reset did: the generation directory names it dropped, the ones belonging to a different
+///     solution it deliberately left where they were, and the ones it could not delete, under the cache home
+///     it looked in. Formatting lives in <c>CacheResetFormatter</c>.
 /// </summary>
 internal sealed record CacheResetOutcome(
     string SolutionPath,
     string CacheHome,
     IReadOnlyList<string> Dropped,
+    IReadOnlyList<string> LeftAlone,
     IReadOnlyList<CacheResetFailure> Failures);
 
 /// <summary>
@@ -32,6 +34,14 @@ internal sealed record CacheResetOutcome(
 ///         another session's live <c>jb</c> with nothing to serialize on.
 ///     </para>
 ///     <para>
+///         What belongs to this solution is settled by <see cref="JbSolutionCacheHash" /> rather than by the
+///         generation's file name, which several checkouts of one repository share. A generation is deleted
+///         only where the hash in its name is the one this solution's path produces; everything else is
+///         reported as left alone, and a computed hash matching nothing deletes nothing at all. That is what
+///         makes a shared cache home ordinary rather than an obstacle — before, two checkouts in one cache
+///         home made the tool refuse for both.
+///     </para>
+///     <para>
 ///         A failed delete is reported, not thrown, and may leave a generation partly deleted. That is
 ///         deliberate: a directory jb rebuilds is a better outcome than a call that fails after deleting most
 ///         of one, this tool is idempotent so re-running finishes the job, and the one thing that reliably
@@ -43,6 +53,7 @@ internal sealed class CacheResetService(JbRunLock runLock)
     public async Task<CacheResetOutcome> RunAsync(ResolvedConfig config, CancellationToken cancellationToken)
     {
         string solutionName = Path.GetFileNameWithoutExtension(config.SolutionPath);
+        string hash = JbSolutionCacheHash.Compute(config.SolutionPath);
 
         using IDisposable runLease = await runLock.AcquireAsync(config.SolutionPath, config.CacheHome, cancellationToken);
 
@@ -50,12 +61,15 @@ internal sealed class CacheResetService(JbRunLock runLock)
         // gap could fork a generation this call would then leave behind while reporting a clean reset.
         var generations = Find(config.CacheHome, solutionName);
 
-        var hashes = generations.Select(generation => generation.Hash).Distinct(StringComparer.Ordinal).ToList();
-        if (hashes.Count > 1) throw Ambiguous(config, solutionName, generations);
+        // Which of the same-named generations are this solution's is decided by reproducing jb's own hash of
+        // the solution path, so ownership is proved rather than guessed. A hash matching nothing deletes
+        // nothing: the answer to "none of these is provably mine" is to leave them all where they are.
+        var ours = generations.Where(generation => string.Equals(generation.Hash, hash, StringComparison.Ordinal)).ToList();
+        var leftAlone = generations.Except(ours).Select(generation => generation.Name).ToList();
 
         List<string> dropped = [];
         List<CacheResetFailure> failures = [];
-        foreach (JbCacheGeneration generation in generations)
+        foreach (JbCacheGeneration generation in ours)
             try
             {
                 Directory.Delete(generation.FullPath, true);
@@ -68,10 +82,15 @@ internal sealed class CacheResetService(JbRunLock runLock)
 
         // The marker claims a jb run against this generation succeeded recently, which is what stops the next
         // session pre-warming. After a reset that claim is false however the deletes went, and the marker's
-        // one safe failure direction is a redundant pre-warm.
+        // one safe failure direction is a redundant pre-warm. Clearing it also withdraws this solution as a
+        // donor for anything else, which is the same statement pointed outwards.
         JbWarmMarker.Clear(config.SolutionPath, config.CacheHome);
 
-        return new CacheResetOutcome(config.SolutionPath, config.CacheHome, dropped, failures);
+        // Unconditional, including the reset that dropped nothing: what the caller asked for is a cold next
+        // run, and the one mechanism that could quietly supply a warm cache instead has to be told.
+        JbColdTombstone.Write(config.SolutionPath, config.CacheHome);
+
+        return new CacheResetOutcome(config.SolutionPath, config.CacheHome, dropped, leftAlone, failures);
     }
 
     /// <summary>
@@ -90,25 +109,6 @@ internal sealed class CacheResetService(JbRunLock runLock)
             throw new UserErrorException(
                 $"Could not read the ReSharper cache home \"{cacheHome}\" ({SingleLine(exception.Message)}).", exception);
         }
-    }
-
-    /// <summary>
-    ///     Two solutions with the same file name share a cache home, and their generation directories differ
-    ///     only by a hash that records no path. Nothing here can tell them apart, and this call deletes what
-    ///     it picks, so it names the candidates and refuses.
-    /// </summary>
-    private static UserErrorException Ambiguous(
-        ResolvedConfig config,
-        string solutionName,
-        List<JbCacheGeneration> generations)
-    {
-        string candidates = string.Join("\n", generations.Select(generation => $"  - {generation.Name}"));
-
-        return new UserErrorException(
-            $"The ReSharper cache home \"{config.CacheHome}\" holds generations for more than one solution file named \"{solutionName}\":\n"
-            + candidates + "\n"
-            + $"jb's directory names record a hash of the solution path, not the path, so which of these belongs to \"{config.SolutionPath}\" cannot be determined here.\n"
-            + "Delete the right one yourself, or point JB_CACHE_HOME at a cache home this solution does not share.");
     }
 
     /// <summary>

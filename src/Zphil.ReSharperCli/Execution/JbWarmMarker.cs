@@ -1,12 +1,14 @@
+using System.Text;
 using Serilog;
 
 namespace Zphil.ReSharperCli.Execution;
 
 /// <summary>
-///     A zero-byte file inside the cache home whose modification time records when a <c>jb</c> run against
-///     that cache generation last <em>succeeded</em>. The speculative pre-warm reads it to skip a generation
-///     something has already warmed; every successful run through <see cref="Services.JbRunner" /> — a
-///     foreground tool call included — stamps it.
+///     A file inside the cache home whose modification time records when a <c>jb</c> run against that cache
+///     generation last <em>succeeded</em>, and whose content names the generation directory that run left
+///     behind. The speculative pre-warm reads the timestamp to skip a generation something has already
+///     warmed, and a transplant reads the name to find a donor worth copying; every successful run through
+///     <see cref="Services.JbRunner" /> — a foreground tool call included — stamps it.
 /// </summary>
 /// <remarks>
 ///     <para>
@@ -28,6 +30,15 @@ namespace Zphil.ReSharperCli.Execution;
 internal static class JbWarmMarker
 {
     /// <summary>
+    ///     Whether the "no generation matched this solution's hash" warning has already been logged. The
+    ///     condition means <c>jb</c>'s directory naming no longer matches what
+    ///     <see cref="JbSolutionCacheHash" /> reproduces, which is one fact about this machine's <c>jb</c>
+    ///     rather than one fact per run — logging it on every stamp would bury the session in a repeat of the
+    ///     same sentence.
+    /// </summary>
+    private static int _driftWarned;
+
+    /// <summary>
     ///     Where the marker for one cache generation lives: beside its lock file, in the cache home itself
     ///     and under the same key, because the cache home <em>is</em> the shared resource.
     /// </summary>
@@ -38,21 +49,72 @@ internal static class JbWarmMarker
     }
 
     /// <summary>
-    ///     Record that a <c>jb</c> run against this cache generation has just succeeded. The file's content
-    ///     carries nothing — closing an empty <see cref="FileMode.Create" /> handle flushes the modification
-    ///     time, which is the whole payload.
+    ///     Record that a <c>jb</c> run against this cache generation has just succeeded, and which generation
+    ///     directory it left warm. The modification time is the debounce's whole payload; the content is what
+    ///     lets a <em>different</em> solution find this one, since the marker's own file name is a key
+    ///     nothing can invert back into a solution path.
     /// </summary>
+    /// <remarks>
+    ///     Named from the outside, by matching this solution's computed hash against the directories actually
+    ///     on disk, rather than composed from the hash alone: what is wanted is the generation <c>jb</c> just
+    ///     used, forks included, and only the filesystem knows which of those exists. Finding none leaves the
+    ///     file empty — exactly the marker this used to write — so every reader that wants a name is told
+    ///     there is none, and the features built on it switch themselves off rather than acting on a guess.
+    /// </remarks>
     internal static void Stamp(string solutionPath, string cacheHome)
     {
         try
         {
+            string? generationName = WarmedGenerationName(solutionPath, cacheHome);
+
             // FileShare.ReadWrite: a concurrent server stamping or reading the same generation must not see
             // a sharing violation for what is only a hint.
             using FileStream marker = new(PathFor(solutionPath, cacheHome), FileMode.Create, FileAccess.Write, FileShare.ReadWrite);
+
+            if (generationName is null)
+            {
+                WarnOnceAboutUnrecognisedNaming(solutionPath, cacheHome);
+                return;
+            }
+
+            marker.Write(Encoding.UTF8.GetBytes(generationName));
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or NotSupportedException or ArgumentException)
         {
             Log.Debug(exception, "Could not stamp the jb warm marker for solution {SolutionPath} in cache home {CacheHome}", solutionPath, cacheHome);
+        }
+    }
+
+    /// <summary>
+    ///     The cache generation directory named by the marker file at <paramref name="markerFilePath" />, or
+    ///     <see langword="null" /> when it names none this server should act on. Takes the marker's path
+    ///     rather than a solution path because the caller that needs this — donor discovery — is reading
+    ///     <em>another</em> solution's marker, and has nothing but the file to go on.
+    /// </summary>
+    /// <remarks>
+    ///     Every uncertainty answers <see langword="null" />: a marker written before this content existed, an
+    ///     empty one written under naming drift, one whose generation has since been deleted, and one whose
+    ///     content is not a bare directory name at all. The last is a guard rather than a formality — the
+    ///     content is combined with a cache home to make a path a caller then copies from, so anything
+    ///     carrying a separator, a drive, or a parent reference is refused before it can address a directory
+    ///     outside the cache home.
+    /// </remarks>
+    internal static string? TryReadGenerationName(string markerFilePath, string cacheHome)
+    {
+        try
+        {
+            using FileStream file = new(markerFilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            using StreamReader reader = new(file, Encoding.UTF8);
+            string content = reader.ReadToEnd().Trim();
+
+            if (!IsBareDirectoryName(content)) return null;
+
+            return Directory.Exists(Path.Combine(Path.GetFullPath(cacheHome), content)) ? content : null;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or NotSupportedException or ArgumentException)
+        {
+            Log.Debug(exception, "Could not read the jb warm marker {MarkerFilePath}", markerFilePath);
+            return null;
         }
     }
 
@@ -93,5 +155,54 @@ internal static class JbWarmMarker
             Log.Debug(exception, "Could not read the jb warm marker for solution {SolutionPath} in cache home {CacheHome}", solutionPath, cacheHome);
             return false;
         }
+    }
+
+    /// <summary>
+    ///     Which generation directory under <paramref name="cacheHome" /> the run that just succeeded left
+    ///     warm: the one whose name carries this solution's computed hash, and — where <c>jb</c> has forked
+    ///     the generation — the most recently written of them, since that is the one it can only just have
+    ///     closed. Ties break towards the higher generation number, which is the later fork.
+    /// </summary>
+    private static string? WarmedGenerationName(string solutionPath, string cacheHome)
+    {
+        string hash = JbSolutionCacheHash.Compute(solutionPath);
+        string solutionName = Path.GetFileNameWithoutExtension(solutionPath);
+
+        return JbCacheGenerations.Find(cacheHome, solutionName)
+            .Where(generation => string.Equals(generation.Hash, hash, StringComparison.Ordinal))
+            .OrderByDescending(generation => Directory.GetLastWriteTimeUtc(generation.FullPath))
+            .ThenByDescending(generation => generation.Name, StringComparer.Ordinal)
+            .Select(generation => generation.Name)
+            .FirstOrDefault();
+    }
+
+    /// <summary>
+    ///     A run succeeded and left no directory this server can recognise as its cache generation, so
+    ///     <c>jb</c>'s naming has moved away from what <see cref="JbSolutionCacheHash" /> reproduces. Nothing
+    ///     is broken by it — every feature reading the name simply stops finding one — but it is the single
+    ///     signal that the derivation has gone stale, so it is a warning rather than a debug line, and said
+    ///     once.
+    /// </summary>
+    private static void WarnOnceAboutUnrecognisedNaming(string solutionPath, string cacheHome)
+    {
+        if (Interlocked.Exchange(ref _driftWarned, 1) != 0) return;
+
+        Log.Warning(
+            "A jb run against solution {SolutionPath} succeeded but left no cache generation directory matching its computed hash under {CacheHome}; "
+            + "features that need to name a cache generation are disabled for this server",
+            solutionPath,
+            cacheHome);
+    }
+
+    /// <summary>
+    ///     Whether <paramref name="content" /> is a directory name and nothing more — no separator, no drive,
+    ///     no <c>.</c> or <c>..</c>. The equality against <see cref="Path.GetFileName(string)" /> rejects
+    ///     every form that carries a path; the dot cases are spelled out because they survive it.
+    /// </summary>
+    private static bool IsBareDirectoryName(string content)
+    {
+        if (content.Length == 0 || content is "." or "..") return false;
+
+        return string.Equals(content, Path.GetFileName(content), StringComparison.Ordinal);
     }
 }

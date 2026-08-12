@@ -18,9 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the same queue lock the analysis tools take, and holds it across the delete: a reset waits for a `jb` run
   in flight rather than deleting the cache underneath it, and a run starting meanwhile waits for the reset —
   which deleting the directories by hand cannot do. It also reclaims the cold generations a concurrent `jb`
-  forks and abandons. In one case it refuses instead of guessing: when the cache home holds generations for
-  two solutions with the same file name, `jb`'s directory names record a hash of the solution path rather
-  than the path, so the error names the candidates and leaves them alone.
+  forks and abandons. It drops only what provably belongs to the solution it was pointed at: `jb`'s directory
+  names record a hash of the solution's full path, which the server reproduces, so a cache home shared by two
+  checkouts of one repository is ordinary — the generations carrying another path's hash are named in the
+  report and left where they are, and a hash matching nothing deletes nothing.
 - An inspection result that contains compilation errors now leads with a note saying how to read them:
   build the solution, and if the compiler accepts the code the index is stale and the errors are phantoms
   that will repeat on every re-run. It names the resolved cache directory, which the caller cannot derive,

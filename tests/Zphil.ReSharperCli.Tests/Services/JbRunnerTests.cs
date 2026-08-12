@@ -111,6 +111,36 @@ public sealed class JbRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task RunAsync_SucceedingRun_DischargesAPrecedingCacheReset()
+    {
+        // Arrange — a reset promises the next run is cold, and this is that run: the cache it just built is
+        // this solution's own, so the promise is kept and there is nothing left to hold anything back from.
+        JbColdTombstone.Write(_config.SolutionPath, _config.CacheHome);
+        StubExit(0, string.Empty);
+
+        // Act
+        await _runner.RunAsync(_config, ["inspectcode", _config.SolutionPath], Ct);
+
+        // Assert
+        JbColdTombstone.Exists(_config.SolutionPath, _config.CacheHome).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task RunAsync_FailingRun_LeavesTheCacheResetUndischarged()
+    {
+        // Arrange — a jb that exited non-zero may have built nothing, so the reset's promise still stands and
+        // the next attempt must not be allowed to shortcut it.
+        JbColdTombstone.Write(_config.SolutionPath, _config.CacheHome);
+        StubExit(2, "boom");
+
+        // Act
+        await Should.ThrowAsync<UserErrorException>(() => _runner.RunAsync(_config, ["inspectcode", _config.SolutionPath], Ct));
+
+        // Assert
+        JbColdTombstone.Exists(_config.SolutionPath, _config.CacheHome).ShouldBeTrue();
+    }
+
+    [Fact]
     public async Task TryRunAsync_CacheGenerationFree_RunsAndStampsTheWarmMarker()
     {
         // Arrange

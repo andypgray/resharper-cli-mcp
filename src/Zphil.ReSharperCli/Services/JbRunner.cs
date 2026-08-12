@@ -156,7 +156,8 @@ internal sealed class JbRunner(IProcessRunner processRunner, JbRunLock runLock, 
     ///     The single <c>jb</c> spawn. A clean exit stamps the warm marker, so the pre-warm debounce records
     ///     every successful run — foreground tool calls included, and <c>cleanupcode</c> as much as
     ///     <c>inspectcode</c>, since both analyse the whole solution into the same cache generation — rather
-    ///     than relying on one call site remembering to.
+    ///     than relying on one call site remembering to. The same exit discharges any cold tombstone a reset
+    ///     left: the cache this run rebuilt is the solution's own, so there is no longer a reset to protect.
     /// </summary>
     private async Task<ProcessResult> SpawnAsync(
         ResolvedConfig config,
@@ -166,7 +167,10 @@ internal sealed class JbRunner(IProcessRunner processRunner, JbRunLock runLock, 
         ProcessResult result = await processRunner.RunAsync(
             config.JbExecutablePath, arguments, runTimeout, cancellationToken);
 
-        if (result.ExitCode == 0) JbWarmMarker.Stamp(config.SolutionPath, config.CacheHome);
+        if (result.ExitCode != 0) return result;
+
+        JbWarmMarker.Stamp(config.SolutionPath, config.CacheHome);
+        JbColdTombstone.Clear(config.SolutionPath, config.CacheHome);
 
         return result;
     }

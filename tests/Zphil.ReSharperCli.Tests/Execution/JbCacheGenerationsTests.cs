@@ -2,6 +2,7 @@ using Shouldly;
 using Xunit;
 using Zphil.ReSharperCli.Execution;
 using Zphil.ReSharperCli.Tests.TestDoubles;
+using Zphil.ReSharperCli.Tests.TestSupport;
 
 namespace Zphil.ReSharperCli.Tests.Execution;
 
@@ -60,10 +61,10 @@ public sealed class JbCacheGenerationsTests : IDisposable
         // Arrange — one solution's two generations, a same-prefixed sibling solution, an unrelated solution,
         // and the server's own sidecar files, which are files rather than directories.
         string cacheHome = _environment.CreateTempDirectory();
-        PlantGeneration(cacheHome, "_App.100200300.00");
-        PlantGeneration(cacheHome, "_App.100200300.01");
-        PlantGeneration(cacheHome, "_App.Core.400500600.00");
-        PlantGeneration(cacheHome, "_Other.99.00");
+        CacheHomes.PlantGeneration(cacheHome, "_App.100200300.00");
+        CacheHomes.PlantGeneration(cacheHome, "_App.100200300.01");
+        CacheHomes.PlantGeneration(cacheHome, "_App.Core.400500600.00");
+        CacheHomes.PlantGeneration(cacheHome, "_Other.99.00");
         File.WriteAllText(Path.Combine(cacheHome, ".resharper-cli-mcp-abc.lock"), string.Empty);
 
         // Act
@@ -82,8 +83,8 @@ public sealed class JbCacheGenerationsTests : IDisposable
         // Arrange — the ambiguity the reset tool refuses on, reproduced here because this is where it becomes
         // visible: same file name, different directories, so jb hashed them apart and recorded neither path.
         string cacheHome = _environment.CreateTempDirectory();
-        PlantGeneration(cacheHome, "_App.1344362500.00");
-        PlantGeneration(cacheHome, "_App.-1749040816.00");
+        CacheHomes.PlantGeneration(cacheHome, "_App.1344362500.00");
+        CacheHomes.PlantGeneration(cacheHome, "_App.-1749040816.00");
 
         // Act
         var generations = JbCacheGenerations.Find(cacheHome, "App");
@@ -99,12 +100,5 @@ public sealed class JbCacheGenerationsTests : IDisposable
         string missing = Path.Combine(_environment.CreateTempDirectory(), "never-created");
 
         JbCacheGenerations.Find(missing, "App").ShouldBeEmpty();
-    }
-
-    private static void PlantGeneration(string cacheHome, string directoryName)
-    {
-        string path = Path.Combine(cacheHome, directoryName);
-        Directory.CreateDirectory(path);
-        File.WriteAllText(Path.Combine(path, "Db.dat"), "cache");
     }
 }

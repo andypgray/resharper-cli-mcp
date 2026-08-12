@@ -13,7 +13,7 @@ namespace Zphil.ReSharperCli.Services;
 /// </summary>
 /// <remarks>
 ///     <para>
-///         Queue time is deliberately outside the run budget: the timeout below is armed inside
+///         Queue time is deliberately outside the run budget: <paramref name="runTimeout" /> is armed inside
 ///         <see cref="ProcessRunner" />, which starts only once the lock is held, so a call that waited for
 ///         another run still gets its own full budget.
 ///     </para>
@@ -25,12 +25,14 @@ namespace Zphil.ReSharperCli.Services;
 ///         sole place a <c>jb</c> process starts.
 ///     </para>
 /// </remarks>
-internal sealed class JbRunner(IProcessRunner processRunner, JbRunLock runLock)
+/// <param name="runTimeout">
+///     Wall-clock cap on one <c>jb</c> run, after which its process tree is killed. Resolved from
+///     <see cref="JbRunTimeout" /> at the composition root, which hands the same value to
+///     <see cref="JbRunLock" /> so wait and run stay one number.
+/// </param>
+internal sealed class JbRunner(IProcessRunner processRunner, JbRunLock runLock, TimeSpan runTimeout)
 {
     private const int StandardErrorTailLength = 2000;
-
-    /// <summary>Wall-clock cap on one <c>jb</c> run, after which its process tree is killed.</summary>
-    public static readonly TimeSpan Timeout = TimeSpan.FromMinutes(5);
 
     /// <summary>
     ///     The speculative run in flight, or <see langword="null" />. Published so a real call can reclaim
@@ -83,7 +85,15 @@ internal sealed class JbRunner(IProcessRunner processRunner, JbRunLock runLock)
 
         using IDisposable runLease = await runLock.AcquireAsync(config.SolutionPath, config.CacheHome, cancellationToken);
 
-        ProcessResult result = await SpawnAsync(config, arguments, cancellationToken);
+        ProcessResult result;
+        try
+        {
+            result = await SpawnAsync(config, arguments, cancellationToken);
+        }
+        catch (ProcessTimeoutException exception)
+        {
+            throw new UserErrorException(TimedOutMessage(arguments[0]), exception);
+        }
 
         if (result.ExitCode != 0)
             throw new UserErrorException(
@@ -120,6 +130,14 @@ internal sealed class JbRunner(IProcessRunner processRunner, JbRunLock runLock)
 
             return await SpawnAsync(config, arguments, mine.Token);
         }
+        catch (ProcessTimeoutException)
+        {
+            // The cap is a foreground protection: it is there so a call the user is waiting on cannot hang
+            // on a stuck jb. Nobody is waiting on this one, and a cold solution big enough to exceed the cap
+            // is precisely the solution pre-warming exists for — so running out of budget here is an
+            // ordinary skip, not the "unexpected failure" the warmer would otherwise log a warning for.
+            return null;
+        }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             // A foreground run took over. ProcessRunner surfaces that and our own caller's cancellation
@@ -146,11 +164,28 @@ internal sealed class JbRunner(IProcessRunner processRunner, JbRunLock runLock)
         CancellationToken cancellationToken)
     {
         ProcessResult result = await processRunner.RunAsync(
-            config.JbExecutablePath, arguments, Timeout, cancellationToken);
+            config.JbExecutablePath, arguments, runTimeout, cancellationToken);
 
         if (result.ExitCode == 0) JbWarmMarker.Stamp(config.SolutionPath, config.CacheHome);
 
         return result;
+    }
+
+    /// <summary>
+    ///     What a foreground caller is told when its run hit the cap. Three things it cannot work out for
+    ///     itself, and the reason this message is not left to <see cref="ProcessRunner" />: the cap belongs
+    ///     to this server rather than to <c>jb</c> or to the MCP client, there is an environment variable
+    ///     that moves it, and the obvious next move does not work — scoping with <c>files</c> narrows what
+    ///     <c>jb</c> reports and never what it analyses, so a retry scoped to one file is just as slow.
+    /// </summary>
+    private string TimedOutMessage(string subcommand)
+    {
+        return $"jb {subcommand} timed out after {ProcessRunner.FormatDuration(runTimeout)} and was stopped.\n"
+               + $"That cap is this server's, not jb's own: raise it by setting {JbRunTimeout.Variable} (in seconds) "
+               + "in this server's env block in your MCP client config, then restart the server.\n"
+               + "A run that long is almost always a cold ReSharper cache. Scoping the next call with `files` will "
+               + "not help — jb analyses the whole solution whatever the report is narrowed to — but the cache keeps "
+               + "what this run built, so a retry resumes from there.";
     }
 
     /// <summary>

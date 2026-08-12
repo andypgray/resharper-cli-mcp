@@ -30,7 +30,7 @@ public sealed class JbRunSerializationTests : IDisposable
         File.WriteAllText(solutionPath, string.Empty);
         _config = new ResolvedConfig(
             solutionPath, null, null, _environment.CreateTempDirectory(), null, null, "jb", ConfigWarnings.None);
-        _runner = new JbRunner(_probe, new JbRunLock(JbRunner.Timeout));
+        _runner = new JbRunner(_probe, new JbRunLock(JbRunTimeout.Default), JbRunTimeout.Default);
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -99,8 +99,8 @@ public sealed class JbRunSerializationTests : IDisposable
 
         // Act — straight at the process runner, with no JbRunner and so no lock between the callers.
         await Task.WhenAll(
-            _probe.RunAsync("jb", ["inspectcode"], JbRunner.Timeout, Ct),
-            _probe.RunAsync("jb", ["inspectcode"], JbRunner.Timeout, Ct));
+            _probe.RunAsync("jb", ["inspectcode"], JbRunTimeout.Default, Ct),
+            _probe.RunAsync("jb", ["inspectcode"], JbRunTimeout.Default, Ct));
 
         // Assert
         _probe.MaxConcurrent.ShouldBe(2);

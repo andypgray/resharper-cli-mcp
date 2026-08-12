@@ -133,7 +133,7 @@ internal sealed class CleanupService(JbRunner jbRunner)
     ///     SHA-256 of the file's content, or <see langword="null" /> if it cannot be read. Content hashing is
     ///     deliberate: <c>(length, mtime)</c> false-positives on a touch-with-identical-content and
     ///     false-negatives on a same-length edit, while holding the raw bytes would pin every before-buffer
-    ///     across the up-to-5-minute jb run. Never throws — a transient lock (AV/indexer) or a file jb deleted
+    ///     across a jb run that can last minutes. Never throws — a transient lock (AV/indexer) or a file jb deleted
     ///     must not turn a completed cleanup into a reported error.
     /// </summary>
     private static byte[]? HashFile(string resolvedPath)

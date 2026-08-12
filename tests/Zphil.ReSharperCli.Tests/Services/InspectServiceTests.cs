@@ -23,7 +23,7 @@ public sealed class InspectServiceTests : IDisposable
         // literal like "/cache" would leave a stray folder at the drive root.
         _config = new ResolvedConfig(
             "/sln/App.sln", null, null, _environment.CreateTempDirectory(), null, null, "jb", ConfigWarnings.None);
-        _service = new InspectService(new JbRunner(_processRunner, new JbRunLock(JbRunner.Timeout)));
+        _service = new InspectService(new JbRunner(_processRunner, new JbRunLock(JbRunTimeout.Default), JbRunTimeout.Default));
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;

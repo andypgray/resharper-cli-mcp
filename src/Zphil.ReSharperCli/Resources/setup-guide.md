@@ -47,8 +47,17 @@ takes effect on the next call rather than after a client restart.
 `resharper_inspect` and `resharper_cleanup` both run `jb` with `--no-build` against a ReSharper cache
 directory — `~/.jb-cache` unless `JB_CACHE_HOME` overrides it. The first inspection or cleanup on a
 solution populates that cache and can take minutes; later calls reuse it and finish in seconds. Each `jb`
-run is capped at **5 minutes**, after which the process tree is killed and the call fails with a timeout
-message.
+run is capped at **10 minutes**, after which the process tree is killed and the call fails with a timeout
+message. `RESHARPER_MCP_TIMEOUT_SECS` moves that cap (default `600`). It is named for this server rather
+than for `jb` because `jb` never learns of it: it arms a kill timer here, unlike every `JB_` variable
+below, each of which becomes something `jb` is actually told. Seconds rather than minutes so a cap can be
+pitched just above a run you have actually timed.
+
+**The cap is this server's own, and nothing outside imposes it.** An MCP client's tool-call limit is
+typically far longer — Claude Code's default is measured in hours — so a timeout here is always this
+number rather than `jb` giving up or the client losing patience. Raise it for a solution that genuinely
+needs longer. It stays bounded (a day at most) so that a `jb` which has truly hung cannot occupy an agent
+indefinitely.
 
 **Only one `jb` at a time may use a solution's cache**, so calls against one solution queue rather than
 run together. This is not politeness: a second concurrent `jb` cannot open the warm cache, and instead of
@@ -56,15 +65,18 @@ waiting it silently forks a new, *empty* one — so both runs do cold-cache work
 past the timeout, and the fork is left behind taking up disk. Queueing costs a wait and nothing else. The
 queue is shared by every client on the machine, since it is the cache that is contended, not the server.
 
-So a call is bounded by its wait plus its run. A call waits up to **5 minutes** for a run already in
-flight, and only then starts its own 5-minute run; if the wait runs out the error says a run against that
-solution is already going, and retrying shortly after is the right response. The wait is invisible when
-nothing else is running, which is the normal case.
+So a call is bounded by its wait plus its run. A call waits up to the same cap for a run already in
+flight, and only then starts its own run; if the wait runs out the error says a run against that solution
+is already going, and retrying shortly after is the right response. The wait is invisible when nothing
+else is running, which is the normal case.
 
-A timeout with nothing else running is almost always the cold run: retry once, and if it still times out,
-narrow the work with `files` so `jb` analyses less. Your MCP client may also enforce its own, shorter
-tool-call timeout and give up before the server's caps; raise that on the client side (for Claude Code,
-the `MCP_TOOL_TIMEOUT` environment variable, in milliseconds).
+A timeout with nothing else running is almost always the cold run. **Scoping the retry with `files` does
+not help**: `jb` analyses the whole solution whatever the report is narrowed to, so a one-file run is no
+faster than a solution-wide one — often marginally slower. What a killed run does leave behind is a
+partly-built cache, so a retry resumes from there rather than starting over; but where a cold analysis
+simply takes longer than the cap, raising `RESHARPER_MCP_TIMEOUT_SECS` is the fix and retrying is not. Your MCP
+client may also enforce a tool-call timeout of its own and give up before the server's cap; raise that on
+the client side too (for Claude Code, the `MCP_TOOL_TIMEOUT` environment variable, in milliseconds).
 
 ### The background pre-warm
 
@@ -100,8 +112,9 @@ you do in the editor clears it. Only a real compilation error survives the build
 **The cure.** Call `resharper_reset_cache`. It deletes the solution's cache generation directories under
 the cache home, and the next inspect or cleanup rebuilds the index from cold. It takes the same queue lock
 the analysis tools take, so it waits for a run in flight rather than deleting the cache underneath it, and
-a run that starts meanwhile waits for the reset. That cold rebuild costs minutes and can hit the 5-minute
-run cap on a large solution, so the retry after a reset is the one call most worth expecting to be slow.
+a run that starts meanwhile waits for the reset. That cold rebuild costs minutes and can hit the run cap
+on a large solution, so the call after a reset is the one most worth expecting to be slow — and the one
+most worth raising `RESHARPER_MCP_TIMEOUT_SECS` for ahead of time.
 
 It refuses in one case rather than guessing: when the cache home holds generations for **two solutions with
 the same file name**, since `jb` names those directories with a hash of the solution path and not the path
@@ -149,7 +162,9 @@ the remainder.
 ## Environment variables
 
 Set these in the MCP client config's `env` block. They are read from the server process's own environment,
-so a change takes effect once the client restarts the server. All are optional.
+so a change takes effect once the client restarts the server. All are optional. The `JB_` ones each become
+something `jb` itself is told; the `RESHARPER_MCP_` ones govern this server's own behaviour and never reach
+`jb` at all.
 
 | Variable | Effect |
 |---|---|
@@ -158,6 +173,7 @@ so a change takes effect once the client restarts the server. All are optional.
 | `JB_CACHE_HOME` | ReSharper cache directory (default `~/.jb-cache`). |
 | `JB_EXTENSIONS` | Semicolon-separated ReSharper plugin IDs to load. |
 | `JB_EXTENSION_SOURCE` | Custom NuGet source for those plugins. |
+| `RESHARPER_MCP_TIMEOUT_SECS` | Cap in seconds on one `jb` run, and on the wait for one already in flight (default `600`). Clamped to 60…86,400; anything unreadable falls back to `600`. |
 | `RESHARPER_MCP_PREWARM` | Set to `off` to stop the background pre-warm above. Anything else, including unset, leaves it on. |
 | `RESHARPER_MCP_LOG_LEVEL` | Minimum level for the file log (default `Warning`). Accepts Serilog or Microsoft level names; anything unrecognised falls back to `Warning`. |
 | `MAX_MCP_OUTPUT_TOKENS` | Set by the MCP client, not by you — the output budget above. |

@@ -6,7 +6,13 @@ namespace Zphil.ReSharperCli;
 ///     filter catches these and returns the message to the MCP client <em>without</em> writing
 ///     to the file log, which is reserved for unexpected crashes.
 /// </summary>
-internal sealed class UserErrorException : InvalidOperationException
+/// <remarks>
+///     Open for one purpose: a subclass that lets a <em>caller</em> recognise a particular expected failure
+///     and restate it with knowledge the thrower did not have (see
+///     <see cref="Execution.ProcessTimeoutException" />). The filter matches the base type, so a subclass
+///     that reaches it is still handled as an expected error.
+/// </remarks>
+internal class UserErrorException : InvalidOperationException
 {
     public UserErrorException(string message) : base(message)
     {

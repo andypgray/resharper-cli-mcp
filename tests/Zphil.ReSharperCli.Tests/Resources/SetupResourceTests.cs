@@ -50,7 +50,7 @@ public sealed class SetupResourceTests
         string text = contents.Text;
         text.ShouldContain("JetBrains.ReSharper.GlobalTools"); // the install command for the missing jb
         text.ShouldContain("no parent walk"); // solution discovery is top-level only
-        text.ShouldContain("5 minutes"); // the per-run cap behind most timeouts
+        text.ShouldContain("10 minutes"); // the per-run cap behind most timeouts
         text.ShouldContain("queue"); // why a concurrent call waits rather than forking a cold cache
         text.ShouldContain("25,000"); // the output cap when the client sets no budget
         text.ShouldContain("DETAIL REDUCED"); // the marker an agent actually sees on an over-budget result
@@ -69,6 +69,7 @@ public sealed class SetupResourceTests
     [InlineData("JB_CACHE_HOME")]
     [InlineData("JB_EXTENSIONS")]
     [InlineData("JB_EXTENSION_SOURCE")]
+    [InlineData("RESHARPER_MCP_TIMEOUT_SECS")]
     [InlineData("RESHARPER_MCP_PREWARM")]
     [InlineData("RESHARPER_MCP_LOG_LEVEL")]
     [InlineData("MAX_MCP_OUTPUT_TOKENS")]

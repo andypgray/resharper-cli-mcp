@@ -68,11 +68,11 @@ A solution-wide run comes back more compactly: once it would overflow the output
 
 Call `resharper_cleanup` once, at the end of a task, with every file you changed batched into the one call.
 
-The first run on a solution is slow while ReSharper builds its caches under `--caches-home`; later runs reuse them and finish in seconds. The server caps each run at 5 minutes.
+The first run on a solution is slow while ReSharper builds its caches under `--caches-home`; later runs reuse them and finish in seconds. The server caps each run at 10 minutes, and `RESHARPER_MCP_TIMEOUT_SECS` moves that cap. The cap is the server's own — no MCP client requires one this short — so a solution whose cold analysis needs longer should be given longer rather than retried, and narrowing the call with `files` will not make it finish: `jb` analyses the whole solution whatever the report is scoped to.
 
 To spend that cold run on idle time rather than yours, the server starts one speculative inspection of the discovered solution as soon as a client connects — at most once per session, skipped when any run against that cache succeeded in the last hour, and silently skipped entirely when there is no solution to find. A real call arriving mid-pre-warm cancels it and takes the cache, so it never queues behind one *in the same server process*; one running in another process cannot be cancelled and is the one case where a first call can be slower than before. It is a full solution analysis, which is not free — set `RESHARPER_MCP_PREWARM=off` to turn it off.
 
-Calls against one solution are serialized, across every client on the machine: only one `jb` at a time can use a solution's cache, and a second one that tries silently forks a cold copy instead of waiting — so two sessions inspecting one solution would otherwise make each other slow and leave a stale cache behind. A call therefore waits up to 5 minutes for a run already in flight before starting its own 5-minute run, and says so if that wait runs out. If your MCP client's own tool-call timeout is shorter than a cold run needs, the client gives up first. In Claude Code, raise it with a per-server `"timeout"` in milliseconds in `.mcp.json`, or the `MCP_TOOL_TIMEOUT` environment variable.
+Calls against one solution are serialized, across every client on the machine: only one `jb` at a time can use a solution's cache, and a second one that tries silently forks a cold copy instead of waiting — so two sessions inspecting one solution would otherwise make each other slow and leave a stale cache behind. A call therefore waits up to the same cap for a run already in flight before starting its own run, and says so if that wait runs out. If your MCP client's own tool-call timeout is shorter than a cold run needs, the client gives up first. In Claude Code, raise it with a per-server `"timeout"` in milliseconds in `.mcp.json`, or the `MCP_TOOL_TIMEOUT` environment variable.
 
 ### When ReSharper reports errors your compiler does not
 
@@ -84,7 +84,7 @@ The ReSharper CLI exposes no cache-invalidation option of its own — `--caches-
 
 ## Configuration
 
-Set these in the MCP client config's `env` block. All are optional.
+Set these in the MCP client config's `env` block. All are optional. Each `JB_` variable becomes something `jb` itself is told; the `RESHARPER_MCP_` ones govern this server's own behaviour and never reach `jb`.
 
 | Variable | Purpose |
 |---|---|
@@ -93,6 +93,7 @@ Set these in the MCP client config's `env` block. All are optional.
 | `JB_CACHE_HOME` | ReSharper cache directory (default `~/.jb-cache`). |
 | `JB_EXTENSIONS` | Semicolon-separated ReSharper plugin IDs to load. |
 | `JB_EXTENSION_SOURCE` | Custom NuGet source for those plugins. |
+| `RESHARPER_MCP_TIMEOUT_SECS` | Cap in seconds on one `jb` run, and on the wait for one already in flight (default `600`, clamped to 60–86,400). |
 | `RESHARPER_MCP_PREWARM` | `off` disables the background cache pre-warm above. |
 | `RESHARPER_MCP_LOG_LEVEL` | Level for the rolling file log (default `Warning`). |
 | `MAX_MCP_OUTPUT_TOKENS` | Client output budget; caps large inspection results. |
@@ -135,7 +136,7 @@ The two tools read two independent configuration axes: `resharper_inspect` obeys
 
 Rather than carry that model in every session's context, the server advertises it as an on-demand MCP resource, `resharper://guides/configuration` — the two axes, how to protect a deliberate style, where settings and `.editorconfig` are read from, and the `.DotSettings` key shapes. A client that surfaces resources lets an agent load it exactly when it is about to change what ReSharper enforces.
 
-A second resource, `resharper://guides/setup`, covers running the server rather than configuring ReSharper: how `jb` and the solution are discovered, why the first call is slow and what the background pre-warm does about it, what the 5-minute caps mean and why calls against one solution queue, how a large result is shortened to fit the output budget, the environment variables above, and where logs go. An agent loads it when a call cannot find `jb` or the solution, times out, or comes back shortened. Splitting the two keeps each pull small, and keeps the always-loaded server instructions down to the cross-tool rules that no schema can express.
+A second resource, `resharper://guides/setup`, covers running the server rather than configuring ReSharper: how `jb` and the solution are discovered, why the first call is slow and what the background pre-warm does about it, what the run cap means and why calls against one solution queue, how a large result is shortened to fit the output budget, the environment variables above, and where logs go. An agent loads it when a call cannot find `jb` or the solution, times out, or comes back shortened. Splitting the two keeps each pull small, and keeps the always-loaded server instructions down to the cross-tool rules that no schema can express.
 
 ## Cleanup reminder hook
 

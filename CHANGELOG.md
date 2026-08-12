@@ -33,6 +33,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the cause — `jb` builds its solution model from source for a solution's own projects and resolves
   declarations added since the last build without one.
 
+### Changed
+
+- Each `jb` run is now capped at **10 minutes** rather than 5, and the new `RESHARPER_MCP_TIMEOUT_SECS`
+  moves that cap (in seconds, default `600`, clamped to 60–86,400; anything unreadable falls back to the
+  default). It takes the server's own prefix rather than `JB_`, because that is the line the existing
+  variables already draw: every `JB_` one becomes something `jb` is told, and this one arms a kill timer
+  `jb` never learns about. Seconds rather than minutes so a cap can be pitched just above a run you have
+  timed, and a cap that is not a round number of minutes is reported back the way you set it — a run
+  stopped at 455 seconds says "7 minutes 35 seconds", not "8 minutes". The old cap sat inside the
+  normal working range of a cold whole-solution analysis rather than beyond it, so it killed runs that were
+  making steady progress. Nothing outside this server ever asked for it either — an MCP client's own
+  tool-call limit is far longer — which means a timeout here has always been this server's own choice, and
+  is now one you can change. The same value bounds the queue wait, so a call stays bounded by wait + run.
+- A run that hits the cap now says whose cap it is, names the variable that raises it, and heads off the
+  retry that cannot work: `jb` analyses the whole solution whatever the report is scoped to, so narrowing a
+  retry with `files` makes it no faster. The setup guide previously advised exactly that; it no longer does.
+
+### Fixed
+
+- A background cache pre-warm that runs out of that budget is an ordinary skip rather than an unexpected
+  failure. Speculative work has nobody waiting on it, and a solution large enough to exceed the cap from
+  cold is precisely the one pre-warming exists for, so it no longer logs a warning for its own best case.
+
 ## [1.2.1] - 2026-08-07
 
 ### Fixed

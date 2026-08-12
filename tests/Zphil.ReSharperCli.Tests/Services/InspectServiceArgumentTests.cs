@@ -141,7 +141,7 @@ public sealed class InspectServiceArgumentTests
                 captured = call.Arg<IReadOnlyList<string>>();
                 return new ProcessResult(0, string.Empty, string.Empty);
             });
-        InspectService service = new(new JbRunner(processRunner, new JbRunLock(JbRunner.Timeout)));
+        InspectService service = new(new JbRunner(processRunner, new JbRunLock(JbRunTimeout.Default), JbRunTimeout.Default));
 
         // Act
         await service.WarmCacheAsync(config, Ct);

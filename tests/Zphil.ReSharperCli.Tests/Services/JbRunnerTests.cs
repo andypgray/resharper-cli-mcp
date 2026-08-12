@@ -23,14 +23,14 @@ public sealed class JbRunnerTests : IDisposable
     private readonly ResolvedConfig _config;
     private readonly FakeEnvironment _environment = new();
     private readonly IProcessRunner _processRunner = Substitute.For<IProcessRunner>();
-    private readonly JbRunLock _runLock = new(JbRunner.Timeout);
+    private readonly JbRunLock _runLock = new(JbRunTimeout.Default);
     private readonly JbRunner _runner;
 
     public JbRunnerTests()
     {
         _config = new ResolvedConfig(
             "/sln/App.sln", null, null, _environment.CreateTempDirectory(), null, null, "jb", ConfigWarnings.None);
-        _runner = new JbRunner(_processRunner, _runLock);
+        _runner = new JbRunner(_processRunner, _runLock, JbRunTimeout.Default);
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -126,6 +126,58 @@ public sealed class JbRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task RunAsync_RunHitsTheCap_SaysWhoseCapItIsAndNamesTheLever()
+    {
+        // Arrange — ProcessRunner reports the mechanical fact and stops there, because it does not know
+        // whose timeout it was handed. Only the runner can answer the two questions a caller is left with.
+        StubTimeout();
+
+        // Act
+        var exception = await Should.ThrowAsync<UserErrorException>(() => _runner.RunAsync(_config, ["inspectcode", _config.SolutionPath], Ct));
+
+        // Assert — every timeout a user meets is one this server chose (an MCP client would have waited
+        // far longer), so the message has to disown it, name the variable that moves it, and head off the
+        // retry that does not work.
+        exception.Message.ShouldStartWith("jb inspectcode timed out after 10 minutes");
+        exception.Message.ShouldContain("this server's, not jb's own");
+        exception.Message.ShouldContain(JbRunTimeout.Variable);
+        exception.Message.ShouldContain("`files` will not help");
+    }
+
+    [Fact]
+    public async Task RunAsync_RunHitsARaisedCap_ReportsThatCapExactlyAsItWasSet()
+    {
+        // Arrange — a raised cap that still ran out must say so with the raised number, or the advice to
+        // raise it reads as though nothing happened the first time. 455 seconds and not a round number of
+        // minutes on purpose: the variable is configured in seconds, so a cap must never be reported back
+        // rounded to a value the user did not choose.
+        JbRunner runner = new(_processRunner, _runLock, TimeSpan.FromSeconds(455));
+        StubTimeout();
+
+        // Act
+        var exception = await Should.ThrowAsync<UserErrorException>(() => runner.RunAsync(_config, ["inspectcode", _config.SolutionPath], Ct));
+
+        // Assert
+        exception.Message.ShouldStartWith("jb inspectcode timed out after 7 minutes 35 seconds");
+    }
+
+    [Fact]
+    public async Task TryRunAsync_RunHitsTheCap_SkipsInsteadOfReportingAFailure()
+    {
+        // Arrange — the cap protects a caller who is waiting, and nobody waits on speculative work. A big
+        // cold solution is both the likeliest to exceed it and the one pre-warming exists for, so treating
+        // that as a fault would make the warmer log a warning for its own best-case workload.
+        StubTimeout();
+
+        // Act
+        var result = await _runner.TryRunAsync(_config, ["inspectcode", _config.SolutionPath], Ct);
+
+        // Assert
+        result.ShouldBeNull();
+        JbWarmMarker.IsFreshWithin(_config.SolutionPath, _config.CacheHome, RecentlyEnough).ShouldBeFalse();
+    }
+
+    [Fact]
     public async Task TryRunAsync_CacheGenerationAlreadyTaken_SkipsWithoutSpawningJb()
     {
         // Arrange — a lease held by someone else, standing in for a real call or another server process.
@@ -171,6 +223,17 @@ public sealed class JbRunnerTests : IDisposable
 
         // Act & Assert
         await Should.ThrowAsync<OperationCanceledException>(() => _runner.TryRunAsync(_config, ["inspectcode", _config.SolutionPath], callerCancelled.Token));
+    }
+
+    /// <summary>
+    ///     A run killed at the cap, as <see cref="Zphil.ReSharperCli.Execution.ProcessRunner" /> reports it:
+    ///     the mechanical message, carrying no idea of whose cap it was.
+    /// </summary>
+    private void StubTimeout()
+    {
+        _processRunner
+            .RunAsync("jb", Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new ProcessTimeoutException("'jb' timed out."));
     }
 
     private void StubExit(int exitCode, string standardError)

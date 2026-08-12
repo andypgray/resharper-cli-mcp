@@ -69,7 +69,7 @@ internal sealed class ProcessRunner : IProcessRunner
             // External cancellation (the caller's token) propagates as a normal OperationCanceledException.
             if (cancellationToken.IsCancellationRequested) throw;
 
-            throw new UserErrorException($"'{fileName}' timed out after {FormatDuration(timeout)}.");
+            throw new ProcessTimeoutException($"'{fileName}' timed out after {FormatDuration(timeout)}.");
         }
 
         // The process has exited and its exit code is final. Bound the pipe drain by the still-armed
@@ -105,20 +105,27 @@ internal sealed class ProcessRunner : IProcessRunner
     }
 
     /// <summary>
-    ///     Human-readable, correctly-pluralized run duration: sub-minute values render in whole seconds
-    ///     ("1 second", "30 seconds"); a minute or longer renders in whole minutes rounded away from zero
-    ///     ("1 minute", "5 minutes").
+    ///     Human-readable, correctly-pluralized run duration: "30 seconds", "5 minutes", "1 minute
+    ///     30 seconds". The leftover seconds are spelled out rather than rounded into the minute count
+    ///     because the run cap is configured <em>in</em> seconds — a cap someone set to 90 must not report
+    ///     itself as two minutes, or the message contradicts the value they chose.
     /// </summary>
     internal static string FormatDuration(TimeSpan duration)
     {
-        if (duration.TotalSeconds < 60)
-        {
-            int seconds = Math.Max(1, (int)Math.Round(duration.TotalSeconds, MidpointRounding.AwayFromZero));
-            return seconds == 1 ? "1 second" : $"{seconds} seconds";
-        }
+        int totalSeconds = Math.Max(1, (int)Math.Round(duration.TotalSeconds, MidpointRounding.AwayFromZero));
+        if (totalSeconds < 60) return Pluralize(totalSeconds, "second");
 
-        int minutes = Math.Max(1, (int)Math.Round(duration.TotalMinutes, MidpointRounding.AwayFromZero));
-        return minutes == 1 ? "1 minute" : $"{minutes} minutes";
+        int minutes = totalSeconds / 60;
+        int seconds = totalSeconds % 60;
+
+        return seconds == 0
+            ? Pluralize(minutes, "minute")
+            : $"{Pluralize(minutes, "minute")} {Pluralize(seconds, "second")}";
+    }
+
+    private static string Pluralize(int count, string unit)
+    {
+        return count == 1 ? $"1 {unit}" : $"{count} {unit}s";
     }
 
     /// <summary>

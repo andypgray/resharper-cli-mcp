@@ -43,16 +43,18 @@ public sealed class ProcessRunnerTests
     }
 
     [Fact]
-    public async Task RunAsync_ProcessExceedsTimeout_ThrowsUserErrorException()
+    public async Task RunAsync_ProcessExceedsTimeout_ThrowsProcessTimeoutException()
     {
         // Arrange
         ProcessRunner runner = new();
         (string fileName, string[] arguments) = SleepThirtySecondsCommand();
 
-        // Act
-        var exception = await Should.ThrowAsync<UserErrorException>(() => runner.RunAsync(fileName, arguments, TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken));
+        // Act — the distinct type is what lets the caller that chose the timeout recognise its own cap and
+        // restate it; a plain UserErrorException would leave the mechanical message as the last word.
+        var exception = await Should.ThrowAsync<ProcessTimeoutException>(() => runner.RunAsync(fileName, arguments, TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken));
 
         // Assert
+        exception.ShouldBeAssignableTo<UserErrorException>();
         exception.Message.ShouldContain("timed out after 2 seconds");
         exception.Message.ShouldContain(fileName);
     }
@@ -79,15 +81,26 @@ public sealed class ProcessRunnerTests
     [InlineData(1, "1 second")]
     [InlineData(30, "30 seconds")]
     [InlineData(60, "1 minute")]
-    [InlineData(90, "2 minutes")]
     [InlineData(300, "5 minutes")]
-    public void FormatDuration_RendersWholeUnitsWithCorrectPluralization(int seconds, string expected)
+    [InlineData(600, "10 minutes")]
+    public void FormatDuration_WholeUnits_RendersThemWithCorrectPluralization(int seconds, string expected)
     {
         // Act
         string formatted = ProcessRunner.FormatDuration(TimeSpan.FromSeconds(seconds));
 
         // Assert
         formatted.ShouldBe(expected);
+    }
+
+    [Theory]
+    [InlineData(61, "1 minute 1 second")]
+    [InlineData(90, "1 minute 30 seconds")]
+    [InlineData(455, "7 minutes 35 seconds")]
+    public void FormatDuration_LeftoverSeconds_SaysThemRatherThanRoundingIntoTheMinutes(int seconds, string expected)
+    {
+        // The run cap is configured in seconds, so rounding 90 up to "2 minutes" would report a cap the
+        // user never set and quietly contradict the value in their own config.
+        ProcessRunner.FormatDuration(TimeSpan.FromSeconds(seconds)).ShouldBe(expected);
     }
 
     [Fact]

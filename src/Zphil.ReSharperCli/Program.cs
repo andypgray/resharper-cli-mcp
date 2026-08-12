@@ -31,13 +31,20 @@ SerilogConfiguration.RegisterCrashHandlers();
 HostApplicationBuilder builder = Host.CreateApplicationBuilder(args);
 builder.AddSerilogLogging();
 
+// Read here rather than in either consumer, and passed to both: a call is bounded by its queue wait plus
+// its own run, and those two caps only mean anything together if they are the same number.
+TimeSpan runTimeout = JbRunTimeout.Resolve(Environment.GetEnvironmentVariable(JbRunTimeout.Variable));
+
 // The two fakeable seams plus the pure/concrete graph composed over them — all singletons.
 builder.Services.AddSingleton<IEnvironment, SystemEnvironment>();
 builder.Services.AddSingleton<IProcessRunner, ProcessRunner>();
 builder.Services.AddSingleton<JbLocator>();
 builder.Services.AddSingleton<ConfigResolver>();
-builder.Services.AddSingleton(_ => new JbRunLock(JbRunner.Timeout));
-builder.Services.AddSingleton<JbRunner>();
+builder.Services.AddSingleton(_ => new JbRunLock(runTimeout));
+builder.Services.AddSingleton(provider => new JbRunner(
+    provider.GetRequiredService<IProcessRunner>(),
+    provider.GetRequiredService<JbRunLock>(),
+    runTimeout));
 builder.Services.AddSingleton<InspectService>();
 builder.Services.AddSingleton<CleanupService>();
 builder.Services.AddSingleton<CacheResetService>();

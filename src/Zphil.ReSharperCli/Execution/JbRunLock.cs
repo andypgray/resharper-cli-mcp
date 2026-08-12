@@ -32,9 +32,10 @@ namespace Zphil.ReSharperCli.Execution;
 ///     </para>
 /// </remarks>
 /// <param name="maxWait">
-///     How long a caller queues for a run in flight before giving up. The composition root wires it to
-///     the run cap in <see cref="Services.JbRunner" /> — one constant, so a queued call is bounded by
-///     wait + run and the two caps cannot drift apart.
+///     How long a caller queues for a run in flight before giving up. The composition root resolves
+///     <see cref="JbRunTimeout" /> once and wires the same value here and to the run cap in
+///     <see cref="Services.JbRunner" />, so a queued call is bounded by wait + run and the two caps cannot
+///     drift apart — including when <c>RESHARPER_MCP_TIMEOUT_SECS</c> moves them.
 /// </param>
 internal sealed class JbRunLock(TimeSpan maxWait)
 {

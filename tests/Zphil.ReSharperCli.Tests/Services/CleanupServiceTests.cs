@@ -34,7 +34,7 @@ public sealed class CleanupServiceTests : IDisposable
         // literal like "/cache" would leave a stray folder at the drive root.
         _config = new ResolvedConfig(
             solutionPath, null, null, _environment.CreateTempDirectory(), null, null, "jb", ConfigWarnings.None);
-        _service = new CleanupService(new JbRunner(_processRunner, new JbRunLock(JbRunner.Timeout)));
+        _service = new CleanupService(new JbRunner(_processRunner, new JbRunLock(JbRunTimeout.Default), JbRunTimeout.Default));
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;

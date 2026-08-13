@@ -40,14 +40,15 @@ internal static class JbRunTimeout
     /// <summary>
     ///     A cap below this would kill runs that were never in trouble — a warm whole-solution analysis
     ///     alone costs the better part of a minute — so a smaller value is read as a mistake and raised.
+    ///     Internal so the setup guide's clamp row is pinned against the real bound.
     /// </summary>
-    private static readonly TimeSpan Floor = TimeSpan.FromSeconds(60);
+    internal static readonly TimeSpan Floor = TimeSpan.FromSeconds(60);
 
     /// <summary>
     ///     Past a day the cap has stopped bounding anything anyone is waiting for, and bounding a hung
-    ///     <c>jb</c> is the whole reason to have one.
+    ///     <c>jb</c> is the whole reason to have one. Internal for the same reason as <see cref="Floor" />.
     /// </summary>
-    private static readonly TimeSpan Ceiling = TimeSpan.FromHours(24);
+    internal static readonly TimeSpan Ceiling = TimeSpan.FromHours(24);
 
     /// <summary>
     ///     The cap <paramref name="envValue" /> asks for, clamped to <see cref="Floor" />..<see cref="Ceiling" />.

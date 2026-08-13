@@ -91,6 +91,17 @@ internal static class JbCacheGenerations
     }
 
     /// <summary>
+    ///     Where the generation directory called <paramref name="generationName" /> sits under
+    ///     <paramref name="cacheHome" />, anchored absolute. Lives beside the parser because the name can
+    ///     come from a warm marker's content — untrusted input to a copy — and anchoring the composition
+    ///     here is what keeps every reader and writer of that name addressing inside the cache home.
+    /// </summary>
+    internal static string PathUnder(string cacheHome, string generationName)
+    {
+        return Path.Combine(Path.GetFullPath(cacheHome), generationName);
+    }
+
+    /// <summary>
     ///     Whether <paramref name="directoryName" /> names a generation of a solution file called like
     ///     <paramref name="solutionPath" />'s but built from a <em>different</em> path — the shape a
     ///     transplant donor has. A generation of this very solution fails it, and so does anything else in

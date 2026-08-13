@@ -72,7 +72,7 @@ internal sealed class CacheResetService(JbRunLock runLock)
             }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
             {
-                failures.Add(new CacheResetFailure(generation.Name, ConfigWarningBanner.SingleLine(exception.Message)));
+                failures.Add(new CacheResetFailure(generation.Name, exception.Message));
             }
 
         // The marker claims a jb run against this generation succeeded recently, which is what stops the next

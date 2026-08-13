@@ -1,6 +1,8 @@
+using System.Globalization;
 using ModelContextProtocol.Protocol;
 using Shouldly;
 using Xunit;
+using Zphil.ReSharperCli.Execution;
 using Zphil.ReSharperCli.Resources;
 using Zphil.ReSharperCli.Tests.TestSupport;
 using Zphil.ReSharperCli.Tools;
@@ -50,7 +52,15 @@ public sealed class SetupResourceTests
         string text = contents.Text;
         text.ShouldContain("JetBrains.ReSharper.GlobalTools"); // the install command for the missing jb
         text.ShouldContain("no parent walk"); // solution discovery is top-level only
-        text.ShouldContain("10 minutes"); // the per-run cap behind most timeouts
+
+        // The run-cap numbers, derived from their owner rather than restated: the guide is the caps' only
+        // agent-facing home, so a change to JbRunTimeout that skips the guide must fail here, not ship a
+        // document asserting the wrong cap.
+        text.ShouldContain($"capped at **{(int)JbRunTimeout.Default.TotalMinutes} minutes**");
+        text.ShouldContain($"default `{(int)JbRunTimeout.Default.TotalSeconds}`");
+        text.ShouldContain(
+            $"Clamped to {(int)JbRunTimeout.Floor.TotalSeconds}…{JbRunTimeout.Ceiling.TotalSeconds.ToString("N0", CultureInfo.InvariantCulture)}");
+
         text.ShouldContain("queue"); // why a concurrent call waits rather than forking a cold cache
         text.ShouldContain("25,000"); // the output cap when the client sets no budget
         text.ShouldContain("DETAIL REDUCED"); // the marker an agent actually sees on an over-budget result

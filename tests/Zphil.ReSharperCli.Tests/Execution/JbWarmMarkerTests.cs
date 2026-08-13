@@ -169,10 +169,9 @@ public sealed class JbWarmMarkerTests : IDisposable
     [Fact]
     public void Stamp_CacheHomeThatCannotHoldTheMarker_DoesNotThrowAndStillReportsStale()
     {
-        // Arrange — a *file* where the cache home should be, so the marker can never be created. This runs
-        // straight after a jb run the user asked for, so throwing here would fail a call that succeeded.
-        string blocked = Path.Combine(_environment.CreateTempDirectory(), "not-a-directory");
-        File.WriteAllText(blocked, string.Empty);
+        // Arrange — the marker can never be created there. This runs straight after a jb run the user asked
+        // for, so throwing here would fail a call that succeeded.
+        string blocked = CacheHomes.BlockedCacheHome(_environment);
 
         // Act
         Should.NotThrow(() => JbWarmMarker.Stamp(SolutionPath, blocked));

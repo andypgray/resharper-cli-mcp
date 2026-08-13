@@ -487,7 +487,7 @@ public sealed class JbRunnerTests : IDisposable
     /// <summary>Another checkout of the same solution file, which is what makes a donor a donor.</summary>
     private string SiblingSolutionPath()
     {
-        return Path.Combine(_environment.CreateTempDirectory(), Path.GetFileName(_config.SolutionPath));
+        return _environment.CreateSolutionPath(Path.GetFileName(_config.SolutionPath));
     }
 
     /// <summary>Where a cache seeded for this runner's own solution would land.</summary>

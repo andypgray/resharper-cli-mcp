@@ -67,7 +67,7 @@ internal sealed class JbRunLock(TimeSpan maxWait)
             key = JbSidecar.ComputeKey(solutionPath, cacheHome);
             lockFilePath = LockFilePathFor(cacheHome, key);
         }
-        catch (Exception exception) when (exception is ArgumentException or NotSupportedException or PathTooLongException)
+        catch (Exception exception) when (CannotDeriveLock(exception))
         {
             Log.Warning(exception, "Could not derive a jb run lock for solution {SolutionPath} in cache home {CacheHome}; running unserialized", solutionPath, cacheHome);
             return new Holder(null, null);
@@ -121,7 +121,7 @@ internal sealed class JbRunLock(TimeSpan maxWait)
             key = JbSidecar.ComputeKey(solutionPath, cacheHome);
             lockFilePath = LockFilePathFor(cacheHome, key);
         }
-        catch (Exception exception) when (exception is ArgumentException or NotSupportedException or PathTooLongException)
+        catch (Exception exception) when (CannotDeriveLock(exception))
         {
             return null;
         }
@@ -180,7 +180,7 @@ internal sealed class JbRunLock(TimeSpan maxWait)
         {
             lockFilePath = LockFilePathFor(cacheHome, key);
         }
-        catch (Exception exception) when (exception is ArgumentException or NotSupportedException or PathTooLongException)
+        catch (Exception exception) when (CannotDeriveLock(exception))
         {
             return null;
         }
@@ -211,6 +211,17 @@ internal sealed class JbRunLock(TimeSpan maxWait)
     internal static string LockFilePathFor(string cacheHome, string key)
     {
         return JbSidecar.PathForKey(cacheHome, key, "lock");
+    }
+
+    /// <summary>
+    ///     The one definition of "the lock cannot even be derived": what <see cref="JbSidecar" />'s path
+    ///     derivations throw for an argument no path API will accept. Every entry point filters on this and
+    ///     then degrades its own way — a set edited in one prologue and not the others would silently change
+    ///     which acquisition shapes serialize.
+    /// </summary>
+    private static bool CannotDeriveLock(Exception exception)
+    {
+        return exception is ArgumentException or NotSupportedException or PathTooLongException;
     }
 
     /// <summary>

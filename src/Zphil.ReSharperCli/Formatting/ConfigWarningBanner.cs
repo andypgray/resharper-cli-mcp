@@ -64,8 +64,8 @@ internal static class ConfigWarningBanner
 
     /// <summary>
     ///     Flattens a reason onto one line: it is an exception message, and one carrying an embedded newline
-    ///     would make the banner's tail — or the report list item <c>CacheResetService</c> puts it in — read
-    ///     as body text.
+    ///     would make the banner's tail — or the report list item <see cref="CacheResetFormatter" /> puts it
+    ///     in — read as body text.
     /// </summary>
     internal static string SingleLine(string reason)
     {

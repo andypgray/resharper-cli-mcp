@@ -4,6 +4,7 @@ using Shouldly;
 using Xunit;
 using Zphil.ReSharperCli.Execution;
 using Zphil.ReSharperCli.Tests.TestDoubles;
+using Zphil.ReSharperCli.Tests.TestSupport;
 
 namespace Zphil.ReSharperCli.Tests.Execution;
 
@@ -126,11 +127,10 @@ public sealed class JbRunLockTests : IDisposable
     [Fact]
     public async Task AcquireAsync_CacheHomeCannotBeCreated_DegradesInsteadOfFailingTheRun()
     {
-        // Arrange — a *file* where the cache home should be, so the directory can never be created. The lock
-        // is an optimisation, never a dependency: the jb run must still go ahead without it.
+        // Arrange — the lock is an optimisation, never a dependency: the jb run must still go ahead
+        // without it.
         JbRunLock runLock = new(ShortWait);
-        string blocked = Path.Combine(_environment.CreateTempDirectory(), "not-a-directory");
-        await File.WriteAllTextAsync(blocked, string.Empty, Ct);
+        string blocked = CacheHomes.BlockedCacheHome(_environment);
 
         // Act
         IDisposable degraded = await runLock.AcquireAsync(SolutionPath, blocked, Ct).WaitAsync(Generous, Ct);
@@ -278,12 +278,11 @@ public sealed class JbRunLockTests : IDisposable
     [Fact]
     public async Task TryAcquire_CacheHomeCannotBeCreated_SkipsInsteadOfDegrading()
     {
-        // Arrange — a *file* where the cache home should be. AcquireAsync degrades here and runs anyway,
-        // because a call the user asked for outranks the optimisation; a speculative run has no such claim,
-        // and running it unserialized would fork the cold cache the lock exists to prevent.
+        // Arrange — AcquireAsync degrades here and runs anyway, because a call the user asked for outranks
+        // the optimisation; a speculative run has no such claim, and running it unserialized would fork the
+        // cold cache the lock exists to prevent.
         JbRunLock runLock = new(ShortWait);
-        string blocked = Path.Combine(_environment.CreateTempDirectory(), "not-a-directory");
-        await File.WriteAllTextAsync(blocked, string.Empty, Ct);
+        string blocked = CacheHomes.BlockedCacheHome(_environment);
 
         // Act
         IDisposable? lease = runLock.TryAcquire(SolutionPath, blocked);
@@ -429,6 +428,6 @@ public sealed class JbRunLockTests : IDisposable
     /// <summary>Hold the lock file the way another server process would: exclusively, until disposed.</summary>
     private FileStream OpenLockFileExclusively()
     {
-        return new FileStream(LockFilePath(), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+        return CacheHomes.HoldLockFile(_cacheHome, SolutionPath);
     }
 }

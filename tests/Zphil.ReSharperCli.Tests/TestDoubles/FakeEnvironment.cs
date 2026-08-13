@@ -59,4 +59,15 @@ internal sealed class FakeEnvironment : IEnvironment, IDisposable
         _tempDirectories.Add(directory);
         return directory;
     }
+
+    /// <summary>
+    ///     A path for a solution file called <paramref name="solutionFileName" /> in a fresh temp directory
+    ///     of its own; nothing is written at it. Reusing another solution's file name makes the checkout
+    ///     shape <c>jb</c> hashes apart — a transplant donor, a reset's left-alone neighbour — and a
+    ///     different name makes an unrelated solution.
+    /// </summary>
+    public string CreateSolutionPath(string solutionFileName)
+    {
+        return Path.Combine(CreateTempDirectory(), solutionFileName);
+    }
 }

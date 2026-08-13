@@ -1,7 +1,9 @@
 using Shouldly;
 using Xunit;
 using Zphil.ReSharperCli.Formatting;
+using Zphil.ReSharperCli.Resources;
 using Zphil.ReSharperCli.Sarif;
+using Zphil.ReSharperCli.Tools;
 
 namespace Zphil.ReSharperCli.Tests.Formatting;
 
@@ -29,13 +31,14 @@ public sealed class CompilationErrorNoteTests
         // Act
         string note = CompilationErrorNote.For(issues, CacheHome);
 
-        // Assert — the exact text, because this is the whole feature.
+        // Assert — the exact text, because this is the whole feature. The cure's tool name and the guide's
+        // URI are interpolated from their owners, pinning that the note routes to names that really exist.
         note.ShouldBe(
             "NOTE: 2 of these issue(s) are compilation errors (`.CSharpErrors`). Build the solution before "
             + "acting on them: if the compiler accepts the code, ReSharper's solution-wide index is stale and "
-            + "these are phantoms that will repeat on every re-run. Run resharper_reset_cache to drop this "
+            + $"these are phantoms that will repeat on every re-run. Run {ResharperTools.ResetCacheToolName} to drop this "
             + $"solution's cache generation under \"{CacheHome}\", then inspect again. "
-            + "See the resharper://guides/setup resource.\n\n");
+            + $"See the {ResharperResources.SetupGuideUri} resource.\n\n");
     }
 
     [Fact]

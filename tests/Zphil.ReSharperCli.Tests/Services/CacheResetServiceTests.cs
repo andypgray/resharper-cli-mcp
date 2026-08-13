@@ -17,7 +17,16 @@ namespace Zphil.ReSharperCli.Tests.Services;
 /// </summary>
 public sealed class CacheResetServiceTests : IDisposable
 {
+    private readonly string _cacheHome;
+    private readonly ResolvedConfig _config;
     private readonly FakeEnvironment _environment = new();
+    private readonly CacheResetService _service = new(new JbRunLock(TimeSpan.FromSeconds(1)));
+
+    public CacheResetServiceTests()
+    {
+        _cacheHome = _environment.CreateTempDirectory();
+        _config = ConfigFor("App.sln", _cacheHome);
+    }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
@@ -31,16 +40,13 @@ public sealed class CacheResetServiceTests : IDisposable
     {
         // Arrange — the reclaim case: the generation in use plus the cold ".01" fork a concurrent jb left
         // behind, beside a sibling solution whose name shares the prefix and an unrelated one.
-        string cacheHome = _environment.CreateTempDirectory();
-        ResolvedConfig config = ConfigFor("App.sln", cacheHome);
-        string ours = CacheHomes.PlantGenerationFor(cacheHome, config.SolutionPath);
-        string fork = CacheHomes.PlantFork(cacheHome, ours);
-        CacheHomes.PlantGeneration(cacheHome, "_App.Core.400500600.00");
-        CacheHomes.PlantGeneration(cacheHome, "_Other.99.00");
-        CacheResetService service = new(new JbRunLock(TimeSpan.FromSeconds(1)));
+        string ours = CacheHomes.PlantGenerationFor(_cacheHome, _config.SolutionPath);
+        string fork = CacheHomes.PlantFork(_cacheHome, ours);
+        CacheHomes.PlantGeneration(_cacheHome, "_App.Core.400500600.00");
+        CacheHomes.PlantGeneration(_cacheHome, "_Other.99.00");
 
         // Act
-        CacheResetOutcome outcome = await service.RunAsync(config, Ct);
+        CacheResetOutcome outcome = await _service.RunAsync(_config, Ct);
 
         // Assert
         outcome.Dropped.ShouldBe([Path.GetFileName(ours), Path.GetFileName(fork)]);
@@ -48,8 +54,8 @@ public sealed class CacheResetServiceTests : IDisposable
         outcome.Failures.ShouldBeEmpty();
         Directory.Exists(ours).ShouldBeFalse();
         Directory.Exists(fork).ShouldBeFalse();
-        Directory.Exists(Path.Combine(cacheHome, "_App.Core.400500600.00")).ShouldBeTrue();
-        Directory.Exists(Path.Combine(cacheHome, "_Other.99.00")).ShouldBeTrue();
+        Directory.Exists(Path.Combine(_cacheHome, "_App.Core.400500600.00")).ShouldBeTrue();
+        Directory.Exists(Path.Combine(_cacheHome, "_Other.99.00")).ShouldBeTrue();
     }
 
     [Fact]
@@ -58,14 +64,11 @@ public sealed class CacheResetServiceTests : IDisposable
         // Arrange — two checkouts of one repository sharing a cache home: same solution file name, different
         // paths, so jb hashed them apart. Reproducing that hash is what turns this from an ambiguity the tool
         // used to refuse on into an ordinary answer.
-        string cacheHome = _environment.CreateTempDirectory();
-        ResolvedConfig config = ConfigFor("App.sln", cacheHome);
-        string ours = CacheHomes.PlantGenerationFor(cacheHome, config.SolutionPath);
-        string theirs = CacheHomes.PlantGenerationFor(cacheHome, Path.Combine(_environment.CreateTempDirectory(), "App.sln"));
-        CacheResetService service = new(new JbRunLock(TimeSpan.FromSeconds(1)));
+        string ours = CacheHomes.PlantGenerationFor(_cacheHome, _config.SolutionPath);
+        string theirs = CacheHomes.PlantGenerationFor(_cacheHome, _environment.CreateSolutionPath("App.sln"));
 
         // Act
-        CacheResetOutcome outcome = await service.RunAsync(config, Ct);
+        CacheResetOutcome outcome = await _service.RunAsync(_config, Ct);
 
         // Assert — and the other checkout's cache is still there, which is the point of naming it rather than
         // deleting it.
@@ -80,13 +83,10 @@ public sealed class CacheResetServiceTests : IDisposable
         // Arrange — this solution has never been analysed, and the generations sharing its file name belong
         // to someone else. A hash that matches nothing must delete nothing: there is no closest match here,
         // only a wrong one.
-        string cacheHome = _environment.CreateTempDirectory();
-        ResolvedConfig config = ConfigFor("App.sln", cacheHome);
-        string theirs = CacheHomes.PlantGenerationFor(cacheHome, Path.Combine(_environment.CreateTempDirectory(), "App.sln"));
-        CacheResetService service = new(new JbRunLock(TimeSpan.FromSeconds(1)));
+        string theirs = CacheHomes.PlantGenerationFor(_cacheHome, _environment.CreateSolutionPath("App.sln"));
 
         // Act
-        CacheResetOutcome outcome = await service.RunAsync(config, Ct);
+        CacheResetOutcome outcome = await _service.RunAsync(_config, Ct);
 
         // Assert
         outcome.Dropped.ShouldBeEmpty();
@@ -102,17 +102,14 @@ public sealed class CacheResetServiceTests : IDisposable
         // the next session pre-warming. Leaving it behind would make the next session's first real call pay
         // the cold run this reset just guaranteed — and would leave this solution advertised as a donor for a
         // cache that no longer exists.
-        string cacheHome = _environment.CreateTempDirectory();
-        ResolvedConfig config = ConfigFor("App.sln", cacheHome);
-        CacheHomes.PlantWarmDonor(cacheHome, config.SolutionPath);
-        JbWarmMarker.IsFreshWithin(config.SolutionPath, cacheHome, TimeSpan.FromHours(1)).ShouldBeTrue();
-        CacheResetService service = new(new JbRunLock(TimeSpan.FromSeconds(1)));
+        CacheHomes.PlantWarmDonor(_cacheHome, _config.SolutionPath);
+        JbWarmMarker.IsFreshWithin(_config.SolutionPath, _cacheHome, TimeSpan.FromHours(1)).ShouldBeTrue();
 
         // Act
-        await service.RunAsync(config, Ct);
+        await _service.RunAsync(_config, Ct);
 
         // Assert
-        JbWarmMarker.IsFreshWithin(config.SolutionPath, cacheHome, TimeSpan.FromHours(1)).ShouldBeFalse();
+        JbWarmMarker.IsFreshWithin(_config.SolutionPath, _cacheHome, TimeSpan.FromHours(1)).ShouldBeFalse();
     }
 
     [Fact]
@@ -121,16 +118,13 @@ public sealed class CacheResetServiceTests : IDisposable
         // Arrange — an already-reset solution. "Nothing was deleted" is not the same as "no reset happened":
         // the caller asked for cold, and the record is what stops a later run seeding this cache from a
         // sibling checkout instead of rebuilding it.
-        string cacheHome = _environment.CreateTempDirectory();
-        ResolvedConfig config = ConfigFor("App.sln", cacheHome);
-        CacheResetService service = new(new JbRunLock(TimeSpan.FromSeconds(1)));
 
         // Act
-        CacheResetOutcome outcome = await service.RunAsync(config, Ct);
+        CacheResetOutcome outcome = await _service.RunAsync(_config, Ct);
 
         // Assert
         outcome.Dropped.ShouldBeEmpty();
-        JbColdTombstone.Exists(config.SolutionPath, cacheHome).ShouldBeTrue();
+        JbColdTombstone.Exists(_config.SolutionPath, _cacheHome).ShouldBeTrue();
     }
 
     [Fact]
@@ -138,18 +132,16 @@ public sealed class CacheResetServiceTests : IDisposable
     {
         // Arrange — an already-reset solution, or one that has never been analysed. The tool is idempotent, so
         // the second call in a row is a normal thing to do.
-        string cacheHome = _environment.CreateTempDirectory();
-        CacheHomes.PlantGeneration(cacheHome, "_Other.99.00");
-        CacheResetService service = new(new JbRunLock(TimeSpan.FromSeconds(1)));
+        CacheHomes.PlantGeneration(_cacheHome, "_Other.99.00");
 
         // Act
-        CacheResetOutcome outcome = await service.RunAsync(ConfigFor("App.sln", cacheHome), Ct);
+        CacheResetOutcome outcome = await _service.RunAsync(_config, Ct);
 
         // Assert
         outcome.Dropped.ShouldBeEmpty();
         outcome.LeftAlone.ShouldBeEmpty();
         outcome.Failures.ShouldBeEmpty();
-        Directory.Exists(Path.Combine(cacheHome, "_Other.99.00")).ShouldBeTrue();
+        Directory.Exists(Path.Combine(_cacheHome, "_Other.99.00")).ShouldBeTrue();
     }
 
     [Fact]
@@ -158,41 +150,33 @@ public sealed class CacheResetServiceTests : IDisposable
         // Arrange — a file inside the generation held open, which is what a jb this server does not know
         // about looks like from here. A partly-deleted cache jb rebuilds is a better outcome than a call that
         // throws having already removed most of one, so the failure is reported and the tool stays idempotent.
-        string cacheHome = _environment.CreateTempDirectory();
-        ResolvedConfig config = ConfigFor("App.sln", cacheHome);
-        string ours = CacheHomes.PlantGenerationFor(cacheHome, config.SolutionPath);
+        string ours = CacheHomes.PlantGenerationFor(_cacheHome, _config.SolutionPath);
         await using FileStream held = new(
             Path.Combine(ours, "Db", "CURRENT"), FileMode.Open, FileAccess.Read, FileShare.None);
-        CacheResetService service = new(new JbRunLock(TimeSpan.FromSeconds(1)));
 
         // Act
-        CacheResetOutcome outcome = await service.RunAsync(config, Ct);
+        CacheResetOutcome outcome = await _service.RunAsync(_config, Ct);
 
-        // Assert — named, with the filesystem's own reason flattened onto the one line the report gives it.
+        // Assert — named, carrying the filesystem's own reason; fitting it onto the report's one line is the
+        // formatter's job.
         outcome.Dropped.ShouldBeEmpty();
         CacheResetFailure failure = outcome.Failures.ShouldHaveSingleItem();
         failure.Name.ShouldBe(Path.GetFileName(ours));
         failure.Reason.ShouldNotBeEmpty();
-        failure.Reason.ShouldNotContain("\n");
     }
 
     [Fact]
     public async Task RunAsync_AJbRunHoldsTheCacheGeneration_WaitsAndThenRefusesWithoutDeleting()
     {
         // Arrange — the whole reason this is a server-side tool rather than advice to delete a glob. The held
-        // lock file is what another session's live jb looks like from here.
-        string cacheHome = _environment.CreateTempDirectory();
-        ResolvedConfig config = ConfigFor("App.sln", cacheHome);
-        string ours = CacheHomes.PlantGenerationFor(cacheHome, config.SolutionPath);
-
-        string key = JbSidecar.ComputeKey(config.SolutionPath, cacheHome);
-        await using FileStream held = new(
-            JbRunLock.LockFilePathFor(cacheHome, key), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
-
+        // lock file is what another session's live jb looks like from here, and the short-wait service is
+        // what lets the test hit the cap.
+        string ours = CacheHomes.PlantGenerationFor(_cacheHome, _config.SolutionPath);
+        await using FileStream held = CacheHomes.HoldLockFile(_cacheHome, _config.SolutionPath);
         CacheResetService service = new(new JbRunLock(TimeSpan.FromMilliseconds(250)));
 
         // Act
-        var exception = await Should.ThrowAsync<UserErrorException>(() => service.RunAsync(config, Ct));
+        var exception = await Should.ThrowAsync<UserErrorException>(() => service.RunAsync(_config, Ct));
 
         // Assert — it queued on the run rather than deleting the cache underneath it, and gave up intact.
         exception.Message.ShouldContain("Another inspect or cleanup is already running");

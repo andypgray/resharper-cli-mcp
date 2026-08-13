@@ -1,4 +1,6 @@
+using Zphil.ReSharperCli.Resources;
 using Zphil.ReSharperCli.Sarif;
+using Zphil.ReSharperCli.Tools;
 
 namespace Zphil.ReSharperCli.Formatting;
 
@@ -54,9 +56,9 @@ internal static class CompilationErrorNote
 
         return $"NOTE: {errors} of these issue(s) are compilation errors (`{RuleId}`). Build the solution before "
                + "acting on them: if the compiler accepts the code, ReSharper's solution-wide index is stale and "
-               + "these are phantoms that will repeat on every re-run. Run resharper_reset_cache to drop this "
+               + $"these are phantoms that will repeat on every re-run. Run {ResharperTools.ResetCacheToolName} to drop this "
                + $"solution's cache generation under \"{cacheHome}\", then inspect again. "
-               + "See the resharper://guides/setup resource.\n\n";
+               + $"See the {ResharperResources.SetupGuideUri} resource.\n\n";
     }
 
     private static bool IsCompilationError(string ruleId)

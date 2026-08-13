@@ -31,8 +31,8 @@ public sealed class CacheTransplanterTests : IDisposable
     public CacheTransplanterTests()
     {
         _cacheHome = _environment.CreateTempDirectory();
-        _mainSolution = Path.Combine(_environment.CreateTempDirectory(), "App.sln");
-        _worktreeSolution = Path.Combine(_environment.CreateTempDirectory(), "App.sln");
+        _mainSolution = _environment.CreateSolutionPath("App.sln");
+        _worktreeSolution = _environment.CreateSolutionPath("App.sln");
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -163,7 +163,7 @@ public sealed class CacheTransplanterTests : IDisposable
     {
         // Arrange — a warm cache for a different solution in the same cache home. It shares nothing with this
         // one but the directory it lives in.
-        CacheHomes.PlantWarmDonor(_cacheHome, Path.Combine(_environment.CreateTempDirectory(), "Other.sln"));
+        CacheHomes.PlantWarmDonor(_cacheHome, _environment.CreateSolutionPath("Other.sln"));
 
         // Act & Assert
         (await Transplanter().TryTransplantAsync(ConfigFor(_worktreeSolution), Ct)).ShouldBeFalse();
@@ -174,7 +174,7 @@ public sealed class CacheTransplanterTests : IDisposable
     {
         // Arrange — several checkouts of one repository, analysed at different times. The freshest cache is
         // the closest to this worktree's code, so it is the one worth the copy.
-        string stale = CacheHomes.PlantWarmDonor(_cacheHome, Path.Combine(_environment.CreateTempDirectory(), "App.sln"));
+        string stale = CacheHomes.PlantWarmDonor(_cacheHome, _environment.CreateSolutionPath("App.sln"));
         File.WriteAllText(Path.Combine(stale, "Db", "CURRENT"), "stale");
         string fresh = CacheHomes.PlantWarmDonor(_cacheHome, _mainSolution);
         File.WriteAllText(Path.Combine(fresh, "Db", "CURRENT"), "fresh");
@@ -191,14 +191,10 @@ public sealed class CacheTransplanterTests : IDisposable
     [Fact]
     public async Task TryTransplantAsync_DonorHeldByALiveRun_DeclinesInsteadOfReadingItMidWrite()
     {
-        // Arrange — the donor's lock file held the way another server process holds it. Copying a cache jb is
-        // writing would produce a torn one, and the copy is worthless if it has to be wiped anyway.
+        // Arrange — the donor's lock file held by a live run. Copying a cache jb is writing would produce a
+        // torn one, and the copy is worthless if it has to be wiped anyway.
         CacheHomes.PlantWarmDonor(_cacheHome, _mainSolution);
-        await using FileStream held = new(
-            JbRunLock.LockFilePathFor(_cacheHome, JbSidecar.ComputeKey(_mainSolution, _cacheHome)),
-            FileMode.OpenOrCreate,
-            FileAccess.ReadWrite,
-            FileShare.None);
+        await using FileStream held = CacheHomes.HoldLockFile(_cacheHome, _mainSolution);
 
         // Act
         bool seeded = await Transplanter().TryTransplantAsync(ConfigFor(_worktreeSolution), Ct);

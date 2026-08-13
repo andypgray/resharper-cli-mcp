@@ -1,6 +1,7 @@
 using Shouldly;
 using Xunit;
 using Zphil.ReSharperCli.Execution;
+using Zphil.ReSharperCli.Services;
 using Zphil.ReSharperCli.Tests.TestDoubles;
 using Zphil.ReSharperCli.Tests.TestSupport;
 
@@ -43,11 +44,12 @@ public sealed class JbCacheGenerationsTests : IDisposable
     [InlineData("_Zphil.ReSharperCli.-1625048228.00", "Zphil")]
     // A different solution entirely.
     [InlineData("_Other.123456.00", "App")]
-    // Malformed tails: no generation, a non-numeric hash, a non-numeric generation, a trailing suffix.
+    // Malformed tails: no generation, a non-numeric hash, a non-numeric generation, and a trailing suffix —
+    // the last spelled with the transplanter's own, whose in-progress copies rely on being unparseable here.
     [InlineData("_App.123456", "App")]
     [InlineData("_App.abc.00", "App")]
     [InlineData("_App.123456.xx", "App")]
-    [InlineData("_App.123456.00.deleting", "App")]
+    [InlineData("_App.123456.00" + CacheTransplanter.InProgressSuffix, "App")]
     // jb's leading underscore is part of the scheme, so a directory without it is not one of these.
     [InlineData("App.123456.00", "App")]
     public void MatchHash_AnythingElse_ReturnsNull(string directoryName, string solutionName)
@@ -126,8 +128,8 @@ public sealed class JbCacheGenerationsTests : IDisposable
     [InlineData("_App.99.00", true)]
     // A different solution file name is not a neighbour, whatever its hash.
     [InlineData("_Other.99.00", false)]
-    // Not parseable as a generation at all.
-    [InlineData("_App.99.00.deleting", false)]
+    // Not parseable as a generation at all — an in-progress transplant copy must stay invisible here too.
+    [InlineData("_App.99.00" + CacheTransplanter.InProgressSuffix, false)]
     public void IsNeighbourOf_MeansSameSolutionFileNameAtADifferentPath(string directoryName, bool expected)
     {
         JbCacheGenerations.IsNeighbourOf(directoryName, "/repo/App.sln").ShouldBe(expected);

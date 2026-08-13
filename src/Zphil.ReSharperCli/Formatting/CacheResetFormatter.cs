@@ -44,7 +44,10 @@ internal static class CacheResetFormatter
         if (outcome.Failures.Count > 0)
         {
             lines.Add($"Could not drop {outcome.Failures.Count} generation(s):");
-            lines.AddRange(outcome.Failures.Select(failure => $"  - {failure.Name}: {failure.Reason}"));
+
+            // The reason is whatever the filesystem said, and some of its messages span lines; each failure
+            // gets one list item, so the flattening is this report's layout rule and is applied here.
+            lines.AddRange(outcome.Failures.Select(failure => $"  - {failure.Name}: {ConfigWarningBanner.SingleLine(failure.Reason)}"));
             lines.Add(
                 "A generation that will not delete is usually one another jb still has open. Retry once it has "
                 + "finished; this tool is safe to run again.");

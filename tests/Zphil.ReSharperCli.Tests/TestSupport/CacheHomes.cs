@@ -1,4 +1,5 @@
 using Zphil.ReSharperCli.Execution;
+using Zphil.ReSharperCli.Tests.TestDoubles;
 
 namespace Zphil.ReSharperCli.Tests.TestSupport;
 
@@ -43,7 +44,30 @@ internal static class CacheHomes
     /// </summary>
     public static string GenerationPathFor(string cacheHome, string solutionPath)
     {
-        return Path.Combine(cacheHome, JbSolutionCacheHash.FirstGenerationDirectoryName(solutionPath));
+        return JbCacheGenerations.PathUnder(cacheHome, JbSolutionCacheHash.FirstGenerationDirectoryName(solutionPath));
+    }
+
+    /// <summary>
+    ///     Hold the run-lock file for <paramref name="solutionPath" /> the way another server process's live
+    ///     <c>jb</c> holds it — exclusively, until the returned stream is disposed. This is exactly what
+    ///     another holder's handle looks like to the OS, so it is how a test stands in for a concurrent run.
+    /// </summary>
+    public static FileStream HoldLockFile(string cacheHome, string solutionPath)
+    {
+        string lockFilePath = JbRunLock.LockFilePathFor(cacheHome, JbSidecar.ComputeKey(solutionPath, cacheHome));
+        return new FileStream(lockFilePath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+    }
+
+    /// <summary>
+    ///     A cache home nothing can bring into existence: a <em>file</em> sits where the directory should
+    ///     be, so every attempt to create or write under it fails — the fixture for pinning that a cache-home
+    ///     side effect degrades instead of failing its call.
+    /// </summary>
+    public static string BlockedCacheHome(FakeEnvironment environment)
+    {
+        string blocked = Path.Combine(environment.CreateTempDirectory(), "not-a-directory");
+        File.WriteAllText(blocked, string.Empty);
+        return blocked;
     }
 
     /// <summary>

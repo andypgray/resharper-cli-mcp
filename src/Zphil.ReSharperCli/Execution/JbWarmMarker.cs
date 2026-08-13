@@ -128,7 +128,7 @@ internal static class JbWarmMarker
 
             if (!IsBareDirectoryName(content)) return null;
 
-            return Directory.Exists(Path.Combine(Path.GetFullPath(cacheHome), content)) ? content : null;
+            return Directory.Exists(JbCacheGenerations.PathUnder(cacheHome, content)) ? content : null;
         }
         catch (Exception exception) when (FilesystemFailure.Covers(exception))
         {

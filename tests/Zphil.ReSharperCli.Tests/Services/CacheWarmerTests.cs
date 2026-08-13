@@ -170,14 +170,9 @@ public sealed class CacheWarmerTests : IDisposable
     [Fact]
     public async Task Start_CacheGenerationHeldByAnotherProcess_SkipsWithoutRunningJb()
     {
-        // Arrange — the lock file held from outside, which is exactly what another server process's run
-        // looks like to the OS. Running anyway would fork a cold cache generation, which is the whole
-        // failure the run lock exists to prevent.
-        await using FileStream otherProcess = new(
-            JbRunLock.LockFilePathFor(_cacheHome, JbSidecar.ComputeKey(_solutionPath, _cacheHome)),
-            FileMode.OpenOrCreate,
-            FileAccess.ReadWrite,
-            FileShare.None);
+        // Arrange — running while another process holds the generation would fork a cold cache generation,
+        // which is the whole failure the run lock exists to prevent.
+        await using FileStream otherProcess = CacheHomes.HoldLockFile(_cacheHome, _solutionPath);
         using CacheWarmer warmer = BuildWarmer();
 
         // Act

@@ -58,8 +58,9 @@ internal sealed class CacheTransplanter(JbRunLock runLock, TimeSpan? donorLockPa
     ///     Marks a directory as a copy still being made. The trailing token is not digits, so
     ///     <see cref="JbCacheGenerations" /> does not read the directory as a generation while it is
     ///     incomplete — and neither does a reset, which would otherwise be able to delete it mid-copy.
+    ///     Internal so the parser's tests can pin that invisibility against the real suffix.
     /// </summary>
-    private const string InProgressSuffix = ".transplanting";
+    internal const string InProgressSuffix = ".transplanting";
 
     /// <summary>
     ///     Long enough to outlast a donor's marker being rewritten at the end of someone else's run, short
@@ -110,8 +111,8 @@ internal sealed class CacheTransplanter(JbRunLock runLock, TimeSpan? donorLockPa
 
         string generationName = JbSolutionCacheHash.FirstGenerationDirectoryName(config.SolutionPath);
         return Copy(
-            Path.Combine(Path.GetFullPath(config.CacheHome), donor.GenerationName),
-            Path.Combine(Path.GetFullPath(config.CacheHome), generationName),
+            JbCacheGenerations.PathUnder(config.CacheHome, donor.GenerationName),
+            JbCacheGenerations.PathUnder(config.CacheHome, generationName),
             config.SolutionPath,
             cancellationToken);
     }

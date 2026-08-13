@@ -2,6 +2,7 @@ using Shouldly;
 using Xunit;
 using Zphil.ReSharperCli.Execution;
 using Zphil.ReSharperCli.Tests.TestDoubles;
+using Zphil.ReSharperCli.Tests.TestSupport;
 
 namespace Zphil.ReSharperCli.Tests.Execution;
 
@@ -82,10 +83,9 @@ public sealed class JbColdTombstoneTests : IDisposable
     [Fact]
     public void Write_CacheHomeThatCannotHoldIt_DoesNotThrow()
     {
-        // Arrange — a *file* where the cache home should be. This runs at the end of a reset that has already
-        // deleted directories, so throwing would fail a call whose work is done.
-        string blocked = Path.Combine(_environment.CreateTempDirectory(), "not-a-directory");
-        File.WriteAllText(blocked, string.Empty);
+        // Arrange — this runs at the end of a reset that has already deleted directories, so throwing would
+        // fail a call whose work is done.
+        string blocked = CacheHomes.BlockedCacheHome(_environment);
 
         // Act & Assert
         Should.NotThrow(() => JbColdTombstone.Write(SolutionPath, blocked));

@@ -249,21 +249,8 @@ internal sealed class CacheWarmer(
     {
         if (!IsEnabled(environment.GetVariable(EnableVariable))) return WarmUpOutcome.Disabled;
 
-        ResolvedConfig config;
-        if (target is not null)
-            config = target;
-        else
-            try
-            {
-                config = await configResolver.ResolveAsync(null, _stopping.Token);
-            }
-            catch (UserErrorException exception)
-            {
-                // No jb installed, or no solution in the working directory: the ordinary shape of a server
-                // started somewhere that is not a .NET repo. There is nothing to warm and nobody to tell.
-                logger.LogDebug(exception, "Nothing to pre-warm");
-                return WarmUpOutcome.NoTarget;
-            }
+        ResolvedConfig? config = target ?? await TryResolveTargetAsync();
+        if (config is null) return WarmUpOutcome.NoTarget;
 
         // The debounce governs every pass, re-arms included. It cannot be hoisted above the resolution above
         // it, because it is keyed on what that resolution produces.
@@ -277,5 +264,23 @@ internal sealed class CacheWarmer(
         if (result is null) return WarmUpOutcome.Skipped;
 
         return result.Value.ExitCode == 0 ? WarmUpOutcome.Warmed : WarmUpOutcome.Failed;
+    }
+
+    /// <summary>
+    ///     The solution a pass with no given target warms, or <see langword="null" /> when there is none —
+    ///     no <c>jb</c> installed, or no solution in the working directory, which is the ordinary shape of a
+    ///     server started somewhere that is not a .NET repo. There is nothing to warm and nobody to tell.
+    /// </summary>
+    private async Task<ResolvedConfig?> TryResolveTargetAsync()
+    {
+        try
+        {
+            return await configResolver.ResolveAsync(null, _stopping.Token);
+        }
+        catch (UserErrorException exception)
+        {
+            logger.LogDebug(exception, "Nothing to pre-warm");
+            return null;
+        }
     }
 }

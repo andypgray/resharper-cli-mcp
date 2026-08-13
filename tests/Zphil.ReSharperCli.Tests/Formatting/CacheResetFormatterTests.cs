@@ -74,6 +74,21 @@ public sealed class CacheResetFormatterTests
     }
 
     [Fact]
+    public void Format_AReasonSpanningLines_FlattensItOntoItsOneListItem()
+    {
+        // Arrange — the reason is whatever the filesystem said, carried raw in the outcome; some of its
+        // messages span lines, and a failure's list item must not spill into the report as body text.
+        CacheResetOutcome outcome = new(
+            SolutionPath, CacheHome, [], [], [new CacheResetFailure("_App.123.00", "The process\r\ncannot access the file.")]);
+
+        // Act
+        string result = CacheResetFormatter.Format(outcome);
+
+        // Assert
+        result.ShouldContain("  - _App.123.00: The process cannot access the file.");
+    }
+
+    [Fact]
     public void Format_PartialSuccess_ReportsBothHalves()
     {
         // Arrange — one generation went, the fork did not.

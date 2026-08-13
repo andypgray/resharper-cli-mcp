@@ -147,12 +147,11 @@ public sealed class CacheResetServiceTests : IDisposable
     [Fact]
     public async Task RunAsync_GenerationThatWillNotDelete_ReportsItRatherThanFailingTheCall()
     {
-        // Arrange — a file inside the generation held open, which is what a jb this server does not know
-        // about looks like from here. A partly-deleted cache jb rebuilds is a better outcome than a call that
-        // throws having already removed most of one, so the failure is reported and the tool stays idempotent.
+        // Arrange — the generation made undeletable, which is what a jb this server does not know about looks
+        // like from here. A partly-deleted cache jb rebuilds is a better outcome than a call that throws
+        // having already removed most of one, so the failure is reported and the tool stays idempotent.
         string ours = CacheHomes.PlantGenerationFor(_cacheHome, _config.SolutionPath);
-        await using FileStream held = new(
-            Path.Combine(ours, "Db", "CURRENT"), FileMode.Open, FileAccess.Read, FileShare.None);
+        using IDisposable held = CacheHomes.BlockDeletionOf(ours);
 
         // Act
         CacheResetOutcome outcome = await _service.RunAsync(_config, Ct);

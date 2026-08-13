@@ -53,12 +53,29 @@ public sealed class JbSolutionCacheHashTests
         JbSolutionCacheHash.Compute(@"C:\repö\App.sln").ShouldNotBe(JbSolutionCacheHash.Compute(@"C:\repÖ\App.sln"));
     }
 
+    /// <summary>
+    ///     Windows accepts <c>/</c> as a separator as well as <c>\</c>, so a POSIX path is the one shape
+    ///     whose solution name comes out the same on every platform.
+    /// </summary>
+    public static bool OnWindows => OperatingSystem.IsWindows();
+
     [Theory]
     // A negative hash is the ordinary case about half the time, and the minus sign is part of the name.
-    [InlineData(@"C:\repo\App.sln", "_App.-609246064.00")]
+    [InlineData("/repo/App.sln", "_App.-979675449.00")]
     // Dots in the solution name are not separators, and survive into the directory name unchanged.
-    [InlineData(@"C:\repo\Zphil.ReSharperCli.slnx", "_Zphil.ReSharperCli.-1122688508.00")]
+    [InlineData("/repo/Zphil.ReSharperCli.slnx", "_Zphil.ReSharperCli.-505706949.00")]
     public void FirstGenerationDirectoryName_ComposesTheNameJbWouldCreate(string solutionPath, string expected)
+    {
+        JbSolutionCacheHash.FirstGenerationDirectoryName(solutionPath).ShouldBe(expected);
+    }
+
+    [Theory(Skip = "A backslash only separates a path on Windows.", SkipUnless = nameof(OnWindows))]
+    // The names jb actually wrote, on the platform it wrote them on: the solution name is taken from the
+    // last backslash, which off Windows is an ordinary character and would leave the whole path in the name.
+    [InlineData(@"C:\repo\App.sln", "_App.-609246064.00")]
+    [InlineData(@"C:\repo\Zphil.ReSharperCli.slnx", "_Zphil.ReSharperCli.-1122688508.00")]
+    public void FirstGenerationDirectoryName_AWindowsPath_TakesTheNameFromTheLastBackslash(
+        string solutionPath, string expected)
     {
         JbSolutionCacheHash.FirstGenerationDirectoryName(solutionPath).ShouldBe(expected);
     }
@@ -69,7 +86,7 @@ public sealed class JbSolutionCacheHashTests
         // Arrange — the two halves of one undocumented scheme, written apart: this composes a name and
         // JbCacheGenerations parses one. A change to either that the other did not follow leaves a directory
         // nothing can find, so they are pinned against each other rather than only against literals.
-        const string solutionPath = @"C:\repo\Zphil.ReSharperCli.slnx";
+        const string solutionPath = "/repo/Zphil.ReSharperCli.slnx";
         string composed = JbSolutionCacheHash.FirstGenerationDirectoryName(solutionPath);
 
         // Act

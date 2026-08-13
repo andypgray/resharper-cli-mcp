@@ -1,3 +1,4 @@
+using System.Runtime.Versioning;
 using Zphil.ReSharperCli.Execution;
 using Zphil.ReSharperCli.Tests.TestDoubles;
 
@@ -59,6 +60,29 @@ internal static class CacheHomes
     }
 
     /// <summary>
+    ///     Make the generation at <paramref name="generationPath" /> refuse to delete, the way a <c>jb</c>
+    ///     this server does not know about makes it refuse. Dispose to let go again — a test that did not
+    ///     would leave its own fixture unable to clean up.
+    /// </summary>
+    /// <remarks>
+    ///     One situation, two opposite levers, and neither stands in for the other: Windows will not unlink
+    ///     a file something holds open, while POSIX unlinks an open file quite happily and refuses only when
+    ///     the containing directory is unwritable. Holding a handle — the obvious spelling, and the one this
+    ///     started as — therefore blocks nothing outside Windows, and the test that relied on it passed there
+    ///     while asserting the opposite of the truth everywhere else.
+    /// </remarks>
+    public static IDisposable BlockDeletionOf(string generationPath)
+    {
+        string directory = Path.Combine(generationPath, "Db");
+        if (OperatingSystem.IsWindows())
+        {
+            return new FileStream(Path.Combine(directory, "CURRENT"), FileMode.Open, FileAccess.Read, FileShare.None);
+        }
+
+        return new UnwritableDirectory(directory);
+    }
+
+    /// <summary>
     ///     A cache home nothing can bring into existence: a <em>file</em> sits where the directory should
     ///     be, so every attempt to create or write under it fails — the fixture for pinning that a cache-home
     ///     side effect degrades instead of failing its call.
@@ -90,5 +114,29 @@ internal static class CacheHomes
         string generation = PlantGenerationFor(cacheHome, solutionPath);
         JbWarmMarker.Stamp(solutionPath, cacheHome);
         return generation;
+    }
+
+    /// <summary>
+    ///     Strips the write permission a directory's entries can only be unlinked through, and puts back
+    ///     exactly the mode that was there rather than a guess at what it should have been.
+    /// </summary>
+    [UnsupportedOSPlatform("windows")]
+    private sealed class UnwritableDirectory : IDisposable
+    {
+        private const UnixFileMode Writable = UnixFileMode.UserWrite | UnixFileMode.GroupWrite | UnixFileMode.OtherWrite;
+        private readonly DirectoryInfo _directory;
+        private readonly UnixFileMode _original;
+
+        public UnwritableDirectory(string directory)
+        {
+            _directory = new DirectoryInfo(directory);
+            _original = _directory.UnixFileMode;
+            _directory.UnixFileMode = _original & ~Writable;
+        }
+
+        public void Dispose()
+        {
+            _directory.UnixFileMode = _original;
+        }
     }
 }

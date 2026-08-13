@@ -7,19 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- A tool call that hits the run cap now arms another background cache pre-warm, against the solution that
-  timed out. Previously the first tool call to reach the runner retired speculative work for the life of the
-  process, so the moment it was worth most — the cache part-built, the error advising a retry, the user idle
-  reading it — was exactly the moment the server had guaranteed it would never run again. Measurement
-  settled the assumption that advice rests on: a run killed at the cap does leave a cache a retry resumes
-  from, and the resumed run reports the same issues a clean cold run does. It does not resume from exactly
-  where it stopped, though — whatever was in flight when it was killed is redone — so several capped runs
-  still cost appreciably more than one run allowed to finish, and raising `RESHARPER_MCP_TIMEOUT_SECS`
-  remains the fix when a cold analysis simply takes longer than the cap. The pre-warm still runs one pass at
-  a time, still stands down while a real call is in flight, and re-arms on nothing else: not a timer, not
-  each message, and never on its own timeout.
+## [1.3.0] - 2026-08-13
 
 ### Added
 
@@ -85,6 +73,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A run that hits the cap now says whose cap it is, names the variable that raises it, and heads off the
   retry that cannot work: `jb` analyses the whole solution whatever the report is scoped to, so narrowing a
   retry with `files` makes it no faster. The setup guide previously advised exactly that; it no longer does.
+- A tool call that hits the run cap now arms another background cache pre-warm, against the solution that
+  timed out. Previously the first tool call to reach the runner retired speculative work for the life of the
+  process, so the moment it was worth most — the cache part-built, the error advising a retry, the user idle
+  reading it — was exactly the moment the server had guaranteed it would never run again. Measurement
+  settled the assumption that advice rests on: a run killed at the cap does leave a cache a retry resumes
+  from, and the resumed run reports the same issues a clean cold run does. It does not resume from exactly
+  where it stopped, though — whatever was in flight when it was killed is redone — so several capped runs
+  still cost appreciably more than one run allowed to finish, and raising `RESHARPER_MCP_TIMEOUT_SECS`
+  remains the fix when a cold analysis simply takes longer than the cap. The pre-warm still runs one pass at
+  a time, still stands down while a real call is in flight, and re-arms on nothing else: not a timer, not
+  each message, and never on its own timeout.
 
 ### Fixed
 
@@ -314,7 +313,8 @@ Unofficial; not affiliated with or endorsed by JetBrains.
 - Ships as a .NET global tool and MCP server (`PackAsTool` + `PackageType=McpServer`), published to
   NuGet with SLSA build provenance and registered on the MCP registry.
 
-[Unreleased]: https://github.com/andypgray/resharper-cli-mcp/compare/v1.2.1...HEAD
+[Unreleased]: https://github.com/andypgray/resharper-cli-mcp/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/andypgray/resharper-cli-mcp/releases/tag/v1.3.0
 [1.2.1]: https://github.com/andypgray/resharper-cli-mcp/releases/tag/v1.2.1
 [1.2.0]: https://github.com/andypgray/resharper-cli-mcp/releases/tag/v1.2.0
 [1.1.1]: https://github.com/andypgray/resharper-cli-mcp/releases/tag/v1.1.1

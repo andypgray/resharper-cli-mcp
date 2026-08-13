@@ -101,4 +101,44 @@ public sealed class JbCacheGenerationsTests : IDisposable
 
         JbCacheGenerations.Find(missing, "App").ShouldBeEmpty();
     }
+
+    [Fact]
+    public void FindFor_TwoCheckoutsSharingACacheHome_SplitsOwnershipByTheComputedHash()
+    {
+        // Arrange — this solution's generation planted under its real computed hash, beside a same-named
+        // checkout at another path and a solution that shares nothing but the cache home. This is the one
+        // predicate the reset's delete, the seeding check, and the warm marker all hang off.
+        string cacheHome = _environment.CreateTempDirectory();
+        string ours = CacheHomes.PlantGenerationFor(cacheHome, "/repo/App.sln");
+        string theirs = CacheHomes.PlantGenerationFor(cacheHome, "/elsewhere/App.sln");
+        CacheHomes.PlantGeneration(cacheHome, "_Other.99.00");
+
+        // Act
+        JbSolutionGenerations generations = JbCacheGenerations.FindFor(cacheHome, "/repo/App.sln");
+
+        // Assert
+        generations.Owned.Select(generation => generation.FullPath).ShouldBe([ours]);
+        generations.Neighbours.Select(generation => generation.FullPath).ShouldBe([theirs]);
+    }
+
+    [Theory]
+    // Another checkout: the same solution file name under a hash this path does not produce.
+    [InlineData("_App.99.00", true)]
+    // A different solution file name is not a neighbour, whatever its hash.
+    [InlineData("_Other.99.00", false)]
+    // Not parseable as a generation at all.
+    [InlineData("_App.99.00.deleting", false)]
+    public void IsNeighbourOf_MeansSameSolutionFileNameAtADifferentPath(string directoryName, bool expected)
+    {
+        JbCacheGenerations.IsNeighbourOf(directoryName, "/repo/App.sln").ShouldBe(expected);
+    }
+
+    [Fact]
+    public void IsNeighbourOf_TheSolutionsOwnGeneration_IsFalse()
+    {
+        // Assert — the donor filter's other half: a generation of this very solution is not a donor.
+        string own = JbSolutionCacheHash.FirstGenerationDirectoryName("/repo/App.sln");
+
+        JbCacheGenerations.IsNeighbourOf(own, "/repo/App.sln").ShouldBeFalse();
+    }
 }

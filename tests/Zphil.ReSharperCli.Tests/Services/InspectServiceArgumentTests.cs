@@ -6,6 +6,7 @@ using Zphil.ReSharperCli.Discovery;
 using Zphil.ReSharperCli.Execution;
 using Zphil.ReSharperCli.Services;
 using Zphil.ReSharperCli.Tests.TestDoubles;
+using Zphil.ReSharperCli.Tests.TestSupport;
 using Zphil.ReSharperCli.Tools;
 
 namespace Zphil.ReSharperCli.Tests.Services;
@@ -141,8 +142,7 @@ public sealed class InspectServiceArgumentTests
                 captured = call.Arg<IReadOnlyList<string>>();
                 return new ProcessResult(0, string.Empty, string.Empty);
             });
-        JbRunLock runLock = new(JbRunTimeout.Default);
-        InspectService service = new(new JbRunner(processRunner, runLock, new CacheTransplanter(runLock), JbRunTimeout.Default));
+        InspectService service = new(JbRunners.Create(processRunner));
 
         // Act
         await service.WarmCacheAsync(config, Ct);

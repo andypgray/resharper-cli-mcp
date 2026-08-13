@@ -62,8 +62,6 @@ internal static class JbRunTimeout
 
         // Clamp in seconds rather than building the TimeSpan first: a value like 1e300 overflows
         // TimeSpan.FromSeconds outright, and the clamp must not be the thing that throws.
-        if (seconds <= Floor.TotalSeconds) return Floor;
-
-        return seconds >= Ceiling.TotalSeconds ? Ceiling : TimeSpan.FromSeconds(seconds);
+        return TimeSpan.FromSeconds(Math.Clamp(seconds, Floor.TotalSeconds, Ceiling.TotalSeconds));
     }
 }

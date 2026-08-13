@@ -98,7 +98,7 @@ public sealed class JbColdTombstoneTests : IDisposable
         // from silently addressing another's file.
         string tombstone = JbColdTombstone.PathFor(SolutionPath, _cacheHome);
         string marker = JbWarmMarker.PathFor(SolutionPath, _cacheHome);
-        string lockFile = JbRunLock.LockFilePathFor(_cacheHome, JbRunLock.ComputeKey(SolutionPath, _cacheHome));
+        string lockFile = JbRunLock.LockFilePathFor(_cacheHome, JbSidecar.ComputeKey(SolutionPath, _cacheHome));
 
         new[] { tombstone, marker, lockFile }.Distinct().Count().ShouldBe(3);
         Path.GetDirectoryName(tombstone).ShouldBe(Path.GetDirectoryName(lockFile));

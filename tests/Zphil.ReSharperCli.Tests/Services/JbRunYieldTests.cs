@@ -4,6 +4,7 @@ using Zphil.ReSharperCli.Discovery;
 using Zphil.ReSharperCli.Execution;
 using Zphil.ReSharperCli.Services;
 using Zphil.ReSharperCli.Tests.TestDoubles;
+using Zphil.ReSharperCli.Tests.TestSupport;
 
 namespace Zphil.ReSharperCli.Tests.Services;
 
@@ -28,14 +29,11 @@ public sealed class JbRunYieldTests : IDisposable
 
     public JbRunYieldTests()
     {
-        _config = new ResolvedConfig(
-            "/sln/App.sln", null, null, _environment.CreateTempDirectory(), null, null, "jb", ConfigWarnings.None);
+        _config = Configs.Bare("/sln/App.sln", _environment.CreateTempDirectory());
 
         // A short wait cap so a regression that stopped the pre-warm yielding fails these tests promptly
         // instead of hanging them out to the production cap.
-        TimeSpan shortCap = TimeSpan.FromSeconds(10);
-        JbRunLock runLock = new(shortCap);
-        _runner = new JbRunner(_probe, runLock, new CacheTransplanter(runLock), shortCap);
+        _runner = JbRunners.Create(_probe, TimeSpan.FromSeconds(10));
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;

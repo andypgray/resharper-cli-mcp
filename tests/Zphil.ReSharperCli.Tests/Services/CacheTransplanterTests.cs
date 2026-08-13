@@ -54,7 +54,7 @@ public sealed class CacheTransplanterTests : IDisposable
 
         // Assert — planted under the name jb will look for, byte for byte, with the donor untouched.
         seeded.ShouldBeTrue();
-        string target = Path.Combine(_cacheHome, JbSolutionCacheHash.FirstGenerationDirectoryName(_worktreeSolution));
+        string target = TargetPath();
         File.ReadAllText(Path.Combine(target, "Db", "CURRENT")).ShouldBe("cache");
         File.ReadAllText(Path.Combine(target, "Db", "000001.log")).ShouldBe("leveldb");
         Directory.Exists(donor).ShouldBeTrue();
@@ -109,8 +109,7 @@ public sealed class CacheTransplanterTests : IDisposable
 
         // Assert
         seeded.ShouldBeFalse();
-        Directory.Exists(Path.Combine(_cacheHome, JbSolutionCacheHash.FirstGenerationDirectoryName(_worktreeSolution)))
-            .ShouldBeFalse();
+        Directory.Exists(TargetPath()).ShouldBeFalse();
     }
 
     [Fact]
@@ -185,7 +184,7 @@ public sealed class CacheTransplanterTests : IDisposable
         await Transplanter().TryTransplantAsync(ConfigFor(_worktreeSolution), Ct);
 
         // Assert
-        string target = Path.Combine(_cacheHome, JbSolutionCacheHash.FirstGenerationDirectoryName(_worktreeSolution));
+        string target = TargetPath();
         File.ReadAllText(Path.Combine(target, "Db", "CURRENT")).ShouldBe("fresh");
     }
 
@@ -196,7 +195,7 @@ public sealed class CacheTransplanterTests : IDisposable
         // writing would produce a torn one, and the copy is worthless if it has to be wiped anyway.
         CacheHomes.PlantWarmDonor(_cacheHome, _mainSolution);
         await using FileStream held = new(
-            JbRunLock.LockFilePathFor(_cacheHome, JbRunLock.ComputeKey(_mainSolution, _cacheHome)),
+            JbRunLock.LockFilePathFor(_cacheHome, JbSidecar.ComputeKey(_mainSolution, _cacheHome)),
             FileMode.OpenOrCreate,
             FileAccess.ReadWrite,
             FileShare.None);
@@ -206,8 +205,7 @@ public sealed class CacheTransplanterTests : IDisposable
 
         // Assert
         seeded.ShouldBeFalse();
-        Directory.Exists(Path.Combine(_cacheHome, JbSolutionCacheHash.FirstGenerationDirectoryName(_worktreeSolution)))
-            .ShouldBeFalse();
+        Directory.Exists(TargetPath()).ShouldBeFalse();
     }
 
     [Fact]
@@ -261,8 +259,7 @@ public sealed class CacheTransplanterTests : IDisposable
         // Arrange — a server killed mid-copy leaves this behind. It is invisible to every parser here, so
         // nothing else will ever clean it up, and a copy that could not start over it would never recover.
         CacheHomes.PlantWarmDonor(_cacheHome, _mainSolution);
-        string leftover = Path.Combine(
-            _cacheHome, JbSolutionCacheHash.FirstGenerationDirectoryName(_worktreeSolution) + ".transplanting");
+        string leftover = InProgressPath();
         Directory.CreateDirectory(Path.Combine(leftover, "Db"));
         File.WriteAllText(Path.Combine(leftover, "Db", "CURRENT"), "abandoned");
 
@@ -272,7 +269,7 @@ public sealed class CacheTransplanterTests : IDisposable
         // Assert
         seeded.ShouldBeTrue();
         Directory.Exists(leftover).ShouldBeFalse();
-        string target = Path.Combine(_cacheHome, JbSolutionCacheHash.FirstGenerationDirectoryName(_worktreeSolution));
+        string target = TargetPath();
         File.ReadAllText(Path.Combine(target, "Db", "CURRENT")).ShouldBe("cache");
     }
 
@@ -295,7 +292,7 @@ public sealed class CacheTransplanterTests : IDisposable
     /// <summary>Where a seeded generation for the worktree lands, and where it is built before it lands.</summary>
     private string TargetPath()
     {
-        return Path.Combine(_cacheHome, JbSolutionCacheHash.FirstGenerationDirectoryName(_worktreeSolution));
+        return CacheHomes.GenerationPathFor(_cacheHome, _worktreeSolution);
     }
 
     private string InProgressPath()
@@ -305,16 +302,16 @@ public sealed class CacheTransplanterTests : IDisposable
 
     private ResolvedConfig ConfigFor(string solutionPath)
     {
-        return new ResolvedConfig(solutionPath, null, null, _cacheHome, null, null, "jb", ConfigWarnings.None);
+        return Configs.Bare(solutionPath, _cacheHome);
     }
 
     /// <summary>Back-date the warm marker that names <paramref name="generationPath" />.</summary>
     private void AgeMarker(string generationPath, TimeSpan age)
     {
         string generationName = Path.GetFileName(generationPath);
-        string markerPath = Directory
-            .EnumerateFiles(_cacheHome, $"{JbRunLock.SidecarPrefix}*.warm")
-            .Single(path => JbWarmMarker.TryReadGenerationName(path, _cacheHome) == generationName);
+        string markerPath = JbWarmMarker.FindAll(_cacheHome)
+            .Single(marker => JbWarmMarker.TryReadGenerationName(marker.MarkerPath, _cacheHome) == generationName)
+            .MarkerPath;
 
         File.SetLastWriteTimeUtc(markerPath, DateTime.UtcNow - age);
     }

@@ -29,9 +29,8 @@ public sealed class JbRunnerTests : IDisposable
 
     public JbRunnerTests()
     {
-        _config = new ResolvedConfig(
-            "/sln/App.sln", null, null, _environment.CreateTempDirectory(), null, null, "jb", ConfigWarnings.None);
-        _runner = new JbRunner(_processRunner, _runLock, new CacheTransplanter(_runLock), JbRunTimeout.Default);
+        _config = Configs.Bare("/sln/App.sln", _environment.CreateTempDirectory());
+        _runner = JbRunners.Create(_processRunner, _runLock);
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -214,7 +213,7 @@ public sealed class JbRunnerTests : IDisposable
         // raise it reads as though nothing happened the first time. 455 seconds and not a round number of
         // minutes on purpose: the variable is configured in seconds, so a cap must never be reported back
         // rounded to a value the user did not choose.
-        JbRunner runner = new(_processRunner, _runLock, new CacheTransplanter(_runLock), TimeSpan.FromSeconds(455));
+        JbRunner runner = JbRunners.Create(_processRunner, _runLock, TimeSpan.FromSeconds(455));
         StubTimeout();
 
         // Act
@@ -319,7 +318,6 @@ public sealed class JbRunnerTests : IDisposable
     /// <summary>Where a cache seeded for this runner's own solution would land.</summary>
     private string SeededGenerationPath()
     {
-        return Path.Combine(
-            _config.CacheHome, JbSolutionCacheHash.FirstGenerationDirectoryName(_config.SolutionPath));
+        return CacheHomes.GenerationPathFor(_config.CacheHome, _config.SolutionPath);
     }
 }

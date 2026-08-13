@@ -17,8 +17,8 @@ namespace Zphil.ReSharperCli.Execution;
 ///         when one <em>fails</em>, while the debounce needs "when did one last succeed"; a lock file held
 ///         <see cref="FileShare.None" /> cannot be stamped from a second handle anyway; and the lock is
 ///         load-bearing correctness where this is only a hint, so a bug here must not be able to break it.
-///         The coupling runs one way — this reuses <see cref="JbRunLock.ComputeKey" />, and
-///         <see cref="JbRunLock" /> never references the marker.
+///         The two share only <see cref="JbSidecar" />'s naming; <see cref="JbRunLock" /> never references
+///         the marker.
 ///     </para>
 ///     <para>
 ///         Every filesystem failure is swallowed, because a marker that cannot be written or read is not a
@@ -38,6 +38,8 @@ namespace Zphil.ReSharperCli.Execution;
 /// </remarks>
 internal static class JbWarmMarker
 {
+    private const string Extension = "warm";
+
     /// <summary>
     ///     Whether the "no generation matched this solution's hash" warning has already been logged. The
     ///     condition means <c>jb</c>'s directory naming no longer matches what
@@ -48,13 +50,23 @@ internal static class JbWarmMarker
     private static int _driftWarned;
 
     /// <summary>
-    ///     Where the marker for one cache generation lives: beside its lock file, in the cache home itself
-    ///     and under the same key, because the cache home <em>is</em> the shared resource.
+    ///     Where the marker for one cache generation lives: beside its lock file and cold tombstone, under
+    ///     <see cref="JbSidecar" />'s one key for the generation.
     /// </summary>
     internal static string PathFor(string solutionPath, string cacheHome)
     {
-        string key = JbRunLock.ComputeKey(solutionPath, cacheHome);
-        return JbRunLock.SidecarPathFor(cacheHome, key, "warm");
+        return JbSidecar.PathFor(solutionPath, cacheHome, Extension);
+    }
+
+    /// <summary>
+    ///     Every warm marker under <paramref name="cacheHome" />, with the key its file name carries. For
+    ///     donor discovery, which starts from nothing but the cache home: the key is one-way, so the owning
+    ///     solution's path is not recoverable — and does not need to be, because the generation's name is
+    ///     read from the marker's content and the donor's lock is taken by key.
+    /// </summary>
+    internal static IEnumerable<(string Key, string MarkerPath)> FindAll(string cacheHome)
+    {
+        return JbSidecar.FindAll(cacheHome, Extension);
     }
 
     /// <summary>
@@ -76,9 +88,7 @@ internal static class JbWarmMarker
         {
             string? generationName = WarmedGenerationName(solutionPath, cacheHome);
 
-            // FileShare.ReadWrite: a concurrent server stamping or reading the same generation must not see
-            // a sharing violation for what is only a hint.
-            using FileStream marker = new(PathFor(solutionPath, cacheHome), FileMode.Create, FileAccess.Write, FileShare.ReadWrite);
+            using FileStream marker = JbSidecar.OpenToWrite(solutionPath, cacheHome, Extension);
 
             if (generationName is null)
             {
@@ -88,7 +98,7 @@ internal static class JbWarmMarker
 
             marker.Write(Encoding.UTF8.GetBytes(generationName));
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or NotSupportedException or ArgumentException)
+        catch (Exception exception) when (FilesystemFailure.Covers(exception))
         {
             Log.Debug(exception, "Could not stamp the jb warm marker for solution {SolutionPath} in cache home {CacheHome}", solutionPath, cacheHome);
         }
@@ -120,7 +130,7 @@ internal static class JbWarmMarker
 
             return Directory.Exists(Path.Combine(Path.GetFullPath(cacheHome), content)) ? content : null;
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or NotSupportedException or ArgumentException)
+        catch (Exception exception) when (FilesystemFailure.Covers(exception))
         {
             Log.Debug(exception, "Could not read the jb warm marker {MarkerFilePath}", markerFilePath);
             return null;
@@ -136,14 +146,7 @@ internal static class JbWarmMarker
     /// </summary>
     internal static void Clear(string solutionPath, string cacheHome)
     {
-        try
-        {
-            File.Delete(PathFor(solutionPath, cacheHome));
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or NotSupportedException or ArgumentException)
-        {
-            Log.Debug(exception, "Could not clear the jb warm marker for solution {SolutionPath} in cache home {CacheHome}", solutionPath, cacheHome);
-        }
+        JbSidecar.TryDelete(solutionPath, cacheHome, Extension, "jb warm marker");
     }
 
     /// <summary>
@@ -159,7 +162,7 @@ internal static class JbWarmMarker
             TimeSpan age = DateTime.UtcNow - File.GetLastWriteTimeUtc(PathFor(solutionPath, cacheHome));
             return age >= TimeSpan.Zero && age < window;
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or NotSupportedException or ArgumentException)
+        catch (Exception exception) when (FilesystemFailure.Covers(exception))
         {
             Log.Debug(exception, "Could not read the jb warm marker for solution {SolutionPath} in cache home {CacheHome}", solutionPath, cacheHome);
             return false;
@@ -174,11 +177,7 @@ internal static class JbWarmMarker
     /// </summary>
     private static string? WarmedGenerationName(string solutionPath, string cacheHome)
     {
-        string hash = JbSolutionCacheHash.Compute(solutionPath);
-        string solutionName = Path.GetFileNameWithoutExtension(solutionPath);
-
-        return JbCacheGenerations.Find(cacheHome, solutionName)
-            .Where(generation => string.Equals(generation.Hash, hash, StringComparison.Ordinal))
+        return JbCacheGenerations.FindFor(cacheHome, solutionPath).Owned
             .OrderByDescending(generation => Directory.GetLastWriteTimeUtc(generation.FullPath))
             .ThenByDescending(generation => generation.Name, StringComparer.Ordinal)
             .Select(generation => generation.Name)

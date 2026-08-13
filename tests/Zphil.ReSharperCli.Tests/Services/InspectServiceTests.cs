@@ -21,10 +21,8 @@ public sealed class InspectServiceTests : IDisposable
     {
         // The cache home is a real directory: JbRunLock creates it and takes its lock file there, so a
         // literal like "/cache" would leave a stray folder at the drive root.
-        _config = new ResolvedConfig(
-            "/sln/App.sln", null, null, _environment.CreateTempDirectory(), null, null, "jb", ConfigWarnings.None);
-        JbRunLock runLock = new(JbRunTimeout.Default);
-        _service = new InspectService(new JbRunner(_processRunner, runLock, new CacheTransplanter(runLock), JbRunTimeout.Default));
+        _config = Configs.Bare("/sln/App.sln", _environment.CreateTempDirectory());
+        _service = new InspectService(JbRunners.Create(_processRunner));
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;

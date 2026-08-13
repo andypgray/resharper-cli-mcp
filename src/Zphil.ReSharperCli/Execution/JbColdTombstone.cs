@@ -24,14 +24,16 @@ namespace Zphil.ReSharperCli.Execution;
 /// </remarks>
 internal static class JbColdTombstone
 {
+    private const string Extension = "cold";
+
     /// <summary>
-    ///     Where the tombstone for one cache generation lives: the cache home, under the same key as the lock
-    ///     file and the warm marker, so all three move together if the scheme ever changes.
+    ///     Where the tombstone for one cache generation lives: beside the lock file and the warm marker,
+    ///     under <see cref="JbSidecar" />'s one key for the generation, so all three move together if the
+    ///     scheme ever changes.
     /// </summary>
     internal static string PathFor(string solutionPath, string cacheHome)
     {
-        string key = JbRunLock.ComputeKey(solutionPath, cacheHome);
-        return JbRunLock.SidecarPathFor(cacheHome, key, "cold");
+        return JbSidecar.PathFor(solutionPath, cacheHome, Extension);
     }
 
     /// <summary>
@@ -42,9 +44,9 @@ internal static class JbColdTombstone
     {
         try
         {
-            using FileStream tombstone = new(PathFor(solutionPath, cacheHome), FileMode.Create, FileAccess.Write, FileShare.ReadWrite);
+            using FileStream tombstone = JbSidecar.OpenToWrite(solutionPath, cacheHome, Extension);
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or NotSupportedException or ArgumentException)
+        catch (Exception exception) when (FilesystemFailure.Covers(exception))
         {
             Log.Warning(
                 exception,
@@ -65,7 +67,7 @@ internal static class JbColdTombstone
         {
             return File.Exists(PathFor(solutionPath, cacheHome));
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or NotSupportedException or ArgumentException)
+        catch (Exception exception) when (FilesystemFailure.Covers(exception))
         {
             Log.Debug(exception, "Could not read the cache reset record for solution {SolutionPath} in cache home {CacheHome}", solutionPath, cacheHome);
             return true;
@@ -79,13 +81,6 @@ internal static class JbColdTombstone
     /// </summary>
     internal static void Clear(string solutionPath, string cacheHome)
     {
-        try
-        {
-            File.Delete(PathFor(solutionPath, cacheHome));
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or NotSupportedException or ArgumentException)
-        {
-            Log.Debug(exception, "Could not clear the cache reset record for solution {SolutionPath} in cache home {CacheHome}", solutionPath, cacheHome);
-        }
+        JbSidecar.TryDelete(solutionPath, cacheHome, Extension, "cache reset record");
     }
 }

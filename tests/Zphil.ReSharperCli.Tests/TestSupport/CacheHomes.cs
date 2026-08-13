@@ -37,6 +37,26 @@ internal static class CacheHomes
     }
 
     /// <summary>
+    ///     Where the generation for <paramref name="solutionPath" /> sits under
+    ///     <paramref name="cacheHome" />, planted or not — for tests asserting on a directory something else
+    ///     is expected to create.
+    /// </summary>
+    public static string GenerationPathFor(string cacheHome, string solutionPath)
+    {
+        return Path.Combine(cacheHome, JbSolutionCacheHash.FirstGenerationDirectoryName(solutionPath));
+    }
+
+    /// <summary>
+    ///     Plant the fork a concurrent <c>jb</c> creates when it cannot open
+    ///     <paramref name="generationPath" />: the same solution and hash at the next generation number.
+    ///     Returns its full path.
+    /// </summary>
+    public static string PlantFork(string cacheHome, string generationPath)
+    {
+        return PlantGeneration(cacheHome, Path.GetFileName(generationPath).Replace(".00", ".01"));
+    }
+
+    /// <summary>
     ///     Plant a generation for <paramref name="solutionPath" /> and stamp its warm marker, which is what
     ///     a solution whose last <c>jb</c> run succeeded looks like from the outside — and therefore what a
     ///     transplant looks for in a donor. Returns the generation's full path.

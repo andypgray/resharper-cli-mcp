@@ -73,7 +73,7 @@ public sealed class JbWarmMarkerTests : IDisposable
         // run that just succeeded actually used is the one it has only just closed, and the ordinal-latest
         // name is aged here on purpose so a name-ordered pick would fail.
         string first = CacheHomes.PlantGenerationFor(_cacheHome, SolutionPath);
-        string fork = CacheHomes.PlantGeneration(_cacheHome, Path.GetFileName(first).Replace(".00", ".01"));
+        string fork = CacheHomes.PlantFork(_cacheHome, first);
         Directory.SetLastWriteTimeUtc(fork, DateTime.UtcNow - TimeSpan.FromHours(2));
         Directory.SetLastWriteTimeUtc(first, DateTime.UtcNow);
 
@@ -212,7 +212,7 @@ public sealed class JbWarmMarkerTests : IDisposable
         // Assert — the structural proof that a marker bug cannot clobber the lock: they share a directory
         // and a key, and only the extension keeps them apart.
         string marker = JbWarmMarker.PathFor(SolutionPath, _cacheHome);
-        string lockFile = JbRunLock.LockFilePathFor(_cacheHome, JbRunLock.ComputeKey(SolutionPath, _cacheHome));
+        string lockFile = JbRunLock.LockFilePathFor(_cacheHome, JbSidecar.ComputeKey(SolutionPath, _cacheHome));
 
         marker.ShouldNotBe(lockFile);
         Path.GetDirectoryName(marker).ShouldBe(Path.GetDirectoryName(lockFile));

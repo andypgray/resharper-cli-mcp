@@ -9,9 +9,24 @@ namespace Zphil.ReSharperCli.Execution;
 ///     directory gets a new one. So the hash is identity: directories sharing it are generations of one
 ///     solution, and two values under one solution <em>file name</em> are two different solutions.
 /// </param>
-/// <param name="Name">The directory's own name, which is what a report names.</param>
 /// <param name="FullPath">The absolute path, which is what a delete takes.</param>
-internal sealed record JbCacheGeneration(string Hash, string Name, string FullPath);
+internal sealed record JbCacheGeneration(string Hash, string FullPath)
+{
+    /// <summary>The directory's own name, which is what a report names.</summary>
+    internal string Name => Path.GetFileName(FullPath);
+}
+
+/// <summary>
+///     The generations under one cache home sharing one solution's file name, split by ownership. Both lists
+///     keep <see cref="JbCacheGenerations.Find" />'s name order.
+/// </summary>
+/// <param name="Owned">The ones the hash proves are this solution path's own.</param>
+/// <param name="Neighbours">
+///     The rest: same solution file name, different path — another checkout or copy of the repository.
+/// </param>
+internal sealed record JbSolutionGenerations(
+    IReadOnlyList<JbCacheGeneration> Owned,
+    IReadOnlyList<JbCacheGeneration> Neighbours);
 
 /// <summary>
 ///     Reads the cache home's directory layout from the outside: <c>jb</c> stores a solution's analysis in
@@ -48,13 +63,48 @@ internal static class JbCacheGenerations
         List<JbCacheGeneration> generations = [];
         foreach (string fullPath in Directory.EnumerateDirectories(cacheHome))
         {
-            string name = Path.GetFileName(fullPath);
-            if (MatchHash(name, solutionName) is not { } hash) continue;
+            if (MatchHash(Path.GetFileName(fullPath), solutionName) is not { } hash) continue;
 
-            generations.Add(new JbCacheGeneration(hash, name, fullPath));
+            generations.Add(new JbCacheGeneration(hash, fullPath));
         }
 
         return generations.OrderBy(generation => generation.Name, StringComparer.Ordinal).ToList();
+    }
+
+    /// <summary>
+    ///     The generations built from a solution file named like <paramref name="solutionPath" />'s, split by
+    ///     ownership. Which of the same-named generations are the solution's own is decided by reproducing
+    ///     <c>jb</c>'s hash of the path (<see cref="JbSolutionCacheHash" />), so ownership is proved rather
+    ///     than guessed — a hash matching nothing owns nothing, and every caller treats that as "leave
+    ///     everything alone" rather than "pick the closest". This pairing of name derivation, hash, and
+    ///     comparison is the one safety-critical predicate of the cache tools, which is why it lives here
+    ///     beside the parser instead of being restated at each call site.
+    /// </summary>
+    internal static JbSolutionGenerations FindFor(string cacheHome, string solutionPath)
+    {
+        string hash = JbSolutionCacheHash.Compute(solutionPath);
+        var generations = Find(cacheHome, Path.GetFileNameWithoutExtension(solutionPath));
+
+        var owned = generations.Where(generation => SameHash(generation.Hash, hash)).ToList();
+        var neighbours = generations.Where(generation => !SameHash(generation.Hash, hash)).ToList();
+        return new JbSolutionGenerations(owned, neighbours);
+    }
+
+    /// <summary>
+    ///     Whether <paramref name="directoryName" /> names a generation of a solution file called like
+    ///     <paramref name="solutionPath" />'s but built from a <em>different</em> path — the shape a
+    ///     transplant donor has. A generation of this very solution fails it, and so does anything else in
+    ///     the cache home, which is another solution entirely.
+    /// </summary>
+    internal static bool IsNeighbourOf(string directoryName, string solutionPath)
+    {
+        string? hash = MatchHash(directoryName, Path.GetFileNameWithoutExtension(solutionPath));
+        return hash is not null && !SameHash(hash, JbSolutionCacheHash.Compute(solutionPath));
+    }
+
+    private static bool SameHash(string left, string right)
+    {
+        return string.Equals(left, right, StringComparison.Ordinal);
     }
 
     /// <summary>

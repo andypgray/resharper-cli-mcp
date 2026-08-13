@@ -85,11 +85,7 @@ internal sealed class CacheTransplanter(JbRunLock runLock, TimeSpan? donorLockPa
         {
             return await SeedAsync(config, cancellationToken);
         }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or NotSupportedException or ArgumentException)
+        catch (Exception exception) when (FilesystemFailure.Covers(exception))
         {
             Log.Debug(exception, "Could not look for a ReSharper cache to seed solution {SolutionPath} from", config.SolutionPath);
             return false;
@@ -98,19 +94,14 @@ internal sealed class CacheTransplanter(JbRunLock runLock, TimeSpan? donorLockPa
 
     private async Task<bool> SeedAsync(ResolvedConfig config, CancellationToken cancellationToken)
     {
-        string solutionName = Path.GetFileNameWithoutExtension(config.SolutionPath);
-        string targetHash = JbSolutionCacheHash.Compute(config.SolutionPath);
-
-        // Scoped by hash rather than by solution name: the donor shares the name by definition, so a check for
-        // "this solution has no generations" would find the donor's and never fire.
-        bool alreadyCached = JbCacheGenerations.Find(config.CacheHome, solutionName)
-            .Any(generation => string.Equals(generation.Hash, targetHash, StringComparison.Ordinal));
-
+        // Owned generations only: the donor shares the solution file name by definition, so a check for
+        // "this solution has no generations at all" would find the donor's and never fire.
+        bool alreadyCached = JbCacheGenerations.FindFor(config.CacheHome, config.SolutionPath).Owned.Count > 0;
         if (alreadyCached) return false;
 
         if (JbColdTombstone.Exists(config.SolutionPath, config.CacheHome)) return false;
 
-        if (FindDonor(config, solutionName, targetHash) is not { } donor) return false;
+        if (FindDonor(config) is not { } donor) return false;
 
         using IDisposable? donorLease = await runLock.TryAcquireByKeyAsync(
             config.CacheHome, donor.Key, _donorLockPatience, cancellationToken);
@@ -136,30 +127,23 @@ internal sealed class CacheTransplanter(JbRunLock runLock, TimeSpan? donorLockPa
     ///     The first candidate is the only candidate: falling through to a second-best donor would spend the
     ///     caller's time on a chain of attempts to save a cold run that is already running late.
     /// </remarks>
-    private static Donor? FindDonor(ResolvedConfig config, string solutionName, string targetHash)
+    private static Donor? FindDonor(ResolvedConfig config)
     {
-        string cacheHome = Path.GetFullPath(config.CacheHome);
-        if (!Directory.Exists(cacheHome)) return null;
-
-        string ourKey = JbRunLock.ComputeKey(config.SolutionPath, config.CacheHome);
+        string ourKey = JbSidecar.ComputeKey(config.SolutionPath, config.CacheHome);
 
         List<Donor> candidates = [];
-        foreach (string markerPath in Directory.EnumerateFiles(cacheHome, $"{JbRunLock.SidecarPrefix}*.warm"))
+        foreach ((string key, string markerPath) in JbWarmMarker.FindAll(config.CacheHome))
         {
-            string key = KeyOf(markerPath);
             if (string.Equals(key, ourKey, StringComparison.Ordinal)) continue;
 
-            if (JbWarmMarker.TryReadGenerationName(markerPath, cacheHome) is not { } generationName) continue;
+            if (JbWarmMarker.TryReadGenerationName(markerPath, config.CacheHome) is not { } generationName) continue;
 
-            // Same solution file name, different path hash: a generation of *this* solution would be the one
-            // already ruled out, and anything else in the cache home is another solution entirely.
-            string? hash = JbCacheGenerations.MatchHash(generationName, solutionName);
-            if (hash is null || string.Equals(hash, targetHash, StringComparison.Ordinal)) continue;
+            if (!JbCacheGenerations.IsNeighbourOf(generationName, config.SolutionPath)) continue;
 
             candidates.Add(new Donor(key, generationName, File.GetLastWriteTimeUtc(markerPath)));
         }
 
-        return candidates.OrderByDescending(candidate => candidate.WarmedAt).FirstOrDefault();
+        return candidates.MaxBy(candidate => candidate.WarmedAt);
     }
 
     /// <summary>
@@ -194,7 +178,7 @@ internal sealed class CacheTransplanter(JbRunLock runLock, TimeSpan? donorLockPa
             Discard(inProgressPath);
             throw;
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or NotSupportedException or ArgumentException)
+        catch (Exception exception) when (FilesystemFailure.Covers(exception))
         {
             Discard(inProgressPath);
             Log.Warning(
@@ -221,18 +205,21 @@ internal sealed class CacheTransplanter(JbRunLock runLock, TimeSpan? donorLockPa
     {
         Directory.CreateDirectory(destinationPath);
 
-        foreach (string file in Directory.EnumerateFiles(sourcePath))
+        // One enumeration serves both kinds of entry, and Attributes comes from its find data — no
+        // per-directory re-stat on the only path in this server that walks hundreds of megabytes.
+        foreach (FileSystemInfo entry in new DirectoryInfo(sourcePath).EnumerateFileSystemInfos())
         {
             cancellationToken.ThrowIfCancellationRequested();
-            File.Copy(file, Path.Combine(destinationPath, Path.GetFileName(file)));
-        }
 
-        foreach (string directory in Directory.EnumerateDirectories(sourcePath))
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (new DirectoryInfo(directory).Attributes.HasFlag(FileAttributes.ReparsePoint)) continue;
+            if (entry is not DirectoryInfo)
+            {
+                File.Copy(entry.FullName, Path.Combine(destinationPath, entry.Name));
+                continue;
+            }
 
-            CopyTree(directory, Path.Combine(destinationPath, Path.GetFileName(directory)), cancellationToken);
+            if (entry.Attributes.HasFlag(FileAttributes.ReparsePoint)) continue;
+
+            CopyTree(entry.FullName, Path.Combine(destinationPath, entry.Name), cancellationToken);
         }
     }
 
@@ -250,16 +237,6 @@ internal sealed class CacheTransplanter(JbRunLock runLock, TimeSpan? donorLockPa
         {
             Log.Debug(exception, "Could not remove the abandoned partial cache copy {InProgressPath}", inProgressPath);
         }
-    }
-
-    /// <summary>
-    ///     The lock key a sidecar file name carries. It is the only handle on a generation belonging to a
-    ///     solution this process has never resolved — the key is one-way, so the donor's own path is not
-    ///     recoverable, and does not need to be.
-    /// </summary>
-    private static string KeyOf(string sidecarPath)
-    {
-        return Path.GetFileNameWithoutExtension(sidecarPath)[JbRunLock.SidecarPrefix.Length..];
     }
 
     /// <summary>A cache generation worth copying, and what it takes to lock it.</summary>

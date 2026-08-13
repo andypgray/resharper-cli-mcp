@@ -34,7 +34,7 @@ public sealed class CacheResetServiceTests : IDisposable
         string cacheHome = _environment.CreateTempDirectory();
         ResolvedConfig config = ConfigFor("App.sln", cacheHome);
         string ours = CacheHomes.PlantGenerationFor(cacheHome, config.SolutionPath);
-        string fork = CacheHomes.PlantGeneration(cacheHome, ForkOf(ours));
+        string fork = CacheHomes.PlantFork(cacheHome, ours);
         CacheHomes.PlantGeneration(cacheHome, "_App.Core.400500600.00");
         CacheHomes.PlantGeneration(cacheHome, "_Other.99.00");
         CacheResetService service = new(new JbRunLock(TimeSpan.FromSeconds(1)));
@@ -185,7 +185,7 @@ public sealed class CacheResetServiceTests : IDisposable
         ResolvedConfig config = ConfigFor("App.sln", cacheHome);
         string ours = CacheHomes.PlantGenerationFor(cacheHome, config.SolutionPath);
 
-        string key = JbRunLock.ComputeKey(config.SolutionPath, cacheHome);
+        string key = JbSidecar.ComputeKey(config.SolutionPath, cacheHome);
         await using FileStream held = new(
             JbRunLock.LockFilePathFor(cacheHome, key), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
 
@@ -208,12 +208,6 @@ public sealed class CacheResetServiceTests : IDisposable
         string solutionPath = Path.Combine(_environment.CurrentDirectory, solutionFileName);
         File.WriteAllText(solutionPath, string.Empty);
 
-        return new ResolvedConfig(solutionPath, null, null, cacheHome, null, null, "jb", ConfigWarnings.None);
-    }
-
-    /// <summary>The name of the <c>.01</c> generation a concurrent <c>jb</c> forks off <paramref name="generation" />.</summary>
-    private static string ForkOf(string generation)
-    {
-        return Path.GetFileName(generation).Replace(".00", ".01");
+        return Configs.Bare(solutionPath, cacheHome);
     }
 }

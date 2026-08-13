@@ -27,9 +27,6 @@ internal static class CacheResetFormatter
 
     public static string Format(CacheResetOutcome outcome)
     {
-        if (outcome.Dropped.Count == 0 && outcome.Failures.Count == 0 && outcome.LeftAlone.Count == 0)
-            return NothingFound(outcome);
-
         List<string> lines = [];
 
         if (outcome.Dropped.Count > 0)
@@ -39,8 +36,8 @@ internal static class CacheResetFormatter
         }
         else if (outcome.Failures.Count == 0)
         {
-            // Only neighbours were found. Reporting that as an empty cache home would be a different claim
-            // from the true one, which is that nothing here was this solution's to drop.
+            // Nothing was found, or only neighbours were. Either way nothing here was this solution's to
+            // drop, which is a different claim from an empty cache home and is reported as itself.
             lines.Add(NothingFound(outcome));
         }
 

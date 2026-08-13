@@ -1,5 +1,6 @@
 using Zphil.ReSharperCli.Discovery;
 using Zphil.ReSharperCli.Execution;
+using Zphil.ReSharperCli.Formatting;
 
 namespace Zphil.ReSharperCli.Services;
 
@@ -52,24 +53,18 @@ internal sealed class CacheResetService(JbRunLock runLock)
 {
     public async Task<CacheResetOutcome> RunAsync(ResolvedConfig config, CancellationToken cancellationToken)
     {
-        string solutionName = Path.GetFileNameWithoutExtension(config.SolutionPath);
-        string hash = JbSolutionCacheHash.Compute(config.SolutionPath);
-
         using IDisposable runLease = await runLock.AcquireAsync(config.SolutionPath, config.CacheHome, cancellationToken);
 
         // Enumerated inside the lock, so the set found is the set deleted: outside it, a run starting in the
-        // gap could fork a generation this call would then leave behind while reporting a clean reset.
-        var generations = Find(config.CacheHome, solutionName);
-
-        // Which of the same-named generations are this solution's is decided by reproducing jb's own hash of
-        // the solution path, so ownership is proved rather than guessed. A hash matching nothing deletes
-        // nothing: the answer to "none of these is provably mine" is to leave them all where they are.
-        var ours = generations.Where(generation => string.Equals(generation.Hash, hash, StringComparison.Ordinal)).ToList();
-        var leftAlone = generations.Except(ours).Select(generation => generation.Name).ToList();
+        // gap could fork a generation this call would then leave behind while reporting a clean reset. Which
+        // of the same-named generations are this solution's own is FindFor's proof; this only decides what
+        // happens to each half.
+        JbSolutionGenerations generations = Find(config.CacheHome, config.SolutionPath);
+        var leftAlone = generations.Neighbours.Select(generation => generation.Name).ToList();
 
         List<string> dropped = [];
         List<CacheResetFailure> failures = [];
-        foreach (JbCacheGeneration generation in ours)
+        foreach (JbCacheGeneration generation in generations.Owned)
             try
             {
                 Directory.Delete(generation.FullPath, true);
@@ -77,7 +72,7 @@ internal sealed class CacheResetService(JbRunLock runLock)
             }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
             {
-                failures.Add(new CacheResetFailure(generation.Name, SingleLine(exception.Message)));
+                failures.Add(new CacheResetFailure(generation.Name, ConfigWarningBanner.SingleLine(exception.Message)));
             }
 
         // The marker claims a jb run against this generation succeeded recently, which is what stops the next
@@ -94,29 +89,20 @@ internal sealed class CacheResetService(JbRunLock runLock)
     }
 
     /// <summary>
-    ///     <see cref="JbCacheGenerations.Find" /> with its enumeration failures turned into a reportable
+    ///     <see cref="JbCacheGenerations.FindFor" /> with its enumeration failures turned into a reportable
     ///     error. A cache home this server cannot read is not "nothing to drop" — answering a delete request
     ///     with a clean report would be the worst possible reading of it.
     /// </summary>
-    private static List<JbCacheGeneration> Find(string cacheHome, string solutionName)
+    private static JbSolutionGenerations Find(string cacheHome, string solutionPath)
     {
         try
         {
-            return JbCacheGenerations.Find(cacheHome, solutionName);
+            return JbCacheGenerations.FindFor(cacheHome, solutionPath);
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or NotSupportedException or ArgumentException)
+        catch (Exception exception) when (FilesystemFailure.Covers(exception))
         {
             throw new UserErrorException(
-                $"Could not read the ReSharper cache home \"{cacheHome}\" ({SingleLine(exception.Message)}).", exception);
+                $"Could not read the ReSharper cache home \"{cacheHome}\" ({ConfigWarningBanner.SingleLine(exception.Message)}).", exception);
         }
-    }
-
-    /// <summary>
-    ///     Flattens an exception message onto one line, so a reported reason cannot break out of the list item
-    ///     it belongs to.
-    /// </summary>
-    private static string SingleLine(string reason)
-    {
-        return reason.ReplaceLineEndings(" ").Trim();
     }
 }

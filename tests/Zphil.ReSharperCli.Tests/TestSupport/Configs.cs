@@ -1,0 +1,16 @@
+using Zphil.ReSharperCli.Discovery;
+
+namespace Zphil.ReSharperCli.Tests.TestSupport;
+
+/// <summary>
+///     The <see cref="ResolvedConfig" /> for tests that enter below <c>ConfigResolver</c>: a solution path
+///     and a cache home carrying meaning, every optional axis absent, and <c>jb</c> resolved by bare name.
+///     One spelling, so growing the record ripples here rather than through every service test.
+/// </summary>
+internal static class Configs
+{
+    public static ResolvedConfig Bare(string solutionPath, string cacheHome)
+    {
+        return new ResolvedConfig(solutionPath, null, null, cacheHome, null, null, "jb", ConfigWarnings.None);
+    }
+}

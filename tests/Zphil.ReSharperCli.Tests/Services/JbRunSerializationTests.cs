@@ -4,6 +4,7 @@ using Zphil.ReSharperCli.Discovery;
 using Zphil.ReSharperCli.Execution;
 using Zphil.ReSharperCli.Services;
 using Zphil.ReSharperCli.Tests.TestDoubles;
+using Zphil.ReSharperCli.Tests.TestSupport;
 
 namespace Zphil.ReSharperCli.Tests.Services;
 
@@ -28,10 +29,8 @@ public sealed class JbRunSerializationTests : IDisposable
         _solutionDirectory = _environment.CurrentDirectory;
         string solutionPath = Path.Combine(_solutionDirectory, "App.sln");
         File.WriteAllText(solutionPath, string.Empty);
-        _config = new ResolvedConfig(
-            solutionPath, null, null, _environment.CreateTempDirectory(), null, null, "jb", ConfigWarnings.None);
-        JbRunLock runLock = new(JbRunTimeout.Default);
-        _runner = new JbRunner(_probe, runLock, new CacheTransplanter(runLock), JbRunTimeout.Default);
+        _config = Configs.Bare(solutionPath, _environment.CreateTempDirectory());
+        _runner = JbRunners.Create(_probe);
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;

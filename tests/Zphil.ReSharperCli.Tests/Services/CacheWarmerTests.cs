@@ -171,7 +171,7 @@ public sealed class CacheWarmerTests : IDisposable
         // looks like to the OS. Running anyway would fork a cold cache generation, which is the whole
         // failure the run lock exists to prevent.
         await using FileStream otherProcess = new(
-            JbRunLock.LockFilePathFor(_cacheHome, JbRunLock.ComputeKey(_solutionPath, _cacheHome)),
+            JbRunLock.LockFilePathFor(_cacheHome, JbSidecar.ComputeKey(_solutionPath, _cacheHome)),
             FileMode.OpenOrCreate,
             FileAccess.ReadWrite,
             FileShare.None);

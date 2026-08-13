@@ -19,11 +19,10 @@ internal static class ToolHarness
         JbLocator jbLocator = new(processRunner, environment);
         ConfigResolver configResolver = new(jbLocator, environment);
 
-        // One lock for the whole graph, exactly as the composition root registers it: a cache reset or a cache
-        // copy that took a lock of its own would serialize against nothing and could touch a generation
-        // mid-run.
+        // One lock for the whole graph, exactly as the composition root registers it: a cache reset with a
+        // lock of its own would serialize against nothing and could delete a generation mid-run.
         JbRunLock runLock = new(JbRunTimeout.Default);
-        JbRunner jbRunner = new(processRunner, runLock, new CacheTransplanter(runLock), JbRunTimeout.Default);
+        JbRunner jbRunner = JbRunners.Create(processRunner, runLock);
 
         InspectService inspectService = new(jbRunner);
         CleanupService cleanupService = new(jbRunner);
@@ -44,8 +43,7 @@ internal static class ToolHarness
     {
         JbLocator jbLocator = new(processRunner, environment);
         ConfigResolver configResolver = new(jbLocator, environment);
-        JbRunLock runLock = new(JbRunTimeout.Default);
-        JbRunner jbRunner = new(processRunner, runLock, new CacheTransplanter(runLock), JbRunTimeout.Default);
+        JbRunner jbRunner = JbRunners.Create(processRunner);
         InspectService inspectService = new(jbRunner);
         return new CacheWarmer(configResolver, inspectService, environment, logger);
     }

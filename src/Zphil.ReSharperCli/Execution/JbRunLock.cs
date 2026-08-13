@@ -1,7 +1,5 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.Security.Cryptography;
-using System.Text;
 using Serilog;
 
 namespace Zphil.ReSharperCli.Execution;
@@ -40,13 +38,6 @@ namespace Zphil.ReSharperCli.Execution;
 /// </param>
 internal sealed class JbRunLock(TimeSpan maxWait)
 {
-    /// <summary>
-    ///     What every file this server writes into a cache home is called before its key: enough to be
-    ///     obviously not <c>jb</c>'s, and enough for the sidecars to be found again by something that knows
-    ///     only the cache home.
-    /// </summary>
-    internal const string SidecarPrefix = ".resharper-cli-mcp-";
-
     private static readonly TimeSpan RetryInterval = TimeSpan.FromMilliseconds(250);
 
     /// <summary>
@@ -73,7 +64,7 @@ internal sealed class JbRunLock(TimeSpan maxWait)
         string lockFilePath;
         try
         {
-            key = ComputeKey(solutionPath, cacheHome);
+            key = JbSidecar.ComputeKey(solutionPath, cacheHome);
             lockFilePath = LockFilePathFor(cacheHome, key);
         }
         catch (Exception exception) when (exception is ArgumentException or NotSupportedException or PathTooLongException)
@@ -127,7 +118,7 @@ internal sealed class JbRunLock(TimeSpan maxWait)
         string lockFilePath;
         try
         {
-            key = ComputeKey(solutionPath, cacheHome);
+            key = JbSidecar.ComputeKey(solutionPath, cacheHome);
             lockFilePath = LockFilePathFor(cacheHome, key);
         }
         catch (Exception exception) when (exception is ArgumentException or NotSupportedException or PathTooLongException)
@@ -149,16 +140,7 @@ internal sealed class JbRunLock(TimeSpan maxWait)
             throw;
         }
 
-        // Unlike AcquireAsync, "could not prove exclusivity" is a *return* rather than a throw, so releasing
-        // in the catch above is not enough: leaving the gate taken here would wedge every later caller of
-        // this generation — foreground ones included — until the process ended.
-        if (file is null)
-        {
-            gate.Release();
-            return null;
-        }
-
-        return new Holder(gate, file);
+        return HolderOrRelease(gate, file);
     }
 
     /// <summary>
@@ -173,8 +155,8 @@ internal sealed class JbRunLock(TimeSpan maxWait)
     ///         Keyed rather than pathed because the caller has no solution path to key from. The keys are the
     ///         cache home's own sidecar file names, so a generation belonging to a solution this process has
     ///         never resolved — another checkout, analysed by another session — can still be locked before it
-    ///         is read from. <see cref="ComputeKey" /> produces the same key from the pair, so the two entry
-    ///         points contend with each other exactly as they should.
+    ///         is read from. <see cref="JbSidecar.ComputeKey" /> produces the same key from the pair, so the
+    ///         two entry points contend with each other exactly as they should.
     ///     </para>
     ///     <para>
     ///         Follows <see cref="TryAcquire" />'s inverted degradation rule for the same reason: this serves
@@ -219,9 +201,26 @@ internal sealed class JbRunLock(TimeSpan maxWait)
             throw;
         }
 
-        // The gate is handed back on the way out for the same reason TryAcquire does it: this returns rather
-        // than throwing when exclusivity cannot be proved, so leaving it taken would wedge every later caller
-        // of this generation — foreground ones included — for the life of the process.
+        return HolderOrRelease(gate, file);
+    }
+
+    /// <summary>
+    ///     Where the lock file for <paramref name="key" /> lives: beside the warm marker and the cold
+    ///     tombstone, under <see cref="JbSidecar" />'s one naming scheme for all three.
+    /// </summary>
+    internal static string LockFilePathFor(string cacheHome, string key)
+    {
+        return JbSidecar.PathForKey(cacheHome, key, "lock");
+    }
+
+    /// <summary>
+    ///     The speculative acquires' shared tail. Unlike <see cref="AcquireAsync" />, "could not prove
+    ///     exclusivity" is a <em>return</em> rather than a throw, so releasing in a catch is not enough:
+    ///     leaving the gate taken on the null path would wedge every later caller of this generation —
+    ///     foreground ones included — for the life of the process.
+    /// </summary>
+    private static IDisposable? HolderOrRelease(SemaphoreSlim gate, FileStream? file)
+    {
         if (file is null)
         {
             gate.Release();
@@ -229,38 +228,6 @@ internal sealed class JbRunLock(TimeSpan maxWait)
         }
 
         return new Holder(gate, file);
-    }
-
-    /// <summary>
-    ///     Identifies one cache generation: a short hash of the normalised (solution, cache home) pair.
-    ///     Both paths are absolute by contract — <c>ResolvedConfig</c> resolves them — so normalising here
-    ///     only folds separators and Windows casing, and never consults the process working directory.
-    /// </summary>
-    internal static string ComputeKey(string solutionPath, string cacheHome)
-    {
-        var material = $"{Normalize(solutionPath)}\n{Normalize(cacheHome)}";
-        byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(material));
-        return Convert.ToHexStringLower(hash)[..16];
-    }
-
-    /// <summary>
-    ///     Where the lock file for <paramref name="key" /> lives: inside the cache home itself, and
-    ///     deliberately not in the temp directory — the cache home <em>is</em> the contended resource, so
-    ///     two sessions sharing a cache share a lock file even when their temp directories differ.
-    /// </summary>
-    internal static string LockFilePathFor(string cacheHome, string key)
-    {
-        return SidecarPathFor(cacheHome, key, "lock");
-    }
-
-    /// <summary>
-    ///     The path of a per-generation sidecar file in the cache home. One spelling of the naming scheme,
-    ///     shared with <see cref="JbWarmMarker" />, so the lock file and the warm marker always sit side by
-    ///     side under the same key — a scheme change moves both or neither.
-    /// </summary>
-    internal static string SidecarPathFor(string cacheHome, string key, string extension)
-    {
-        return Path.Combine(Path.GetFullPath(cacheHome), $"{SidecarPrefix}{key}.{extension}");
     }
 
     /// <summary>
@@ -277,9 +244,7 @@ internal sealed class JbRunLock(TimeSpan maxWait)
         while (true)
             try
             {
-                // Not DeleteOnClose: a zero-byte file left behind is cheaper than the delete-pending race
-                // it would introduce between a releasing holder and an arriving one.
-                return new FileStream(lockFilePath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+                return OpenLockFile(lockFilePath);
             }
             catch (IOException exception) when (IsContention(exception) && waited.Elapsed < _maxWait)
             {
@@ -311,7 +276,7 @@ internal sealed class JbRunLock(TimeSpan maxWait)
         while (true)
             try
             {
-                return new FileStream(lockFilePath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+                return OpenLockFile(lockFilePath);
             }
             catch (IOException exception) when (IsContention(exception) && waited.Elapsed < patience)
             {
@@ -332,12 +297,22 @@ internal sealed class JbRunLock(TimeSpan maxWait)
     {
         try
         {
-            return new FileStream(lockFilePath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+            return OpenLockFile(lockFilePath);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or NotSupportedException)
         {
             return null;
         }
+    }
+
+    /// <summary>
+    ///     The one spelling of the exclusive open. <see cref="FileShare.None" /> is the lock itself. Not
+    ///     DeleteOnClose: a zero-byte file left behind is cheaper than the delete-pending race it would
+    ///     introduce between a releasing holder and an arriving one.
+    /// </summary>
+    private static FileStream OpenLockFile(string lockFilePath)
+    {
+        return new FileStream(lockFilePath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
     }
 
     /// <summary>
@@ -389,12 +364,6 @@ internal sealed class JbRunLock(TimeSpan maxWait)
     private static TimeSpan Shorter(TimeSpan first, TimeSpan second)
     {
         return first < second ? first : second;
-    }
-
-    private static string Normalize(string path)
-    {
-        string full = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        return OperatingSystem.IsWindows() ? full.ToLowerInvariant() : full;
     }
 
     /// <summary>

@@ -345,7 +345,7 @@ public sealed class JbRunLockTests : IDisposable
 
         // Act
         IDisposable? byKey = await runLock.TryAcquireByKeyAsync(
-            _cacheHome, JbRunLock.ComputeKey(SolutionPath, _cacheHome), ShortWait, Ct);
+            _cacheHome, JbSidecar.ComputeKey(SolutionPath, _cacheHome), ShortWait, Ct);
 
         // Assert
         byKey.ShouldBeNull();
@@ -362,7 +362,7 @@ public sealed class JbRunLockTests : IDisposable
 
         // Act
         IDisposable? lease = await runLock.TryAcquireByKeyAsync(
-            _cacheHome, JbRunLock.ComputeKey(SolutionPath, _cacheHome), TimeSpan.FromMilliseconds(300), Ct);
+            _cacheHome, JbSidecar.ComputeKey(SolutionPath, _cacheHome), TimeSpan.FromMilliseconds(300), Ct);
 
         // Assert
         lease.ShouldBeNull();
@@ -384,7 +384,7 @@ public sealed class JbRunLockTests : IDisposable
 
         // Act
         IDisposable? lease = await runLock.TryAcquireByKeyAsync(
-            _cacheHome, JbRunLock.ComputeKey(SolutionPath, _cacheHome), Generous, Ct);
+            _cacheHome, JbSidecar.ComputeKey(SolutionPath, _cacheHome), Generous, Ct);
 
         // Assert
         await release;
@@ -399,7 +399,7 @@ public sealed class JbRunLockTests : IDisposable
         // the lock file can never be opened, and the answer is a return rather than a throw.
         JbRunLock runLock = new(ShortWait);
         Directory.CreateDirectory(LockFilePath());
-        string key = JbRunLock.ComputeKey(SolutionPath, _cacheHome);
+        string key = JbSidecar.ComputeKey(SolutionPath, _cacheHome);
         (await runLock.TryAcquireByKeyAsync(_cacheHome, key, ShortWait, Ct)).ShouldBeNull();
         var waited = Stopwatch.StartNew();
 
@@ -421,21 +421,9 @@ public sealed class JbRunLockTests : IDisposable
         (await runLock.TryAcquireByKeyAsync(_cacheHome + "\0invalid", "abc123", ShortWait, Ct)).ShouldBeNull();
     }
 
-    [Fact]
-    public void ComputeKey_FoldsPathsThatNameTheSameCacheGeneration()
-    {
-        // Assert — a trailing separator must not fork one generation's lock into two...
-        JbRunLock.ComputeKey(SolutionPath, _cacheHome + Path.DirectorySeparatorChar)
-            .ShouldBe(JbRunLock.ComputeKey(SolutionPath, _cacheHome));
-
-        // ...while a different solution in the same cache home is a different generation.
-        JbRunLock.ComputeKey("/repo/Other.sln", _cacheHome)
-            .ShouldNotBe(JbRunLock.ComputeKey(SolutionPath, _cacheHome));
-    }
-
     private string LockFilePath()
     {
-        return JbRunLock.LockFilePathFor(_cacheHome, JbRunLock.ComputeKey(SolutionPath, _cacheHome));
+        return JbRunLock.LockFilePathFor(_cacheHome, JbSidecar.ComputeKey(SolutionPath, _cacheHome));
     }
 
     /// <summary>Hold the lock file the way another server process would: exclusively, until disposed.</summary>

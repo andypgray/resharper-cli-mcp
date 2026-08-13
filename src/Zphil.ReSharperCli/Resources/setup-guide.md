@@ -73,8 +73,10 @@ else is running, which is the normal case.
 A timeout with nothing else running is almost always the cold run. **Scoping the retry with `files` does
 not help**: `jb` analyses the whole solution whatever the report is narrowed to, so a one-file run is no
 faster than a solution-wide one — often marginally slower. What a killed run does leave behind is a
-partly-built cache, so a retry resumes from there rather than starting over; but where a cold analysis
-simply takes longer than the cap, raising `RESHARPER_MCP_TIMEOUT_SECS` is the fix and retrying is not. Your MCP
+partly-built cache that a retry picks up rather than starting over — though not from exactly where it
+stopped, because whatever was in flight when it was killed is lost and gets redone. Retrying therefore makes
+real progress, but a series of capped runs costs appreciably more than one run allowed to finish; where a
+cold analysis simply takes longer than the cap, raising `RESHARPER_MCP_TIMEOUT_SECS` is the fix and retrying is not. Your MCP
 client may also enforce a tool-call timeout of its own and give up before the server's cap; raise that on
 the client side too (for Claude Code, the `MCP_TOOL_TIMEOUT` environment variable, in milliseconds).
 
@@ -92,10 +94,21 @@ or two — rather than for the run to finish. **A pre-warm in another server pro
 though, so a call there queues behind it exactly as it queues behind another session's real call. That is
 the one case where pre-warming can make a first call slower than it would have been.
 
-It runs **at most once per session**, and is skipped when any `jb` run against that solution's cache
+**At most one pass runs at a time**, and a pass is skipped when any `jb` run against that solution's cache
 succeeded within the last hour — a tool call counts, so working in a repo does not earn its next session a
 redundant analysis. It is a full solution analysis when it does run (`--include` does not make `jb` do less
 work), so set `RESHARPER_MCP_PREWARM=off` if you would rather not spend the CPU.
+
+Exactly one thing arms another pass: **a tool call hitting the run cap**. That is when speculative work is
+worth most — the cache is part-built and you are reading the error rather than waiting on `jb` — so the
+server spends the pause warming the solution that just timed out. Nothing else re-arms it: not a timer, not
+each message, and never a pre-warm reacting to its own timeout. Recurrence only ever advances when you make
+another call.
+
+One case it still cannot help, because the decision is made at connect time: a session that connects while
+the cache is fresh, sits idle for hours, and only then makes its first call. The pass ran at connect, found
+a recent successful run, and correctly skipped; by the time the call arrives the tree has moved on and the
+call pays the cold cost anyway. Raising `RESHARPER_MCP_TIMEOUT_SECS` is the answer there.
 
 ### Worktrees, clones, and copies of one repository
 

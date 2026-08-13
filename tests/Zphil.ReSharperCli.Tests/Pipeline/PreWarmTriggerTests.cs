@@ -37,6 +37,39 @@ public sealed class PreWarmTriggerTests
     }
 
     [Fact]
+    public async Task LaterMessages_DoNotStartFurtherPasses()
+    {
+        // Arrange — the warmer is re-armable now, so the one-shot lives here instead. Without it every
+        // message would reach Start, and Start would keep saying yes: config resolution is deliberately
+        // uncached (a directory enumeration plus a full settings parse each time) and jb discovery caches
+        // successes only, so a server sitting in a repo with no solution would re-probe two jb candidates at
+        // thirty seconds each, per message, silently. That cost is invisible from a tool result, which is
+        // exactly why it needs a test rather than a comment.
+        await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(
+            Ct, true, ArrangeWarmableSolution);
+        await harness.Warmer.Finished.WaitAsync(Generous, Ct);
+        harness.Warmer.Outcome.ShouldBe(WarmUpOutcome.Warmed);
+
+        // Act — more traffic, each message going through the same filter as the handshake did.
+        await harness.Client.ListToolsAsync(cancellationToken: Ct);
+        await harness.Client.ListToolsAsync(cancellationToken: Ct);
+
+        // Assert — on the outcome, because counting jb runs would not catch this: a per-message pass would
+        // find the marker its own first pass just stamped and settle as AlreadyWarm without spending a jb,
+        // so the run count stays at one either way. The outcome is what changes. The filter calls Start
+        // before passing the message on, so by the time these calls have returned any pass they triggered
+        // has been claimed, and awaiting Finished waits for that pass rather than the handshake's.
+        await harness.Warmer.Finished.WaitAsync(Generous, Ct);
+        harness.Warmer.Outcome.ShouldBe(WarmUpOutcome.Warmed);
+
+        await harness.ProcessRunner.Received(1).RunAsync(
+            Arg.Any<string>(),
+            Arg.Is<IReadOnlyList<string>>(arguments => !IsVersionProbe(arguments)),
+            Arg.Any<TimeSpan>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task ConnectingAClient_WithPreWarmTurnedOff_SettlesWithoutSpawningAnything()
     {
         // Arrange & Act — the harness's default, which every other test in this suite relies on: a session

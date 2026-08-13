@@ -96,22 +96,43 @@ public sealed class JbRunYieldTests : IDisposable
     }
 
     [Fact]
-    public async Task PreWarm_StartingAfterAForegroundRunHasArrived_NeverRunsAtAll()
+    public async Task PreWarm_StartingWhileAForegroundRunIsInFlight_NeverRunsAtAll()
     {
         // Arrange — the degenerate ordering the trigger permits: a client whose very first message is a tool
         // call, so the real run passes its cancel point before the pre-warm has anything to hand back. Left
         // alone, that call would then queue behind a pre-warm started a moment later — the one way pre-warming
         // could delay a call inside this process.
+        var foreground = _runner.RunAsync(_config, ForegroundArguments, Ct);
+        await _probe.WaitForNextStartAsync(Ct);
+
+        // Act
+        var preWarm = await _runner.TryRunAsync(_config, WarmUpArguments, Ct);
+
+        // Assert — it stands down rather than racing: a real run analyses the same solution into the same
+        // cache generation, so while one is in flight there is nothing for a speculative run to buy.
+        preWarm.ShouldBeNull();
+        _probe.Runs.ShouldBe(1);
+
+        _probe.ReleaseAll();
+        (await foreground).ExitCode.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task PreWarm_StartingAfterAForegroundRunHasFinished_RunsAgain()
+    {
+        // Arrange — the same ordering a moment later, and the answer is now the opposite one. Standing down
+        // while a call is in flight is the invariant worth keeping; staying down for the rest of the process
+        // was an accident of spelling that invariant as a latch, and it switched the pre-warm off precisely
+        // when a call that had just hit the cap most needed it.
         _probe.ReleaseAll();
         await _runner.RunAsync(_config, ForegroundArguments, Ct);
 
         // Act
         var preWarm = await _runner.TryRunAsync(_config, WarmUpArguments, Ct);
 
-        // Assert — it retires rather than racing: a real run analyses the same solution into the same cache
-        // generation, so there is nothing left for a speculative one to buy.
-        preWarm.ShouldBeNull();
-        _probe.Runs.ShouldBe(1);
+        // Assert
+        preWarm.ShouldNotBeNull();
+        _probe.Runs.ShouldBe(2);
     }
 
     [Fact]

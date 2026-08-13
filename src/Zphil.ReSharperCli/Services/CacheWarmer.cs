@@ -7,13 +7,19 @@ using Zphil.ReSharperCli.Infrastructure;
 namespace Zphil.ReSharperCli.Services;
 
 /// <summary>
-///     The server's one piece of background work: once per session, as soon as a client connects, populate
-///     the ReSharper cache generation the first tool call is going to want. A session usually idles for
-///     minutes between the handshake and its first call, and a cold <c>jb inspectcode</c> costs minutes, so
-///     this spends the idle window instead of the user's. <see cref="Pipeline.PreWarmTrigger" /> owns the
-///     signal that gets it going.
+///     The server's one piece of background work: populate the ReSharper cache generation a tool call is
+///     going to want, in an idle window rather than in the user's. A session usually idles for minutes
+///     between the handshake and its first call, and a cold <c>jb inspectcode</c> costs minutes.
+///     <see cref="Pipeline.PreWarmTrigger" /> owns the signal that gets the first pass going.
 /// </summary>
 /// <remarks>
+///     <para>
+///         One <em>kind</em> of speculative work and at most one pass in flight, but not at most one pass per
+///         process. A pass may recur on a signal that a real call has just handed the cache generation back —
+///         today only a foreground run hitting the cap — and never on a timer or per message. A timer would
+///         be a second background job; a pass that started itself would be a loop; a per-message trigger
+///         would pay a settings parse and a <c>jb</c> re-probe on every message for nothing.
+///     </para>
 ///     <para>
 ///         It decides <em>when</em> a warm-up runs; <see cref="InspectService.WarmCacheAsync" /> decides
 ///         <em>how</em>, so no jb argument is ever built here. The target is whatever
@@ -37,6 +43,7 @@ namespace Zphil.ReSharperCli.Services;
 internal sealed class CacheWarmer(
     ConfigResolver configResolver,
     InspectService inspectService,
+    JbRunner jbRunner,
     IEnvironment environment,
     ILogger<CacheWarmer> logger) : IHostedService, IDisposable
 {
@@ -59,16 +66,42 @@ internal sealed class CacheWarmer(
 
     private static readonly string[] OffSpellings = ["off", "false", "0", "no", "disabled"];
 
-    private readonly TaskCompletionSource _finished = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    /// <summary>
+    ///     Guards the three fields below as one. Not decoration: <see cref="Start" /> claims the slot and
+    ///     republishes the completion signal in a single step, and <see cref="StopAsync" /> closes the door
+    ///     and reads that signal in a single step. Interleaved without it, <c>Start</c> claims the slot,
+    ///     <c>StopAsync</c> reads the <em>previous</em> pass's already-settled task, drains instantly and
+    ///     returns, and <c>Start</c> then spawns a <c>jb</c> after shutdown.
+    /// </summary>
+    private readonly Lock _gate = new();
+
     private readonly CancellationTokenSource _stopping = new();
 
-    private int _started;
+    private TaskCompletionSource _finished = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private bool _passInFlight;
+    private bool _stopped;
 
-    /// <summary>How the pre-warm ended; <see cref="WarmUpOutcome.NotRun" /> until it has.</summary>
+    /// <summary>
+    ///     How the last settled pass ended; <see cref="WarmUpOutcome.NotRun" /> until one has. Never reset
+    ///     when a pass begins, so it always names a real outcome rather than briefly reading as "not run".
+    /// </summary>
     internal WarmUpOutcome Outcome { get; private set; } = WarmUpOutcome.NotRun;
 
-    /// <summary>Completes once the pre-warm has settled, on every path including the ones that never ran <c>jb</c>.</summary>
-    internal Task Finished => _finished.Task;
+    /// <summary>
+    ///     Completes once the pass in flight has settled, on every path including the ones that never ran
+    ///     <c>jb</c>. Republished when a pass starts, so a caller awaiting it after a re-arm waits for that
+    ///     pass rather than sailing past on the previous one's completed task.
+    /// </summary>
+    internal Task Finished
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _finished.Task;
+            }
+        }
+    }
 
     public void Dispose()
     {
@@ -76,11 +109,13 @@ internal sealed class CacheWarmer(
     }
 
     /// <summary>
-    ///     Deliberately a no-op: the host starts before any client has connected, so there is nothing to warm
-    ///     for yet. <see cref="Start" /> is what actually begins the work.
+    ///     Starts nothing — the host starts before any client has connected, so there is nothing to warm for
+    ///     yet, and <see cref="Start" /> is still what begins a pass. What it does is subscribe, so that a
+    ///     foreground run hitting the run cap arranges one.
     /// </summary>
     public Task StartAsync(CancellationToken cancellationToken)
     {
+        jbRunner.ForegroundRunTimedOut += OnForegroundRunTimedOut;
         return Task.CompletedTask;
     }
 
@@ -90,19 +125,29 @@ internal sealed class CacheWarmer(
     /// </summary>
     public async Task StopAsync(CancellationToken cancellationToken)
     {
-        // Claim the start slot on the way out, so a message arriving now cannot start a run this method has
-        // already decided not to wait for. A false here means nothing ever started.
-        bool wasStarted = Interlocked.Exchange(ref _started, 1) != 0;
+        // Unhook before shutting the door, not after: a signal arriving in between would start a pass this
+        // method has already decided not to wait for.
+        jbRunner.ForegroundRunTimedOut -= OnForegroundRunTimedOut;
+
+        Task? inFlight;
+        lock (_gate)
+        {
+            // Shut the door and read the signal as one step, so no pass can be claimed between the two. A
+            // null here means no pass is running — either none ever started, or the last one already settled
+            // — and there is nothing to drain.
+            _stopped = true;
+            inFlight = _passInFlight ? _finished.Task : null;
+        }
 
         await _stopping.CancelAsync();
 
-        if (!wasStarted) return;
+        if (inFlight is null) return;
 
         try
         {
             // CancellationToken.None on purpose: the host's shutdown token is very likely already cancelled,
             // and an orderly drain must not come back looking like a cancellation.
-            await Finished.WaitAsync(DrainTimeout, CancellationToken.None);
+            await inFlight.WaitAsync(DrainTimeout, CancellationToken.None);
         }
         catch (TimeoutException)
         {
@@ -111,18 +156,45 @@ internal sealed class CacheWarmer(
     }
 
     /// <summary>
-    ///     Begin the pre-warm, at most once per process. Returns immediately: the caller sits in the server's
-    ///     incoming-message pipeline, which every later message queues behind.
+    ///     Begin a pre-warm pass. At most one is ever in flight, and none starts once the host has stopped;
+    ///     beyond that a caller may re-arm, which is what lets a call that just hit the run cap be followed by
+    ///     speculative work rather than by nothing at all. Returns immediately.
     /// </summary>
-    public void Start()
+    /// <param name="target">
+    ///     The solution to warm, when the caller already knows it — a re-arm after a foreground timeout does,
+    ///     and it is the solution that actually timed out rather than whatever the working directory would
+    ///     resolve to. Omitted, the pass resolves its own target as it always has.
+    /// </param>
+    public void Start(ResolvedConfig? target = null)
     {
-        if (Interlocked.Exchange(ref _started, 1) != 0) return;
+        TaskCompletionSource signal;
+        lock (_gate)
+        {
+            if (_stopped || _passInFlight) return;
+            _passInFlight = true;
+
+            if (_finished.Task.IsCompleted)
+                _finished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            signal = _finished;
+        }
 
         // Task.Run is load-bearing rather than stylistic. Config resolution reaches JbLocator, and spawning a
         // process starts it synchronously before the first await, so calling straight through would stall the
         // message pipeline on `jb inspectcode --version` — and holding a message filter open holds the
         // session's loop, and therefore host shutdown, for the length of a jb run.
-        _ = Task.Run(RunAsync);
+        _ = Task.Run(() => RunAsync(signal, target));
+    }
+
+    /// <summary>
+    ///     A call the user made ran out of budget. That is the best moment speculative work ever gets: the
+    ///     cache is part-built, the error just told the user a retry resumes from there, and the user is now
+    ///     idle reading it. One pass per timeout, and no pass re-arms itself, so recurrence is unbounded but
+    ///     paced entirely by the user making another call.
+    /// </summary>
+    private void OnForegroundRunTimedOut(ResolvedConfig config)
+    {
+        Start(config);
     }
 
     /// <summary>
@@ -136,12 +208,12 @@ internal sealed class CacheWarmer(
     }
 
     /// <summary>Never throws: it is the top of a fire-and-forget task, so an escape would be an unobserved exception.</summary>
-    private async Task RunAsync()
+    private async Task RunAsync(TaskCompletionSource signal, ResolvedConfig? target)
     {
         var outcome = WarmUpOutcome.NotRun;
         try
         {
-            outcome = await WarmAsync();
+            outcome = await WarmAsync(target);
         }
         catch (OperationCanceledException)
         {
@@ -159,27 +231,42 @@ internal sealed class CacheWarmer(
             // Outcome before Finished, so a caller that awaits the one can read the other.
             Outcome = outcome;
             logger.LogDebug("Background cache pre-warm finished: {Outcome}", outcome);
-            _finished.TrySetResult();
+
+            // The slot before the signal, so `await Finished; Start();` re-arms rather than meeting a pass
+            // that has settled but not yet stood down.
+            lock (_gate)
+            {
+                _passInFlight = false;
+            }
+
+            // The signal this pass was handed, never the field: a later pass must not be able to strand a
+            // caller awaiting an earlier one.
+            signal.TrySetResult();
         }
     }
 
-    private async Task<WarmUpOutcome> WarmAsync()
+    private async Task<WarmUpOutcome> WarmAsync(ResolvedConfig? target)
     {
         if (!IsEnabled(environment.GetVariable(EnableVariable))) return WarmUpOutcome.Disabled;
 
         ResolvedConfig config;
-        try
-        {
-            config = await configResolver.ResolveAsync(null, _stopping.Token);
-        }
-        catch (UserErrorException exception)
-        {
-            // No jb installed, or no solution in the working directory: the ordinary shape of a server
-            // started somewhere that is not a .NET repo. There is nothing to warm and nobody to tell.
-            logger.LogDebug(exception, "Nothing to pre-warm");
-            return WarmUpOutcome.NoTarget;
-        }
+        if (target is not null)
+            config = target;
+        else
+            try
+            {
+                config = await configResolver.ResolveAsync(null, _stopping.Token);
+            }
+            catch (UserErrorException exception)
+            {
+                // No jb installed, or no solution in the working directory: the ordinary shape of a server
+                // started somewhere that is not a .NET repo. There is nothing to warm and nobody to tell.
+                logger.LogDebug(exception, "Nothing to pre-warm");
+                return WarmUpOutcome.NoTarget;
+            }
 
+        // The debounce governs every pass, re-arms included. It cannot be hoisted above the resolution above
+        // it, because it is keyed on what that resolution produces.
         if (JbWarmMarker.IsFreshWithin(config.SolutionPath, config.CacheHome, RecentlyWarmWindow))
             return WarmUpOutcome.AlreadyWarm;
 

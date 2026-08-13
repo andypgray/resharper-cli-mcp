@@ -20,6 +20,7 @@ namespace Zphil.ReSharperCli.Tests.Services;
 public sealed class JbRunnerTests : IDisposable
 {
     private static readonly TimeSpan RecentlyEnough = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan Generous = TimeSpan.FromSeconds(30);
 
     private readonly ResolvedConfig _config;
     private readonly FakeEnvironment _environment = new();
@@ -287,6 +288,164 @@ public sealed class JbRunnerTests : IDisposable
         await Should.ThrowAsync<OperationCanceledException>(() => _runner.TryRunAsync(_config, ["inspectcode", _config.SolutionPath], callerCancelled.Token));
     }
 
+    [Fact]
+    public async Task TryRunAsync_AfterAForegroundRunHasFinished_RunsAgain()
+    {
+        // Arrange — a real call has been and gone. Retiring speculative work permanently at that point is
+        // what this counter replaced: the moment it is worth most is right after a foreground run has hit
+        // the cap, leaving a part-built cache and an idle user.
+        StubExit(0, string.Empty);
+        await _runner.RunAsync(_config, ["inspectcode", _config.SolutionPath], Ct);
+
+        // Act
+        var result = await _runner.TryRunAsync(_config, ["inspectcode", _config.SolutionPath], Ct);
+
+        // Assert
+        result.ShouldNotBeNull();
+        result.Value.ExitCode.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task TryRunAsync_ForegroundRunStillInFlight_SkipsEvenThoughItsOwnGenerationIsFree()
+    {
+        // Arrange — a *second* solution, so the run lock cannot be the explanation: its cache generation is
+        // free throughout, and the in-flight count is the only thing left that could stop this.
+        ResolvedConfig other = Configs.Bare("/sln/Other.sln", _config.CacheHome);
+        TaskCompletionSource started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        StubBlocking(started, release);
+
+        var foreground = _runner.RunAsync(_config, ["inspectcode", _config.SolutionPath], Ct);
+        await started.Task.WaitAsync(Generous, Ct);
+
+        // Act
+        var result = await _runner.TryRunAsync(other, ["inspectcode", other.SolutionPath], Ct).WaitAsync(Generous, Ct);
+
+        // Assert
+        result.ShouldBeNull();
+
+        release.SetResult();
+        await foreground.WaitAsync(Generous, Ct);
+    }
+
+    [Fact]
+    public async Task RunAsync_RunHitsTheCap_AnnouncesItWithTheConfigurationThatRanOut()
+    {
+        // Arrange — the config travels with the signal so a listener warms the solution that actually timed
+        // out, rather than whatever the server's working directory would resolve to.
+        StubTimeout();
+        List<ResolvedConfig> announced = [];
+        _runner.ForegroundRunTimedOut += announced.Add;
+
+        // Act
+        await Should.ThrowAsync<UserErrorException>(() => _runner.RunAsync(_config, ["inspectcode", _config.SolutionPath], Ct));
+
+        // Assert
+        announced.ShouldHaveSingleItem().SolutionPath.ShouldBe(_config.SolutionPath);
+    }
+
+    [Fact]
+    public async Task RunAsync_RunsThatDidNotTimeOut_AnnounceNothing()
+    {
+        // Arrange — the signal means "a part-built cache and an idle user", which is true of a run killed at
+        // the cap and of nothing else. A clean run left the cache warm; a failed one left a problem no
+        // amount of speculative warming addresses.
+        List<ResolvedConfig> announced = [];
+        _runner.ForegroundRunTimedOut += announced.Add;
+
+        // Act
+        StubExit(0, string.Empty);
+        await _runner.RunAsync(_config, ["inspectcode", _config.SolutionPath], Ct);
+
+        StubExit(7, "boom");
+        await Should.ThrowAsync<UserErrorException>(() => _runner.RunAsync(_config, ["inspectcode", _config.SolutionPath], Ct));
+
+        // Assert
+        announced.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task TryRunAsync_RunHitsTheCap_AnnouncesNothing()
+    {
+        // Arrange — speculative work must never re-arm itself. A pre-warm that announced its own timeout
+        // would warm, hit the cap, re-arm, and repeat for the life of the process, with only the run lock
+        // pacing it. Recurrence has to advance on something the user did.
+        StubTimeout();
+        List<ResolvedConfig> announced = [];
+        _runner.ForegroundRunTimedOut += announced.Add;
+
+        // Act
+        var result = await _runner.TryRunAsync(_config, ["inspectcode", _config.SolutionPath], Ct);
+
+        // Assert
+        result.ShouldBeNull();
+        announced.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task RunAsync_RunHitsTheCap_AnnouncesOnlyOnceTheLeaseIsFreeAndTheCountIsBack()
+    {
+        // Arrange — both orderings pinned through behaviour rather than by reading privates. A listener that
+        // can take the lease proves the lease went first; one whose own speculative run actually starts
+        // proves the count was decremented first. Reverse either and nothing throws: the re-armed pass just
+        // settles as a skip and the whole feature quietly buys nothing.
+        StubTimeout();
+        var leaseWasFree = false;
+        Task<ProcessResult?>? speculative = null;
+
+        _runner.ForegroundRunTimedOut += timedOut =>
+        {
+            IDisposable? lease = _runLock.TryAcquire(timedOut.SolutionPath, timedOut.CacheHome);
+            leaseWasFree = lease is not null;
+            lease?.Dispose();
+
+            StubExit(0, string.Empty);
+            speculative = _runner.TryRunAsync(timedOut, ["inspectcode", timedOut.SolutionPath], CancellationToken.None);
+        };
+
+        // Act
+        await Should.ThrowAsync<UserErrorException>(() => _runner.RunAsync(_config, ["inspectcode", _config.SolutionPath], Ct));
+
+        // Assert
+        leaseWasFree.ShouldBeTrue();
+        var reArmed = speculative.ShouldNotBeNull();
+        (await reArmed.WaitAsync(Generous, Ct)).ShouldNotBeNull();
+    }
+
+    [Fact]
+    public async Task RunAsync_ListenerThrows_StillReportsTheTimeoutToTheCaller()
+    {
+        // Arrange — the signal fires while the timeout error is unwinding, so a throwing listener would
+        // replace the one message telling the user whose cap it was and which variable moves it.
+        StubTimeout();
+        _runner.ForegroundRunTimedOut += _ => throw new InvalidOperationException("this listener is broken");
+
+        // Act
+        var exception = await Should.ThrowAsync<UserErrorException>(() => _runner.RunAsync(_config, ["inspectcode", _config.SolutionPath], Ct));
+
+        // Assert
+        exception.Message.ShouldStartWith("jb inspectcode timed out");
+        exception.Message.ShouldContain(JbRunTimeout.Variable);
+    }
+
+    [Fact]
+    public async Task TryRunAsync_AlreadyCancelled_NeverStartsJbAtAll()
+    {
+        // Arrange — ProcessRunner calls Start() before it ever looks at its token, so without the check a
+        // pre-warm cancelled in that window forks a jb only to tree-kill and reap it, holding for those
+        // seconds the very lease the real call is queueing for.
+        StubExit(0, string.Empty);
+        using CancellationTokenSource cancelled = new();
+        await cancelled.CancelAsync();
+
+        // Act
+        await Should.ThrowAsync<OperationCanceledException>(() => _runner.TryRunAsync(_config, ["inspectcode", _config.SolutionPath], cancelled.Token));
+
+        // Assert
+        await _processRunner.DidNotReceive().RunAsync(
+            Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>());
+    }
+
     /// <summary>
     ///     A run killed at the cap, as <see cref="Zphil.ReSharperCli.Execution.ProcessRunner" /> reports it:
     ///     the mechanical message, carrying no idea of whose cap it was.
@@ -296,6 +455,22 @@ public sealed class JbRunnerTests : IDisposable
         _processRunner
             .RunAsync("jb", Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new ProcessTimeoutException("'jb' timed out."));
+    }
+
+    /// <summary>
+    ///     A jb that signals when it has started and then parks until told to finish, so a test can hold a
+    ///     foreground run open across an assertion.
+    /// </summary>
+    private void StubBlocking(TaskCompletionSource started, TaskCompletionSource release)
+    {
+        _processRunner
+            .RunAsync("jb", Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns(async _ =>
+            {
+                started.TrySetResult();
+                await release.Task;
+                return new ProcessResult(0, string.Empty, string.Empty);
+            });
     }
 
     private void StubExit(int exitCode, string standardError, Action? whileRunning = null)

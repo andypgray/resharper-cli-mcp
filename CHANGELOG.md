@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- A tool call that hits the run cap now arms another background cache pre-warm, against the solution that
+  timed out. Previously the first tool call to reach the runner retired speculative work for the life of the
+  process, so the moment it was worth most — the cache part-built, the error advising a retry, the user idle
+  reading it — was exactly the moment the server had guaranteed it would never run again. Measurement
+  settled the assumption that advice rests on: a run killed at the cap does leave a cache a retry resumes
+  from, and the resumed run reports the same issues a clean cold run does. It does not resume from exactly
+  where it stopped, though — whatever was in flight when it was killed is redone — so several capped runs
+  still cost appreciably more than one run allowed to finish, and raising `RESHARPER_MCP_TIMEOUT_SECS`
+  remains the fix when a cold analysis simply takes longer than the cap. The pre-warm still runs one pass at
+  a time, still stands down while a real call is in flight, and re-arms on nothing else: not a timer, not
+  each message, and never on its own timeout.
+
 ### Added
 
 - `resharper_reset_cache` drops the solution's ReSharper cache generations, so the next inspection or

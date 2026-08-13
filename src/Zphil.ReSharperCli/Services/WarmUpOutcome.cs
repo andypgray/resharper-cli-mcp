@@ -1,13 +1,14 @@
 namespace Zphil.ReSharperCli.Services;
 
 /// <summary>
-///     How the session-start cache pre-warm ended. Product state rather than a test artefact — the log line
-///     the warmer writes is derived from it — and none of these is an error: a pre-warm that did not happen
-///     leaves the session exactly where it would have been without the feature.
+///     How the last cache pre-warm pass ended. Product state rather than a test artefact — the log line the
+///     warmer writes is derived from it — and none of these is an error: a pre-warm that did not happen
+///     leaves the session exactly where it would have been without the feature. A pass that has settled
+///     leaves its outcome standing until the next one settles, so this always names a real result.
 /// </summary>
 internal enum WarmUpOutcome
 {
-    /// <summary>No pre-warm has been attempted yet — no client has connected, or one never will.</summary>
+    /// <summary>No pass has been attempted yet — no client has connected, or one never will.</summary>
     NotRun,
 
     /// <summary>Turned off by the environment.</summary>

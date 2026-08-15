@@ -20,7 +20,7 @@ public sealed class CacheResetServiceTests : IDisposable
     private readonly string _cacheHome;
     private readonly ResolvedConfig _config;
     private readonly FakeEnvironment _environment = new();
-    private readonly CacheResetService _service = new(new JbRunLock(TimeSpan.FromSeconds(1)));
+    private readonly CacheResetService _service = new(new JbRunLock(TimeSpan.FromSeconds(1)), new JbRunYield());
 
     public CacheResetServiceTests()
     {
@@ -172,13 +172,13 @@ public sealed class CacheResetServiceTests : IDisposable
         // what lets the test hit the cap.
         string ours = CacheHomes.PlantGenerationFor(_cacheHome, _config.SolutionPath);
         await using FileStream held = CacheHomes.HoldLockFile(_cacheHome, _config.SolutionPath);
-        CacheResetService service = new(new JbRunLock(TimeSpan.FromMilliseconds(250)));
+        CacheResetService service = new(new JbRunLock(TimeSpan.FromMilliseconds(250)), new JbRunYield());
 
         // Act
         var exception = await Should.ThrowAsync<UserErrorException>(() => service.RunAsync(_config, Ct));
 
         // Assert — it queued on the run rather than deleting the cache underneath it, and gave up intact.
-        exception.Message.ShouldContain("Another inspect or cleanup is already running");
+        exception.Message.ShouldContain("Another jb run already holds the ReSharper cache");
         Directory.Exists(ours).ShouldBeTrue();
     }
 

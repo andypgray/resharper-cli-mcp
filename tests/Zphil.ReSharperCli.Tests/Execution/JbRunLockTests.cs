@@ -48,7 +48,7 @@ public sealed class JbRunLockTests : IDisposable
         IDisposable first = await runLock.AcquireAsync(SolutionPath, _cacheHome, Ct);
 
         // Act
-        var second = runLock.AcquireAsync(SolutionPath, _cacheHome, Ct);
+        Task<IDisposable> second = runLock.AcquireAsync(SolutionPath, _cacheHome, Ct);
         await Task.Delay(TimeSpan.FromMilliseconds(200), Ct);
         bool completedWhileHeld = second.IsCompleted;
         first.Dispose();
@@ -67,7 +67,7 @@ public sealed class JbRunLockTests : IDisposable
         FileStream otherProcess = OpenLockFileExclusively();
 
         // Act
-        var queued = runLock.AcquireAsync(SolutionPath, _cacheHome, Ct);
+        Task<IDisposable> queued = runLock.AcquireAsync(SolutionPath, _cacheHome, Ct);
         await Task.Delay(TimeSpan.FromMilliseconds(400), Ct);
         bool completedWhileHeld = queued.IsCompleted;
         await otherProcess.DisposeAsync();
@@ -120,7 +120,7 @@ public sealed class JbRunLockTests : IDisposable
 
         // Assert — running anyway is the bug, so the caller is told what is in flight and to retry.
         exception.Message.ShouldContain(SolutionPath);
-        exception.Message.ShouldContain("already running");
+        exception.Message.ShouldContain("already holds the ReSharper cache");
         exception.Message.ShouldContain("Retry");
     }
 
@@ -202,7 +202,7 @@ public sealed class JbRunLockTests : IDisposable
 
         // Act
         using IDisposable second = await runLock.AcquireAsync(SolutionPath, _cacheHome, Ct);
-        var third = runLock.AcquireAsync(SolutionPath, _cacheHome, Ct);
+        Task<IDisposable> third = runLock.AcquireAsync(SolutionPath, _cacheHome, Ct);
 
         // Assert — the third caller queues behind the live holder and gives up at the cap.
         await Should.ThrowAsync<UserErrorException>(() => third);

@@ -42,6 +42,10 @@ builder.Services.AddSingleton<JbLocator>();
 builder.Services.AddSingleton<ConfigResolver>();
 builder.Services.AddSingleton(_ => new JbRunLock(runTimeout));
 
+// Shared on purpose, like the lock and for the same reason: the lock decides who waits, the yield decides
+// who is made to wait, and a second instance of either would arbitrate against nothing.
+builder.Services.AddSingleton<JbRunYield>();
+
 builder.Services.AddSingleton<CacheTransplanter>();
 
 // By factory rather than by type: the run timeout is a value this composition root resolved above, not a
@@ -49,6 +53,7 @@ builder.Services.AddSingleton<CacheTransplanter>();
 builder.Services.AddSingleton(provider => new JbRunner(
     provider.GetRequiredService<IProcessRunner>(),
     provider.GetRequiredService<JbRunLock>(),
+    provider.GetRequiredService<JbRunYield>(),
     provider.GetRequiredService<CacheTransplanter>(),
     runTimeout));
 builder.Services.AddSingleton<InspectService>();

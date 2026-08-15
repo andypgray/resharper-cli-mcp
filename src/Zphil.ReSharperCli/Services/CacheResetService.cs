@@ -35,6 +35,13 @@ internal sealed record CacheResetOutcome(
 ///         another session's live <c>jb</c> with nothing to serialize on.
 ///     </para>
 ///     <para>
+///         It waits for a run, but not for speculative work: <see cref="JbRunYield" /> is entered before the
+///         lock, so a pre-warm holding the generation is stood down rather than waited out. Queueing behind
+///         one would be the worst possible trade — the user is waiting on a call whose whole purpose is to
+///         delete what that pass is busy building — and taking the lock without the claim is what left this
+///         tool doing exactly that for up to the full run cap.
+///     </para>
+///     <para>
 ///         What belongs to this solution is settled by <see cref="JbSolutionCacheHash" /> rather than by the
 ///         generation's file name, which several checkouts of one repository share. A generation is deleted
 ///         only where the hash in its name is the one this solution's path produces; everything else is
@@ -43,16 +50,37 @@ internal sealed record CacheResetOutcome(
 ///         home made the tool refuse for both.
 ///     </para>
 ///     <para>
-///         A failed delete is reported, not thrown, and may leave a generation partly deleted. That is
-///         deliberate: a directory jb rebuilds is a better outcome than a call that fails after deleting most
-///         of one, this tool is idempotent so re-running finishes the job, and the one thing that reliably
-///         holds these files open — another <c>jb</c> — is named in the report.
+///         A failed delete is retried briefly and then reported rather than thrown, and may leave a
+///         generation partly deleted. That is deliberate: a directory jb rebuilds is a better outcome than a
+///         call that fails after deleting most of one, and this tool is idempotent, so re-running finishes
+///         the job. All the report can say about <em>why</em> is what the filesystem said, which is the
+///         honest limit — the holder is usually a <c>jb</c> in another session, but since this call now
+///         cancels a speculative run rather than waiting it out, it can equally be one this server killed a
+///         moment ago and has not finished reaping.
 ///     </para>
 /// </remarks>
-internal sealed class CacheResetService(JbRunLock runLock)
+internal sealed class CacheResetService(JbRunLock runLock, JbRunYield runYield)
 {
+    /// <summary>
+    ///     How hard to try one generation before reporting it, and how long to leave between attempts.
+    ///     <see cref="ProcessRunner" /> waits up to five seconds for a killed <c>jb</c> tree to be reaped
+    ///     and then rethrows anyway, so cancelling a pre-warm can hand this call the lease while that tree
+    ///     is still alive holding memory-mapped cache files. Those handles go within a moment or they do not
+    ///     go at all, so a few hundred milliseconds turns the common case into a clean drop while a
+    ///     genuinely undeletable directory still reaches the report about as fast as before.
+    /// </summary>
+    private const int DeleteAttempts = 3;
+
+    private static readonly TimeSpan DeleteRetryDelay = TimeSpan.FromMilliseconds(200);
+
     public async Task<CacheResetOutcome> RunAsync(ResolvedConfig config, CancellationToken cancellationToken)
     {
+        // First statement, with no await before it, so the claim is provably raised by the time this method
+        // hands its task back — a pre-warm starting a moment later reads the count rather than racing it.
+        // Disposal is the reverse of declaration, so the claim outlives the lease by a hair: a pre-warm
+        // arriving in that window finds a free generation but a raised count and stands down, which is the
+        // safe direction to be wrong in.
+        using IDisposable foreground = runYield.EnterForeground();
         using IDisposable runLease = await runLock.AcquireAsync(config.SolutionPath, config.CacheHome, cancellationToken);
 
         // Enumerated inside the lock, so the set found is the set deleted: outside it, a run starting in the
@@ -60,20 +88,19 @@ internal sealed class CacheResetService(JbRunLock runLock)
         // of the same-named generations are this solution's own is FindFor's proof; this only decides what
         // happens to each half.
         JbSolutionGenerations generations = Find(config.CacheHome, config.SolutionPath);
-        var leftAlone = generations.Neighbours.Select(generation => generation.Name).ToList();
+        List<string> leftAlone = generations.Neighbours.Select(generation => generation.Name).ToList();
 
         List<string> dropped = [];
         List<CacheResetFailure> failures = [];
         foreach (JbCacheGeneration generation in generations.Owned)
-            try
-            {
-                Directory.Delete(generation.FullPath, true);
+        {
+            CacheResetFailure? failure = await TryDeleteAsync(generation, cancellationToken);
+
+            if (failure is null)
                 dropped.Add(generation.Name);
-            }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-            {
-                failures.Add(new CacheResetFailure(generation.Name, exception.Message));
-            }
+            else
+                failures.Add(failure);
+        }
 
         // The marker claims a jb run against this generation succeeded recently, which is what stops the next
         // session pre-warming. After a reset that claim is false however the deletes went, and the marker's
@@ -86,6 +113,31 @@ internal sealed class CacheResetService(JbRunLock runLock)
         JbColdTombstone.Write(config.SolutionPath, config.CacheHome);
 
         return new CacheResetOutcome(config.SolutionPath, config.CacheHome, dropped, leftAlone, failures);
+    }
+
+    /// <summary>
+    ///     Delete one generation, giving a process that is on its way out a moment to let go, and returning
+    ///     what stopped it rather than throwing. A recursive delete is idempotent after a partial failure —
+    ///     whatever came off stays off — so a retry resumes rather than starting over.
+    /// </summary>
+    private static async Task<CacheResetFailure?> TryDeleteAsync(
+        JbCacheGeneration generation,
+        CancellationToken cancellationToken)
+    {
+        for (var attempt = 1;; attempt++)
+        {
+            try
+            {
+                Directory.Delete(generation.FullPath, true);
+                return null;
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                if (attempt == DeleteAttempts) return new CacheResetFailure(generation.Name, exception.Message);
+            }
+
+            await Task.Delay(DeleteRetryDelay, cancellationToken);
+        }
     }
 
     /// <summary>

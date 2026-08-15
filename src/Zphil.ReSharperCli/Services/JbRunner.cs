@@ -22,7 +22,9 @@ namespace Zphil.ReSharperCli.Services;
 ///         the lock and throws on failure. <see cref="TryRunAsync" /> serves speculative work — today only
 ///         <see cref="CacheWarmer" /> — and does the opposite at every turn: it skips rather than queues, and
 ///         reports rather than throws. Both go through <see cref="SpawnAsync" />, which keeps this class the
-///         sole place a <c>jb</c> process starts.
+///         sole place a <c>jb</c> process starts. Which of the two wins when they collide is
+///         <see cref="JbRunYield" />'s to say, not this class's: the rule belongs to every caller the user is
+///         waiting on, and a cache reset is one that runs no <c>jb</c> at all.
 ///     </para>
 ///     <para>
 ///         Both also give <see cref="CacheTransplanter" /> its one chance to seed the cache, in the window
@@ -40,56 +42,11 @@ namespace Zphil.ReSharperCli.Services;
 internal sealed class JbRunner(
     IProcessRunner processRunner,
     JbRunLock runLock,
+    JbRunYield runYield,
     CacheTransplanter transplanter,
     TimeSpan runTimeout)
 {
     private const int StandardErrorTailLength = 2000;
-
-    /// <summary>
-    ///     The speculative run in flight, or <see langword="null" />. Published so a real call can reclaim
-    ///     the cache generation instead of queueing behind work nobody asked for.
-    /// </summary>
-    /// <remarks>
-    ///     <para>
-    ///         The published source is never disposed. A foreground caller that has already taken the
-    ///         reference may be about to <c>Cancel()</c> it, and that window cannot be closed without holding
-    ///         a lock across a cancellation whose callbacks tree-kill a process inline. One undisposed linked
-    ///         source — one per speculative pass, not one per process — is the cheaper
-    ///         trade, and <see cref="CancelBackgroundRun" /> catches the disposal race regardless. Passes stay
-    ///         bounded because only a foreground timeout starts one and no pass re-arms itself, so the total
-    ///         tracks what the user did rather than a timer.
-    ///     </para>
-    ///     <para>
-    ///         Cancelling is not instantaneous. The lease drops only after <see cref="ProcessRunner" /> sees
-    ///         the cancellation, tree-kills <c>jb</c>, and reaps it, so a foreground call can still spend
-    ///         milliseconds to a few seconds on the lock after cancelling. Bounded and far better than
-    ///         waiting out the run, but yielding is not free.
-    ///     </para>
-    ///     <para>
-    ///         In-process only. A pre-warm running in another server process cannot be yielded to, and a call
-    ///         there queues behind it exactly as it queues behind another session's real call.
-    ///     </para>
-    /// </remarks>
-    private CancellationTokenSource? _backgroundRun;
-
-    /// <summary>
-    ///     How many calls the user made are inside <see cref="RunAsync" /> right now. A real run analyses the
-    ///     whole solution into the same cache generation a pre-warm would, so while one is in flight the
-    ///     speculative run has nothing left to buy — and starting one anyway is the only way pre-warming
-    ///     could ever delay a call inside this process. Reading it <em>after</em> publishing
-    ///     <see cref="_backgroundRun" /> is what closes the gap between the two: whichever of the pair reads
-    ///     stale, the other has already seen the write it needed.
-    /// </summary>
-    /// <remarks>
-    ///     A count rather than the latch this used to be, and the difference is not bookkeeping. A latch that
-    ///     is never cleared retires speculative work for the life of the process, so the moment it is worth
-    ///     most — a foreground run has just hit the cap, the cache is part-built, the user is idle reading an
-    ///     error saying a retry resumes from there — is exactly the moment the server has guaranteed it will
-    ///     never run again. Clearing the latch on the way out instead would be wrong for the opposite reason:
-    ///     with two calls overlapping, "the first one returned" is not "no call is running", and clearing on
-    ///     that first return opens the generation behind the second one's back. Only a count says both things.
-    /// </remarks>
-    private int _foregroundRuns;
 
     /// <summary>
     ///     Raised when a call the user made hit the run cap, carrying the configuration that run used. A
@@ -116,20 +73,18 @@ internal sealed class JbRunner(
         IReadOnlyList<string> arguments,
         CancellationToken cancellationToken)
     {
-        // Counted before anything else, and paired with the read in TryRunAsync: from here on a pre-warm
-        // either sees a non-zero count or has already published a source for CancelBackgroundRun to cancel.
-        Interlocked.Increment(ref _foregroundRuns);
-
         var timedOut = false;
         try
         {
-            // Before queueing, not after: a call arriving ten seconds into a cold pre-warm would otherwise pay
-            // the whole queue wait and then its own full run, which is strictly worse than never pre-warming.
-            CancelBackgroundRun();
+            // Entered before queueing, not after: a call arriving ten seconds into a cold pre-warm would
+            // otherwise pay the whole queue wait and then its own full run, which is strictly worse than
+            // never pre-warming.
+            using IDisposable foreground = runYield.EnterForeground();
 
-            // Scoped inside this try on purpose, so the lease is released before the finally below announces a
-            // timeout. Announce while still holding it and the re-armed pass would meet TryAcquire, get null,
-            // and settle as a skip — the re-arm would buy nothing, silently.
+            // Both scoped inside this try on purpose, so the lease is released and the claim stood down
+            // before the finally below announces a timeout. Announce while still holding either and the
+            // re-armed pass would settle as a skip — the re-arm would buy nothing, silently. Disposal is the
+            // reverse of declaration, so the lease goes first and the count outlives it by a hair.
             using IDisposable runLease = await runLock.AcquireAsync(config.SolutionPath, config.CacheHome, cancellationToken);
 
             await transplanter.TryTransplantAsync(config, cancellationToken);
@@ -153,10 +108,6 @@ internal sealed class JbRunner(
         }
         finally
         {
-            // Decrement before announcing, or the re-armed pass reads a count that still includes this run
-            // and skips. Both orderings here are load-bearing, and both are invisible from the call site.
-            Interlocked.Decrement(ref _foregroundRuns);
-
             if (timedOut) AnnounceTimeout(config);
         }
     }
@@ -173,29 +124,25 @@ internal sealed class JbRunner(
         IReadOnlyList<string> arguments,
         CancellationToken cancellationToken)
     {
-        // Publish before taking the lease, then re-read the flag: a foreground call that has already gone
-        // past its own cancel point would find nothing to cancel, and would then queue behind a run started
-        // a moment later. Publish-then-check is what makes "a real call is never delayed by a pre-warm in
-        // this process" a rule rather than a near-certainty.
-        var mine = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        Interlocked.Exchange(ref _backgroundRun, mine);
+        // Claimed before the lease is taken: the claim is what a caller the user is waiting on cancels, and
+        // a null answer means one is already in flight.
+        using JbRunYield.SpeculativeRun? speculative = runYield.TryEnterSpeculative(cancellationToken);
+        if (speculative is null) return null;
 
         try
         {
-            if (Volatile.Read(ref _foregroundRuns) != 0) return null;
-
             using IDisposable? runLease = runLock.TryAcquire(config.SolutionPath, config.CacheHome);
             if (runLease is null) return null;
 
-            await transplanter.TryTransplantAsync(config, mine.Token);
+            await transplanter.TryTransplantAsync(config, speculative.Token);
 
             // ProcessRunner calls process.Start() before it ever looks at its token, so a pre-warm cancelled
             // in this window would fork a jb only to tree-kill and reap it — holding, for those seconds, the
             // very lease the real call is queueing for. Cheap to check, and re-arming makes it reachable more
             // than once per process.
-            mine.Token.ThrowIfCancellationRequested();
+            speculative.Token.ThrowIfCancellationRequested();
 
-            return await SpawnAsync(config, arguments, mine.Token);
+            return await SpawnAsync(config, arguments, speculative.Token);
         }
         catch (ProcessTimeoutException)
         {
@@ -207,15 +154,10 @@ internal sealed class JbRunner(
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            // A foreground run took over. ProcessRunner surfaces that and our own caller's cancellation
-            // identically — an OCE on the token it was handed — so this filter is the only discriminator.
+            // A caller the user is waiting on took over. ProcessRunner surfaces that and our own caller's
+            // cancellation identically — an OCE on the token it was handed — so this filter is the only
+            // discriminator.
             return null;
-        }
-        finally
-        {
-            // Compare-and-swap, not a blind clear: by now the field may already hold a *later* run, and a
-            // finished pre-warm must not have its successor cancelled on its behalf.
-            Interlocked.CompareExchange(ref _backgroundRun, null, mine);
         }
     }
 
@@ -260,29 +202,11 @@ internal sealed class JbRunner(
     }
 
     /// <summary>
-    ///     Give a real call the cache generation back: cancel the speculative run holding the lease, if any.
-    ///     A failure here degrades to today's behaviour — the call queues — because a background optimisation
-    ///     must never be able to fail one. The caller has already counted itself in, which is what keeps a
-    ///     <em>new</em> pre-warm from starting behind this one.
-    /// </summary>
-    private void CancelBackgroundRun()
-    {
-        try
-        {
-            Interlocked.Exchange(ref _backgroundRun, null)?.Cancel();
-        }
-        catch (Exception exception) when (exception is AggregateException or ObjectDisposedException)
-        {
-            Log.Warning(exception, "Could not cancel the background cache pre-warm; this call will queue behind it instead");
-        }
-    }
-
-    /// <summary>
     ///     Tell whoever is listening that a foreground run ran out of budget. Swallows anything a subscriber
     ///     throws: this fires while the <see cref="UserErrorException" /> carrying
     ///     <see cref="TimedOutMessage" /> is unwinding, and a throwing listener would replace the one message
     ///     that tells the user whose cap it was with an unrelated failure. The same bargain
-    ///     <see cref="CancelBackgroundRun" /> already makes — an optimisation may not fail a call.
+    ///     <see cref="JbRunYield" /> makes on the way in — an optimisation may not fail a call.
     /// </summary>
     private void AnnounceTimeout(ResolvedConfig config)
     {

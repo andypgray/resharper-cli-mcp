@@ -356,9 +356,9 @@ internal sealed class JbRunLock(TimeSpan maxWait)
     private UserErrorException Contended(string solutionPath)
     {
         return new UserErrorException(
-            $"Another inspect or cleanup is already running against \"{solutionPath}\" and did not finish within {ProcessRunner.FormatDuration(_maxWait)}.\n"
-            + "Runs against one solution are serialized on purpose: a second concurrent jb cannot share the warm ReSharper cache, so it silently forks a new empty one and both runs get slower.\n"
-            + "Retry once the run in flight has finished.");
+            $"Another jb run already holds the ReSharper cache for \"{solutionPath}\" and did not finish within {ProcessRunner.FormatDuration(_maxWait)}.\n"
+            + "Work against one solution's cache is serialized on purpose: a second concurrent jb cannot share the warm cache, so it silently forks a new empty one and both runs get slower — and a reset deleting a generation mid-run would take it out from under whoever was using it.\n"
+            + "A speculative pre-warm inside this server always yields, so the holder is another session: its inspect, its cleanup, or its own pre-warm. Retry once that run has finished.");
     }
 
     private TimeSpan Remaining(Stopwatch waited)

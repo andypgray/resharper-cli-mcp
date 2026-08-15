@@ -43,6 +43,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reserved for the case it exists for — a `JB_SETTINGS_PATH` naming a file `jb` cannot find itself. One
   visible side effect: a `{solution}.DotSettings.user` now outranks `{solution}.DotSettings`, which is
   `jb`'s own default and matches the IDE.
+- `resharper_reset_cache` no longer queues behind the background cache pre-warm. The rule that a call
+  you are waiting on outranks speculative work was written into the code that runs `jb`, so the one tool
+  that runs no `jb` at all was the one it never covered: a reset took the queue lock directly and waited
+  its turn — for up to the whole run cap, behind a pass rebuilding exactly what it had been called to
+  delete. That precedence now belongs to the callers rather than to the spawn, and is taken by
+  everything you are waiting on whether or not it runs `jb`. Reclaiming is faster than queueing but not
+  instant: the cache generation comes free only once the cancelled `jb` has been killed and reaped, so a
+  reset can still spend a second or two on the lock — against minutes before. Admitted that quickly, it
+  can also meet a dying `jb` still holding memory-mapped cache files, so a delete the filesystem refuses
+  is now retried briefly before being reported.
 
 ## [1.3.0] - 2026-08-13
 

@@ -20,6 +20,9 @@ namespace Zphil.ReSharperCli.Tests.Pipeline;
 /// </summary>
 public sealed class GlobalCallToolFilterIntegrationTests
 {
+    /// <summary>Long enough that only a genuine hang reaches it, short enough to fail rather than wedge.</summary>
+    private static readonly TimeSpan Generous = TimeSpan.FromSeconds(30);
+
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]
@@ -127,7 +130,7 @@ public sealed class GlobalCallToolFilterIntegrationTests
         await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
 
         // Act
-        var tools = await harness.Client.ListToolsAsync(cancellationToken: Ct);
+        IList<McpClientTool> tools = await harness.Client.ListToolsAsync(cancellationToken: Ct);
 
         // Assert — cleanup's files parameter is schema-required; inspect's stays optional.
         McpClientTool cleanup = tools.Single(tool => tool.Name == "resharper_cleanup");
@@ -145,6 +148,90 @@ public sealed class GlobalCallToolFilterIntegrationTests
         // Assert — ServerInfo.Name identifies the server; the embedded instructions come across non-empty.
         harness.Client.ServerInfo.Name.ShouldBe("resharper-cli-mcp");
         harness.Client.ServerInstructions.ShouldNotBeNullOrEmpty();
+    }
+
+    [Fact]
+    public async Task CallTool_CancelledMidRun_StopsJbAndIsLoggedOnlyByTheSdk()
+    {
+        // Arrange — a jb run parked mid-analysis, so cancellation lands while the call is genuinely in
+        // flight. The request carries an id of the test's own choosing, because cancelling a call the way a
+        // real client does means naming the request to cancel.
+        await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
+        PlantSolution(harness.Environment, "App.sln");
+        TaskCompletionSource started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource<bool> stopped = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        RouteParkingJb(harness.ProcessRunner, started, stopped);
+
+        RequestId requestId = new("cancel-me");
+        Task<CallToolResult> call = harness.Client.SendRequestAsync<CallToolRequestParams, CallToolResult>(
+            "tools/call",
+            new CallToolRequestParams { Name = "resharper_inspect" },
+            requestId: requestId,
+            cancellationToken: Ct).AsTask();
+        await started.Task.WaitAsync(Generous, Ct);
+
+        // Act — what an interrupted client sends. Cancelling the client's own token does not do this: the
+        // SDK's client never emits notifications/cancelled, so it would abandon the call locally and leave
+        // the server running to completion, which is not the situation this pins.
+        await harness.Client.SendNotificationAsync(
+            "notifications/cancelled",
+            new CancelledNotificationParams { RequestId = requestId, Reason = "user interrupted" },
+            cancellationToken: Ct);
+
+        // Assert — the request fails rather than answering, which is the correct protocol outcome, and the
+        // cancellation reached all the way down: jb is stopped rather than left running behind an
+        // abandoned call.
+        (await Should.ThrowAsync<OperationCanceledException>(() => call)).ShouldNotBeNull();
+        (await stopped.Task.WaitAsync(Generous, Ct)).ShouldBeTrue();
+
+        // And the one warning it costs is the SDK's own — it wraps every request handler in a catch that
+        // logs before rethrowing, with no exception for cancellation. GlobalCallToolFilter excludes
+        // OperationCanceledException from its logging catch on purpose and is not the source here; it runs
+        // inside that handler, so there is nothing it can do about a warning logged outside it. Answering a
+        // cancelled request with a CallToolResult would silence it and is not worth the lie.
+        LogEntry warning = await harness.Logs.FirstWarning.WaitAsync(Generous, Ct);
+        harness.Logs.Warnings.ShouldHaveSingleItem();
+        warning.Category.ShouldStartWith("ModelContextProtocol.");
+        warning.Message.ShouldContain("request handler failed");
+        warning.Exception.ShouldBeAssignableTo<OperationCanceledException>();
+    }
+
+    /// <summary>
+    ///     An <c>inspectcode</c> that parks until its token is cancelled, exactly as a long run looks, and
+    ///     reports through <paramref name="started" /> that it began — completing it with <c>true</c> only
+    ///     once cancellation actually reached it, which is what <see cref="ProcessRunner" /> surfaces after
+    ///     tree-killing <c>jb</c>.
+    /// </summary>
+    private static void RouteParkingJb(
+        IProcessRunner processRunner,
+        TaskCompletionSource started,
+        TaskCompletionSource<bool> stopped)
+    {
+        processRunner
+            .RunAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns(async callInfo =>
+            {
+                var arguments = callInfo.ArgAt<IReadOnlyList<string>>(1);
+                if (arguments.Contains("--version")) return new ProcessResult(0, "Version: 2026.1.2", string.Empty);
+
+                var cancellationToken = callInfo.ArgAt<CancellationToken>(3);
+                started.TrySetResult();
+
+                try
+                {
+                    // Bounded, so a regression that stopped propagating cancellation fails this test rather
+                    // than wedging the run.
+                    await Task.Delay(Generous, cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    stopped.TrySetResult(true);
+                    throw;
+                }
+
+                stopped.TrySetResult(false);
+                return new ProcessResult(0, string.Empty, string.Empty);
+            });
     }
 
     private static string TextOf(CallToolResult result)

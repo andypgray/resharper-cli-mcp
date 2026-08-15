@@ -13,20 +13,32 @@ namespace Zphil.ReSharperCli.Tests.TestDoubles;
 internal sealed class CapturingLoggerProvider : ILoggerProvider
 {
     private readonly ConcurrentQueue<LogEntry> _entries = new();
+    private readonly TaskCompletionSource<LogEntry> _firstWarning = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    /// <summary>
+    ///     Completes with the first entry logged at <see cref="LogLevel.Warning" />, whenever that arrives.
+    ///     The MCP SDK logs some warnings further up the unwind than anything a test can observe from inside
+    ///     the server, so "the call has returned" is not "the warning has been logged"; awaiting this turns
+    ///     that race into an observation, without a sleep.
+    /// </summary>
+    public Task<LogEntry> FirstWarning => _firstWarning.Task;
 
     /// <summary>The captured entries at <see cref="LogLevel.Warning" /> — the level the filter uses for unexpected failures.</summary>
     public IReadOnlyList<LogEntry> Warnings => _entries.Where(entry => entry.Level == LogLevel.Warning).ToList();
 
     public ILogger CreateLogger(string categoryName)
     {
-        return new CapturingLogger(categoryName, _entries);
+        return new CapturingLogger(categoryName, _entries, _firstWarning);
     }
 
     public void Dispose()
     {
     }
 
-    private sealed class CapturingLogger(string category, ConcurrentQueue<LogEntry> entries) : ILogger
+    private sealed class CapturingLogger(
+        string category,
+        ConcurrentQueue<LogEntry> entries,
+        TaskCompletionSource<LogEntry> firstWarning) : ILogger
     {
         public IDisposable BeginScope<TState>(TState state) where TState : notnull
         {
@@ -45,7 +57,11 @@ internal sealed class CapturingLoggerProvider : ILoggerProvider
             Exception? exception,
             Func<TState, Exception?, string> formatter)
         {
-            entries.Enqueue(new LogEntry(logLevel, formatter(state, exception), exception, category));
+            LogEntry entry = new(logLevel, formatter(state, exception), exception, category);
+            entries.Enqueue(entry);
+
+            // Enqueued first, so a test woken by this already sees the entry through Warnings/Entries.
+            if (logLevel == LogLevel.Warning) firstWarning.TrySetResult(entry);
         }
     }
 

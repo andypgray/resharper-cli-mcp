@@ -92,9 +92,14 @@ tool result.
 
 It is never allowed to cost you anything **in this server process**: a tool call arriving mid-pre-warm
 *cancels* it and takes the cache for itself, so the call waits for `jb` to be killed and reaped — a second
-or two — rather than for the run to finish. **A pre-warm in another server process cannot be cancelled**,
-though, so a call there queues behind it exactly as it queues behind another session's real call. That is
-the one case where pre-warming can make a first call slower than it would have been.
+or two — rather than for the run to finish. That includes `resharper_reset_cache`, the member of the set
+easiest to miss: it runs no `jb` of its own, yet it outranks the pass all the same — queueing would put
+the call that deletes the cache behind the run busy building it. The precedence is process-wide rather
+than per solution, so a call against one solution stands down a pre-warm of another: speculative work
+loses to anything you are waiting on, whichever solution each is about. **A pre-warm in another server
+process cannot be cancelled**, though, so a call there queues behind it exactly as it queues behind
+another session's real call. That is the one case where pre-warming can make a first call slower than it
+would have been.
 
 **At most one pass runs at a time**, and a pass is skipped when any `jb` run against that solution's cache
 succeeded within the last hour — a tool call counts, so working in a repo does not earn its next session a
@@ -161,9 +166,11 @@ you do in the editor clears it. Only a real compilation error survives the build
 **The cure.** Call `resharper_reset_cache`. It deletes the solution's cache generation directories under
 the cache home, and the next inspect or cleanup rebuilds the index from cold. It takes the same queue lock
 the analysis tools take, so it waits for a run in flight rather than deleting the cache underneath it, and
-a run that starts meanwhile waits for the reset. That cold rebuild costs minutes and can hit the run cap
-on a large solution, so the call after a reset is the one most worth expecting to be slow — and the one
-most worth raising `RESHARPER_MCP_TIMEOUT_SECS` for ahead of time.
+a run that starts meanwhile waits for the reset. A background pre-warm is the one thing it does not wait
+for: the reset cancels it and takes the generation once the killed `jb` has been reaped — a second or two,
+not the minutes the pass had left. That cold rebuild costs minutes and can hit the run cap on a large
+solution, so the call after a reset is the one most worth expecting to be slow — and the one most worth
+raising `RESHARPER_MCP_TIMEOUT_SECS` for ahead of time.
 
 It deletes only what provably belongs to this solution. `jb` names a generation directory with a hash of the
 solution's **full path**, which this server reproduces, so a cache home shared by two checkouts of one

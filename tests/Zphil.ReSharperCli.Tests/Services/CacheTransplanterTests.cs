@@ -146,7 +146,7 @@ public sealed class CacheTransplanterTests : IDisposable
         // outranks the replacement path: the user asked for cold.
         CacheHomes.PlantWarmDonor(_cacheHome, _mainSolution);
         ResolvedConfig config = ConfigFor(_worktreeSolution);
-        CacheResetService reset = new(new JbRunLock(TimeSpan.FromSeconds(1)));
+        CacheResetService reset = new(new JbRunLock(TimeSpan.FromSeconds(1)), new JbRunYield());
         await reset.RunAsync(config, Ct);
         string husk = CacheHomes.PlantGenerationFor(_cacheHome, _worktreeSolution);
         File.WriteAllText(Path.Combine(husk, "Db", "CURRENT"), "part-built since the reset");
@@ -168,7 +168,7 @@ public sealed class CacheTransplanterTests : IDisposable
         CacheHomes.PlantWarmDonor(_cacheHome, _mainSolution);
         ResolvedConfig config = ConfigFor(_worktreeSolution);
         CacheHomes.PlantGenerationFor(_cacheHome, _worktreeSolution);
-        CacheResetService reset = new(new JbRunLock(TimeSpan.FromSeconds(1)));
+        CacheResetService reset = new(new JbRunLock(TimeSpan.FromSeconds(1)), new JbRunYield());
         await reset.RunAsync(config, Ct);
 
         // Act

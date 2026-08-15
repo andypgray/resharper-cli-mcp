@@ -21,6 +21,19 @@ internal static class DotSettingsFixtures
     }
 
     /// <summary>
+    ///     A settings file carrying one inspection-severity override — the entry a solution or project layer
+    ///     uses to widen or narrow a rule, and so the shape of the two layers in a layer-precedence fixture.
+    /// </summary>
+    public static string SettingSeverity(string ruleId, string severity)
+    {
+        return $"""
+                {Header}
+                	<s:String x:Key="/Default/CodeInspection/Highlighting/InspectionSeverities/={ruleId}/@EntryIndexedValue">{severity}</s:String>
+                </wpf:ResourceDictionary>
+                """;
+    }
+
+    /// <summary>
     ///     The real-world break this feature was found by: the same declaration behind a comment containing
     ///     <c>--</c>, which is illegal XML and which <c>XDocument</c> rejects outright while ReSharper and
     ///     <c>jb</c> read the file without complaint. The comment spans two lines so a parse error reported

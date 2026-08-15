@@ -9,10 +9,12 @@ namespace Zphil.ReSharperCli.Formatting;
 ///     authoritative while answering under configuration the caller did not choose.
 ///     <para>
 ///         The two warnings have different blast radii, so each tool gets only the ones that apply to it. A
-///         settings file this server could not parse still reached <c>jb</c>, which parses it perfectly well
-///         — inspection severities are unaffected and only the cleanup profile lookup was lost — so
-///         <see cref="ForInspect" /> stays silent about it rather than reporting a consequence that does not
-///         exist. Output uses <c>\n</c> line endings and is ASCII-only, matching the other formatters.
+///         settings file this server could not parse is still read by <c>jb</c> — discovered files are
+///         layers it mounts itself, and a custom <c>JB_SETTINGS_PATH</c> rides its command line — and it
+///         parses them perfectly well, so inspection severities are unaffected and only the cleanup profile
+///         lookup was lost. <see cref="ForInspect" /> therefore stays silent about it rather than reporting
+///         a consequence that does not exist. Output uses <c>\n</c> line endings and is ASCII-only, matching
+///         the other formatters.
 ///     </para>
 /// </summary>
 internal static class ConfigWarningBanner
@@ -56,7 +58,7 @@ internal static class ConfigWarningBanner
     /// </summary>
     private static string Build(params string?[] warnings)
     {
-        var applicable = warnings.Where(warning => warning is not null).ToList();
+        List<string?> applicable = warnings.Where(warning => warning is not null).ToList();
         if (applicable.Count == 0) return "";
 
         return string.Join("\n", applicable) + "\n\n";

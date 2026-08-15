@@ -11,6 +11,6 @@ internal static class Configs
 {
     public static ResolvedConfig Bare(string solutionPath, string cacheHome)
     {
-        return new ResolvedConfig(solutionPath, null, null, cacheHome, null, null, "jb", ConfigWarnings.None);
+        return new ResolvedConfig(solutionPath, null, false, null, cacheHome, null, null, "jb", ConfigWarnings.None);
     }
 }

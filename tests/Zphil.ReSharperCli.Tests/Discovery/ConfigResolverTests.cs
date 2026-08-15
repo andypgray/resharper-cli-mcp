@@ -229,9 +229,7 @@ public sealed class ConfigResolverTests : IDisposable
     {
         // Arrange
         CreateSolutionInCurrentDirectory("App.sln");
-        string sharedSettings = Path.Combine(ExpectedSharedSettingsDirectory(), "GlobalSettingsStorage.DotSettings");
-        Directory.CreateDirectory(Path.GetDirectoryName(sharedSettings)!);
-        File.WriteAllText(sharedSettings, string.Empty);
+        string sharedSettings = WriteSharedGlobalSettings();
 
         // Act
         ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
@@ -251,6 +249,93 @@ public sealed class ConfigResolverTests : IDisposable
 
         // Assert
         config.SettingsPath.ShouldBeNull();
+        config.SettingsPathIsCustomLayer.ShouldBeFalse();
+    }
+
+    // ── Settings: the custom-layer split ──────────────────────────────────────
+    // jb mounts the adjacent {solution}.DotSettings (SolutionShared) and the shared
+    // GlobalSettingsStorage.DotSettings (GlobalAll) itself, so naming either as --settings would not be a
+    // no-op: a Custom layer sits above the project layers, and every {project}.csproj.DotSettings in the
+    // solution would silently stop applying. Only a JB_SETTINGS_PATH outside those two earns the flag.
+
+    [Fact]
+    public async Task ResolveAsync_JbSettingsPathNamesAFileJbCannotDiscover_IsACustomLayer()
+    {
+        // Arrange
+        CreateSolutionInCurrentDirectory("App.sln");
+        string settings = Path.Combine(_environment.CreateTempDirectory(), "Custom.DotSettings");
+        File.WriteAllText(settings, string.Empty);
+        _environment.SetVariable("JB_SETTINGS_PATH", settings);
+
+        // Act
+        ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
+
+        // Assert — the one case --settings exists for: jb has no way to find this file on its own.
+        config.SettingsPathIsCustomLayer.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task ResolveAsync_AdjacentDotSettings_IsNotACustomLayer()
+    {
+        // Arrange
+        CreateSolutionInCurrentDirectory("App.sln");
+        WriteAdjacentSettings(string.Empty);
+
+        // Act
+        ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
+
+        // Assert
+        config.SettingsPath.ShouldNotBeNull();
+        config.SettingsPathIsCustomLayer.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task ResolveAsync_SharedGlobalSettings_IsNotACustomLayer()
+    {
+        // Arrange
+        CreateSolutionInCurrentDirectory("App.sln");
+        WriteSharedGlobalSettings();
+
+        // Act
+        ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
+
+        // Assert — the worse instance of the same demotion: a personal, machine-wide IDE preference
+        // mounted above a repo's checked-in project settings.
+        config.SettingsPath.ShouldNotBeNull();
+        config.SettingsPathIsCustomLayer.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task ResolveAsync_JbSettingsPathNamesTheAdjacentDotSettings_IsNotACustomLayer()
+    {
+        // Arrange — hardening: what the env var names is what jb would discover anyway, so passing it
+        // as --settings would demote the project layers exactly as the discovered branch would.
+        CreateSolutionInCurrentDirectory("App.sln");
+        WriteAdjacentSettings(string.Empty);
+        _environment.SetVariable("JB_SETTINGS_PATH", Path.Combine(_environment.CurrentDirectory, "App.sln.DotSettings"));
+
+        // Act
+        ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
+
+        // Assert
+        config.SettingsPath.ShouldBe(config.SolutionPath + ".DotSettings");
+        config.SettingsPathIsCustomLayer.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task ResolveAsync_JbSettingsPathNamesTheSharedGlobalSettings_IsNotACustomLayer()
+    {
+        // Arrange
+        CreateSolutionInCurrentDirectory("App.sln");
+        string sharedSettings = WriteSharedGlobalSettings();
+        _environment.SetVariable("JB_SETTINGS_PATH", sharedSettings);
+
+        // Act
+        ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
+
+        // Assert
+        config.SettingsPath.ShouldBe(sharedSettings);
+        config.SettingsPathIsCustomLayer.ShouldBeFalse();
     }
 
     // ── Cleanup profile ───────────────────────────────────────────────────────
@@ -315,7 +400,7 @@ public sealed class ConfigResolverTests : IDisposable
 
         // Assert
         config.CleanupProfile.ShouldBeNull();
-        config.SettingsPath.ShouldNotBeNull(); // still passed to jb, which has its own opinion of it
+        config.SettingsPath.ShouldNotBeNull(); // jb reads the file itself and has its own opinion of it
     }
 
     [Fact]
@@ -589,6 +674,14 @@ public sealed class ConfigResolverTests : IDisposable
     private void WriteAdjacentSettings(string content)
     {
         File.WriteAllText(Path.Combine(_environment.CurrentDirectory, "App.sln.DotSettings"), content);
+    }
+
+    private string WriteSharedGlobalSettings()
+    {
+        string sharedSettings = Path.Combine(ExpectedSharedSettingsDirectory(), "GlobalSettingsStorage.DotSettings");
+        Directory.CreateDirectory(Path.GetDirectoryName(sharedSettings)!);
+        File.WriteAllText(sharedSettings, string.Empty);
+        return sharedSettings;
     }
 
     private string CreateSolutionInCurrentDirectory(string fileName)

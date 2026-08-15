@@ -212,7 +212,7 @@ something `jb` itself is told; the `RESHARPER_MCP_` ones govern this server's ow
 | Variable | Effect |
 |---|---|
 | `JB_SOLUTION_PATH` | Solution to use when the working directory holds zero or several. The `solutionPath` argument overrides it per call. |
-| `JB_SETTINGS_PATH` | Explicit `.DotSettings` file to pass to `jb`. Set but missing logs a warning and falls through to the next settings source rather than failing the call. |
+| `JB_SETTINGS_PATH` | Explicit `.DotSettings` file passed to `jb` as `--settings`, which mounts it as a Custom layer overriding the solution's and every project's own settings — use it only when that is the intent. Set but missing logs a warning and falls through to the next settings source rather than failing the call. |
 | `JB_CACHE_HOME` | ReSharper cache directory (default `~/.jb-cache`). |
 | `JB_EXTENSIONS` | Semicolon-separated ReSharper plugin IDs to load. |
 | `JB_EXTENSION_SOURCE` | Custom NuGet source for those plugins. |

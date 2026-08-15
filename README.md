@@ -91,7 +91,7 @@ Set these in the MCP client config's `env` block. All are optional. Each `JB_` v
 | Variable | Purpose |
 |---|---|
 | `JB_SOLUTION_PATH` | Solution to use when the working directory has zero or several. |
-| `JB_SETTINGS_PATH` | Explicit `.DotSettings` file to pass to `jb`. |
+| `JB_SETTINGS_PATH` | Explicit `.DotSettings` file for `jb`, mounted as a Custom layer above the solution's and every project's own settings. |
 | `JB_CACHE_HOME` | ReSharper cache directory (default `~/.jb-cache`). |
 | `JB_EXTENSIONS` | Semicolon-separated ReSharper plugin IDs to load. |
 | `JB_EXTENSION_SOURCE` | Custom NuGet source for those plugins. |
@@ -104,7 +104,7 @@ The `solutionPath` tool argument overrides `JB_SOLUTION_PATH` for a single call.
 
 **Solution discovery** tries, in order: the `solutionPath` argument, then `JB_SOLUTION_PATH`, then a single `.sln`/`.slnx` in the working directory (top level only, no parent walk). Zero or several without an override is an error that names the variable to set.
 
-**Settings discovery** tries, in order: `JB_SETTINGS_PATH` (a missing file logs a warning and falls through), then a `.DotSettings` file beside the solution, then `GlobalSettingsStorage.DotSettings` in the JetBrains shared directory, then none. On top of whichever it finds, `jb` also reads `.editorconfig` from the source tree automatically — no flag needed — so editorconfig style rules apply even with no `.DotSettings` at all.
+**Settings discovery** tries, in order: `JB_SETTINGS_PATH` (a missing file logs a warning and falls through), then a `.DotSettings` file beside the solution, then `GlobalSettingsStorage.DotSettings` in the JetBrains shared directory, then none. The last two are locations `jb` mounts on its own — alongside every project's `{project}.csproj.DotSettings` — so the server passes `--settings` only for a `JB_SETTINGS_PATH` outside them: that flag mounts a Custom layer above the whole stack, and naming an already-discovered file would silently override the project layers instead of changing nothing. On top of whichever settings apply, `jb` also reads `.editorconfig` from the source tree automatically — no flag needed — so editorconfig style rules apply even with no `.DotSettings` at all.
 
 Logs roll daily under `%LOCALAPPDATA%\Zphil.ReSharperCli\logs` on Windows, and the platform-equivalent path elsewhere. Nothing leaves the machine; [PRIVACY.md](https://github.com/andypgray/resharper-cli-mcp/blob/main/PRIVACY.md) states that as policy.
 

@@ -64,12 +64,27 @@ Choose (1) for a house rule, (3) for a one-off you must keep, (2) for a file you
 
 ## Where settings come from
 
-Both tools resolve an explicit ReSharper settings file in this order:
+`jb` mounts ReSharper's settings layers itself, exactly as the IDE does. From lowest to highest
+precedence: the machine-wide global layers (`GlobalSettingsStorage.DotSettings` in the JetBrains
+shared directory), the solution's `{solution}.DotSettings`, and each project's own
+`{project}.csproj.DotSettings` — plus the personal `.user` variants of the solution and project
+files, each outranking its shared counterpart. Higher wins on conflict, so a
+`{project}.csproj.DotSettings` is exactly how a repo narrows a rule for one project: it beats the
+solution layer, which beats the global one.
+
+This server resolves a settings file in this order:
 
 1. `JB_SETTINGS_PATH`, when set and the file exists,
 2. `{solution}.DotSettings` beside the solution (for example `App.sln.DotSettings`),
 3. `GlobalSettingsStorage.DotSettings` in the JetBrains shared directory,
 4. none.
+
+but it passes `--settings` to `jb` only when the result is a file `jb` does not discover itself — a
+`JB_SETTINGS_PATH` outside the two discovered locations. `--settings` is not additive: it mounts its
+file as a **Custom** layer *above the whole stack*, so passing a discovered file along would demote
+every project layer, and a `{project}.csproj.DotSettings` the solution relies on would silently stop
+applying. Levels 2 and 3 still matter to this server — the resolved file is where the declared
+cleanup profile below is read from — but `jb` honors them on its own.
 
 **On top of that, `jb` automatically honors `.editorconfig` from the source tree** — no flag, no
 `--settings` needed. Because `.editorconfig` is also read by StyleCop.Analyzers, Roslyn, `dotnet format`,
@@ -119,8 +134,8 @@ ReSharper reads without complaint — so this server tolerates the same thing ra
 `jb` itself would have honored. When a settings file is broken past that, the `resharper_cleanup` result
 leads with a `WARNING:` naming the file and the fault, because the fallback to `Built-in: Full Cleanup` has
 already rewritten the code the declared profile existed to protect. `resharper_inspect` stays quiet about
-it: `jb` still received `--settings` and parses that file perfectly well, so inspection severities are
-unaffected. The other warning — `JB_SETTINGS_PATH` naming a file that does not exist — appears on **both**
+it: `jb` reads that file itself and parses it perfectly well, so inspection severities are unaffected.
+The other warning — `JB_SETTINGS_PATH` naming a file that does not exist — appears on **both**
 tools, since it drops the settings file from the run entirely.
 
 ## What cannot be configured here

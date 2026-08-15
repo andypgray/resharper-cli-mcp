@@ -21,7 +21,7 @@ public sealed class InspectServiceArgumentTests
     public void BuildArguments_MinimalConfig_ProducesExactFixedOrder()
     {
         // Act
-        var arguments = InspectService.BuildArguments(Config(), OutputFile, null, InspectSeverity.Warning);
+        List<string> arguments = InspectService.BuildArguments(Config(), OutputFile, null, InspectSeverity.Warning);
 
         // Assert
         arguments.ShouldBe(
@@ -40,9 +40,9 @@ public sealed class InspectServiceArgumentTests
     [Fact]
     public void BuildArguments_AllOptionsPresent_AppendsInPinnedOrder()
     {
-        // Act
-        var arguments = InspectService.BuildArguments(
-            Config("/sln/App.sln.DotSettings", "Cfg.Ext", "cfg-source"),
+        // Act — the settings file is one jb cannot discover, which is the only shape that earns --settings.
+        List<string> arguments = InspectService.BuildArguments(
+            Config("/team/Shared.DotSettings", true, "Cfg.Ext", "cfg-source"),
             OutputFile,
             ["src/A.cs", "src/B.cs"],
             InspectSeverity.Error);
@@ -60,7 +60,7 @@ public sealed class InspectServiceArgumentTests
             "--absolute-paths",
             "--include=src/A.cs;src/B.cs",
             "--caches-home=/cache",
-            "--settings=/sln/App.sln.DotSettings",
+            "--settings=/team/Shared.DotSettings",
             "-x=Cfg.Ext",
             "--source=cfg-source"
         ]);
@@ -70,7 +70,7 @@ public sealed class InspectServiceArgumentTests
     public void BuildArguments_MultipleFiles_JoinsIncludeWithSemicolons()
     {
         // Act
-        var arguments = InspectService.BuildArguments(
+        List<string> arguments = InspectService.BuildArguments(
             Config(), OutputFile, ["A.cs", "B.cs", "C.cs"], InspectSeverity.Warning);
 
         // Assert
@@ -81,7 +81,7 @@ public sealed class InspectServiceArgumentTests
     public void BuildArguments_EmptyFiles_OmitsIncludeFlag()
     {
         // Act
-        var arguments = InspectService.BuildArguments(Config(), OutputFile, [], InspectSeverity.Warning);
+        List<string> arguments = InspectService.BuildArguments(Config(), OutputFile, [], InspectSeverity.Warning);
 
         // Assert
         arguments.Any(a => a.StartsWith("--include", StringComparison.Ordinal)).ShouldBeFalse();
@@ -91,7 +91,20 @@ public sealed class InspectServiceArgumentTests
     public void BuildArguments_NullSettings_OmitsSettingsFlag()
     {
         // Act
-        var arguments = InspectService.BuildArguments(Config(), OutputFile, null, InspectSeverity.Warning);
+        List<string> arguments = InspectService.BuildArguments(Config(), OutputFile, null, InspectSeverity.Warning);
+
+        // Assert
+        arguments.Any(a => a.StartsWith("--settings", StringComparison.Ordinal)).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void BuildArguments_SettingsFileJbDiscoversItself_OmitsSettingsFlag()
+    {
+        // Act — resolved, but a file jb mounts on its own (the adjacent .DotSettings). Passing it as
+        // --settings would re-mount it as a Custom layer above the project layers, silently demoting
+        // every {project}.csproj.DotSettings in the solution.
+        List<string> arguments = InspectService.BuildArguments(
+            Config("/sln/App.sln.DotSettings"), OutputFile, null, InspectSeverity.Warning);
 
         // Assert
         arguments.Any(a => a.StartsWith("--settings", StringComparison.Ordinal)).ShouldBeFalse();
@@ -101,7 +114,7 @@ public sealed class InspectServiceArgumentTests
     public void BuildArguments_ConfigExtensions_AppendsExtensionFlags()
     {
         // Act
-        var arguments = InspectService.BuildArguments(
+        List<string> arguments = InspectService.BuildArguments(
             Config(extensions: "Cfg.Ext", extensionSource: "cfg-source"), OutputFile, null, InspectSeverity.Warning);
 
         // Assert
@@ -131,7 +144,7 @@ public sealed class InspectServiceArgumentTests
         // Arrange
         using FakeEnvironment environment = new();
         ResolvedConfig config = new(
-            "/sln/App.sln", "/sln/App.sln.DotSettings", null, environment.CreateTempDirectory(), "Cfg.Ext", "cfg-source", "jb",
+            "/sln/App.sln", "/team/Shared.DotSettings", true, null, environment.CreateTempDirectory(), "Cfg.Ext", "cfg-source", "jb",
             ConfigWarnings.None);
         var processRunner = Substitute.For<IProcessRunner>();
         IReadOnlyList<string>? captured = null;
@@ -155,11 +168,16 @@ public sealed class InspectServiceArgumentTests
         captured.Any(argument => argument.StartsWith("--include", StringComparison.Ordinal)).ShouldBeFalse();
     }
 
-    private static ResolvedConfig Config(string? settings = null, string? extensions = null, string? extensionSource = null)
+    private static ResolvedConfig Config(
+        string? settings = null,
+        bool settingsIsCustomLayer = false,
+        string? extensions = null,
+        string? extensionSource = null)
     {
         return new ResolvedConfig(
             "/sln/App.sln",
             settings,
+            settingsIsCustomLayer,
             null,
             "/cache",
             extensions,

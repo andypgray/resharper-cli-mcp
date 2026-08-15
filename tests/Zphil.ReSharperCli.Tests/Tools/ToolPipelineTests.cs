@@ -314,9 +314,10 @@ public sealed class ToolPipelineTests
     [Fact]
     public async Task InspectAsync_UnreadableSettings_SaysNothingAboutIt()
     {
-        // Arrange — the blast radii differ. jb still received --settings and parses that file perfectly well,
-        // so inspection severities are unaffected; only this server's own profile lookup failed. Warning here
-        // would report a consequence that does not exist.
+        // Arrange — the blast radii differ. jb reads that file itself — the adjacent .DotSettings is a
+        // layer it mounts on its own — and parses it perfectly well, so inspection severities are
+        // unaffected; only this server's own profile lookup failed. Warning here would report a
+        // consequence that does not exist.
         using FakeEnvironment environment = new();
         PlantSolution(environment, "App.sln");
         PlantSettings(environment, DotSettingsFixtures.Unparseable());
@@ -335,9 +336,10 @@ public sealed class ToolPipelineTests
     [Fact]
     public async Task InspectAsync_JbSettingsPathNamesAMissingFile_LeadsWithAWarning()
     {
-        // Arrange — this one does reach inspect: no --settings is passed at all, so the severities the file
-        // was supposed to carry are absent. On an empty result especially, a bare "No issues found." would
-        // read as a clean bill of health for a scan that ran unconfigured.
+        // Arrange — this one does reach inspect: the file the variable names reaches jb neither by flag
+        // nor by its own discovery, so the severities it was supposed to carry are absent. On an empty
+        // result especially, a bare "No issues found." would read as a clean bill of health for a scan
+        // that ran unconfigured.
         using FakeEnvironment environment = new();
         PlantSolution(environment, "App.sln");
         string missing = Path.Combine(environment.CurrentDirectory, "missing.DotSettings");
@@ -353,6 +355,32 @@ public sealed class ToolPipelineTests
             $"WARNING: JB_SETTINGS_PATH is set to \"{missing}\" but no such file exists, so the ReSharper "
             + "settings it names were not applied to this run.\n\n"
             + "No issues found.");
+    }
+
+    [Fact]
+    public async Task InspectAsync_SolutionAndProjectLayersDisagree_LeavesSettingsDiscoveryToJb()
+    {
+        // Arrange — a tree where the project layer narrows a rule the solution layer reports: on a direct
+        // jb run ProjectShared outranks SolutionShared, so the project's DO_NOT_SHOW wins. Passing the
+        // solution file as --settings would re-mount it as a Custom layer above the project layer and
+        // resurrect every finding the project scoped away (measured in the field: 0 findings became 83).
+        using FakeEnvironment environment = new();
+        PlantSolution(environment, "App.sln");
+        PlantSettings(environment, DotSettingsFixtures.SettingSeverity("MethodHasAsyncOverload", "WARNING"));
+        PlantFile(environment, "Proj/Proj.csproj");
+        PlantFile(environment, "Proj/Proj.csproj.DotSettings", DotSettingsFixtures.SettingSeverity("MethodHasAsyncOverload", "DO_NOT_SHOW"));
+        List<string>? inspectArguments = null;
+        StubJb(
+            Fixtures.ReadSarif("empty-runs.json"),
+            args => inspectArguments = [.. args]);
+        ResharperTools tools = ToolHarness.Build(_processRunner, environment);
+
+        // Act
+        await tools.InspectAsync(cancellationToken: Ct);
+
+        // Assert — no --settings: the pin that the project layer is left able to win.
+        inspectArguments.ShouldNotBeNull();
+        inspectArguments.Any(a => a.StartsWith("--settings", StringComparison.Ordinal)).ShouldBeFalse();
     }
 
     [Fact]
@@ -532,11 +560,11 @@ public sealed class ToolPipelineTests
         File.WriteAllText(Path.Combine(environment.CurrentDirectory, "App.sln.DotSettings"), content);
     }
 
-    private static void PlantFile(FakeEnvironment environment, string relativePath)
+    private static void PlantFile(FakeEnvironment environment, string relativePath, string content = "")
     {
         string fullPath = Path.Combine(environment.CurrentDirectory, relativePath);
         Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
-        File.WriteAllText(fullPath, string.Empty);
+        File.WriteAllText(fullPath, content);
     }
 
     /// <summary>

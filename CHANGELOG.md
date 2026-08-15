@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `--settings` is no longer passed for a settings file `jb` discovers on its own — the
+  `{solution}.DotSettings` beside the solution, or the machine-wide `GlobalSettingsStorage.DotSettings`
+  when no adjacent file exists. The flag is not additive: it mounts its file as a Custom layer above
+  ReSharper's whole layer stack, so passing an already-discovered file silently demoted every project's
+  own `{project}.csproj.DotSettings` — the layer that outranks the solution's on a direct `jb` run, and
+  exactly how a repo narrows a rule for one project. Measured on a solution carrying such a layer: a
+  direct `jb` run reported 0 findings and this server reported 83, every one of them scoped away by the
+  project layer it had demoted. The global case was the same bug one level up, and worse for being
+  personal configuration: in a repo with no `.sln.DotSettings`, a machine-wide IDE preferences file
+  outranked every layer the repo checked in. Both tools now agree with a direct run, and `--settings` is
+  reserved for the case it exists for — a `JB_SETTINGS_PATH` naming a file `jb` cannot find itself. One
+  visible side effect: a `{solution}.DotSettings.user` now outranks `{solution}.DotSettings`, which is
+  `jb`'s own default and matches the IDE.
+
 ## [1.3.0] - 2026-08-13
 
 ### Added

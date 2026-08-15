@@ -60,8 +60,8 @@ public sealed class ConfigWarningBannerTests
         // Act
         string banner = ConfigWarningBanner.ForInspect(new ConfigWarnings(null, ReadFailure));
 
-        // Assert — jb received --settings and parsed that file itself, so inspection severities are intact.
-        // Only the cleanup-profile lookup was lost, and inspect runs no cleanup profile.
+        // Assert — jb reads the settings file itself, so inspection severities are intact. Only the
+        // cleanup-profile lookup was lost, and inspect runs no cleanup profile.
         banner.ShouldBe("");
     }
 

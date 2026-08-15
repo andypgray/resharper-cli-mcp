@@ -301,13 +301,16 @@ internal sealed class JbRunner(
     ///     <c>--settings</c>, <c>-x</c>, <c>--source</c> — in one place. Inspect and cleanup must pass
     ///     identical configuration to open the same cache generation, so a new axis added here reaches
     ///     both builders at once instead of landing in one and silently missing the other. The optional
-    ///     values are null-or-meaningful by <c>ConfigResolver</c>'s contract, so presence is a null check.
+    ///     values are null-or-meaningful by <c>ConfigResolver</c>'s contract, so presence is a null check —
+    ///     except <c>--settings</c>, which is present only for a file <c>jb</c> cannot discover itself:
+    ///     it mounts a Custom layer above the whole stack, so passing a discovered file would demote every
+    ///     project's own <c>.csproj.DotSettings</c> rather than change nothing.
     /// </summary>
     internal static void AppendConfigArguments(List<string> arguments, ResolvedConfig config)
     {
         arguments.Add($"--caches-home={config.CacheHome}");
 
-        if (config.SettingsPath is not null) arguments.Add($"--settings={config.SettingsPath}");
+        if (config.SettingsPathIsCustomLayer) arguments.Add($"--settings={config.SettingsPath}");
 
         if (config.Extensions is not null) arguments.Add($"-x={config.Extensions}");
 

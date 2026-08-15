@@ -18,9 +18,15 @@ internal sealed record ConfigWarnings(string? MissingSettingsPath, SettingsReadF
 }
 
 /// <summary>Everything needed to shell out to <c>jb</c>: the solution, optional settings, cache home, and extensions.</summary>
+/// <param name="SettingsPathIsCustomLayer">
+///     Whether <see cref="SettingsPath" /> must ride <c>jb</c>'s command line as <c>--settings</c>: true only
+///     when it is non-null <em>and</em> names a file outside every location <c>jb</c> mounts itself, so the
+///     flag is reserved for the one case it exists for — a file <c>jb</c> cannot find on its own.
+/// </param>
 internal sealed record ResolvedConfig(
     string SolutionPath,
     string? SettingsPath,
+    bool SettingsPathIsCustomLayer,
     string? CleanupProfile,
     string CacheHome,
     string? Extensions,
@@ -61,6 +67,7 @@ internal sealed class ConfigResolver(JbLocator jbLocator, IEnvironment environme
         return new ResolvedConfig(
             solutionPath,
             settings.Path,
+            settings.IsCustomLayer,
             declaredProfile.Name,
             ResolveCacheHome(),
             EmptyToNull(environment.GetVariable("JB_EXTENSIONS")),
@@ -96,7 +103,7 @@ internal sealed class ConfigResolver(JbLocator jbLocator, IEnvironment environme
         string currentDirectory = environment.CurrentDirectory;
 
         // Top-level files only — no parent walk, and a directory named "Foo.sln" must not match.
-        var solutionNames = Directory.EnumerateFiles(currentDirectory)
+        List<string> solutionNames = Directory.EnumerateFiles(currentDirectory)
             .Select(Path.GetFileName)
             .Where(IsSolutionFileName)
             .Select(name => name!)
@@ -122,7 +129,7 @@ internal sealed class ConfigResolver(JbLocator jbLocator, IEnvironment environme
         if (!string.IsNullOrEmpty(envPath))
         {
             string resolved = Path.GetFullPath(envPath, environment.CurrentDirectory);
-            if (File.Exists(resolved)) return new SettingsResolution(resolved, null);
+            if (File.Exists(resolved)) return new SettingsResolution(resolved, null, !JbMountsItself(resolved, solutionPath));
 
             // Never throw on a bad settings path — warn and fall through to the other sources. Recorded as
             // well as logged: it silently drops both configuration axes, so the caller has to be told.
@@ -130,15 +137,43 @@ internal sealed class ConfigResolver(JbLocator jbLocator, IEnvironment environme
             missingEnvPath = envPath;
         }
 
-        // Project-level {solution}.DotSettings next to the solution file.
+        // Solution-level {solution}.DotSettings next to the solution file.
         string solutionSettings = solutionPath + ".DotSettings";
-        if (File.Exists(solutionSettings)) return new SettingsResolution(solutionSettings, missingEnvPath);
+        if (File.Exists(solutionSettings)) return new SettingsResolution(solutionSettings, missingEnvPath, false);
 
         // OS-specific JetBrains shared settings.
-        string globalSettings = Path.Combine(SharedSettingsDirectory(), "GlobalSettingsStorage.DotSettings");
-        if (File.Exists(globalSettings)) return new SettingsResolution(globalSettings, missingEnvPath);
+        string globalSettings = GlobalSettingsPath();
+        if (File.Exists(globalSettings)) return new SettingsResolution(globalSettings, missingEnvPath, false);
 
-        return new SettingsResolution(null, missingEnvPath);
+        return new SettingsResolution(null, missingEnvPath, false);
+    }
+
+    /// <summary>
+    ///     Whether <c>jb</c> mounts this settings file itself — as its SolutionShared or GlobalAll layer.
+    ///     Naming such a file with <c>--settings</c> does not add it; it re-mounts it as a Custom layer
+    ///     <em>above</em> the project layers, so a <c>{project}.csproj.DotSettings</c> the solution relies on
+    ///     stops applying. Only the <c>JB_SETTINGS_PATH</c> branch can land outside these two, which is the
+    ///     one case <c>--settings</c> exists for.
+    /// </summary>
+    private bool JbMountsItself(string settingsPath, string solutionPath)
+    {
+        return PathsEqual(settingsPath, solutionPath + ".DotSettings")
+               || PathsEqual(settingsPath, GlobalSettingsPath());
+    }
+
+    /// <summary>
+    ///     How two settings paths are compared, matching the platform's filesystem case rules. Both operands
+    ///     are already absolute and normalized; a symlinked or 8.3-form spelling defeats equality and simply
+    ///     falls back to passing <c>--settings</c>.
+    /// </summary>
+    private static bool PathsEqual(string left, string right)
+    {
+        return string.Equals(left, right, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+    }
+
+    private string GlobalSettingsPath()
+    {
+        return Path.Combine(SharedSettingsDirectory(), "GlobalSettingsStorage.DotSettings");
     }
 
     private string SharedSettingsDirectory()
@@ -180,6 +215,8 @@ internal sealed class ConfigResolver(JbLocator jbLocator, IEnvironment environme
     ///     The settings file the chain landed on, plus the <c>JB_SETTINGS_PATH</c> value that named a file
     ///     that does not exist. Both travel together because a bad env path does not stop the chain: it can
     ///     fall through to an adjacent or shared settings file, and the caller is owed the warning either way.
+    ///     <see cref="IsCustomLayer" /> can be true only for the env branch — the other two land on files
+    ///     <c>jb</c> mounts itself.
     /// </summary>
-    private sealed record SettingsResolution(string? Path, string? MissingEnvPath);
+    private sealed record SettingsResolution(string? Path, string? MissingEnvPath, bool IsCustomLayer);
 }

@@ -45,9 +45,11 @@ internal static class JbCacheGenerations
 {
     /// <summary>
     ///     How two cache-home directory names are compared, matching <see cref="JbRunLock" />'s treatment of
-    ///     the paths that key the same directories.
+    ///     the paths that key the same directories. Internal because a transplant that has just replaced one
+    ///     generation tells it apart from the forks it is sweeping up by name, and there is one right answer
+    ///     to how these names compare.
     /// </summary>
-    private static StringComparison NameComparison =>
+    internal static StringComparison NameComparison =>
         OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
 
     /// <summary>
@@ -83,10 +85,10 @@ internal static class JbCacheGenerations
     internal static JbSolutionGenerations FindFor(string cacheHome, string solutionPath)
     {
         string hash = JbSolutionCacheHash.Compute(solutionPath);
-        var generations = Find(cacheHome, Path.GetFileNameWithoutExtension(solutionPath));
+        List<JbCacheGeneration> generations = Find(cacheHome, Path.GetFileNameWithoutExtension(solutionPath));
 
-        var owned = generations.Where(generation => SameHash(generation.Hash, hash)).ToList();
-        var neighbours = generations.Where(generation => !SameHash(generation.Hash, hash)).ToList();
+        List<JbCacheGeneration> owned = generations.Where(generation => SameHash(generation.Hash, hash)).ToList();
+        List<JbCacheGeneration> neighbours = generations.Where(generation => !SameHash(generation.Hash, hash)).ToList();
         return new JbSolutionGenerations(owned, neighbours);
     }
 

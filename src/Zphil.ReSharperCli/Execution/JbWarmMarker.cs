@@ -7,8 +7,10 @@ namespace Zphil.ReSharperCli.Execution;
 ///     A file inside the cache home whose modification time records when a <c>jb</c> run against that cache
 ///     generation last <em>succeeded</em>, and whose content names the generation directory that run left
 ///     behind. The speculative pre-warm reads the timestamp to skip a generation something has already
-///     warmed, and a transplant reads the name to find a donor worth copying; every successful run through
-///     <see cref="Services.JbRunner" /> — a foreground tool call included — stamps it.
+///     warmed, a transplant reads the name to find a donor worth copying, and — because every successful run
+///     through <see cref="Services.JbRunner" /> stamps it, a foreground tool call included — a transplant
+///     reads its mere <see cref="Exists">existence</see> to tell a cache some run produced from the
+///     part-built remnant of one that never finished.
 /// </summary>
 /// <remarks>
 ///     <para>
@@ -23,10 +25,12 @@ namespace Zphil.ReSharperCli.Execution;
 ///     <para>
 ///         Every filesystem failure is swallowed, because a marker that cannot be written or read is not a
 ///         reason to fail — or to log against — a run the user asked for. Every failure mode also reads as
-///         the least useful answer: a missing file, an unreadable one, and a future-dated one all report
-///         stale, and anything short of a directory this server can name reports no generation. So the marker
-///         can only ever permit a redundant pre-warm or forgo a copy, never suppress the one or misdirect the
-///         other.
+///         the answer that can only cost work: a missing file, an unreadable one, and a future-dated one all
+///         report stale, and anything short of a directory this server can name reports no generation, so
+///         those two readers can permit a redundant pre-warm or forgo a copy but never suppress the one or
+///         misdirect the other. <see cref="Exists" /> fails the other way round for the same reason, since
+///         its caller's only use for <see langword="false" /> is to delete: an unanswerable question reads as
+///         a cache worth protecting.
 ///     </para>
 ///     <para>
 ///         The single exception to the silence is <see cref="WarnOnceAboutUnrecognisedNaming" />, and it is
@@ -166,6 +170,40 @@ internal static class JbWarmMarker
         {
             Log.Debug(exception, "Could not read the jb warm marker for solution {SolutionPath} in cache home {CacheHome}", solutionPath, cacheHome);
             return false;
+        }
+    }
+
+    /// <summary>
+    ///     Whether a <c>jb</c> run against this cache generation has ever succeeded, whenever that was. Asked
+    ///     by a transplant looking at directories that are already there: a marker means some run produced
+    ///     them and they are the solution's own, while no marker at all means no run ever finished and what is
+    ///     on disk is the part-built remnant of one that was killed.
+    /// </summary>
+    /// <remarks>
+    ///     Content is not read, so every marker protects — including the empty one an older build of this
+    ///     server wrote and the empty one naming drift still writes today. Existence is the whole statement,
+    ///     which is what keeps the question answerable by markers written before it was ever asked.
+    ///     <para>
+    ///         Anything that goes wrong answers <see langword="true" />, the mirror of
+    ///         <see cref="JbColdTombstone.Exists" /> failing towards "reset": the caller's only use for a
+    ///         <see langword="false" /> is to delete a directory, and it must not do that on a question this
+    ///         could not answer. <see cref="File.Exists(string)" /> does not throw, so what the catch covers
+    ///         is a key that cannot be <em>derived</em> — an unusable cache home. A marker present but
+    ///         unreadable needs no handling here for a reason worth stating: reading it is the caller's next
+    ///         step only after finding a donor, and a cache home too broken to read this file hides every
+    ///         donor marker from that search too, so no replace can reach the delete.
+    ///     </para>
+    /// </remarks>
+    internal static bool Exists(string solutionPath, string cacheHome)
+    {
+        try
+        {
+            return File.Exists(PathFor(solutionPath, cacheHome));
+        }
+        catch (Exception exception) when (FilesystemFailure.Covers(exception))
+        {
+            Log.Debug(exception, "Could not look for the jb warm marker for solution {SolutionPath} in cache home {CacheHome}", solutionPath, cacheHome);
+            return true;
         }
     }
 

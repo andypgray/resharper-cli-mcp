@@ -12,9 +12,11 @@ namespace Zphil.ReSharperCli.Tests.Services;
 ///     <see cref="CacheTransplanter" /> copies one solution's ReSharper cache under another's name, which is
 ///     both the only thing in this server that writes into a cache generation and an optimisation nobody
 ///     asked for. These tests run against real temp cache homes because the whole behaviour is filesystem
-///     shape, and they pin it from both sides: it plants a faithful copy in the one situation it is for, and
-///     declines — silently, leaving the cache home exactly as it found it — in every situation where it
-///     cannot prove that situation holds.
+///     shape, and they pin it from both sides: it plants a faithful copy in the two situations it is for —
+///     no generation at all, or one no successful run ever left a warm marker beside — and declines,
+///     silently and leaving the cache home exactly as it found it, in every situation where it cannot prove
+///     one of them holds. The second situation is a delete as well as a copy, so its order is pinned too:
+///     nothing goes until the whole copy is standing beside it.
 /// </summary>
 public sealed class CacheTransplanterTests : IDisposable
 {
@@ -77,27 +79,92 @@ public sealed class CacheTransplanterTests : IDisposable
     }
 
     [Fact]
-    public async Task TryTransplantAsync_SolutionThatAlreadyHasAGeneration_LeavesItAlone()
+    public async Task TryTransplantAsync_GenerationWithAWarmMarker_LeavesItAlone()
     {
-        // Arrange — even a stunted one, left by a run killed at the cap. Replacing it would be a delete this
-        // server was not asked for, and resetting first is how a caller asks for exactly that.
+        // Arrange — a marker means a jb run against this path finished, so whatever is on disk is the
+        // solution's own analysis. Replacing that would be a delete this server was not asked for, and
+        // resetting first is how a caller asks for exactly that.
         CacheHomes.PlantWarmDonor(_cacheHome, _mainSolution);
-        string existing = CacheHomes.PlantGenerationFor(_cacheHome, _worktreeSolution);
-        File.WriteAllText(Path.Combine(existing, "Db", "CURRENT"), "half-built");
+        string existing = CacheHomes.PlantWarmDonor(_cacheHome, _worktreeSolution);
+        File.WriteAllText(Path.Combine(existing, "Db", "CURRENT"), "this solution's own");
 
         // Act
         bool seeded = await Transplanter().TryTransplantAsync(ConfigFor(_worktreeSolution), Ct);
 
         // Assert
         seeded.ShouldBeFalse();
-        File.ReadAllText(Path.Combine(existing, "Db", "CURRENT")).ShouldBe("half-built");
+        File.ReadAllText(Path.Combine(existing, "Db", "CURRENT")).ShouldBe("this solution's own");
+    }
+
+    [Fact]
+    public async Task TryTransplantAsync_UnmarkedHuskFromAKilledRun_IsReplacedByACopyOfTheDonor()
+    {
+        // Arrange — the situation this exists for, and the one the field found: a first run on a new checkout
+        // died at the cap, leaving a part-built generation no marker vouches for. Left alone it would decline
+        // for ever, because the remnant it was meant to be seeded over is itself what blocks the seeding.
+        string donor = CacheHomes.PlantWarmDonor(_cacheHome, _mainSolution);
+        File.WriteAllText(Path.Combine(donor, "Db", "000001.log"), "leveldb");
+        string husk = CacheHomes.PlantGenerationFor(_cacheHome, _worktreeSolution);
+        File.WriteAllText(Path.Combine(husk, "Db", "CURRENT"), "part-built");
+
+        // Act
+        bool seeded = await Transplanter().TryTransplantAsync(ConfigFor(_worktreeSolution), Ct);
+
+        // Assert — the donor's content won, all of it, and the copy left nothing of itself behind.
+        seeded.ShouldBeTrue();
+        string target = TargetPath();
+        File.ReadAllText(Path.Combine(target, "Db", "CURRENT")).ShouldBe("cache");
+        File.ReadAllText(Path.Combine(target, "Db", "000001.log")).ShouldBe("leveldb");
+        Directory.Exists(donor).ShouldBeTrue();
+        Directory.EnumerateDirectories(_cacheHome, "*.transplanting").ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task TryTransplantAsync_GenerationWithAnEmptyLegacyMarker_LeavesItAlone()
+    {
+        // Arrange — a marker from an older build of this server, or one written under naming drift: it names
+        // nothing, and it is still the record of a run that succeeded. Existence protects, not content, so
+        // this server reading a marker it cannot use never turns into a delete.
+        CacheHomes.PlantWarmDonor(_cacheHome, _mainSolution);
+        string existing = CacheHomes.PlantGenerationFor(_cacheHome, _worktreeSolution);
+        File.WriteAllText(Path.Combine(existing, "Db", "CURRENT"), "warmed by an older build");
+        await File.WriteAllTextAsync(JbWarmMarker.PathFor(_worktreeSolution, _cacheHome), string.Empty, Ct);
+
+        // Act
+        bool seeded = await Transplanter().TryTransplantAsync(ConfigFor(_worktreeSolution), Ct);
+
+        // Assert
+        seeded.ShouldBeFalse();
+        File.ReadAllText(Path.Combine(existing, "Db", "CURRENT")).ShouldBe("warmed by an older build");
+    }
+
+    [Fact]
+    public async Task TryTransplantAsync_HuskLeftAfterACacheReset_StillDeclines()
+    {
+        // Arrange — a reset clears the marker, so the generation a run starts building afterwards and dies
+        // part way through looks exactly like the husk above. The tombstone is what tells them apart, and it
+        // outranks the replacement path: the user asked for cold.
+        CacheHomes.PlantWarmDonor(_cacheHome, _mainSolution);
+        ResolvedConfig config = ConfigFor(_worktreeSolution);
+        CacheResetService reset = new(new JbRunLock(TimeSpan.FromSeconds(1)));
+        await reset.RunAsync(config, Ct);
+        string husk = CacheHomes.PlantGenerationFor(_cacheHome, _worktreeSolution);
+        File.WriteAllText(Path.Combine(husk, "Db", "CURRENT"), "part-built since the reset");
+
+        // Act
+        bool seeded = await Transplanter().TryTransplantAsync(config, Ct);
+
+        // Assert
+        seeded.ShouldBeFalse();
+        File.ReadAllText(Path.Combine(husk, "Db", "CURRENT")).ShouldBe("part-built since the reset");
     }
 
     [Fact]
     public async Task TryTransplantAsync_AfterACacheReset_DeclinesRatherThanUndoingIt()
     {
         // Arrange — the guardrail, through the real reset rather than a hand-written record: a user who asked
-        // for a cold rebuild must not be handed a copy of the sibling index instead.
+        // for a cold rebuild must not be handed a copy of the sibling index instead. The reset leaves no
+        // generation at all, so the tombstone is the only thing declining here.
         CacheHomes.PlantWarmDonor(_cacheHome, _mainSolution);
         ResolvedConfig config = ConfigFor(_worktreeSolution);
         CacheHomes.PlantGenerationFor(_cacheHome, _worktreeSolution);
@@ -219,7 +286,7 @@ public sealed class CacheTransplanterTests : IDisposable
         // The token rather than its source: a struct copy, so the running copy cannot end up reading a source
         // this method has already disposed on its way out.
         CancellationToken reclaimed = cancelling.Token;
-        var transplant = Task.Run(
+        Task<bool> transplant = Task.Run(
             () => Transplanter().TryTransplantAsync(ConfigFor(_worktreeSolution), reclaimed), Ct);
 
         // Act — as soon as there is a partial copy to abandon.
@@ -267,6 +334,139 @@ public sealed class CacheTransplanterTests : IDisposable
         Directory.Exists(leftover).ShouldBeFalse();
         string target = TargetPath();
         File.ReadAllText(Path.Combine(target, "Db", "CURRENT")).ShouldBe("cache");
+    }
+
+    [Fact]
+    public async Task TryTransplantAsync_CancelledMidCopyOverAHusk_LeavesTheHuskUntouched()
+    {
+        // Arrange — the order pinned from the direction that matters most. A foreground call reclaiming the
+        // generation lands mid-copy by design, and what it reclaims must still be the part-built remnant it
+        // was going to resume. Enough files that the copy is still running when the cancel arrives.
+        string donor = CacheHomes.PlantWarmDonor(_cacheHome, _mainSolution);
+        for (var index = 0; index < 2000; index++)
+            await File.WriteAllTextAsync(Path.Combine(donor, "Db", $"{index:D5}.ldb"), "x", Ct);
+
+        string husk = CacheHomes.PlantGenerationFor(_cacheHome, _worktreeSolution);
+        await File.WriteAllTextAsync(Path.Combine(husk, "Db", "CURRENT"), "part-built", Ct);
+
+        string inProgress = InProgressPath();
+        using CancellationTokenSource cancelling = new();
+
+        // The token rather than its source, for the reason given in the test above.
+        CancellationToken reclaimed = cancelling.Token;
+        Task<bool> transplant = Task.Run(
+            () => Transplanter().TryTransplantAsync(ConfigFor(_worktreeSolution), reclaimed), Ct);
+
+        // Act — as soon as there is a partial copy to abandon.
+        while (!Directory.Exists(inProgress) && !transplant.IsCompleted) await Task.Delay(1, Ct);
+        await cancelling.CancelAsync();
+
+        // Assert — the remnant is exactly as it was, because the delete only ever happens after the whole
+        // copy is standing beside it. Cancellation can cost the copy and nothing else.
+        await Should.ThrowAsync<OperationCanceledException>(() => transplant);
+        File.ReadAllText(Path.Combine(husk, "Db", "CURRENT")).ShouldBe("part-built");
+        Directory.Exists(inProgress).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task TryTransplantAsync_CopyThatFailsBeforeCompleting_LeavesTheHuskUntouched()
+    {
+        // Arrange — the same order without the race: a *file* where the copy gets built cannot be created
+        // over, so the copy fails while the remnant is still the only thing on disk.
+        CacheHomes.PlantWarmDonor(_cacheHome, _mainSolution);
+        string husk = CacheHomes.PlantGenerationFor(_cacheHome, _worktreeSolution);
+        await File.WriteAllTextAsync(Path.Combine(husk, "Db", "CURRENT"), "part-built", Ct);
+        await File.WriteAllTextAsync(InProgressPath(), string.Empty, Ct);
+
+        // Act
+        bool seeded = await Transplanter().TryTransplantAsync(ConfigFor(_worktreeSolution), Ct);
+
+        // Assert — declined, and the run about to start still has the remnant to resume.
+        seeded.ShouldBeFalse();
+        File.ReadAllText(Path.Combine(husk, "Db", "CURRENT")).ShouldBe("part-built");
+    }
+
+    [Fact]
+    public async Task TryTransplantAsync_HuskThatCannotBeDeleted_DeclinesAndDiscardsTheCopy()
+    {
+        // Arrange — a jb this server knows nothing about holds the remnant open. The copy is finished and
+        // the slot will not clear, which is the one new way this can fail.
+        CacheHomes.PlantWarmDonor(_cacheHome, _mainSolution);
+        string husk = CacheHomes.PlantGenerationFor(_cacheHome, _worktreeSolution);
+        await File.WriteAllTextAsync(Path.Combine(husk, "Db", "CURRENT"), "part-built", Ct);
+
+        bool seeded;
+        using (CacheHomes.BlockDeletionOf(husk))
+        {
+            // Act
+            seeded = await Transplanter().TryTransplantAsync(ConfigFor(_worktreeSolution), Ct);
+        }
+
+        // Assert — read once the hold is released, since on Windows it is the file itself being held. The
+        // remnant survives whole, and the copy that could not land does not outlive the attempt.
+        seeded.ShouldBeFalse();
+        File.ReadAllText(Path.Combine(husk, "Db", "CURRENT")).ShouldBe("part-built");
+        Directory.Exists(InProgressPath()).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task TryTransplantAsync_HuskWithAColdFork_SeedsTheSlotAndSweepsTheFork()
+    {
+        // Arrange — a second jb that could not open the remnant forked ".01" off it, so the run that never
+        // finished left two directories. Both are this solution's, and no marker vouches for either.
+        CacheHomes.PlantWarmDonor(_cacheHome, _mainSolution);
+        string husk = CacheHomes.PlantGenerationFor(_cacheHome, _worktreeSolution);
+        string fork = CacheHomes.PlantFork(_cacheHome, husk);
+
+        // Act
+        bool seeded = await Transplanter().TryTransplantAsync(ConfigFor(_worktreeSolution), Ct);
+
+        // Assert — the copy lands in the generation jb opens, and the fork goes with the remnant it was
+        // forked from rather than being left to describe a cache that no longer exists.
+        seeded.ShouldBeTrue();
+        File.ReadAllText(Path.Combine(TargetPath(), "Db", "CURRENT")).ShouldBe("cache");
+        Directory.Exists(fork).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task TryTransplantAsync_ForkThatCannotBeDeleted_StillSeedsAndLeavesTheForkForAReset()
+    {
+        // Arrange — the sweep is the one delete allowed to fail, because it happens after the seeding has
+        // landed. A fork something else is holding must cost disk rather than the copy.
+        CacheHomes.PlantWarmDonor(_cacheHome, _mainSolution);
+        string husk = CacheHomes.PlantGenerationFor(_cacheHome, _worktreeSolution);
+        string fork = CacheHomes.PlantFork(_cacheHome, husk);
+
+        bool seeded;
+        using (CacheHomes.BlockDeletionOf(fork))
+        {
+            // Act
+            seeded = await Transplanter().TryTransplantAsync(ConfigFor(_worktreeSolution), Ct);
+        }
+
+        // Assert — seeded regardless, with the fork left where a cache reset reclaims it.
+        seeded.ShouldBeTrue();
+        File.ReadAllText(Path.Combine(TargetPath(), "Db", "CURRENT")).ShouldBe("cache");
+        Directory.Exists(fork).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task TryTransplantAsync_ReplacingAHusk_DoesNotClaimTheCopyIsWarm()
+    {
+        // Arrange — the marker is now also what protects a generation from being replaced, so stamping one
+        // for an unvalidated copy would do more than advertise a donor: this path would fire once over a
+        // remnant and then be locked out of it for ever.
+        CacheHomes.PlantWarmDonor(_cacheHome, _mainSolution);
+        CacheHomes.PlantGenerationFor(_cacheHome, _worktreeSolution);
+        ResolvedConfig config = ConfigFor(_worktreeSolution);
+
+        // Act
+        (await Transplanter().TryTransplantAsync(config, Ct)).ShouldBeTrue();
+
+        // Assert — from both sides of the marker: nothing to protect the copy, and nothing to debounce a
+        // pre-warm with. Only jb exiting cleanly writes either.
+        JbWarmMarker.Exists(config.SolutionPath, _cacheHome).ShouldBeFalse();
+        JbWarmMarker.IsFreshWithin(config.SolutionPath, _cacheHome, TimeSpan.FromHours(1)).ShouldBeFalse();
     }
 
     [Fact]

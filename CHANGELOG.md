@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Seeding a fresh checkout's cache from a warm copy of the same repository now also fires where the
+  checkout holds the **part-built remnant of a run that never finished** — until now the deliberate rule
+  was that any existing generation is left alone, and in the field that rule meant the feature never fired
+  at all. The shape is circular: the first run on a new checkout is exactly the one long enough to hit the
+  cap, and the moment it is killed it leaves a stunted cache behind; from then on there is a generation
+  there, so every later call declines to seed and resumes the stunted one instead. A reset was no remedy
+  either, since it records that the next run is meant to be cold. What separates a cache worth keeping from
+  those leftovers is the marker every successful run leaves beside its generation: **a marker means hands
+  off** — any marker, including the empty form older versions wrote — and no marker at all means no run
+  against that path ever finished. Nothing is deleted until the whole copy has been made and is standing
+  beside the remnant, so a copy that fails or is cancelled leaves the remnant exactly where it was and the
+  run resumes it as before. `resharper_reset_cache` is unchanged and still outranks all of this: a reset is
+  a request for a cold rebuild, and it is honoured until a run against that solution succeeds. One bounded
+  residual: a checkout analysed only by `jb` directly, never through this server, has no marker for the
+  server to read, so its cache reads as leftovers and can be replaced by a copy — costing one re-key, once.
+  Measured on a real remnant: a 21 MB generation left by a run killed two days earlier was replaced by a
+  277 MB copy of the warm checkout beside it, and the call it had been blocking returned in 456 s where the
+  same call had previously been killed at the cap having produced nothing.
+
 ### Fixed
 
 - `--settings` is no longer passed for a settings file `jb` discovers on its own — the

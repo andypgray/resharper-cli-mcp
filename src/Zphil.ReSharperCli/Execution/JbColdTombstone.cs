@@ -15,11 +15,14 @@ namespace Zphil.ReSharperCli.Execution;
 ///         intention has to be recorded somewhere, and it has to outlive the process that recorded it.
 ///     </para>
 ///     <para>
-///         Its failure direction is the opposite of <see cref="JbWarmMarker" />'s, and deliberately so. The
-///         marker may only ever fail towards redundant work; this may only ever fail towards <em>less</em>
-///         work being skipped. So a tombstone that cannot be written is a warning rather than a debug line —
-///         it leaves a promise to the user unenforced — and a key that cannot even be derived reads as
-///         <see cref="Exists" />, because refusing to seed a cache is free and undoing a reset is not.
+///         Its failure direction is the opposite of the <see cref="JbWarmMarker" /> readers that answer
+///         "recently" and "which directory", and deliberately so. Those may only ever fail towards redundant
+///         work; this may only ever fail towards <em>less</em> work being skipped. So a tombstone that cannot
+///         be written is a warning rather than a debug line — it leaves a promise to the user unenforced —
+///         and a key that cannot even be derived reads as <see cref="Exists" />, because refusing to seed a
+///         cache is free and undoing a reset is not. <see cref="JbWarmMarker.Exists" /> is the one marker
+///         reader that fails this way round too, and for the same shape of reason: what a
+///         <see langword="false" /> buys its caller is permission to delete.
 ///     </para>
 /// </remarks>
 internal static class JbColdTombstone

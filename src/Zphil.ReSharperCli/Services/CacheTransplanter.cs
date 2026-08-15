@@ -25,21 +25,35 @@ namespace Zphil.ReSharperCli.Services;
 ///         <c>jb</c> refuses costs the copy and nothing else.
 ///     </para>
 ///     <para>
-///         It is a trade rather than a free win, and the arithmetic decides where it belongs. Re-keying a
-///         copied cache costs <c>jb</c> around a minute — measured at roughly the same figure on a small
-///         solution and a large one, so treat it as close to fixed — against a saving of however much a warm
-///         cache is worth on that solution. On one whose cold analysis runs past the cap, that is the
-///         difference between a result and a timeout. On one that goes cold in a minute or two, the re-key
-///         can cost more than the rebuild it replaced. No size threshold guards it today: two measurements
-///         are not enough to place one, and the case it exists for is the case where the margin is enormous.
+///         It is a trade rather than a free win, and the arithmetic decides where it belongs. A seeded run
+///         pays to re-key the copy and to analyse whatever the donor's checkout never saw, and that premium
+///         is not fixed: measured at roughly a minute over the warm run that followed it on one repository's
+///         worktrees, and at about six minutes on a larger donor whose checkout had drifted further. What it
+///         buys is however much a warm cache is worth on that solution. On one whose cold analysis runs past
+///         the cap, that is the difference between a result and a timeout — 456 s seeded and returning,
+///         against the same call capping out before. On one that goes cold in a minute or two, the premium
+///         can cost more than the rebuild it replaced. The copy itself is not what makes it a trade: the
+///         largest generation in a censused cache home, 277 MB across 188 files, copied in under two seconds.
+///     </para>
+///     <para>
+///         No size threshold guards it, and that census is the argument that none can be placed from disk. A
+///         generation's size tracks how much analysis has accumulated against that path, not how heavy the
+///         solution is — most of the fresh checkouts of the largest solution there measured smaller than an
+///         aged cache of a small one — so nothing available before the run separates "rescues a call that
+///         would have timed out" from "adds a minute to one that would have been fine". The losing case is
+///         bounded and one-time, a single re-key per new checkout; the winning case is a call that returns
+///         at all.
 ///     </para>
 ///     <para>
 ///         Every step may decline. No donor, an unreadable marker, a busy donor, a copy that fails halfway,
 ///         and a solution whose cache was just reset all end the same way — no seed, no error, and the cold
-///         run the call was going to have anyway. The one thing it must never do is act on a maybe, so the
-///         donor has to be named by a marker a successful run wrote, and the target generation has to be
-///         genuinely absent: an existing one is left alone even when it is a stunted remnant of a run that was
-///         killed, because <c>resharper_reset_cache</c> composes with this and guessing does not.
+///         run the call was going to have anyway. The one thing it must never do is act on a maybe. So the
+///         donor has to be named by a marker a successful run wrote, and it acts on the target only where no
+///         run against that path has ever succeeded: no generation at all, or generations with no warm marker
+///         beside them, since every successful run stamps one and any marker — naming a generation or empty —
+///         protects what is on disk. Even then nothing is deleted until the full copy is standing beside the
+///         slot, so a failure costs the copy rather than the cache. A reset ends the whole thing outright,
+///         because <c>resharper_reset_cache</c> composes with this and guessing does not.
 ///     </para>
 /// </remarks>
 /// <param name="runLock">
@@ -97,8 +111,15 @@ internal sealed class CacheTransplanter(JbRunLock runLock, TimeSpan? donorLockPa
     {
         // Owned generations only: the donor shares the solution file name by definition, so a check for
         // "this solution has no generations at all" would find the donor's and never fire.
-        bool alreadyCached = JbCacheGenerations.FindFor(config.CacheHome, config.SolutionPath).Owned.Count > 0;
-        if (alreadyCached) return false;
+        //
+        // What makes generations that are already there replaceable is the marker's absence, and nothing
+        // else. Every successful run stamps one, so a marker — any marker, the empty legacy form included —
+        // says a run produced what is on disk and this has no business touching it. No marker at all says no
+        // run against this path ever finished, leaving the part-built remnant of one that was killed: worth
+        // less than the copy, and the reason a first run that dies at the cap would otherwise never be
+        // seeded again.
+        JbSolutionGenerations generations = JbCacheGenerations.FindFor(config.CacheHome, config.SolutionPath);
+        if (generations.Owned.Count > 0 && JbWarmMarker.Exists(config.SolutionPath, config.CacheHome)) return false;
 
         if (JbColdTombstone.Exists(config.SolutionPath, config.CacheHome)) return false;
 
@@ -114,6 +135,7 @@ internal sealed class CacheTransplanter(JbRunLock runLock, TimeSpan? donorLockPa
             JbCacheGenerations.PathUnder(config.CacheHome, donor.GenerationName),
             JbCacheGenerations.PathUnder(config.CacheHome, generationName),
             config.SolutionPath,
+            generations.Owned,
             cancellationToken);
     }
 
@@ -148,12 +170,26 @@ internal sealed class CacheTransplanter(JbRunLock runLock, TimeSpan? donorLockPa
     }
 
     /// <summary>
-    ///     Copy the donor's tree into place. Built somewhere <c>jb</c> and this server's own reset both ignore
-    ///     and moved into position at the end, so a copy that fails or is cancelled leaves no directory a
-    ///     later run could open as a cache: within one parent the move is a rename, which cannot be observed
-    ///     half-done.
+    ///     Copy the donor's tree into place, replacing whichever <paramref name="replaced" /> generations are
+    ///     there — the leftovers of runs that never finished, and usually none. Built somewhere <c>jb</c> and
+    ///     this server's own reset both ignore, and moved into position at the end, so a copy that fails or is
+    ///     cancelled adds no directory a later run could open as a cache: within one parent the move is a
+    ///     rename, which cannot be observed half-done.
     /// </summary>
-    private static bool Copy(string donorPath, string targetPath, string solutionPath, CancellationToken cancellationToken)
+    /// <remarks>
+    ///     The order is the safety property, and it is one-way: the copy is complete and standing beside the
+    ///     slot before anything is deleted, so every way this can fail up to that point leaves what was on
+    ///     disk exactly where it was, and the run about to start resumes it. Only the rename spends that
+    ///     safety, and it cannot be observed half-done. What is accepted in exchange is a slot delete that
+    ///     fails part way through, on the same terms as the reset's own: <c>jb</c> validates a generation
+    ///     against its format version and rebuilds it in place, so the worst residue is a cold run.
+    /// </remarks>
+    private static bool Copy(
+        string donorPath,
+        string targetPath,
+        string solutionPath,
+        IReadOnlyList<JbCacheGeneration> replaced,
+        CancellationToken cancellationToken)
     {
         string inProgressPath = targetPath + InProgressSuffix;
 
@@ -164,7 +200,26 @@ internal sealed class CacheTransplanter(JbRunLock runLock, TimeSpan? donorLockPa
             if (Directory.Exists(inProgressPath)) Directory.Delete(inProgressPath, true);
 
             CopyTree(donorPath, inProgressPath, cancellationToken);
+
+            if (!TryClearTargetSlot(targetPath, solutionPath))
+            {
+                Discard(inProgressPath);
+                return false;
+            }
+
             Directory.Move(inProgressPath, targetPath);
+            SweepReplacedForks(targetPath, replaced);
+
+            if (replaced.Count > 0)
+            {
+                Log.Information(
+                    "Seeded the ReSharper cache for solution {SolutionPath} by copying {DonorGeneration} over {ReplacedGenerations}, the part-built remnant of a run that never finished; the run about to start re-keys it",
+                    solutionPath,
+                    Path.GetFileName(donorPath),
+                    replaced.Select(generation => generation.Name).ToList());
+
+                return true;
+            }
 
             Log.Information(
                 "Seeded the ReSharper cache for solution {SolutionPath} by copying {DonorGeneration} to {TargetGeneration}; the run about to start re-keys it",
@@ -189,6 +244,72 @@ internal sealed class CacheTransplanter(JbRunLock runLock, TimeSpan? donorLockPa
                 Path.GetFileName(donorPath));
 
             return false;
+        }
+    }
+
+    /// <summary>
+    ///     Empty the generation slot the finished copy is about to be renamed into, reporting whether it is
+    ///     now clear. Nothing there is the ordinary case and is clear for free; what this exists for is the
+    ///     part-built remnant <see cref="SeedAsync" /> has just proved no successful run produced.
+    /// </summary>
+    /// <remarks>
+    ///     A delete that fails costs the copy and not the cache: the remnant stays whole, the aside is
+    ///     discarded, and the run about to start resumes exactly what it would have resumed anyway. A
+    ///     <em>file</em> at the slot is not a directory to delete and reads as clear, so it goes on to fail at
+    ///     the move, which is what it did before this method existed.
+    /// </remarks>
+    private static bool TryClearTargetSlot(string targetPath, string solutionPath)
+    {
+        if (!Directory.Exists(targetPath)) return true;
+
+        try
+        {
+            Directory.Delete(targetPath, true);
+            return true;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            Log.Warning(
+                exception,
+                "Could not clear the part-built ReSharper cache {TargetGeneration} for solution {SolutionPath}; the run about to start resumes it instead of the copy that was ready to replace it",
+                Path.GetFileName(targetPath),
+                solutionPath);
+
+            return false;
+        }
+    }
+
+    /// <summary>
+    ///     Remove what is left of the replaced generations once the copy has landed: the forks a concurrent
+    ///     <c>jb</c> made of the remnant, which the slot delete does not cover.
+    /// </summary>
+    /// <remarks>
+    ///     Deliberately after the rename and deliberately best effort, which together shrink the delete the
+    ///     seeding depends on to one directory. A fork that will not go costs disk and nothing else: <c>jb</c>
+    ///     opens the first generation, which is the one just seeded, and the marker the next successful run
+    ///     stamps names that one too — so a survivor is reclaimed by the next cache reset rather than being
+    ///     worth failing over.
+    /// </remarks>
+    private static void SweepReplacedForks(string targetPath, IReadOnlyList<JbCacheGeneration> replaced)
+    {
+        string slotName = Path.GetFileName(targetPath);
+
+        foreach (JbCacheGeneration generation in replaced)
+        {
+            // By name, because the slot's own entry now addresses the copy that was just moved into it.
+            if (string.Equals(generation.Name, slotName, JbCacheGenerations.NameComparison)) continue;
+
+            try
+            {
+                Directory.Delete(generation.FullPath, true);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                Log.Debug(
+                    exception,
+                    "Could not remove {ForkGeneration}, a fork of the part-built cache just replaced; a cache reset reclaims it",
+                    generation.Name);
+            }
         }
     }
 

@@ -7,13 +7,16 @@ using Zphil.ReSharperCli.Tests.TestSupport;
 namespace Zphil.ReSharperCli.Tests.Execution;
 
 /// <summary>
-///     <see cref="JbWarmMarker" /> answers two questions about one cache generation: "did a <c>jb</c> run
-///     against it succeed recently?", which debounces the background pre-warm, and "which directory did that
-///     run leave warm?", which is how one solution's cache becomes findable by another. It is a hint, never a
-///     dependency, so the invariant these tests guard is one-sided — every failure mode must read as
-///     <em>not</em> warm and <em>no</em> name, so the marker can permit a redundant pre-warm or a skipped
-///     copy but never suppress one forever or point at the wrong directory — plus the structural fact that a
-///     marker bug can never clobber the lock file it sits beside.
+///     <see cref="JbWarmMarker" /> answers three questions about one cache generation: "did a <c>jb</c> run
+///     against it succeed recently?", which debounces the background pre-warm; "which directory did that run
+///     leave warm?", which is how one solution's cache becomes findable by another; and "did one ever succeed
+///     at all?", which is what stands between a transplant and a cache it has no business deleting. The
+///     invariant these tests guard is one-sided per reader, and the sides are not the same. The two hints
+///     must read as <em>not</em> warm and <em>no</em> name whatever goes wrong, so they can permit a
+///     redundant pre-warm or a skipped copy but never suppress one forever or point at the wrong directory;
+///     <see cref="JbWarmMarker.Exists" /> must read as <em>protected</em>, because its caller's only use for
+///     the other answer is to delete. Plus the structural fact that a marker bug can never clobber the lock
+///     file it sits beside.
 /// </summary>
 public sealed class JbWarmMarkerTests : IDisposable
 {
@@ -141,6 +144,51 @@ public sealed class JbWarmMarkerTests : IDisposable
 
         // Assert
         JbWarmMarker.TryReadGenerationName(markerPath, _cacheHome).ShouldBeNull();
+    }
+
+    [Fact]
+    public void Exists_NoMarker_IsFalse()
+    {
+        // Assert — no run against this generation has ever succeeded, which is what lets a transplant treat
+        // whatever is on disk as the leftovers of one that never finished.
+        JbWarmMarker.Exists(SolutionPath, _cacheHome).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Exists_EmptyMarker_IsTrue()
+    {
+        // Arrange — the marker an older build of this server wrote, and the one naming drift still writes.
+        // It names nothing, and it is still the record of a run that succeeded.
+        File.WriteAllText(JbWarmMarker.PathFor(SolutionPath, _cacheHome), string.Empty);
+
+        // Assert — existence is the whole statement, so a marker this server cannot read a name out of
+        // still protects the cache it was written for.
+        JbWarmMarker.Exists(SolutionPath, _cacheHome).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void Exists_MarkerNamingAGeneration_IsTrue()
+    {
+        // Arrange — the ordinary marker, written by the ordinary successful run.
+        CacheHomes.PlantGenerationFor(_cacheHome, SolutionPath);
+
+        // Act
+        JbWarmMarker.Stamp(SolutionPath, _cacheHome);
+
+        // Assert
+        JbWarmMarker.Exists(SolutionPath, _cacheHome).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void Exists_KeyThatCannotBeDerived_ReportsProtected()
+    {
+        // Arrange — the cache home every other reader here degrades on.
+        string invalid = _cacheHome + "\0invalid";
+
+        // Assert — this one reader fails the opposite way to the rest of the class, and deliberately: a
+        // caller only wants a false so it can delete a directory, so an unanswerable question has to read as
+        // a cache worth keeping. That is JbColdTombstone.Exists's direction, not IsFreshWithin's.
+        JbWarmMarker.Exists(SolutionPath, invalid).ShouldBeTrue();
     }
 
     [Fact]

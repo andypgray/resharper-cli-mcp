@@ -9,11 +9,11 @@ using Zphil.ReSharperCli.Tests.TestSupport;
 namespace Zphil.ReSharperCli.Tests.Services;
 
 /// <summary>
-///     <see cref="CacheResetService" /> is the only tool path that deletes anything outside the files a
-///     caller named, so these pin the properties that make that safe: it drops exactly the generations whose
-///     names carry this solution path's own hash, it reports rather than touches the ones that do not, it
-///     will not delete a cache generation while a <c>jb</c> run holds it, and it leaves behind the record
-///     that keeps the next run cold.
+///     <see cref="CacheResetService" /> deletes directories a caller never named, on the strength of a
+///     derivation from <c>jb</c>'s undocumented naming, so these pin the properties that make that safe: it
+///     drops exactly the generations whose names carry this solution path's own hash, it reports rather than
+///     touches the ones that do not, it will not delete a cache generation while a <c>jb</c> run holds it,
+///     and it leaves behind the record that keeps the next run cold.
 /// </summary>
 public sealed class CacheResetServiceTests : IDisposable
 {

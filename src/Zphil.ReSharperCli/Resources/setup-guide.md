@@ -74,9 +74,11 @@ A timeout with nothing else running is almost always the cold run. **Scoping the
 not help**: `jb` analyses the whole solution whatever the report is narrowed to, so a one-file run is no
 faster than a solution-wide one — often marginally slower. What a killed run does leave behind is a
 partly-built cache that a retry picks up rather than starting over — though not from exactly where it
-stopped, because whatever was in flight when it was killed is lost and gets redone. Retrying therefore makes
-real progress, but a series of capped runs costs appreciably more than one run allowed to finish; where a
-cold analysis simply takes longer than the cap, raising `RESHARPER_MCP_TIMEOUT_SECS` is the fix and retrying is not. Your MCP
+stopped, because whatever was in flight when it was killed is lost and gets redone. With a warm same-named
+checkout in the cache home, the next call replaces that remnant with a copy of that one instead, which is
+faster than resuming. Retrying therefore makes real progress, but a series of capped runs costs
+appreciably more than one run allowed to finish; where a cold analysis simply takes longer than the cap,
+raising `RESHARPER_MCP_TIMEOUT_SECS` is the fix and retrying is not. Your MCP
 client may also enforce a tool-call timeout of its own and give up before the server's cap; raise that on
 the client side too (for Claude Code, the `MCP_TOOL_TIMEOUT` environment variable, in milliseconds).
 
@@ -118,22 +120,28 @@ home. It is also the case least likely to survive: a cold whole-solution run is 
 cap, and the pre-warm cannot help, because it warms the solution the *server's* directory resolves while a
 session in a worktree passes its own `solutionPath` on every call.
 
-So when a call finds no cache generation for its solution, and a **same-named** solution's last successful
-run recorded one, the server copies that generation under the name `jb` will look for before starting the
-run. Nothing needs configuring and nothing reports it.
+So when a call finds no cache generation for its solution — or only the part-built remnant of runs that
+never finished, which no successful run has marked — and a **same-named** solution's last successful run
+recorded one, the server copies that generation under the name `jb` will look for before starting the run.
+Nothing needs configuring and nothing reports it.
 
-**It is a trade, not a free win.** A copied cache carries the donor's absolute paths, and `jb` re-keys it on
-the run that opens it — measured at roughly a minute of extra work, fairly independent of solution size.
-What that buys is the difference between a cold analysis and a warm one. On a solution large enough for
-cold to run past the cap, that difference is many minutes and the trade is overwhelming — a result instead
-of a timeout. On a small solution, where a cold run finishes in a minute or two anyway, the re-key can cost
-more than the rebuild it replaced. It is aimed squarely at the first case.
+**It is a trade, not a free win.** A copied cache carries the donor's absolute paths, so `jb` re-keys it on
+the run that opens it, and that run also analyses whatever the donor's checkout never saw. The premium over
+the warm run that follows has measured anywhere from about a minute to about six, growing with the donor's
+size and with how far the two checkouts have drifted apart. What it buys is the difference between a cold
+analysis and a warm one. On a solution large enough for cold to run past the cap, that difference is the
+whole result: one such call returned in 456 seconds seeded, where the same call had previously been killed
+at the cap having produced nothing. On a small solution, where a cold run finishes in a minute or two
+anyway, the premium can cost more than the rebuild it replaced. It is aimed squarely at the first case.
 
 It gives up at the first doubt, silently, and the call proceeds exactly as it would have: no donor recorded,
 a donor a run currently holds, a copy that fails part way. It takes the same queue lock for the donor that
-it holds for the target, so it never reads a cache another `jb` is writing. It never replaces a generation
-that already exists — including the stunted remnant of a run that was killed, which is what
-`resharper_reset_cache` is for — and it never runs after a reset, because a reset is a request for a cold
+it holds for the target, so it never reads a cache another `jb` is writing. It never replaces a cache a
+successful run produced: every such run leaves a marker beside the generation, and a marker means hands
+off. What it will replace is a generation with no marker at all — the part-built remnant of a first run
+that was killed, which is otherwise the one thing that could block the copy it needs for ever — and even
+then the whole copy is made and standing beside the remnant before anything is deleted, so a failure costs
+the copy rather than the cache. It never runs after a reset, because a reset is a request for a cold
 rebuild and is honoured until a run against that solution succeeds. `jb` remains the judge of what it was
 handed: it validates a cache it opens against its own format and rebuilds in place when it does not like
 it, so a copy it rejects costs the copy and nothing more.

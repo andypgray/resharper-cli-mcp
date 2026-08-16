@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-08-16
+
 ### Changed
 
 - Seeding a fresh checkout's cache from a warm copy of the same repository now also fires where the
@@ -387,7 +389,8 @@ Unofficial; not affiliated with or endorsed by JetBrains.
 - Ships as a .NET global tool and MCP server (`PackAsTool` + `PackageType=McpServer`), published to
   NuGet with SLSA build provenance and registered on the MCP registry.
 
-[Unreleased]: https://github.com/andypgray/resharper-cli-mcp/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/andypgray/resharper-cli-mcp/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/andypgray/resharper-cli-mcp/releases/tag/v1.4.0
 [1.3.0]: https://github.com/andypgray/resharper-cli-mcp/releases/tag/v1.3.0
 [1.2.1]: https://github.com/andypgray/resharper-cli-mcp/releases/tag/v1.2.1
 [1.2.0]: https://github.com/andypgray/resharper-cli-mcp/releases/tag/v1.2.0

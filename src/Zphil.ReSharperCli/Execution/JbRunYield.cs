@@ -18,17 +18,30 @@ namespace Zphil.ReSharperCli.Execution;
 ///     </para>
 ///     <para>
 ///         Process-wide rather than keyed per cache generation, so a caller against one solution stands a
-///         pre-warm of another one down. That asymmetry predates this type and is preserved deliberately:
-///         speculative work is worth so much less than a call in flight that telling the two generations
-///         apart would cost more bookkeeping than it saves.
+///         pre-warm of another one down. Deliberate, and not an approximation of a per-generation rule that
+///         was merely too much bookkeeping to keep: <see cref="JbRunLock" /> partitions a
+///         <em>directory</em>, because a directory is what two <c>jb</c> processes ruin between them, while
+///         this count partitions the <em>machine</em>, because a <c>jb</c> run is a full multi-core
+///         analysis of a whole solution whatever the report is narrowed to. Keying it would set that
+///         analysis going beside the call already racing the run cap, and would hold the speculative
+///         solution's lease for minutes — which is exactly the state <c>CacheTransplanter</c> reads as "no
+///         donor" when the next cold checkout comes looking for one. What leaving it costs is one
+///         speculative pass: a server pointed at two solutions — a client that resolves a worktree
+///         separately from its main checkout is today's only such shape — never pre-warms the one nothing
+///         calls, for the life of the process, and nothing re-arms it, since the only re-arm is a
+///         foreground run hitting the cap and it carries that run's own configuration, while the trigger
+///         that starts the first pass fires once per host. One pass nobody is waiting on, against a cold
+///         analysis running beside a call that is already late.
 ///     </para>
 ///     <para>
 ///         In-process only. A pre-warm running in another server process cannot be yielded to, and a call
 ///         there queues behind it exactly as it queues behind another session's real call.
 ///     </para>
 ///     <para>
-///         <see cref="Interlocked" /> throughout, and no member waits on anything: cancellation callbacks
-///         tree-kill a process inline on the canceller's thread, and that unwind ends in a
+///         <see cref="Interlocked" /> throughout, and no member waits on anything: cancelling a pass can
+///         tree-kill a process on the canceller's own thread — not from a registered callback but from
+///         <see cref="ProcessRunner" />'s <c>catch</c> around its awaited <c>WaitForExitAsync</c>, a
+///         continuation the cancel may resume inline — and that unwind ends in a
 ///         <see cref="JbRunLock" /> holder releasing a semaphore. A mutex held across the cancel would be a
 ///         third lock in that graph — neither bounded nor skippable, unlike the one
 ///         <c>CacheTransplanter</c> nests — which is the deadlock this codebase is careful not to build.
@@ -66,7 +79,7 @@ internal sealed class JbRunYield
     ///     <para>
     ///         The published source is never disposed. A foreground caller that has already taken the
     ///         reference may be about to cancel it, and that window cannot be closed without holding a lock
-    ///         across a cancellation whose callbacks tree-kill a process inline. One undisposed linked
+    ///         across a cancellation that may tree-kill a process on this very thread. One undisposed linked
     ///         source — one per speculative pass, not one per process — is the cheaper trade, and
     ///         <see cref="Reclaim" /> catches the disposal race regardless. Passes stay bounded because only
     ///         a foreground timeout starts one and no pass re-arms itself, so the total tracks what the user

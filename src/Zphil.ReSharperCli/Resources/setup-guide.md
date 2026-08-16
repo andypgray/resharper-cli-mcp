@@ -63,7 +63,9 @@ indefinitely.
 run together. This is not politeness: a second concurrent `jb` cannot open the warm cache, and instead of
 waiting it silently forks a new, *empty* one — so both runs do cold-cache work, the slower one usually
 past the timeout, and the fork is left behind taking up disk. Queueing costs a wait and nothing else. The
-queue is shared by every client on the machine, since it is the cache that is contended, not the server.
+queue is shared by every client running this server, since it is the cache that is contended and not the
+server process — but it reaches no further than that, and a `jb` you start yourself is outside it. See
+*Running `jb` yourself, beside this server* below.
 
 So a call is bounded by its wait plus its run. A call waits up to the same cap for a run already in
 flight, and only then starts its own run; if the wait runs out the error says a run against that solution
@@ -150,6 +152,28 @@ the copy rather than the cache. It never runs after a reset, because a reset is 
 rebuild and is honoured until a run against that solution succeeds. `jb` remains the judge of what it was
 handed: it validates a cache it opens against its own format and rebuilds in place when it does not like
 it, so a copy it rejects costs the copy and nothing more.
+
+### Running `jb` yourself, beside this server
+
+**The queue is a lock file in the cache home that this server's own callers take, and nothing else takes
+it.** A `jb` you start yourself — from a terminal, a script, a CI step — never touches that file, and
+pointing it at the same `JB_CACHE_HOME` does not enrol it. So your run and a call through here can reach
+one solution's cache at the same moment, and from there `jb`'s own lock decides: the second to arrive forks
+a new, *empty* generation rather than waiting for the first, which is the outcome the queue exists to
+prevent. Both runs then do cold-cache work, and the fork is left behind taking up disk.
+
+**Point a run of your own at its own `--caches-home` and it cannot collide.** There are things these tools
+do not expose — an XML or HTML report, a sweep at a severity they do not offer, a probe of which settings
+layer `jb` actually mounts — and running `jb` directly for those is reasonable. A separate cache home is a
+separate set of generations, so nothing in it is contended and neither run can fork the other's. It costs
+that run a cold cache of its own, which is the price of working outside the queue.
+
+**A forked generation is a directory whose name ends `.01` or higher, beside the `.00`.**
+`resharper_reset_cache` drops it with the rest, because a fork of one solution carries the same path hash
+as the generation it forked from — run it with no `jb` live, your own included. Worth knowing too: a run
+you start yourself stamps no warm marker, so its work is invisible to the pre-warm's freshness check and
+to the seeding above. A checkout that only ever saw a `jb` of your own reads here as one no run has
+finished.
 
 ## Phantom compilation errors, and resetting the cache
 

@@ -77,10 +77,22 @@ internal sealed class CacheTransplanter(JbRunLock runLock, TimeSpan? donorLockPa
     internal const string InProgressSuffix = ".transplanting";
 
     /// <summary>
-    ///     Long enough to outlast a donor's marker being rewritten at the end of someone else's run, short
-    ///     enough to be invisible against the cold analysis it is trying to avoid.
+    ///     Long enough to outlast a donor's marker being rewritten at the end of someone else's run, long
+    ///     enough to outlast the reap of a pre-warm this very caller has just cancelled, and short enough to
+    ///     stay invisible against the cold analysis it exists to avoid.
     /// </summary>
-    internal static readonly TimeSpan DefaultDonorLockPatience = TimeSpan.FromSeconds(2);
+    /// <remarks>
+    ///     The second of those is what fixes the number rather than merely bounding it, and it is the one
+    ///     nothing here can see: a caller the user is waiting on cancels the speculative pass before it
+    ///     queues for its own lease (<see cref="JbRunner" />), and across two solutions that lease is
+    ///     uncontended and granted at once — so it can arrive here while the pass it just killed is still
+    ///     holding the donor's. That lease drops only once <see cref="ProcessRunner" /> has reaped the
+    ///     killed tree, so waiting less than <see cref="ProcessRunner.KilledTreeReapBudget" /> would turn a
+    ///     cancelled pre-warm into a declined donor and a cold run — the exact run this exists to avoid, in
+    ///     the worktree configuration it was built for. Equality is enough without a margin because the kill
+    ///     begins strictly before this wait does.
+    /// </remarks>
+    internal static readonly TimeSpan DefaultDonorLockPatience = ProcessRunner.KilledTreeReapBudget;
 
     private readonly TimeSpan _donorLockPatience = donorLockPatience ?? DefaultDonorLockPatience;
 

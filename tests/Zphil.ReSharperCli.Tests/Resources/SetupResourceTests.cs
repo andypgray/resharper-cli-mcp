@@ -1,4 +1,5 @@
 using System.Globalization;
+using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using Shouldly;
 using Xunit;
@@ -29,7 +30,7 @@ public sealed class SetupResourceTests
         await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
 
         // Act — resources/list carries only direct resources; a URI with no {param} must land here.
-        var resources = await harness.Client.ListResourcesAsync(cancellationToken: Ct);
+        IList<McpClientResource> resources = await harness.Client.ListResourcesAsync(cancellationToken: Ct);
 
         // Assert
         resources.Select(resource => resource.Uri).ShouldContain(ResharperResources.SetupGuideUri);
@@ -67,6 +68,7 @@ public sealed class SetupResourceTests
         text.ShouldContain("CSharpErrors"); // the rule that identifies a stale solution-wide index
         text.ShouldContain(ResharperTools.ResetCacheToolName); // and the tool that clears it
         text.ShouldContain("worktree"); // the always-cold case, and the only place the seeding is described
+        text.ShouldContain("Running `jb` yourself"); // how far the queue reaches: a jb the server never spawned is outside it
         text.ShouldContain(ResharperResources.ConfigurationGuideUri); // the onward cross-link
     }
 

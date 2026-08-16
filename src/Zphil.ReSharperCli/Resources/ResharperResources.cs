@@ -11,7 +11,8 @@ namespace Zphil.ReSharperCli.Resources;
 ///     enforces (inspection severities drive <c>resharper_inspect</c>; the cleanup profile drives
 ///     <c>resharper_cleanup</c>, and the two never share a switch). <c>resharper://guides/setup</c> serves
 ///     <c>setup-guide.md</c> — how <c>jb</c> and the solution are discovered, the cold-cache slowness, the
-///     run cap and the queue that keeps concurrent calls off each other's cache, how output is
+///     run cap and the queue that keeps concurrent calls off each other's cache (and how far that queue
+///     reaches, since a <c>jb</c> the user starts is outside it), how output is
 ///     shortened to fit the budget, the environment variables, and where logs go. Both bodies load on demand,
 ///     keeping the always-resident server instructions short.
 /// </summary>
@@ -50,7 +51,9 @@ internal sealed class ResharperResources
         + "JB_SETTINGS_PATH, JB_CACHE_HOME, JB_EXTENSIONS, JB_EXTENSION_SOURCE, "
         + "RESHARPER_MCP_TIMEOUT_SECS, RESHARPER_MCP_PREWARM, and RESHARPER_MCP_LOG_LEVEL variables, "
         + "and where logs go. Load this when a call cannot find jb or the solution, times out, reports "
-        + "another run already in flight, or comes back shortened.";
+        + "another run already in flight, comes back shortened, or is slower than the queue explains "
+        + "alongside a jb run outside this server — which is also how an unexpected extra cache "
+        + "generation appears.";
 
     [McpServerResource(
         UriTemplate = ConfigurationGuideUri,

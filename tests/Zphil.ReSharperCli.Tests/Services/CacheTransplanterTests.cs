@@ -272,6 +272,19 @@ public sealed class CacheTransplanterTests : IDisposable
     }
 
     [Fact]
+    public void DefaultDonorLockPatience_OutlastsTheReapOfARunTheCallerItselfKilled()
+    {
+        // The case above with the holder being the caller's own doing, and the one a timing test would only
+        // catch by luck: a foreground caller cancels the pre-warm before queueing for its lease, and across
+        // two solutions that lease is uncontended and granted at once — so it can reach the donor while the
+        // pass it just killed still holds it. That lease drops only once the killed tree has been reaped, so
+        // a patience shorter than the reap budget silently declines the donor and takes the cold run the
+        // seeding exists to avoid. Pinned as the relationship between the two constants, because that is the
+        // invariant; a duration assertion would restate one of them and say nothing about why.
+        CacheTransplanter.DefaultDonorLockPatience.ShouldBeGreaterThanOrEqualTo(ProcessRunner.KilledTreeReapBudget);
+    }
+
+    [Fact]
     public async Task TryTransplantAsync_CancelledPartWayThroughTheCopy_ThrowsAndLeavesNothingBehind()
     {
         // Arrange — cancellation is how a foreground call reclaims a cache generation, so it arrives mid-copy

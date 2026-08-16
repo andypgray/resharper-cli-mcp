@@ -12,6 +12,15 @@ internal sealed class ProcessRunner : IProcessRunner
     /// <summary>Cap captured stdout/stderr at 10&#160;MB each; past the cap we keep draining but stop appending.</summary>
     private const int MaxCapturedChars = 10 * 1024 * 1024;
 
+    /// <summary>
+    ///     How long a killed process tree is given to be reaped before this gives up on it and unwinds. Named
+    ///     rather than left inline because it is the width of a window the rest of the server can see: a run
+    ///     cancelled here holds its cache-generation lease until this has elapsed, so
+    ///     <c>CacheTransplanter</c> derives from it how long to wait for a donor that a caller may itself
+    ///     have just cancelled.
+    /// </summary>
+    internal static readonly TimeSpan KilledTreeReapBudget = TimeSpan.FromSeconds(5);
+
     /// <inheritdoc />
     public async Task<ProcessResult> RunAsync(
         string fileName,
@@ -42,8 +51,8 @@ internal sealed class ProcessRunner : IProcessRunner
         process.StandardInput.Close();
 
         // Drain both pipes concurrently and immediately so a chatty child never blocks on a full buffer.
-        var standardOutputTask = ReadCappedAsync(process.StandardOutput);
-        var standardErrorTask = ReadCappedAsync(process.StandardError);
+        Task<string> standardOutputTask = ReadCappedAsync(process.StandardOutput);
+        Task<string> standardErrorTask = ReadCappedAsync(process.StandardError);
 
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeoutCts.CancelAfter(timeout);
@@ -59,7 +68,7 @@ internal sealed class ProcessRunner : IProcessRunner
             // Brief reap so the killed tree is cleaned up and the pipe readers reach EOF.
             try
             {
-                await process.WaitForExitAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+                await process.WaitForExitAsync(CancellationToken.None).WaitAsync(KilledTreeReapBudget).ConfigureAwait(false);
             }
             catch
             {

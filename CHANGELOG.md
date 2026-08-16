@@ -53,6 +53,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reset can still spend a second or two on the lock — against minutes before. Admitted that quickly, it
   can also meet a dying `jb` still holding memory-mapped cache files, so a delete the filesystem refuses
   is now retried briefly before being reported.
+- A call that cancels the background pre-warm is no longer denied the warm cache it was about to be seeded
+  from. Cancelling kills the speculative `jb` and the killed run keeps its place in the queue until that
+  process tree has been reaped — up to five seconds — while the call went looking for a cache to copy after
+  waiting only two. Where the two are different solutions the call's own queue place is uncontended and
+  granted at once, so it arrived early, found the cache it wanted still held by the run it had just killed,
+  and did what it does at any other doubt: declined silently and took the cold run seeding exists to avoid.
+  That is the fresh-worktree case the seeding was built for. The wait is now derived from the reap rather
+  than set beside it, so the two cannot drift apart again.
 
 ## [1.3.0] - 2026-08-13
 

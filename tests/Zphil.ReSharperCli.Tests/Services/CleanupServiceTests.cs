@@ -1,4 +1,5 @@
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 using Shouldly;
 using Xunit;
 using Zphil.ReSharperCli.Discovery;
@@ -141,6 +142,30 @@ public sealed class CleanupServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task RunAsync_AbsolutePath_ReachesJbAsARelativeIncludePattern()
+    {
+        // Arrange — the field failure, through the service that builds the argument. jb's --include takes
+        // relative paths only, so an absolute one is an Ant pattern matched against the solution model that
+        // can never hit.
+        string absolute = PlantFile("src/A.cs", "x");
+        List<string>? arguments = null;
+        _processRunner
+            .RunAsync("jb", Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                arguments = [.. call.Arg<IReadOnlyList<string>>()];
+                return new ProcessResult(0, string.Empty, string.Empty);
+            });
+
+        // Act
+        await _service.RunAsync(_config, [absolute], CleanupService.DefaultProfile, Ct);
+
+        // Assert
+        arguments.ShouldNotBeNull();
+        arguments.ShouldContain("--include=src/A.cs");
+    }
+
+    [Fact]
     public async Task RunAsync_NonZeroExit_ThrowsUserErrorSurfacingStderr()
     {
         // Arrange — a non-zero exit throws before any classification.
@@ -154,6 +179,85 @@ public sealed class CleanupServiceTests : IDisposable
 
         // Assert
         exception.Message.ShouldContain("Unknown profile 'No Such Profile'");
+    }
+
+    [Fact]
+    public async Task RunAsync_JbMatchedNothing_SaysTheWholePassFailedAndNamesThePatterns()
+    {
+        // Arrange — jb's own signal for this reads as a success to an agent that has just made 27 edits:
+        // "No items were found to cleanup" is the whole of the stderr, and a pass got skipped in the field
+        // because of it. The framing is cleanup's to give, since only cleanup knows N files were named.
+        PlantFile("src/A.cs", "x");
+        PlantFile("src/B.cs", "x");
+        _processRunner
+            .RunAsync("jb", Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns(new ProcessResult(3, string.Empty, "No items were found to cleanup"));
+
+        // Act
+        var exception = await Should.ThrowAsync<UserErrorException>(() => _service.RunAsync(_config, ["src/A.cs", "src/B.cs"], CleanupService.DefaultProfile, Ct));
+
+        // Assert — the contradiction is stated outright, the patterns jb was actually given are listed, and
+        // the one remaining cause of a matched-nothing run is named.
+        exception.Message.ShouldStartWith("jb cleanupcode exited with code 3. No file was cleaned up");
+        exception.Message.ShouldContain("not as \"nothing needed changing\"");
+        exception.Message.ShouldContain("jb reported: No items were found to cleanup");
+        exception.Message.ShouldContain("The 2 --include pattern(s) it was given:");
+        exception.Message.ShouldContain("  - src/A.cs");
+        exception.Message.ShouldContain("  - src/B.cs");
+        exception.Message.ShouldContain("on disk but in no project matches nothing");
+    }
+
+    [Fact]
+    public async Task RunAsync_AbsolutePathAndJbMatchedNothing_ListsTheTranslatedPattern()
+    {
+        // Arrange — the report echoes the caller's own spelling, so the failure message is the one place the
+        // translated form is visible. That is what makes "these are the patterns jb was given" true.
+        string absolute = PlantFile("src/A.cs", "x");
+        _processRunner
+            .RunAsync("jb", Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns(new ProcessResult(3, string.Empty, "No items were found to cleanup"));
+
+        // Act
+        var exception = await Should.ThrowAsync<UserErrorException>(() => _service.RunAsync(_config, [absolute], CleanupService.DefaultProfile, Ct));
+
+        // Assert
+        exception.Message.ShouldContain("The 1 --include pattern(s) it was given:\n  - src/A.cs");
+        exception.Message.ShouldNotContain(absolute);
+    }
+
+    [Fact]
+    public async Task RunAsync_NonZeroExitWithNoStandardError_OmitsTheQuotedLineRatherThanLeavingItEmpty()
+    {
+        // Arrange — jb does not always say why. A bare "jb reported:" with nothing after it reads as output
+        // that went missing, so the line is only there when there is something to quote.
+        PlantFile("src/A.cs", "x");
+        StubExit(9);
+
+        // Act
+        var exception = await Should.ThrowAsync<UserErrorException>(() => _service.RunAsync(_config, ["src/A.cs"], CleanupService.DefaultProfile, Ct));
+
+        // Assert
+        exception.Message.ShouldNotContain("jb reported:");
+        exception.Message.ShouldContain("The 1 --include pattern(s) it was given:\n  - src/A.cs");
+    }
+
+    [Fact]
+    public async Task RunAsync_RunHitTheCap_IsNotReframedAsAFailedPass()
+    {
+        // Arrange — the discriminator the typed exception exists for. A cleanup killed at the cap may already
+        // have rewritten files, so it must not be told nothing was cleaned up, and the runner's message names
+        // the variable that moves the cap.
+        PlantFile("src/A.cs", "x");
+        _processRunner
+            .RunAsync("jb", Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new ProcessTimeoutException("'jb' timed out."));
+
+        // Act
+        var exception = await Should.ThrowAsync<UserErrorException>(() => _service.RunAsync(_config, ["src/A.cs"], CleanupService.DefaultProfile, Ct));
+
+        // Assert
+        exception.Message.ShouldStartWith("jb cleanupcode timed out after");
+        exception.Message.ShouldNotContain("No file was cleaned up");
     }
 
     [Fact]

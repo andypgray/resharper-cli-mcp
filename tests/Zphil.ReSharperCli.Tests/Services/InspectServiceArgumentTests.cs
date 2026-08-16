@@ -78,6 +78,22 @@ public sealed class InspectServiceArgumentTests
     }
 
     [Fact]
+    public void BuildArguments_AbsolutePathUnderTheSolution_ReachesJbRelative()
+    {
+        // Arrange — the same defect as cleanup's, and worse here: jb exits 0 having matched nothing, so an
+        // absolute glob used to come back as "No issues found." rather than as any kind of failure.
+        string solutionPath = Path.GetFullPath("/sln/App.sln");
+        string absolute = Path.Combine(Path.GetDirectoryName(solutionPath)!, "src", "A.cs");
+
+        // Act
+        List<string> arguments = InspectService.BuildArguments(
+            Config(solutionPath: solutionPath), OutputFile, [absolute], InspectSeverity.Warning);
+
+        // Assert
+        arguments.ShouldContain("--include=src/A.cs");
+    }
+
+    [Fact]
     public void BuildArguments_EmptyFiles_OmitsIncludeFlag()
     {
         // Act
@@ -172,10 +188,11 @@ public sealed class InspectServiceArgumentTests
         string? settings = null,
         bool settingsIsCustomLayer = false,
         string? extensions = null,
-        string? extensionSource = null)
+        string? extensionSource = null,
+        string solutionPath = "/sln/App.sln")
     {
         return new ResolvedConfig(
-            "/sln/App.sln",
+            solutionPath,
             settings,
             settingsIsCustomLayer,
             null,

@@ -9,8 +9,9 @@ namespace Zphil.ReSharperCli;
 /// <remarks>
 ///     Open for one purpose: a subclass that lets a <em>caller</em> recognise a particular expected failure
 ///     and restate it with knowledge the thrower did not have (see
-///     <see cref="Execution.ProcessTimeoutException" />). The filter matches the base type, so a subclass
-///     that reaches it is still handled as an expected error.
+///     <see cref="Execution.ProcessTimeoutException" /> and <see cref="Services.JbExitCodeException" />).
+///     The filter matches the base type, so a subclass that reaches it is still handled as an expected
+///     error.
 /// </remarks>
 internal class UserErrorException : InvalidOperationException
 {

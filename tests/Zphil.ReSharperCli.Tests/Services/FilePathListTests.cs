@@ -10,6 +10,8 @@ namespace Zphil.ReSharperCli.Tests.Services;
 ///     one <c>files</c> element, without ever reinterpreting an element that names a real file. These tests
 ///     plant real files under a per-instance temp directory (so the parallel run stays race-free), because
 ///     the existing-file guard is the whole reason splitting is safe for the destructive tool.
+///     <see cref="FilePathList.ToIncludePattern" /> is the other half: the spelling <c>jb</c>'s
+///     <c>--include</c> can actually match, which is relative-only.
 /// </summary>
 public sealed class FilePathListTests : IDisposable
 {
@@ -21,6 +23,8 @@ public sealed class FilePathListTests : IDisposable
         _solutionDirectory = _environment.CurrentDirectory;
     }
 
+    public static bool OnWindows => OperatingSystem.IsWindows();
+
     public void Dispose()
     {
         _environment.Dispose();
@@ -30,7 +34,7 @@ public sealed class FilePathListTests : IDisposable
     public void Split_CommaJoinedEntry_YieldsOnePathPerFragment()
     {
         // Act
-        var split = FilePathList.Split(["src/A.cs, src/B.cs"], _solutionDirectory);
+        IReadOnlyList<string> split = FilePathList.Split(["src/A.cs, src/B.cs"], _solutionDirectory);
 
         // Assert
         split.ShouldBe(["src/A.cs", "src/B.cs"]);
@@ -43,7 +47,7 @@ public sealed class FilePathListTests : IDisposable
         // inspect happens to work today and cleanup rejects it. Splitting makes the two agree.
 
         // Act
-        var split = FilePathList.Split(["src/A.cs;src/B.cs"], _solutionDirectory);
+        IReadOnlyList<string> split = FilePathList.Split(["src/A.cs;src/B.cs"], _solutionDirectory);
 
         // Assert
         split.ShouldBe(["src/A.cs", "src/B.cs"]);
@@ -53,7 +57,7 @@ public sealed class FilePathListTests : IDisposable
     public void Split_EntryMixingBothDelimiters_SplitsOnEach()
     {
         // Act
-        var split = FilePathList.Split(["a.cs;b.cs,c.cs"], _solutionDirectory);
+        IReadOnlyList<string> split = FilePathList.Split(["a.cs;b.cs,c.cs"], _solutionDirectory);
 
         // Assert
         split.ShouldBe(["a.cs", "b.cs", "c.cs"]);
@@ -63,7 +67,7 @@ public sealed class FilePathListTests : IDisposable
     public void Split_FragmentsPaddedWithWhitespace_AreTrimmed()
     {
         // Act
-        var split = FilePathList.Split(["  src/A.cs  ;  src/B.cs  "], _solutionDirectory);
+        IReadOnlyList<string> split = FilePathList.Split(["  src/A.cs  ;  src/B.cs  "], _solutionDirectory);
 
         // Assert
         split.ShouldBe(["src/A.cs", "src/B.cs"]);
@@ -76,7 +80,7 @@ public sealed class FilePathListTests : IDisposable
         // fragment would reach jb as an --include pattern matching nothing.
 
         // Act
-        var split = FilePathList.Split(["a.cs,,b.cs,"], _solutionDirectory);
+        IReadOnlyList<string> split = FilePathList.Split(["a.cs,,b.cs,"], _solutionDirectory);
 
         // Assert
         split.ShouldBe(["a.cs", "b.cs"]);
@@ -88,7 +92,7 @@ public sealed class FilePathListTests : IDisposable
         // Arrange — inspect's argument is globs, not paths; splitting must not disturb the wildcards.
 
         // Act
-        var split = FilePathList.Split(["src/**/*.cs;tests/**/*.cs"], _solutionDirectory);
+        IReadOnlyList<string> split = FilePathList.Split(["src/**/*.cs;tests/**/*.cs"], _solutionDirectory);
 
         // Assert
         split.ShouldBe(["src/**/*.cs", "tests/**/*.cs"]);
@@ -101,7 +105,7 @@ public sealed class FilePathListTests : IDisposable
         string[] files = ["src/A.cs", "src/**/*.cs"];
 
         // Act
-        var split = FilePathList.Split(files, _solutionDirectory);
+        IReadOnlyList<string> split = FilePathList.Split(files, _solutionDirectory);
 
         // Assert — the common path allocates nothing.
         split.ShouldBeSameAs(files);
@@ -116,7 +120,7 @@ public sealed class FilePathListTests : IDisposable
         PlantFile("Foo,Bar.cs");
 
         // Act
-        var split = FilePathList.Split(files, _solutionDirectory);
+        IReadOnlyList<string> split = FilePathList.Split(files, _solutionDirectory);
 
         // Assert
         split.ShouldBeSameAs(files);
@@ -126,7 +130,7 @@ public sealed class FilePathListTests : IDisposable
     public void Split_MixedList_SplitsOnlyTheJoinedEntries()
     {
         // Act
-        var split = FilePathList.Split(
+        IReadOnlyList<string> split = FilePathList.Split(
             ["src/A.cs", "src/B.cs;src/C.cs", "src/D.cs"], _solutionDirectory);
 
         // Assert — request order is preserved, with the fragments in the joined entry's place.
@@ -140,7 +144,7 @@ public sealed class FilePathListTests : IDisposable
         // split into the list the first one started rather than replacing it.
 
         // Act
-        var split = FilePathList.Split(
+        IReadOnlyList<string> split = FilePathList.Split(
             ["a.cs;b.cs", "c.cs", "d.cs,e.cs"], _solutionDirectory);
 
         // Assert
@@ -155,7 +159,7 @@ public sealed class FilePathListTests : IDisposable
         string[] files = [" , ; "];
 
         // Act
-        var split = FilePathList.Split(files, _solutionDirectory);
+        IReadOnlyList<string> split = FilePathList.Split(files, _solutionDirectory);
 
         // Assert
         split.ShouldBeSameAs(files);
@@ -165,7 +169,7 @@ public sealed class FilePathListTests : IDisposable
     public void Split_NullFiles_PassesThrough()
     {
         // Act — inspect's files argument is optional, and a solution-wide scan must stay solution-wide.
-        var split = FilePathList.Split(null, _solutionDirectory);
+        IReadOnlyList<string>? split = FilePathList.Split(null, _solutionDirectory);
 
         // Assert
         split.ShouldBeNull();
@@ -178,10 +182,119 @@ public sealed class FilePathListTests : IDisposable
         string[] files = [];
 
         // Act
-        var split = FilePathList.Split(files, _solutionDirectory);
+        IReadOnlyList<string> split = FilePathList.Split(files, _solutionDirectory);
 
         // Assert
         split.ShouldBeSameAs(files);
+    }
+
+    [Fact]
+    public void ToIncludePattern_AbsolutePathUnderTheSolution_BecomesAForwardSlashedRelativePath()
+    {
+        // Arrange — jb's --include takes "a set of relative paths" and matches them against the solution
+        // model, so an absolute entry is an Ant pattern that matches nothing at all.
+        string absolute = Path.Combine(_solutionDirectory, "src", "A.cs");
+
+        // Act
+        string pattern = FilePathList.ToIncludePattern(absolute, _solutionDirectory);
+
+        // Assert
+        pattern.ShouldBe("src/A.cs");
+    }
+
+    [Fact(Skip = "Only Windows spells a path with a drive letter.", SkipUnless = nameof(OnWindows))]
+    public void ToIncludePattern_TheFieldSpelling_Resolves()
+    {
+        // Arrange — verbatim from the field report: a lowercase drive letter and forward slashes, which is
+        // how an agent tends to write a Windows path. GetRelativePath compares case-insensitively on Windows,
+        // so the drive letter is not the problem the report guessed it was — being absolute at all is.
+        const string solutionDirectory = @"C:\Users\dev\source\repos\app";
+        const string entry = "c:/Users/dev/source/repos/app/tests/App.Tests/Foo/BarTests.cs";
+
+        // Act
+        string pattern = FilePathList.ToIncludePattern(entry, solutionDirectory);
+
+        // Assert
+        pattern.ShouldBe("tests/App.Tests/Foo/BarTests.cs");
+    }
+
+    [Fact(Skip = "Only Windows has a volume a path can be relative to.", SkipUnless = nameof(OnWindows))]
+    public void ToIncludePattern_PathOnAnotherVolume_StaysAbsolute()
+    {
+        // Arrange — two volumes have no relative path between them, so GetRelativePath hands the target back
+        // unchanged. Nothing better exists: an --include that cannot be relativised cannot be made to match.
+
+        // Act
+        string pattern = FilePathList.ToIncludePattern(@"D:\other\src\A.cs", @"C:\repo");
+
+        // Assert
+        pattern.ShouldBe("D:/other/src/A.cs");
+    }
+
+    [Fact(Skip = "Only Windows has drive-relative paths.", SkipUnless = nameof(OnWindows))]
+    public void ToIncludePattern_DriveRelativePath_IsUntouched()
+    {
+        // Arrange — the reason the test is IsPathFullyQualified rather than IsPathRooted. On Windows
+        // "/src/Foo.cs" is rooted but drive-relative; it is already the relative form jb wants, and
+        // relativising it against the solution directory would turn it into "../src/Foo.cs".
+
+        // Act
+        string pattern = FilePathList.ToIncludePattern("/src/Foo.cs", _solutionDirectory);
+
+        // Assert
+        pattern.ShouldBe("/src/Foo.cs");
+    }
+
+    [Fact]
+    public void ToIncludePattern_AlreadyRelative_IsUntouched()
+    {
+        // Act — the spelling jb documents, arriving as documented.
+        string pattern = FilePathList.ToIncludePattern("src/A.cs", _solutionDirectory);
+
+        // Assert
+        pattern.ShouldBe("src/A.cs");
+    }
+
+    [Fact]
+    public void ToIncludePattern_RootedWildcard_KeepsItsWildcards()
+    {
+        // Arrange — inspect's argument is globs, and an absolute one is just as unmatchable as an absolute
+        // path. Relativising must not disturb the wildcards it carries.
+        string absolute = Path.Combine(_solutionDirectory, "src", "**", "*.cs");
+
+        // Act
+        string pattern = FilePathList.ToIncludePattern(absolute, _solutionDirectory);
+
+        // Assert
+        pattern.ShouldBe("src/**/*.cs");
+    }
+
+    [Fact]
+    public void ToIncludePattern_PathOutsideTheSolutionDirectory_BecomesTheParentRelativeForm()
+    {
+        // Arrange — a project living above the solution file is a legitimate layout, so this is translated
+        // best-effort rather than rejected: "../" is still the relative path jb asked for.
+        string outside = Path.Combine(Path.GetDirectoryName(_solutionDirectory)!, "shared", "A.cs");
+
+        // Act
+        string pattern = FilePathList.ToIncludePattern(outside, _solutionDirectory);
+
+        // Assert
+        pattern.ShouldBe("../shared/A.cs");
+    }
+
+    [Fact]
+    public void ToIncludePattern_PathTheRuntimeRejects_IsKeptVerbatimRatherThanThrowing()
+    {
+        // Arrange — an embedded null throws out of the path APIs. Translation runs on the way to jb, so it
+        // must leave a malformed entry for the validation that reports it rather than adding a crash.
+        string malformed = _solutionDirectory + Path.DirectorySeparatorChar + "\0.cs";
+
+        // Act
+        string pattern = FilePathList.ToIncludePattern(malformed, _solutionDirectory);
+
+        // Assert
+        pattern.ShouldBe(malformed);
     }
 
     [Fact]

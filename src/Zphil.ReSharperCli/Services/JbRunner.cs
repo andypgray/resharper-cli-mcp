@@ -5,9 +5,33 @@ using Zphil.ReSharperCli.Execution;
 namespace Zphil.ReSharperCli.Services;
 
 /// <summary>
+///     A <c>jb</c> run that exited non-zero, carrying what it exited with.
+/// </summary>
+/// <remarks>
+///     A distinct type so a caller can recognise this particular failure and restate it with knowledge
+///     <see cref="JbRunner" /> does not have — the same bargain <see cref="ProcessTimeoutException" /> makes
+///     one level down. It is needed as a discriminator rather than for its payload alone: the timeout path
+///     throws a <see cref="UserErrorException" /> too, and its message must be left exactly as it is, because
+///     a cleanup killed at the cap <em>may</em> have rewritten files and cannot claim otherwise.
+/// </remarks>
+internal sealed class JbExitCodeException(string message, int exitCode, string standardErrorTail)
+    : UserErrorException(message)
+{
+    /// <summary>The code <c>jb</c> exited with. Never zero.</summary>
+    public int ExitCode { get; } = exitCode;
+
+    /// <summary>
+    ///     The tail of the run's standard error, already bounded by
+    ///     <see cref="JbRunner.StandardErrorTail" />, so a caller restating the failure quotes what this
+    ///     message quotes rather than re-trimming it.
+    /// </summary>
+    public string StandardErrorTail { get; } = standardErrorTail;
+}
+
+/// <summary>
 ///     The one path by which a <c>jb</c> subcommand is run: it takes the cross-process
 ///     <see cref="JbRunLock" /> for the solution's cache generation, spawns <c>jb</c> under the run
-///     timeout, and turns a non-zero exit into a <see cref="UserErrorException" /> quoting the tail of
+///     timeout, and turns a non-zero exit into a <see cref="JbExitCodeException" /> quoting the tail of
 ///     standard error. Inspect and cleanup share one cache generation, so the lock has to be taken in one
 ///     place rather than at both call sites by convention.
 /// </summary>
@@ -101,8 +125,11 @@ internal sealed class JbRunner(
             }
 
             if (result.ExitCode != 0)
-                throw new UserErrorException(
-                    $"jb {arguments[0]} exited with code {result.ExitCode}.\n{StandardErrorTail(result.StandardError)}");
+            {
+                string tail = StandardErrorTail(result.StandardError);
+                throw new JbExitCodeException(
+                    $"jb {arguments[0]} exited with code {result.ExitCode}.\n{tail}", result.ExitCode, tail);
+            }
 
             return result;
         }
@@ -241,10 +268,20 @@ internal sealed class JbRunner(
         if (config.ExtensionSource is not null) arguments.Add($"--source={config.ExtensionSource}");
     }
 
-    /// <summary>The <c>--include</c> flag: jb takes one argument joining the patterns with <c>;</c>.</summary>
-    internal static string IncludeArgument(IReadOnlyList<string> files)
+    /// <summary>
+    ///     The <c>--include</c> flag: jb takes one argument joining the patterns with <c>;</c>, each of them
+    ///     relative to <paramref name="solutionDirectory" /> — see
+    ///     <see cref="FilePathList.ToIncludePattern" /> for why an absolute one cannot be passed through.
+    /// </summary>
+    /// <remarks>
+    ///     The translation is made here rather than at the tool edge for the same reason the config tail is
+    ///     appended here: this is the jb-contract boundary, and it reaches inspect and cleanup at once instead
+    ///     of being a rule two call sites keep by convention until someone adds a third.
+    /// </remarks>
+    internal static string IncludeArgument(IReadOnlyList<string> files, string solutionDirectory)
     {
-        return $"--include={string.Join(";", files)}";
+        IEnumerable<string> patterns = files.Select(file => FilePathList.ToIncludePattern(file, solutionDirectory));
+        return $"--include={string.Join(";", patterns)}";
     }
 
     /// <summary>

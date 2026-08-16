@@ -10,6 +10,12 @@ namespace Zphil.ReSharperCli.Services;
 ///     "No issues found." — a false negative, which is worse. Splitting the element at the tool edge makes
 ///     both work.
 /// </summary>
+/// <remarks>
+///     Two normalizations, applied at different depths on purpose. Splitting happens at the tool edge, before
+///     validation, so the error names the fragment that is wrong. Translating an entry into the spelling
+///     <c>jb</c> matches (<see cref="ToIncludePattern" />) happens at the <c>--include</c> boundary, so the
+///     caller's own path is what cleanup echoes back in its report.
+/// </remarks>
 internal static class FilePathList
 {
     private static readonly char[] Delimiters = [';', ','];
@@ -34,7 +40,7 @@ internal static class FilePathList
         for (var i = 0; i < files.Count; i++)
         {
             string entry = files[i];
-            var fragments = SplitEntry(entry, solutionDirectory);
+            List<string>? fragments = SplitEntry(entry, solutionDirectory);
 
             if (fragments is null)
             {
@@ -58,6 +64,46 @@ internal static class FilePathList
     public static string Resolve(string entry, string solutionDirectory)
     {
         return Path.GetFullPath(entry, solutionDirectory);
+    }
+
+    /// <summary>
+    ///     The spelling of <paramref name="entry" /> that <c>jb</c>'s <c>--include</c> can match: relative to
+    ///     <paramref name="solutionDirectory" />, forward-slashed. The one spelling of the <em>jb-pattern</em>
+    ///     rule, as <see cref="Resolve" /> is the one spelling of the <em>filesystem</em> rule.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         <c>--include</c> takes "a set of relative paths" and wildcards, per <c>jb</c>'s own help text,
+    ///         and it matches them against the solution model rather than against the disk. An absolute entry
+    ///         therefore becomes an Ant pattern that matches nothing: <c>cleanupcode</c> exits 3 with "No items
+    ///         were found to cleanup", and <c>inspectcode</c> exits 0 and reports no issues at all — a silent
+    ///         false negative. Both tools have always documented an absolute path as accepted, so this
+    ///         translation is what makes that true rather than a new restriction.
+    ///     </para>
+    ///     <para>
+    ///         Fully qualified, not merely rooted: on Windows a drive-relative <c>/src/Foo.cs</c> is already
+    ///         the relative form <c>jb</c> wants, and relativising it would turn it into <c>../src/Foo.cs</c>.
+    ///         An entry outside the solution directory becomes a <c>../</c> form, which is still the relative
+    ///         path <c>jb</c> asked for — projects above the solution file are a legitimate layout — and an
+    ///         entry on another volume has no relative form, so <see cref="Path.GetRelativePath" /> returns it
+    ///         unchanged, which is the correct verbatim fallback.
+    ///     </para>
+    /// </remarks>
+    public static string ToIncludePattern(string entry, string solutionDirectory)
+    {
+        try
+        {
+            if (!Path.IsPathFullyQualified(entry)) return entry;
+
+            string relative = Path.GetRelativePath(solutionDirectory, entry);
+            return relative.Replace('\\', '/');
+        }
+        catch (ArgumentException)
+        {
+            // A path the runtime rejects outright (an embedded null, say) is left for the validation that
+            // reports it, exactly as ResolvesToExistingFile leaves it.
+            return entry;
+        }
     }
 
     /// <summary>

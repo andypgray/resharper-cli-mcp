@@ -133,6 +133,78 @@ public sealed class ToolPipelineTests
     }
 
     [Fact]
+    public async Task CleanupAsync_AbsolutePaths_ReachJbRelativeAndAreReportedAsTheCallerSpeltThem()
+    {
+        // Arrange — the field failure end to end. 27 absolute paths reached jb verbatim, matched nothing, and
+        // came back as exit 3 with "No items were found to cleanup"; the same list passed relative cleaned all
+        // 27. The tool has always documented an absolute path as accepted, so this is that promise kept.
+        using FakeEnvironment environment = new();
+        PlantSolution(environment, "App.sln");
+        PlantFile(environment, "src/A.cs");
+        PlantFile(environment, "src/B.cs");
+        string[] absolute =
+        [
+            Path.Combine(environment.CurrentDirectory, "src", "A.cs"),
+            Path.Combine(environment.CurrentDirectory, "src", "B.cs")
+        ];
+        List<string>? cleanupArguments = null;
+        StubJb(onCleanup: args => cleanupArguments = [.. args]);
+        ResharperTools tools = ToolHarness.Build(_processRunner, environment);
+
+        // Act
+        string result = await tools.CleanupAsync(absolute, cancellationToken: Ct);
+
+        // Assert — translated on the way to jb, verbatim on the way back: the report answers "what you asked
+        // for", which is the caller's own string.
+        cleanupArguments.ShouldNotBeNull();
+        cleanupArguments.ShouldContain("--include=src/A.cs;src/B.cs");
+        result.ShouldBe(
+            "Cleanup completed with profile \"Built-in: Full Cleanup\". 0 of 2 file(s) changed on disk:\n"
+            + $"  - {absolute[0]} (unchanged)\n"
+            + $"  - {absolute[1]} (unchanged)");
+    }
+
+    [Fact]
+    public async Task InspectAsync_AbsolutePaths_ReachJbRelative()
+    {
+        // Arrange — the same defect, and the dangerous half: jb exits 0 having matched nothing, so an
+        // unmatched absolute path came back as "No issues found." with no error anywhere.
+        using FakeEnvironment environment = new();
+        PlantSolution(environment, "App.sln");
+        List<string>? inspectArguments = null;
+        StubJb(
+            Fixtures.ReadSarif("inspect-sample.json"),
+            args => inspectArguments = [.. args]);
+        ResharperTools tools = ToolHarness.Build(_processRunner, environment);
+
+        // Act
+        await tools.InspectAsync([Path.Combine(environment.CurrentDirectory, "src", "A.cs")], cancellationToken: Ct);
+
+        // Assert
+        inspectArguments.ShouldNotBeNull();
+        inspectArguments.ShouldContain("--include=src/A.cs");
+    }
+
+    [Fact]
+    public async Task CleanupAsync_JbMatchedNothing_FailsLoudlyRatherThanReadingAsANoOp()
+    {
+        // Arrange — a file that is on disk but in no project: jb exits 3 and says "No items were found to
+        // cleanup", which an agent that has just made 27 edits reads as "nothing needed changing".
+        using FakeEnvironment environment = new();
+        PlantSolution(environment, "App.sln");
+        PlantFile(environment, "src/Orphan.cs");
+        StubJbCleanupFailing(3, "No items were found to cleanup");
+        ResharperTools tools = ToolHarness.Build(_processRunner, environment);
+
+        // Act
+        var exception = await Should.ThrowAsync<UserErrorException>(() => tools.CleanupAsync(["src/Orphan.cs"], cancellationToken: Ct));
+
+        // Assert
+        exception.Message.ShouldStartWith("jb cleanupcode exited with code 3. No file was cleaned up");
+        exception.Message.ShouldContain("The 1 --include pattern(s) it was given:\n  - src/Orphan.cs");
+    }
+
+    [Fact]
     public async Task InspectAsync_EntryJoiningSeveralGlobs_IsSplitIntoSeparatePatterns()
     {
         // Arrange — the same mistake is worse here: the joined string reaches jb as one pattern that matches
@@ -599,6 +671,25 @@ public sealed class ToolPipelineTests
 
             return new ProcessResult(0, string.Empty, string.Empty);
         }
+    }
+
+    /// <summary>
+    ///     As <see cref="StubJb" />, but a <c>cleanupcode</c> run exits with <paramref name="exitCode" /> and
+    ///     <paramref name="standardError" />. The version probe still succeeds, or discovery would fail before
+    ///     cleanup ever ran.
+    /// </summary>
+    private void StubJbCleanupFailing(int exitCode, string standardError)
+    {
+        _processRunner
+            .RunAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                var arguments = callInfo.ArgAt<IReadOnlyList<string>>(1);
+
+                return arguments.Contains("--version")
+                    ? new ProcessResult(0, "Version: 2026.1.2", string.Empty)
+                    : new ProcessResult(exitCode, string.Empty, standardError);
+            });
     }
 
     /// <summary>

@@ -8,8 +8,9 @@ namespace Zphil.ReSharperCli.Services;
 ///     <see cref="CleanupOutcome" />: the profile plus a per-entry <see cref="CleanupFileStatus" />
 ///     classification computed by hashing each concrete file before and after the run, so the caller can see
 ///     which files cleanup actually rewrote. Formatting lives in <c>CleanupSummaryFormatter</c>. Mutating: a
-///     non-zero exit (e.g. an unknown profile) surfaces from <see cref="JbRunner" /> as a
-///     <see cref="UserErrorException" /> rather than being silently swallowed.
+///     non-zero exit (e.g. an unknown profile, or an <c>--include</c> set that matched nothing) surfaces from
+///     <see cref="JbRunner" /> and is restated here as a failed pass — see <see cref="FailedPassMessage" /> —
+///     rather than being silently swallowed.
 /// </summary>
 internal sealed class CleanupService(JbRunner jbRunner)
 {
@@ -34,7 +35,7 @@ internal sealed class CleanupService(JbRunner jbRunner)
         // This tool mutates files in place, so verify concrete paths exist before invoking jb — a typo
         // should fail fast and name the offending path, not silently clean up nothing.
         string solutionDirectory = config.SolutionDirectory;
-        var missing = FindMissingFiles(files, solutionDirectory);
+        List<string> missing = FindMissingFiles(files, solutionDirectory);
         if (missing.Count > 0)
             throw new UserErrorException(
                 $"The following files were not found (relative to the solution root \"{solutionDirectory}\", or absolute):\n"
@@ -47,9 +48,16 @@ internal sealed class CleanupService(JbRunner jbRunner)
         foreach (string entry in files)
             beforeHashes.Add(IsPattern(entry) ? null : HashFile(FilePathList.Resolve(entry, solutionDirectory)));
 
-        var arguments = BuildArguments(config, files, resolvedProfile);
+        List<string> arguments = BuildArguments(config, files, resolvedProfile);
 
-        await jbRunner.RunAsync(config, arguments, cancellationToken);
+        try
+        {
+            await jbRunner.RunAsync(config, arguments, cancellationToken);
+        }
+        catch (JbExitCodeException exception)
+        {
+            throw new UserErrorException(FailedPassMessage(exception, files, solutionDirectory), exception);
+        }
 
         // jb has exited (ProcessRunner awaits WaitForExitAsync), so re-hash and classify. This is pure
         // observability: a hash-read failure must never turn a cleanup jb already performed into an error.
@@ -72,12 +80,44 @@ internal sealed class CleanupService(JbRunner jbRunner)
             config.SolutionPath,
             $"--profile={profile}",
             "--no-build",
-            JbRunner.IncludeArgument(files)
+            JbRunner.IncludeArgument(files, config.SolutionDirectory)
         ];
 
         JbRunner.AppendConfigArguments(arguments, config);
 
         return arguments;
+    }
+
+    /// <summary>
+    ///     Restate a non-zero <c>jb cleanupcode</c> exit in cleanup's own terms. The failure that made this
+    ///     necessary reads as a success: <c>jb</c> exits 3 with "No items were found to cleanup", and an agent
+    ///     that has just made 27 edits reads that tail as "nothing needed changing" and moves on — which is how
+    ///     a whole cleanup pass got skipped in the field. Only this class knows the caller named specific files
+    ///     and got none of them, so only this class can say so, and it lists the patterns <c>jb</c> was
+    ///     actually given (translated, unlike the report's own entries) because that spelling is the thing the
+    ///     caller cannot see.
+    /// </summary>
+    private static string FailedPassMessage(
+        JbExitCodeException failure,
+        IReadOnlyList<string> files,
+        string solutionDirectory)
+    {
+        IEnumerable<string> patterns = files.Select(entry => FilePathList.ToIncludePattern(entry, solutionDirectory));
+        IEnumerable<string> lines = patterns.Select(pattern => $"  - {pattern}");
+        string listed = string.Join("\n", lines);
+
+        // Unbounded, as the missing-files error above is: a caller that named 27 files is owed all 27.
+        string reported = failure.StandardErrorTail.Length > 0
+            ? $"jb reported: {failure.StandardErrorTail}\n"
+            : string.Empty;
+
+        return $"jb cleanupcode exited with code {failure.ExitCode}. No file was cleaned up — treat this as a "
+               + "failed pass, not as \"nothing needed changing\".\n"
+               + reported
+               + $"The {files.Count} --include pattern(s) it was given:\n"
+               + listed
+               + "\njb matches --include against the files that belong to a project in the solution. A file "
+               + "that is on disk but in no project matches nothing.";
     }
 
     /// <summary>

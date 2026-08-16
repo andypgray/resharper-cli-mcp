@@ -61,6 +61,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and did what it does at any other doubt: declined silently and took the cold run seeding exists to avoid.
   That is the fresh-worktree case the seeding was built for. The wait is now derived from the reap rather
   than set beside it, so the two cannot drift apart again.
+- A `files` entry written as an absolute path now reaches `jb` in a spelling it can match. `--include`
+  takes "a set of relative paths" and wildcards — `jb`'s own help text — and matches them against the
+  solution model rather than against the disk, so an absolute path arrived as a pattern that could never
+  hit. `resharper_cleanup` showed it as exit code 3 and `No items were found to cleanup`; measured in the
+  field, 27 absolute paths cleaned nothing while the same 27 passed relative to the solution root cleaned
+  every one. `resharper_inspect` was quieter and worse: `jb` exits 0 having matched nothing, so a scan that
+  looked at no file at all came back as `No issues found.` Both tools now translate an absolute entry
+  against the solution root on the way to `jb`, which is what makes the documented "relative to the solution
+  root, or absolute" true rather than aspirational. An entry with no relative form — one on another volume —
+  is passed as it was written, and cleanup's report still echoes the path you asked for rather than the
+  translated one.
+- A `resharper_cleanup` run that `jb` exits non-zero on is now reported as a failed pass. The wording is
+  the fix: `jb`'s own is `No items were found to cleanup`, and an error quoting that verbatim reads as
+  "nothing needed changing" to an agent that has just edited the files it named — which is how a whole
+  cleanup pass came to be skipped after 27 edits. The error now says outright that no file was cleaned up,
+  lists the `--include` patterns `jb` was given (the translated spelling, which is the one thing the caller
+  cannot otherwise see), and names what still causes a run to match nothing: a file that is on disk but
+  belongs to no project in the solution. A run killed at the ten-minute cap keeps its own message — it may
+  already have rewritten files, so it cannot claim otherwise.
 
 ## [1.3.0] - 2026-08-13
 

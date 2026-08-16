@@ -74,6 +74,22 @@ public sealed class CleanupServiceArgumentTests
     }
 
     [Fact]
+    public void BuildArguments_AbsolutePathUnderTheSolution_ReachesJbRelative()
+    {
+        // Arrange — the field failure: jb's --include takes relative paths only, so 27 absolute ones matched
+        // nothing and cleanupcode exited 3 with "No items were found to cleanup".
+        string solutionPath = Path.GetFullPath("/sln/App.sln");
+        string absolute = Path.Combine(Path.GetDirectoryName(solutionPath)!, "src", "A.cs");
+
+        // Act
+        List<string> arguments = CleanupService.BuildArguments(
+            Config(solutionPath: solutionPath), [absolute], CleanupService.DefaultProfile);
+
+        // Assert
+        arguments.ShouldContain("--include=src/A.cs");
+    }
+
+    [Fact]
     public void BuildArguments_DefaultProfileConstant_IsBuiltInFullCleanup()
     {
         // Assert
@@ -84,10 +100,11 @@ public sealed class CleanupServiceArgumentTests
         string? settings = null,
         bool settingsIsCustomLayer = false,
         string? extensions = null,
-        string? extensionSource = null)
+        string? extensionSource = null,
+        string solutionPath = "/sln/App.sln")
     {
         return new ResolvedConfig(
-            "/sln/App.sln",
+            solutionPath,
             settings,
             settingsIsCustomLayer,
             null,

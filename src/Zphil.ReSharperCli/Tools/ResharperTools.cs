@@ -4,6 +4,7 @@ using Zphil.ReSharperCli.Discovery;
 using Zphil.ReSharperCli.Formatting;
 using Zphil.ReSharperCli.Infrastructure;
 using Zphil.ReSharperCli.Pipeline;
+using Zphil.ReSharperCli.Sarif;
 using Zphil.ReSharperCli.Services;
 
 namespace Zphil.ReSharperCli.Tools;
@@ -48,6 +49,13 @@ internal sealed class ResharperTools(
     private const string JoinedPathsNote =
         " An element joining several paths with ; or , is split into separate paths.";
 
+    // Both tools anchor `files` the same way, and used to say so differently: cleanup promised absolute paths
+    // worked while inspect said nothing at all. jb's --include takes relative paths only, so an absolute one
+    // is translated before it is passed; what it cannot do anything about is a file in no project.
+    private const string PathAnchorNote =
+        " Each is relative to the solution root, or absolute. jb matches them against the files that belong "
+        + "to a project in the solution, so one that is on disk but in no project matches nothing.";
+
     [McpServerTool(
         Name = InspectToolName,
         Title = "ReSharper Inspect Code",
@@ -59,6 +67,7 @@ internal sealed class ResharperTools(
     public async Task<string> InspectAsync(
         [Description(
             "Ant-style globs scoping the analysis to specific files, for example src/**/*.cs."
+            + PathAnchorNote
             + JoinedPathsNote)]
         string[]? files = null,
         [Description(
@@ -72,9 +81,9 @@ internal sealed class ResharperTools(
 
         // An entry joining several paths would reach jb as one --include pattern that matches nothing, and
         // this tool would report "No issues found." for a scan that never looked at the files asked for.
-        var scope = FilePathList.Split(files, config.SolutionDirectory);
+        IReadOnlyList<string>? scope = FilePathList.Split(files, config.SolutionDirectory);
 
-        var issues = await inspectService.RunAsync(config, scope, severity, cancellationToken);
+        IReadOnlyList<InspectIssue> issues = await inspectService.RunAsync(config, scope, severity, cancellationToken);
 
         // Two independent preambles, concatenated: configuration that was dropped before the run, then how to
         // read compilation errors in what came back. Either can be empty, and both ride outside the reduction
@@ -99,9 +108,10 @@ internal sealed class ResharperTools(
     [Description(CleanupDescription)]
     public async Task<string> CleanupAsync(
         [Description(
-            "File paths to clean up, relative to the solution root or absolute. Wildcards are allowed and "
-            + "expanded by jb; a non-wildcard path that does not exist fails the whole call before anything "
-            + "is rewritten."
+            "File paths to clean up."
+            + PathAnchorNote
+            + " Wildcards are allowed and expanded by jb; a non-wildcard path that does not exist fails the "
+            + "whole call before anything is rewritten."
             + JoinedPathsNote)]
         string[] files,
         [Description("ReSharper cleanup profile name. Defaults to the profile the solution declares, else full cleanup.")]
@@ -124,7 +134,7 @@ internal sealed class ResharperTools(
         // reports the caller's own indices, and before the service, whose contract is an already-validated
         // list. An entry that names a real file is never reinterpreted, so this can only rescue a call that
         // was going to fail — the bar a tool that rewrites files has to clear.
-        var paths = FilePathList.Split(files, config.SolutionDirectory);
+        IReadOnlyList<string> paths = FilePathList.Split(files, config.SolutionDirectory);
 
         CleanupOutcome outcome = await cleanupService.RunAsync(config, paths, profile, cancellationToken);
 

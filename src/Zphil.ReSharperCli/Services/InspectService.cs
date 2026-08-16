@@ -28,7 +28,7 @@ internal sealed class InspectService(JbRunner jbRunner)
     {
         return await WithSarifScratchAsync("resharper-inspect-", async outputFile =>
         {
-            var arguments = BuildArguments(config, outputFile, files, severity);
+            List<string> arguments = BuildArguments(config, outputFile, files, severity);
 
             ProcessResult result = await jbRunner.RunAsync(config, arguments, cancellationToken);
 
@@ -68,7 +68,7 @@ internal sealed class InspectService(JbRunner jbRunner)
     {
         return WithSarifScratchAsync("resharper-warmup-", outputFile =>
         {
-            var arguments = BuildArguments(config, outputFile, null, WarmUpSeverity);
+            List<string> arguments = BuildArguments(config, outputFile, null, WarmUpSeverity);
 
             return jbRunner.TryRunAsync(config, arguments, cancellationToken);
         });
@@ -92,7 +92,7 @@ internal sealed class InspectService(JbRunner jbRunner)
             "--absolute-paths"
         ];
 
-        if (files is { Count: > 0 }) arguments.Add(JbRunner.IncludeArgument(files));
+        if (files is { Count: > 0 }) arguments.Add(JbRunner.IncludeArgument(files, config.SolutionDirectory));
 
         JbRunner.AppendConfigArguments(arguments, config);
 

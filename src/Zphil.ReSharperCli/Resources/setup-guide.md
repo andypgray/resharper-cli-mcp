@@ -48,12 +48,17 @@ takes effect on the next call rather than after a client restart.
 
 `resharper_inspect` and `resharper_cleanup` both run `jb` with `--no-build` against a ReSharper cache
 directory — `~/.jb-cache` unless `JB_CACHE_HOME` overrides it. The first inspection or cleanup on a
-solution populates that cache and can take minutes; later calls reuse it and finish in seconds. Each `jb`
-run is capped at **10 minutes**, after which the process tree is killed and the call fails with a timeout
-message. `RESHARPER_MCP_TIMEOUT_SECS` moves that cap (default `600`). It is named for this server rather
-than for `jb` because `jb` never learns of it: it arms a kill timer here, unlike every `JB_` variable
-below, each of which becomes something `jb` is actually told. Seconds rather than minutes so a cap can be
-pitched just above a run you have actually timed.
+solution populates that cache and can take minutes; later calls reuse it and finish several times faster,
+though rarely in seconds. Both durations are properties of the machine and the solution (warm cost does not
+track file count, and a larger solution can be the faster one warm), so time your own rather than
+extrapolating from size.
+
+Each `jb` run is capped at **10 minutes**, after which the process tree is killed and the call fails with a
+timeout message. A cold run on a large solution can genuinely need longer than the cap, and one killed at
+the cap has produced nothing. `RESHARPER_MCP_TIMEOUT_SECS` moves that cap
+(default `600`). It is named for this server rather than for `jb` because `jb` never learns of it: it arms a
+kill timer here, unlike every `JB_` variable below, each of which becomes something `jb` is actually told.
+Seconds rather than minutes so a cap can be pitched just above a run you have actually timed.
 
 **The cap is this server's own, and nothing outside imposes it.** An MCP client's tool-call limit is
 typically far longer — Claude Code's default is measured in hours — so a timeout here is always this
@@ -141,12 +146,12 @@ Nothing needs configuring and nothing reports it.
 
 **It is a trade, not a free win.** A copied cache carries the donor's absolute paths, so `jb` re-keys it on
 the run that opens it, and that run also analyses whatever the donor's checkout never saw. The premium over
-the warm run that follows has measured anywhere from about a minute to about six, growing with the donor's
-size and with how far the two checkouts have drifted apart. What it buys is the difference between a cold
-analysis and a warm one. On a solution large enough for cold to run past the cap, that difference is the
-whole result: one such call returned in 456 seconds seeded, where the same call had previously been killed
-at the cap having produced nothing. On a small solution, where a cold run finishes in a minute or two
-anyway, the premium can cost more than the rebuild it replaced. It is aimed squarely at the first case.
+the warm run that follows is not a fixed cost: it grows with the donor's size and with how far the two
+checkouts have drifted apart. What it buys is the difference between a cold analysis and a warm one. On a
+solution large enough for cold to run past the cap, that difference is the whole result: a seeded run can
+return where the same call was previously killed at the cap having produced nothing. On a small solution,
+where a cold run finishes in a few minutes anyway, the premium can cost more than the rebuild it replaced.
+It is aimed squarely at the first case.
 
 It gives up at the first doubt, silently, and the call proceeds exactly as it would have: no donor recorded,
 a donor a run currently holds, a copy that fails part way. It takes the same queue lock for the donor that

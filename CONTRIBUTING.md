@@ -1,6 +1,6 @@
 # Contributing to resharper-cli-mcp
 
-resharper-cli-mcp is an MCP stdio server that wraps JetBrains' ReSharper command-line tools (`jb inspectcode` and `jb cleanupcode`) and exposes them to coding agents as two tools. Thanks for your interest in working on it. For what it does and how to install it, see the [README](README.md); this document is about working on the code.
+resharper-cli-mcp is an MCP stdio server that wraps JetBrains' ReSharper command-line tools (`jb inspectcode` and `jb cleanupcode`) and exposes them to coding agents. Thanks for your interest in working on it. For what it does and how to install it, see the [README](README.md); this document is about working on the code.
 
 ## What contributions land well here
 
@@ -53,7 +53,7 @@ dotnet tool install -g JetBrains.ReSharper.GlobalTools
 dotnet test tests/Zphil.ReSharperCli.Tests/Zphil.ReSharperCli.Tests.csproj --filter "Category=JbContract"
 ```
 
-Each check drives a real analysis, so the suite takes minutes rather than seconds. Findings split in two. A hard-tier break fails the run: those are behaviours the server cannot work without. Soft-tier drift is written to the file named by `JB_CONTRACT_REPORT` and fails nothing, because the code degrades safely on those surfaces and a watcher job that cries wolf stops being read.
+Each check drives a real analysis, so the suite takes minutes rather than seconds. Findings split in two. A hard-tier break fails the run: those are behaviours the server cannot work without. Soft-tier drift is written to the file named by `JB_CONTRACT_REPORT` and fails nothing, because the code degrades safely on those surfaces and a watcher job that cries wolf stops being read. The hard tier's verdict is public: after each check of the latest stable release, the workflow publishes the version it tested to the workflow-owned `badges` branch, and the README's "works with jb" badge renders it.
 
 ## Pull request expectations
 

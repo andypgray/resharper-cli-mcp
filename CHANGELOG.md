@@ -27,6 +27,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   common case is `jb` missing from the `PATH` an MCP client hands its child, so discovery falls through to
   `~/.dotnet/tools`, and the probe that failed first escapes before the process lines are written. Its cost
   reached the reader only as an unexplained delay ahead of the first call.
+- A README badge naming the latest stable ReSharper command-line tools release the daily contract check
+  verified. The check publishes the version it tested as Shields endpoint JSON on a workflow-owned `badges`
+  branch — green when the run held on every runner, red naming the version that did not — and a dispatch
+  that pins a version or opts into prereleases leaves the badge alone.
 
 ### Changed
 
@@ -37,6 +41,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   this server's own run lines.
 - Every log line now carries the class that wrote it. Most previously came from a static logger that bypassed
   the logging pipeline and rendered with an empty source field.
+- The README opens with the cache lifecycle the server runs over `jb` (the run queue, checkout seeding, the
+  background pre-warm, cache reset, and output sizing) before installation, and drops the detail the
+  `resharper://guides/setup` and `resharper://guides/configuration` resources already carry.
+- The README and the setup guide no longer claim warm runs "finish in seconds", which no measured run
+  supported. Cache durations are stated as properties of the machine and the solution (cold takes minutes,
+  warm is several times faster, and warm cost does not track file count), with the guidance to time your own
+  solution rather than extrapolate from its size. The seeded-cache premium is likewise stated as a cost that
+  grows with the donor's size and the checkouts' drift, not as a number.
 
 ## [1.4.0] - 2026-08-16
 

@@ -9,7 +9,9 @@
 # degrades safely on and a false alarm is what would kill a watcher job.
 #
 # A red run here does not touch the CI badge (which points at ci.yml) or Scorecard's CI-Tests check (which
-# reads pull-request check runs), so red means "look at this", not "the project is broken".
+# reads pull-request check runs), so red means "look at this", not "the project is broken". What it does
+# move is the README's "works with jb" badge: the badge job below publishes the version each run checked,
+# green or red, so the repository homepage names the latest stable jb the server is verified against.
 #
 # Poll rather than push: nuget.org has no webhook, and the only push route would be a third-party service
 # holding a write-scoped token for this repo. `dotnet tool install -g` already resolves latest stable, so
@@ -42,6 +44,10 @@ jobs:
         os: [ubuntu-latest, windows-latest]
 
     runs-on: ${{ matrix.os }}
+    # Both legs resolve "latest stable" within seconds of each other, so whichever leg's value survives
+    # the matrix merge names the same version.
+    outputs:
+      jb-version: ${{ steps.jb.outputs.version }}
     # The suite takes about seven minutes on a warm developer machine (jb 2026.2, six real analyses of a
     # three-file solution, plus one dotnet build). The cap leaves room for a slower runner and a cold NuGet
     # cache without letting a genuinely stuck jb hold the runner all day.
@@ -89,6 +95,7 @@ jobs:
       # unfiltered `dotnet test` green on a runner with no jb. So the install has to be asserted here, or a
       # jb that never arrived would report as a full pass.
       - name: Record the jb version
+        id: jb
         run: |
           banner="$(jb inspectcode --version)" || {
             echo "::error::jb did not run after installation; the contract tests would have skipped silently"
@@ -103,6 +110,16 @@ jobs:
             echo '```'
             echo
           } >> "$GITHUB_STEP_SUMMARY"
+
+          # The badge publishes the package version, not the banner's product version: it is the one a
+          # reader can act on — `dotnet tool install --version` takes it — and `dotnet tool list` prints
+          # exactly what the install above resolved.
+          version="$(dotnet tool list --global | awk 'tolower($1) == "jetbrains.resharper.globaltools" { print $2 }')"
+          if [ -z "$version" ]; then
+            echo "::error::JetBrains.ReSharper.GlobalTools is missing from the global tool list, so there is no version to record"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       # GitHub Actions sets CI=true, so Directory.Build.props turns on RestoreLockedMode. No
       # --force-evaluate escape hatch: Dependabot does not trigger this workflow.
@@ -145,3 +162,38 @@ jobs:
           else
             echo "The soft-tier report was never written: the hard tier failed before reaching it." >> "$GITHUB_STEP_SUMMARY"
           fi
+
+  # The README's "works with jb" badge. Shields renders whatever JSON sits at a fixed path on the `badges`
+  # branch, so this job rewrites that branch — one orphan commit, force-pushed — after every check of the
+  # latest stable jb: green naming the version every leg passed, red naming the one that did not. A dispatch
+  # that pins a version or opts into prereleases is a probe, not the claim the badge makes, and leaves it
+  # alone; so does a cancelled run, which proved nothing either way.
+  badge:
+    needs: contract
+    if: ${{ always() && inputs.jb-version == '' && inputs.prerelease != true }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Publish the badge JSON
+        env:
+          RESULT: ${{ needs.contract.result }}
+          JB_VERSION: ${{ needs.contract.outputs.jb-version }}
+          TOKEN: ${{ github.token }}
+        run: |
+          case "$RESULT" in
+            success) message="$JB_VERSION" color=brightgreen ;;
+            # A run that broke before the version was recorded leaves a plain red "failing".
+            failure) message="${JB_VERSION:+$JB_VERSION }failing" color=red ;;
+            *) echo "The contract result is '$RESULT'; the badge keeps its last state."; exit 0 ;;
+          esac
+
+          mkdir badge && cd badge
+          printf '{"schemaVersion":1,"label":"works with jb","message":"%s","color":"%s","cacheSeconds":3600}\n' \
+            "$message" "$color" > jb-contract.json
+          git init --quiet --initial-branch=badges
+          git add jb-contract.json
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit --quiet -m 'Record the latest jb contract result'
+          git push --quiet --force "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" badges

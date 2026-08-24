@@ -2,11 +2,21 @@
 
 <!-- mcp-name: io.github.andypgray/resharper-cli-mcp -->
 
-[![CI](https://github.com/andypgray/resharper-cli-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/andypgray/resharper-cli-mcp/actions/workflows/ci.yml) [![OpenSSF Scorecard](https://img.shields.io/ossf-scorecard/github.com/andypgray/resharper-cli-mcp?label=openssf+scorecard)](https://scorecard.dev/viewer/?uri=github.com/andypgray/resharper-cli-mcp) [![NuGet](https://img.shields.io/nuget/v/Zphil.ReSharperCli?logo=nuget&label=nuget)](https://www.nuget.org/packages/Zphil.ReSharperCli) [![NuGet downloads](https://img.shields.io/nuget/dt/Zphil.ReSharperCli?label=downloads)](https://www.nuget.org/packages/Zphil.ReSharperCli)
+[![CI](https://github.com/andypgray/resharper-cli-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/andypgray/resharper-cli-mcp/actions/workflows/ci.yml) [![works with jb](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fandypgray%2Fresharper-cli-mcp%2Fbadges%2Fjb-contract.json "Checked daily against the latest stable ReSharper command-line tools")](https://github.com/andypgray/resharper-cli-mcp/actions/workflows/jb-contract.yml) [![OpenSSF Scorecard](https://img.shields.io/ossf-scorecard/github.com/andypgray/resharper-cli-mcp?label=openssf+scorecard)](https://scorecard.dev/viewer/?uri=github.com/andypgray/resharper-cli-mcp) [![NuGet](https://img.shields.io/nuget/v/Zphil.ReSharperCli?logo=nuget&label=nuget)](https://www.nuget.org/packages/Zphil.ReSharperCli) [![NuGet downloads](https://img.shields.io/nuget/dt/Zphil.ReSharperCli?label=downloads)](https://www.nuget.org/packages/Zphil.ReSharperCli)
 
-resharper-cli-mcp is an MCP server that runs JetBrains' ReSharper command-line tools and exposes them to C# coding agents over stdio. It is unofficial — not affiliated with or endorsed by JetBrains.
+resharper-cli-mcp is an MCP server that gives a C# coding agent ReSharper's solution-wide inspections (`resharper_inspect`) and its code cleanup (`resharper_cleanup`). It wraps JetBrains' `jb`, managing its cache and returning LLM-friendly markdown sized to a context window. It is unofficial — not affiliated with or endorsed by JetBrains. The server shells out to a `jb` you install yourself and bundles no JetBrains software.
 
-It gives an agent two things a text search cannot: a real ReSharper inspection of your solution (`resharper_inspect`), and ReSharper's own code cleanup applied in place (`resharper_cleanup`). The server shells out to a `jb` you install yourself, and bundles no JetBrains software.
+## What the server adds
+
+`jb` is built for a batch job: one run against one checkout, a report written to a file. An agent hits the same solution several times an hour, and what each call costs comes down to whether ReSharper's solution-wide index is already built. So the server owns the cache directory and runs a lifecycle over it:
+
+- The first run happens before you ask for it. A speculative inspection starts as soon as a client connects, skipped when a run against that cache succeeded in the last hour; a tool call arriving mid-pass cancels it and takes the cache within a second or two. `RESHARPER_MCP_PREWARM=off` turns it off.
+
+- Runs are serialized per solution. A cross-process lock keeps every client on one cache generation; a second concurrent `jb` forks a cold copy of its own and leaves it behind on disk. A `jb` you start yourself is outside that queue, so give it its own `--caches-home`.
+
+- A fresh checkout is seeded from a warm one. Caches are keyed to the solution's absolute path, so a new worktree or clone starts cold. When a call finds no cache and a same-named sibling checkout has a warm one, the server copies it across, best-effort and never over a cache a successful run produced. The copy still has to be re-keyed, so a seeded run lands between warm and cold.
+
+- SARIF becomes markdown that fits the client. Issues come back grouped by file, re-rendered at progressively lower detail until they fit the client's output budget, with every issue still counted and every file still named at each step.
 
 ## Quickstart
 
@@ -16,6 +26,8 @@ The server needs the .NET 10 SDK and JetBrains' [ReSharper Command Line Tools](h
 dotnet tool install -g JetBrains.ReSharper.GlobalTools
 dotnet tool install -g Zphil.ReSharperCli
 ```
+
+The server looks for `jb` on `PATH` and then in `~/.dotnet/tools`. An MCP client often starts the server without your shell's `PATH`, so a `jb` that answers in your terminal can still be invisible to it.
 
 Register the server with your MCP client under the command `resharper-cli-mcp`. For Claude Code, add it to `.mcp.json`:
 
@@ -29,7 +41,7 @@ Register the server with your MCP client under the command `resharper-cli-mcp`. 
 }
 ```
 
-The server finds a single `.sln`/`.slnx` in its working directory. When that directory holds zero or several, set `JB_SOLUTION_PATH` in the config's `env` block or pass `solutionPath` on the call.
+The server finds a single `.sln`/`.slnx` in its working directory; when that directory holds zero or several, set `JB_SOLUTION_PATH` in the config's `env` block.
 
 VS Code and Cursor users can add the server in one click, once both tools are installed:
 
@@ -37,14 +49,14 @@ VS Code and Cursor users can add the server in one click, once both tools are in
 
 ## Install as a Claude Code plugin
 
-Claude Code users can install everything in one step instead of editing `.mcp.json` by hand. This repository doubles as a single-plugin marketplace, so the tools, the `derive_style_guide` prompt, and both guide resources — `resharper://guides/configuration` for what ReSharper enforces and `resharper://guides/setup` for running the server — arrive together:
+This repository doubles as a single-plugin marketplace, so the tools, the `derive_style_guide` prompt, and both guide resources arrive in one step:
 
 ```
 /plugin marketplace add andypgray/resharper-cli-mcp
 /plugin install resharper-cli-mcp@resharper-cli-mcp
 ```
 
-The plugin starts the server with `dotnet dnx`, which fetches `Zphil.ReSharperCli` from NuGet on first use — so you skip `dotnet tool install` for the wrapper itself. You still need the .NET 10 SDK and JetBrains' ReSharper Command Line Tools (`dotnet tool install -g JetBrains.ReSharper.GlobalTools`), which this project never bundles. ReSharper's caches live in the plugin's own data directory, outside your source tree.
+The plugin starts the server with `dotnet dnx`, which fetches `Zphil.ReSharperCli` from NuGet on first use. You still need the .NET 10 SDK and the ReSharper Command Line Tools; ReSharper's caches live in the plugin's own data directory, outside your source tree.
 
 ## Tools
 
@@ -54,7 +66,7 @@ The plugin starts the server with `dotnet dnx`, which fetches `Zphil.ReSharperCl
 | `resharper_cleanup` | yes | Runs ReSharper CleanupCode to reformat and normalize the given files in place. |
 | `resharper_reset_cache` | no (deletes caches) | Drops the solution's ReSharper cache so the next run rebuilds its analysis from cold. |
 
-Scope `resharper_inspect` with the `files` glob and raise `severity` (`Suggestion`, `Warning`, `Error`; default `Warning`) to control how much comes back. Each issue carries a file, line, severity, rule ID, and message:
+Scope `resharper_inspect` with the `files` glob (entries may be solution-relative or absolute) and raise `severity` (`Suggestion`, `Warning`, `Error`; default `Warning`) to control how much comes back. Each issue carries a file, line, severity, rule ID, and message:
 
 ```text
 Found 2 issue(s) across 1 file(s):
@@ -64,25 +76,13 @@ Found 2 issue(s) across 1 file(s):
 - **Line 24** [SUGGESTION] `FieldCanBeMadeReadOnly.Local`: Field can be made readonly.
 ```
 
-A solution-wide run comes back more compactly: once it would overflow the output budget, issues repeating a rule within a file collapse to a single line — ``- **`NotAccessedPositionalProperty.Global`** [WARNING] x30, lines 13-42`` — so the count stays exact and every line number is still there. See [Configuration](#configuration) for the rest of that ladder.
+`resharper_cleanup` changes style, never behavior: formatting, using directives, `var` style, modifier order, redundant qualifiers and parentheses, braces. Write correct logic and let cleanup do the polish: call it once, at the end of a task, with every changed file batched into the one call. It reports which files it actually changed on disk.
 
-Call `resharper_cleanup` once, at the end of a task, with every file you changed batched into the one call.
+For a legacy codebase where the fallback `Built-in: Full Cleanup` profile would churn code you did not touch, define a narrower profile (for example `Custom: No Reordering`) in the solution's `.sln.DotSettings` and name it under `SilentCleanupProfile`. Every call then uses it, including calls from an agent that does not know it exists.
 
-The first run on a solution is slow while ReSharper builds its caches under `--caches-home`; later runs reuse them and finish in seconds. The server caps each run at 10 minutes, and `RESHARPER_MCP_TIMEOUT_SECS` moves that cap. The cap is the server's own — no MCP client requires one this short — so a solution whose cold analysis needs longer should be given longer rather than retried, and narrowing the call with `files` will not make it finish: `jb` analyses the whole solution whatever the report is scoped to.
+## Run times
 
-To spend that cold run on idle time rather than yours, the server starts one speculative inspection of the discovered solution as soon as a client connects — one pass at a time, skipped when any run against that cache succeeded in the last hour, and silently skipped entirely when there is no solution to find. A tool call arriving mid-pre-warm — `resharper_reset_cache` included, though it runs no analysis of its own — cancels the pass and takes the cache within a second or two, so it never queues behind one *in the same server process*; one running in another process cannot be cancelled and is the one case where a first call can be slower than before. A call that hits the run cap arms another pass against the solution that timed out — the cache is part-built and you are reading the error, which is when speculative work is worth most — and that is the only thing that re-arms it, so it never runs on a timer or per message. It is a full solution analysis, which is not free — set `RESHARPER_MCP_PREWARM=off` to turn it off.
-
-A second checkout of one repository — a `git worktree`, a clone, a copy — is always cold, because `jb` keys a cache generation by the solution's absolute path. So when a call finds no cache for its solution and a same-named solution's last successful run recorded one, the server copies that generation under the name `jb` will look for, holding the queue lock on both. It is silent and best-effort: it gives up at the first doubt, never replaces a cache a successful run produced — the part-built remnant of a killed first run is the one thing it will replace, and only once a full copy has landed beside it — never runs after a `resharper_reset_cache`, and leaves `jb` to validate what it was given. It is a trade rather than a free win — a seeded run pays to re-key the copy and to analyse what the donor's checkout never saw, from about a minute to several depending on the donor's size and how far the two have drifted, in exchange for the difference between a cold analysis and a warm one — so it is aimed at the solutions where that difference is minutes and a cold run risks the cap, not at ones that already finish quickly.
-
-Calls against one solution are serialized, across every client running this server: only one `jb` at a time can use a solution's cache, and a second one that tries silently forks a cold copy instead of waiting — so two sessions inspecting one solution would otherwise make each other slow and leave a stale cache behind. That queue is a lock file this server's callers take, so a `jb` you start yourself is outside it and can still fork that cold copy — give such a run its own `--caches-home`. A call therefore waits up to the same cap for a run already in flight before starting its own run, and says so if that wait runs out. If your MCP client's own tool-call timeout is shorter than a cold run needs, the client gives up first. In Claude Code, raise it with a per-server `"timeout"` in milliseconds in `.mcp.json`, or the `MCP_TOOL_TIMEOUT` environment variable.
-
-### When ReSharper reports errors your compiler does not
-
-ReSharper's solution-wide analysis keeps its own index in that cache, and it can miss invalidating the consumers of a declaration you reshaped. The result is `.CSharpErrors` issues — `Cannot resolve symbol 'Foo'` — in files you never edited, while the build and the tests stay green. It does not self-heal: re-running returns the identical set until the cache generation is dropped.
-
-An inspection that reports any compilation error therefore leads with a note saying so, and `resharper_reset_cache` is the cure. It deletes the solution's cache generation directories, taking the same queue lock the analysis tools take so it never deletes a cache out from under a running `jb` — though a background pre-warm is cancelled rather than waited for — and the next call rebuilds from cold. It drops only what provably belongs to the solution it was pointed at: `jb` names those directories with a hash of the solution's full path, which the server reproduces, so a cache home shared with another checkout of the same repository is ordinary — the generations that are not this solution's are named in the report and left where they are.
-
-The ReSharper CLI exposes no cache-invalidation option of its own — `--caches-home` only chooses where caches live — which is why this operation lives in the wrapper.
+Each run is capped at 10 minutes; `RESHARPER_MCP_TIMEOUT_SECS` moves the cap. Narrowing a call with `files` will not make it finish sooner: resolving symbols across projects takes the whole solution model, so `files` decides what is reported, not how much is analysed. When an MCP client's own tool-call timeout is shorter than a cold run needs, the client gives up first; in Claude Code, raise it with a per-server `"timeout"` in `.mcp.json` or `MCP_TOOL_TIMEOUT`. The `resharper://guides/setup` resource carries all of this at troubleshooting depth, for an agent to pull when a call cannot find `jb`, times out, or comes back shortened.
 
 ## Configuration
 
@@ -90,7 +90,7 @@ Set these in the MCP client config's `env` block. All are optional. Each `JB_` v
 
 | Variable | Purpose |
 |---|---|
-| `JB_SOLUTION_PATH` | Solution to use when the working directory has zero or several. |
+| `JB_SOLUTION_PATH` | Solution to use when the working directory has zero or several; the `solutionPath` tool argument overrides it for one call. |
 | `JB_SETTINGS_PATH` | Explicit `.DotSettings` file for `jb`, mounted as a Custom layer above the solution's and every project's own settings. |
 | `JB_CACHE_HOME` | ReSharper cache directory (default `~/.jb-cache`). |
 | `JB_EXTENSIONS` | Semicolon-separated ReSharper plugin IDs to load. |
@@ -98,51 +98,23 @@ Set these in the MCP client config's `env` block. All are optional. Each `JB_` v
 | `RESHARPER_MCP_TIMEOUT_SECS` | Cap in seconds on one `jb` run, and on the wait for one already in flight (default `600`, clamped to 60–86,400). |
 | `RESHARPER_MCP_PREWARM` | `off` disables the background cache pre-warm above. |
 | `RESHARPER_MCP_LOG_LEVEL` | Level for the rolling file log (default `Warning`). |
-| `MAX_MCP_OUTPUT_TOKENS` | Client output budget; caps large inspection results. |
+| `MAX_MCP_OUTPUT_TOKENS` | Client output budget the reduction ladder renders to fit (2.5 characters per token; 25,000 characters when unset). |
 
-The `solutionPath` tool argument overrides `JB_SOLUTION_PATH` for a single call. When a result would exceed `MAX_MCP_OUTPUT_TOKENS` (2.5 characters per token, or 25,000 characters when unset), the two analysis tools re-render it at progressively lower detail until it fits, then append a `DETAIL REDUCED` note naming the level and what that level gave up. Inspection steps down five: every issue listed, then repeated rules collapsed per file, then only the eight most-affected files listed, then a rules-and-files rollup, then a one-line summary. Every issue is still counted and every file still named at each step — a reduced result is complete but less detailed, unlike a truncated one. Truncation at a line boundary remains only as a last-resort backstop for when even the one-line summary overflows.
+**Solution discovery** tries, in order: the `solutionPath` argument, `JB_SOLUTION_PATH`, then a single `.sln`/`.slnx` in the working directory (top level only, no parent walk).
 
-**Solution discovery** tries, in order: the `solutionPath` argument, then `JB_SOLUTION_PATH`, then a single `.sln`/`.slnx` in the working directory (top level only, no parent walk). Zero or several without an override is an error that names the variable to set.
-
-**Settings discovery** tries, in order: `JB_SETTINGS_PATH` (a missing file logs a warning and falls through), then a `.DotSettings` file beside the solution, then `GlobalSettingsStorage.DotSettings` in the JetBrains shared directory, then none. The last two are locations `jb` mounts on its own — alongside every project's `{project}.csproj.DotSettings` — so the server passes `--settings` only for a `JB_SETTINGS_PATH` outside them: that flag mounts a Custom layer above the whole stack, and naming an already-discovered file would silently override the project layers instead of changing nothing. On top of whichever settings apply, `jb` also reads `.editorconfig` from the source tree automatically — no flag needed — so editorconfig style rules apply even with no `.DotSettings` at all.
+**Settings discovery** tries, in order: `JB_SETTINGS_PATH`, a `.DotSettings` file beside the solution, then `GlobalSettingsStorage.DotSettings` in the JetBrains shared directory. `jb` mounts the last two on its own, so the server passes `--settings` only for a `JB_SETTINGS_PATH` outside them (naming an already-mounted file would demote every project's own `.DotSettings`). On top of whichever settings apply, `jb` reads `.editorconfig` from the source tree automatically.
 
 Logs roll daily under `%LOCALAPPDATA%\Zphil.ReSharperCli\logs` on Windows, and the platform-equivalent path elsewhere. Nothing leaves the machine; [PRIVACY.md](https://github.com/andypgray/resharper-cli-mcp/blob/main/PRIVACY.md) states that as policy.
 
-## Deriving a style guide for a legacy codebase
+## What ReSharper enforces
 
-Adding this server to a large existing solution unlocks a second workflow: deriving an *intentional* ReSharper style guide from the code you already have, so an inspection flags real house-style deviations rather than un-configured defaults. The server advertises an MCP prompt, `derive_style_guide` (surfaced as a slash command or prompt-picker entry in clients that render prompts), that walks an agent through it.
+`resharper_inspect` obeys **inspection severities** (what gets reported); `resharper_cleanup` enforces **code style** through its cleanup **profile** (what gets rewritten). The two axes do not share a switch: setting a rule to `DO_NOT_SHOW` hides its issue, and cleanup goes on normalizing that style. The full model ships as an on-demand MCP resource, `resharper://guides/configuration`, for an agent to pull just before changing what ReSharper enforces.
 
-Be clear on the division of labour: ReSharper's command-line tools have no "infer settings from code" verb, and **this server does not infer settings**. The agent derives the rules from evidence — the code plus whatever is already in the repo (StyleCop, analyzers, an existing `.editorconfig`) — and `resharper_inspect` *validates* them: scope an inspection to a representative folder, then keep or silence each noisy rule until the remaining output is all intentional. The recipe is `.editorconfig`-first (portable across ReSharper, StyleCop.Analyzers, Roslyn, `dotnet format`, and Rider), spilling only ReSharper-only knobs and cleanup-profile definitions into `.sln.DotSettings`. When the codebase genuinely mixes conventions, the prompt pauses and asks rather than guessing.
-
-If a teammate has ReSharper or Rider, prefer JetBrains' first-party [Detect Code Style Settings](https://blog.jetbrains.com/dotnet/2018/12/05/detection-code-styles-naming-resharper/) for the baseline; it is IDE-only, so this recipe is the path for headless, CI, or no-licence use, and it adds StyleCop reconciliation and severity tuning on top. See also ReSharper's [Use EditorConfig](https://www.jetbrains.com/help/resharper/Using_EditorConfig.html) and the [InspectCode](https://www.jetbrains.com/help/resharper/InspectCode.html) / [CleanupCode](https://www.jetbrains.com/help/resharper/CleanupCode.html) references. The embedded prompt is the full recipe; this section is only a digest of it.
-
-## Cleanup is cosmetic
-
-`resharper_cleanup` never changes behavior. Its fallback `Built-in: Full Cleanup` profile fixes formatting and style only, so an agent should write correct logic and let the cleanup pass handle the polish. There is no need to re-inspect or rebuild after it. That profile handles all of these:
-
-- unused usings, sorted and shortened qualified references
-- indentation, spacing, line breaks, and wrapping
-- `var` versus explicit type, per the solution's settings
-- modifier order, and explicit or implicit modifiers as configured
-- redundant parentheses, `this.` qualifiers, casts, and default values
-- braces around single statements, per style
-- auto-properties, readonly fields, object-creation style, trailing commas, namespace style
-
-Keep the agent's editing effort on logic, types, naming, and architecture. For a legacy codebase where Full Cleanup would churn regions you did not touch — or for a deliberate style it would normalize away — define a narrower profile (for example `Custom: No Reordering`) in the solution's `.sln.DotSettings`. Name it under `SilentCleanupProfile` there and every call uses it without a `profile` argument, including calls from an agent that does not know it exists; the `profile` argument overrides it per call.
-
-`resharper_cleanup` reports which of the files it changed on disk, so an agent can see when a cleanup rewrote something it meant to leave alone rather than trusting a bare "completed". A small batch lists every file; a solution-wide run collapses the per-file detail toward counts to stay within the output budget.
-
-## Configuring what ReSharper enforces
-
-The two tools read two independent configuration axes: `resharper_inspect` obeys **inspection severities** (what gets reported), and `resharper_cleanup` enforces **code style** through its cleanup **profile** (what gets rewritten). They do not share a switch — setting a rule to `DO_NOT_SHOW` hides its inspection issue but does not stop cleanup from normalizing that style. Some styles are binary with no "leave alone" value (argument style is `positional` or `named`), so protecting one means narrowing the profile, excluding the file, or an in-source `// ReSharper disable` comment.
-
-Rather than carry that model in every session's context, the server advertises it as an on-demand MCP resource, `resharper://guides/configuration` — the two axes, how to protect a deliberate style, where settings and `.editorconfig` are read from, and the `.DotSettings` key shapes. A client that surfaces resources lets an agent load it exactly when it is about to change what ReSharper enforces.
-
-A second resource, `resharper://guides/setup`, covers running the server rather than configuring ReSharper: how `jb` and the solution are discovered, why the first call is slow and what the background pre-warm does about it, what the run cap means and why calls against one solution queue, how a large result is shortened to fit the output budget, the environment variables above, and where logs go. An agent loads it when a call cannot find `jb` or the solution, times out, or comes back shortened. Splitting the two keeps each pull small, and keeps the always-loaded server instructions down to the cross-tool rules that no schema can express.
+For an existing codebase the `derive_style_guide` MCP prompt walks an agent through deriving an intentional style guide from the code you already have, `.editorconfig`-first, with ReSharper-only knobs spilling into `.sln.DotSettings`. If you have access to Resharper or Rider, JetBrains' first-party [Detect Code Style Settings](https://blog.jetbrains.com/dotnet/2018/12/05/detection-code-styles-naming-resharper/) is the better baseline; the prompt is the path for headless use.
 
 ## Cleanup reminder hook
 
-The single end-of-task cleanup above is easy for an agent to forget. A Claude Code [PostToolUse hook](https://code.claude.com/docs/en/hooks) can nudge it toward the habit without running anything itself. Add this to `.claude/settings.json`:
+The single end-of-task cleanup is easy for an agent to forget. This Claude Code [PostToolUse hook](https://code.claude.com/docs/en/hooks) appends a one-line reminder to the agent's context after each `.cs`/`.razor` edit; it never edits code or calls the tool itself, so the agent decides when to clean up. Add it to `.claude/settings.json`:
 
 ```json
 {
@@ -162,7 +134,7 @@ The single end-of-task cleanup above is easy for an agent to forget. A Claude Co
 }
 ```
 
-After each `.cs`/`.razor` edit the hook adds a one-line reminder to the agent's context; on any other file it prints nothing and does nothing. It never edits code or calls the tool, so the agent decides when to clean up. The command uses `grep` and `printf`, so it needs a POSIX shell (on Windows, Git Bash).
+The command uses `grep` and `printf`, so it needs a POSIX shell (on Windows, Git Bash).
 
 ## Contributing
 

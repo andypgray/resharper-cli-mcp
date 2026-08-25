@@ -166,15 +166,20 @@ internal sealed class JbRunner(
             progress?.Seeding();
             bool seeded = await transplanter.TryTransplantAsync(config, cancellationToken);
 
+            // Read here rather than inside the spawn, and after the transplant decision: this is the state jb
+            // is about to open, and the two endings that quote it — the run line and the timeout message —
+            // both sit outside the frame that used to own the reading.
+            JbCacheState cache = JbCacheState.Read(config.SolutionPath, config.CacheHome, seeded, logger);
+
             ProcessResult result;
             try
             {
-                result = await SpawnAsync(config, arguments, queueWait, ForACall, seeded, progress, cancellationToken);
+                result = await SpawnAsync(config, arguments, queueWait, ForACall, cache, progress, cancellationToken);
             }
             catch (ProcessTimeoutException exception)
             {
                 timedOut = true;
-                throw new UserErrorException(TimedOutMessage(arguments[0], progress?.FilesSeen ?? 0), exception);
+                throw new UserErrorException(TimedOutMessage(arguments[0], progress?.FilesSeen ?? 0, cache), exception);
             }
 
             if (result.ExitCode != 0)
@@ -230,10 +235,12 @@ internal sealed class JbRunner(
             // than once per process.
             speculative.Token.ThrowIfCancellationRequested();
 
+            JbCacheState cache = JbCacheState.Read(config.SolutionPath, config.CacheHome, seeded, logger);
+
             // Zero queue wait by construction: TryAcquire does not wait, so a lease in hand was uncontended.
             // No progress either: nobody is waiting on this run, so there is nobody to report it to.
             ProcessResult result = await SpawnAsync(
-                config, arguments, TimeSpan.Zero, Speculative, seeded, null, speculative.Token);
+                config, arguments, TimeSpan.Zero, Speculative, cache, null, speculative.Token);
 
             return result.ExitCode == 0 ? SpeculativeRunOutcome.Completed : SpeculativeRunOutcome.Failed;
         }
@@ -264,6 +271,9 @@ internal sealed class JbRunner(
     ///     <c>inspectcode</c>, since both analyse the whole solution into the same cache generation — rather
     ///     than relying on one call site remembering to. The same exit discharges any cold tombstone a reset
     ///     left: the cache this run rebuilt is the solution's own, so there is no longer a reset to protect.
+    ///     It also records what the run cost under the band it started in, which is what lets the next run
+    ///     like it say how long a run like it takes. All three are the clean exit's alone — a run killed at
+    ///     the cap or one that exited non-zero reaches none of them.
     /// </summary>
     /// <remarks>
     ///     It is also where the pair of <c>Information</c> lines a <c>jb</c> run costs the log are written,
@@ -286,12 +296,11 @@ internal sealed class JbRunner(
         IReadOnlyList<string> arguments,
         TimeSpan queueWait,
         string runKind,
-        bool seeded,
+        JbCacheState cache,
         JbRunProgress? progress,
         CancellationToken cancellationToken)
     {
         string subcommand = arguments[0];
-        JbCacheState cache = JbCacheState.Read(config.SolutionPath, config.CacheHome, seeded, logger);
 
         // The same reading the opening line leads with, and for the same reason: it is what predicts the
         // minutes about to follow, and jb says nothing at all for the first half-minute of them.
@@ -358,6 +367,13 @@ internal sealed class JbRunner(
 
         JbColdTombstone.Clear(config.SolutionPath, config.CacheHome, logger);
 
+        // Keyed by the band the run STARTED in — a transplant-fired run records what a seeded run costs, not
+        // what the warm cache it has just become would. The stopwatch is armed after the lease and the
+        // transplant, so the queue wait is outside this figure by construction, which is what makes it
+        // comparable to the elapsed time a progress line names.
+        if (cache.CostBand is { } band)
+            JbCostRecord.Stamp(config.SolutionPath, config.CacheHome, band, elapsed.Elapsed, logger);
+
         return result;
     }
 
@@ -396,18 +412,31 @@ internal sealed class JbRunner(
     ///     <see cref="RunProgressFormatter.Files" />, so the count reads here as it read on the progress
     ///     line the caller just watched.
     /// </param>
-    private string TimedOutMessage(string subcommand, int filesSeen)
+    /// <param name="cache">
+    ///     What the cache looked like going in, for the one figure this message cannot otherwise offer: how
+    ///     long a comparable run of this solution took. It turns "the cap was ten minutes" into evidence for
+    ///     or against raising it — a solution recorded at eight minutes cold will fit in twelve, and one that
+    ///     has never finished will not. Absent whenever no comparable run has, in which case the message is
+    ///     what it always was.
+    /// </param>
+    private string TimedOutMessage(string subcommand, int filesSeen, JbCacheState cache)
     {
         string reached = filesSeen > 0
             ? $"jb had reached {RunProgressFormatter.Files(filesSeen)} by the time it was stopped, and the cache keeps that work, so a "
               + "retry resumes from there rather than starting over."
             : "The cache keeps most of what this run built, so a retry resumes rather than starting over.";
 
+        string recorded = cache.CostBand is { } band && cache.LastComparableCost is { } cost
+            ? $"The last {JbCostRecord.Label(band)} run of this solution took {DurationFormatter.Format(cost)}. "
+            : string.Empty;
+
         return $"jb {subcommand} timed out after {DurationFormatter.Format(runTimeout)} and was stopped.\n"
                + $"That cap is this server's, not jb's own: raise it by setting {JbRunTimeout.Variable} (in seconds) "
                + "in this server's env block in your MCP client config, then restart the server.\n"
-               + "A run that long is almost always a cold ReSharper cache. Scoping the next call with `files` will "
-               + "not help — jb analyses the whole solution whatever the report is narrowed to. "
+               + "A run that long is almost always a cold ReSharper cache. "
+               + recorded
+               + "Scoping the next call with `files` will not help — jb analyses the whole solution whatever "
+               + "the report is narrowed to. "
                + reached;
     }
 

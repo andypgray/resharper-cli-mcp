@@ -76,6 +76,23 @@ public sealed class RunProgressFormatterTests
     }
 
     [Fact]
+    public void Format_TheSilentPreludeWithARecordedCost_CarriesTheQuoteThrough()
+    {
+        // The other half of telling slow from stuck: the elapsed time says how long this run has been going,
+        // and the cache state now says how long a run like it took last time. The whole clause is
+        // JbCacheState's, and it reaches a caller through here unaltered.
+        string message = Format(
+            JbRunPhase.Starting,
+            TimeSpan.FromSeconds(12),
+            cacheSummary: "cold (none on disk; the last cold run took 8 minutes 17 seconds)",
+            cap: Cap);
+
+        message.ShouldBe(
+            "inspectcode on LoadBearing.slnx: cold (none on disk; the last cold run took 8 minutes 17 seconds) "
+            + "— 12 seconds, cap 10 minutes");
+    }
+
+    [Fact]
     public void Format_TheAnalysisSweep_CountsFiles()
     {
         // The long phase of a cold run — 451 of 497 seconds on one measured solution — so this is the message

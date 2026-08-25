@@ -30,6 +30,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The messages name no run cap, since a reset spends none of the run budget. Notifications reach only a
   client that sends a `progressToken`; the tool's schema, its result, and its log line are unchanged.
 
+- A run's progress lines and its timeout message can name what the last comparable run of this solution
+  cost. The heartbeat says how long a run has been going against the cap, but nothing said how long
+  this solution usually takes — the other half of telling slow from stuck. A `jb` run that exits
+  cleanly now records its duration in a sidecar beside the warm marker, keyed by the cache state it
+  started from — `cold`, `seeded`, or `warm` — because one remembered number would lie: a single
+  measured solution ran 497 seconds cold, 456 seeded, and 39 warm. Where a figure is recorded, the
+  cache-state clause carries it — `cold (none on disk; the last cold run took 8 minutes 17 seconds)` —
+  on both the opening log line and the progress messages sent while `jb` loads the solution, and the
+  timeout message adds `The last cold run of this solution took 8 minutes 17 seconds.` beside the
+  advice it already gives. Queue time is excluded from the recorded duration; a run against a
+  part-built cache records and quotes nothing, since two resumptions of differently killed runs are not
+  comparable; a freshly seeded checkout quotes nothing until a run of its own finishes; and
+  `resharper_reset_cache` clears the record along with the warm marker. With no figure recorded, every
+  line reads byte-for-byte as it did.
+
 - A `report` argument on `resharper_inspect`. Set it to `Markdown` and the complete itemised findings are
   written to a file, which the response names above the summary it already returned. This is the way to get
   every finding with its own message out of a solution-wide run: such a run always exceeds the output budget,

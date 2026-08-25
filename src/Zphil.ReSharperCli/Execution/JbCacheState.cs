@@ -1,5 +1,6 @@
 using System.Globalization;
 using Microsoft.Extensions.Logging;
+using Zphil.ReSharperCli.Formatting;
 
 namespace Zphil.ReSharperCli.Execution;
 
@@ -38,20 +39,27 @@ namespace Zphil.ReSharperCli.Execution;
 ///     unvalidated until <c>jb</c> opens it and stamping a marker for it would be a lie. Without this the most
 ///     interesting state a run can start in would be reported as the one it is least like.
 /// </param>
+/// <param name="LastComparableCost">
+///     What the last run starting from this same <see cref="CostBand" /> took, or <see langword="null" /> when
+///     none has finished or the state falls in no band. Read from <see cref="JbCostRecord" /> by
+///     <see cref="Read" /> rather than passed in, so every caller of the summary gets the figure without
+///     knowing the record exists.
+/// </param>
 internal sealed record JbCacheState(
     IReadOnlyList<string>? Generations,
     TimeSpan? WarmMarkerAge,
     bool ResetRecorded,
-    bool Seeded)
+    bool Seeded,
+    TimeSpan? LastComparableCost = null)
 {
     /// <summary>What every reading that could not be made looks like.</summary>
     private static readonly JbCacheState Unreadable = new(null, null, false, false);
 
     /// <summary>
-    ///     The state as one readable clause — <c>warm (14m old marker, _App.123.00)</c> and the like. A
-    ///     rendered string rather than a handful of separate log properties on purpose: this rides a line
-    ///     that already names the subcommand, the solution and the queue wait, and it is read by a person
-    ///     scanning a file rather than by a query.
+    ///     The state as one readable clause — <c>warm (14m old marker, _App.123.00)</c> and the like, carrying
+    ///     what a run like this one last cost where that is recorded. A rendered string rather than a handful
+    ///     of separate log properties on purpose: this rides a line that already names the subcommand, the
+    ///     solution and the queue wait, and it is read by a person scanning a file rather than by a query.
     /// </summary>
     internal string Summary
     {
@@ -59,25 +67,52 @@ internal sealed record JbCacheState(
         {
             if (Generations is null) return "cache state unreadable";
 
-            if (Generations.Count == 0) return ResetRecorded ? "cold after a reset (none on disk)" : "cold (none on disk)";
+            string cost = RecordedCost();
+
+            if (Generations.Count == 0)
+                return ResetRecorded ? $"cold after a reset (none on disk{cost})" : $"cold (none on disk{cost})";
 
             string directories = string.Join(", ", Generations);
 
             // Before the marker check, not after: a seed deliberately leaves no marker, so the two are
             // indistinguishable on disk and only the transplant knows which of them this is.
-            if (Seeded) return $"seeded from a sibling checkout ({directories}), and this run re-keys it";
+            if (Seeded) return $"seeded from a sibling checkout ({directories}{cost}), and this run re-keys it";
 
             if (WarmMarkerAge is not { } age)
                 return $"part-built ({directories}, no warm marker — a run against it was killed)";
 
-            return $"warm ({FormatAge(age)} old marker, {directories})";
+            return $"warm ({FormatAge(age)} old marker, {directories}{cost})";
+        }
+    }
+
+    /// <summary>
+    ///     Which recorded figure this state may be compared against, or <see langword="null" /> when it may be
+    ///     compared against none. The arms are <see cref="Summary" />'s own, in the same order, because the
+    ///     two answer one question: a state the summary describes in its own words is a state whose duration
+    ///     only runs described the same way predict.
+    /// </summary>
+    /// <remarks>
+    ///     Two states have no band. An unreadable cache home knows nothing, and a part-built generation is the
+    ///     remnant of a run that was killed — how much of the work survived depends on when it died, so two
+    ///     resumptions are not comparable and quoting one at the other would be a guess dressed as a
+    ///     measurement.
+    /// </remarks>
+    internal JbCostBand? CostBand
+    {
+        get
+        {
+            if (Generations is null) return null;
+            if (Generations.Count == 0) return JbCostBand.Cold;
+            if (Seeded) return JbCostBand.Seeded;
+
+            return WarmMarkerAge is null ? null : JbCostBand.Warm;
         }
     }
 
     /// <summary>
     ///     The state of <paramref name="solutionPath" />'s cache under <paramref name="cacheHome" /> right
-    ///     now. Cheap: a single directory enumeration and two file stats, against a <c>jb</c> run measured in
-    ///     minutes.
+    ///     now. Cheap: a single directory enumeration and three file stats — the third read only where the
+    ///     state falls in a band, and a few bytes when it is — against a <c>jb</c> run measured in minutes.
     /// </summary>
     internal static JbCacheState Read(string solutionPath, string cacheHome, bool seeded, ILogger logger)
     {
@@ -87,11 +122,16 @@ internal sealed record JbCacheState(
                 .Select(generation => generation.Name)
                 .ToList();
 
-            return new JbCacheState(
+            JbCacheState state = new(
                 owned,
                 JbWarmMarker.Age(solutionPath, cacheHome, logger),
                 JbColdTombstone.Exists(solutionPath, cacheHome, logger),
                 seeded);
+
+            // After the rest is settled, because the band the figure is keyed by is derived from it.
+            if (state.CostBand is not { } band) return state;
+
+            return state with { LastComparableCost = JbCostRecord.TryRead(solutionPath, cacheHome, band, logger) };
         }
         catch (Exception exception) when (FilesystemFailure.Covers(exception))
         {
@@ -128,6 +168,19 @@ internal sealed record JbCacheState(
         {
             return null;
         }
+    }
+
+    /// <summary>
+    ///     What a run like this one last cost, as a clause to close the parenthetical with, or the empty
+    ///     string when nothing comparable is recorded. Both halves have to hold — a band to key by and a
+    ///     figure under it — so a state with no band quotes nothing even if handed a duration, and every arm
+    ///     reads byte for byte as it did before any figure existed.
+    /// </summary>
+    private string RecordedCost()
+    {
+        if (CostBand is not { } band || LastComparableCost is not { } cost) return string.Empty;
+
+        return $"; the last {JbCostRecord.Label(band)} run took {DurationFormatter.Format(cost)}";
     }
 
     /// <summary>

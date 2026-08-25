@@ -169,6 +169,26 @@ public sealed class JbRunLoggingTests : IDisposable
     }
 
     [Fact]
+    public async Task RunAsync_SecondColdRunOfASolution_OpensNamingWhatTheFirstOneCost()
+    {
+        // Arrange — the pair of runs the feature exists for. Neither leaves a generation behind, so both read
+        // the cache as cold and the second is genuinely comparable to the first.
+        StubExit(0);
+
+        // Act
+        await Runner().RunAsync(Config, ["inspectcode", _solutionPath], Ct);
+        await Runner().RunAsync(Config, ["inspectcode", _solutionPath], Ct);
+
+        // Assert — the first run has nothing to quote and reads exactly as it did before any of this existed;
+        // the second carries the figure, keyed by the band. A stubbed run finishes in microseconds, which
+        // rounds and clamps to one second on both sides of the record.
+        IReadOnlyList<LogEntry> opened = _logs.WithProperty("CacheState");
+        opened.Count.ShouldBe(2);
+        opened[0].Property("CacheState").ShouldBe("cold (none on disk)");
+        opened[1].Property("CacheState").ShouldBe("cold (none on disk; the last cold run took 1 second)");
+    }
+
+    [Fact]
     public async Task RunAsync_KilledAtTheCap_SaysSoRatherThanEndingWithNoLine()
     {
         // Arrange

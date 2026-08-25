@@ -15,7 +15,9 @@ namespace Zphil.ReSharperCli.Tests.Services;
 ///     What <see cref="JbRunner" /> owns on behalf of both services: naming the failed subcommand in the
 ///     error, bounding how much of a failed run's standard error comes back with it, and stamping the warm
 ///     marker on every run that succeeds — and, when that stamp can name no generation, saying so once for
-///     the session it belongs to. Also the shape of the speculative entry point — it skips instead
+///     the session it belongs to. It is also where a run's duration is recorded under the cache band it
+///     started in, and where the band read before <c>jb</c> ran is what a timeout message quotes. Also the
+///     shape of the speculative entry point — it skips instead
 ///     of queueing, and reports instead of throwing — which is what lets background work never affect a
 ///     call the user made, and the ending it names for each of those, since a caller that cannot tell a run
 ///     given up after minutes from one that never started will say the wrong one out loud.
@@ -252,6 +254,119 @@ public sealed class JbRunnerTests : IDisposable
         // Assert
         result.ShouldBe(SpeculativeRunOutcome.Completed);
         JbWarmMarker.IsFreshWithin(_config.SolutionPath, _config.CacheHome, RecentlyEnough, NullLogger.Instance).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task RunAsync_SucceedingRun_RecordsWhatItCostUnderTheBandItStartedIn()
+    {
+        // Arrange — a cold solution whose run leaves a generation behind, which is the ordinary first run. The
+        // band is read before jb starts, so what gets recorded is what a cold run costs — not what the warm
+        // cache this run has just produced would.
+        StubExit(0, string.Empty, () => CacheHomes.PlantGenerationFor(_config.CacheHome, _config.SolutionPath));
+
+        // Act
+        await _runner.RunAsync(_config, ["inspectcode", _config.SolutionPath], Ct);
+
+        // Assert
+        Recorded(JbCostBand.Cold).ShouldNotBeNull();
+        Recorded(JbCostBand.Warm).ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task RunAsync_RunFiredByATransplant_RecordsItAsSeededRatherThanCold()
+    {
+        // Arrange — the band that most needs keeping apart. Measured on one solution, a seeded run took 456
+        // seconds and the warm run after it 39, so a seeded figure filed under cold would quote seven minutes
+        // at a caller about to wait forty seconds — and cold at the moment of the read is exactly what a
+        // solution about to be seeded looks like.
+        CacheHomes.PlantWarmDonor(_config.CacheHome, SiblingSolutionPath());
+        StubExit(0, string.Empty);
+
+        // Act
+        await _runner.RunAsync(_config, ["inspectcode", _config.SolutionPath], Ct);
+
+        // Assert
+        Recorded(JbCostBand.Seeded).ShouldNotBeNull();
+        Recorded(JbCostBand.Cold).ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task TryRunAsync_SucceedingRun_RecordsWhatItCostToo()
+    {
+        // Arrange — a pre-warm's cold run is a comparable cold run, and on a session that starts by warming
+        // it is the only measurement of one there will be.
+        StubExit(0, string.Empty);
+
+        // Act
+        SpeculativeRunOutcome result = await _runner.TryRunAsync(_config, ["inspectcode", _config.SolutionPath], Ct);
+
+        // Assert
+        result.ShouldBe(SpeculativeRunOutcome.Completed);
+        Recorded(JbCostBand.Cold).ShouldNotBeNull();
+    }
+
+    [Fact]
+    public async Task RunAsync_RunHitsTheCap_RecordsNoCostAtAll()
+    {
+        // Arrange — a run killed at the cap did not finish, so its duration is the cap rather than the
+        // solution's. Recording it would teach the next caller that this solution takes exactly as long as
+        // whatever budget it was given.
+        StubTimeout();
+
+        // Act
+        await Should.ThrowAsync<UserErrorException>(() => _runner.RunAsync(_config, ["inspectcode", _config.SolutionPath], Ct));
+
+        // Assert
+        Recorded(JbCostBand.Cold).ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task RunAsync_FailingRun_RecordsNoCostAtAll()
+    {
+        // Arrange — a jb that exited non-zero may have given up in seconds, which is no measure of the run
+        // the next caller is about to make.
+        StubExit(2, "boom");
+
+        // Act
+        await Should.ThrowAsync<UserErrorException>(() => _runner.RunAsync(_config, ["inspectcode", _config.SolutionPath], Ct));
+
+        // Assert
+        Recorded(JbCostBand.Cold).ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task RunAsync_RunHitsTheCapWithAComparableRunOnRecord_NamesWhatThatRunCost()
+    {
+        // Arrange — the figure that turns "the cap was ten minutes" into evidence about whether raising it
+        // will help. A solution recorded at eight minutes cold will fit in twelve; one that has never finished
+        // will not, and the message can only say which if it knows.
+        JbCostRecord.Stamp(_config.SolutionPath, _config.CacheHome, JbCostBand.Cold, TimeSpan.FromSeconds(497), NullLogger.Instance);
+        StubTimeout();
+
+        // Act
+        var exception = await Should.ThrowAsync<UserErrorException>(() => _runner.RunAsync(_config, ["inspectcode", _config.SolutionPath], Ct));
+
+        // Assert — beside the advice it already gives, and keyed by the band this run started in.
+        exception.Message.ShouldContain(
+            "A run that long is almost always a cold ReSharper cache. The last cold run of this solution took "
+            + "8 minutes 17 seconds. Scoping the next call with `files` will not help");
+    }
+
+    [Fact]
+    public async Task RunAsync_RunHitsTheCapWithNothingOnRecord_ReadsExactlyAsItAlwaysHas()
+    {
+        // Arrange — the first run of a solution is both the one most likely to hit the cap and the one that
+        // can never have a figure, so the no-figure message is the common case rather than an edge.
+        StubTimeout();
+
+        // Act
+        var exception = await Should.ThrowAsync<UserErrorException>(() => _runner.RunAsync(_config, ["inspectcode", _config.SolutionPath], Ct));
+
+        // Assert — the two sentences still meet with nothing between them.
+        exception.Message.ShouldContain(
+            "A run that long is almost always a cold ReSharper cache. Scoping the next call with `files` will "
+            + "not help");
+        exception.Message.ShouldNotContain("The last");
     }
 
     [Fact]
@@ -647,6 +762,15 @@ public sealed class JbRunnerTests : IDisposable
                 whileRunning?.Invoke();
                 return new ProcessResult(exitCode, string.Empty, standardError);
             });
+    }
+
+    /// <summary>
+    ///     What this solution has on record for <paramref name="band" />. A stubbed run finishes in
+    ///     microseconds, so presence is the assertable fact and the figure itself is not.
+    /// </summary>
+    private TimeSpan? Recorded(JbCostBand band)
+    {
+        return JbCostRecord.TryRead(_config.SolutionPath, _config.CacheHome, band, NullLogger.Instance);
     }
 
     /// <summary>Another checkout of the same solution file, which is what makes a donor a donor.</summary>

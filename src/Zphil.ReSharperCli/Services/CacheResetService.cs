@@ -134,6 +134,11 @@ internal sealed class CacheResetService(
         // donor for anything else, which is the same statement pointed outwards.
         JbWarmMarker.Clear(config.SolutionPath, config.CacheHome, logger);
 
+        // The recorded durations describe the lineage this reset has just ended: what a warm run of the
+        // dropped cache cost says nothing about the cold one that replaces it, and quoting it at the next
+        // caller would understate the wait by minutes.
+        JbCostRecord.Clear(config.SolutionPath, config.CacheHome, logger);
+
         // Unconditional, including the reset that dropped nothing: what the caller asked for is a cold next
         // run, and the one mechanism that could quietly supply a warm cache instead has to be told.
         JbColdTombstone.Write(config.SolutionPath, config.CacheHome, logger);

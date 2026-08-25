@@ -83,6 +83,11 @@ else is running, which is the normal case.
 the token the client sent with the call. The messages track the stages above, in order: the wait for
 another run on the same cache, then the cache state `jb` opened (`cold (none on disk)`, `warm`,
 `part-built`, `seeded from a sibling checkout`), then a running count of files as `jb` analyses them.
+Where this solution has already finished a run from the same cache state, that clause names what it cost —
+`cold (none on disk; the last cold run took 8 minutes 17 seconds)` — which is the other half of telling a
+slow run from a stuck one. The figure is keyed by the cache state, so a warm run never quotes a cold one's
+minutes; a part-built cache records and quotes nothing, two resumptions of differently killed runs not
+being comparable; and `resharper_reset_cache` clears the figures along with the warm marker.
 Every message sent once `jb` is running carries the elapsed time and the cap, so a call can be seen
 approaching the cap rather than reported as having hit it. There is no percentage: `jb` announces no file
 count up front and its analysis and inspection sweeps report different totals for the same solution, so

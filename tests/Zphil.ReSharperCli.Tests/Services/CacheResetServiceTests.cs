@@ -124,6 +124,22 @@ public sealed class CacheResetServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task RunAsync_DroppingAGeneration_ClearsTheRecordedCostsWithTheMarker()
+    {
+        // Arrange — the durations on record describe the lineage this reset is ending. What a warm run of the
+        // dropped cache cost says nothing about the cold one replacing it, so leaving them behind would have
+        // the next call quote forty seconds at a caller about to wait eight minutes.
+        CacheHomes.PlantWarmDonor(_cacheHome, _config.SolutionPath);
+        JbCostRecord.Stamp(_config.SolutionPath, _cacheHome, JbCostBand.Warm, TimeSpan.FromSeconds(39), NullLogger.Instance);
+
+        // Act
+        await _service.RunAsync(_config, Ct);
+
+        // Assert
+        JbCostRecord.TryRead(_config.SolutionPath, _cacheHome, JbCostBand.Warm, NullLogger.Instance).ShouldBeNull();
+    }
+
+    [Fact]
     public async Task RunAsync_EvenWithNothingToDrop_RecordsThatTheNextRunIsMeantToBeCold()
     {
         // Arrange — an already-reset solution. "Nothing was deleted" is not the same as "no reset happened":

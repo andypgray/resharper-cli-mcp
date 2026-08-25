@@ -1,0 +1,20 @@
+<!-- The solution the jb contract suite analyses. Deliberately dependency-free: every PackageReference
+     would be a restore this fixture cannot make offline, and none of the contracts under test needs one.
+     It is never built in the repo tree — the suite copies it to a temp directory first, because cleanup
+     rewrites these files in place. -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <IsPackable>false</IsPackable>
+
+        <!-- The issues in these files are the fixture's whole point. The compiler must report them without
+             stopping the build, or the suite would have nothing to inspect. -->
+        <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+        <EnableNETAnalyzers>false</EnableNETAnalyzers>
+        <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    </PropertyGroup>
+
+</Project>

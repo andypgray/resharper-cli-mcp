@@ -28,16 +28,32 @@ dotnet test Zphil.ReSharperCli.slnx
 
 # A single test by fully-qualified name
 dotnet test Zphil.ReSharperCli.slnx --filter "FullyQualifiedName~SarifParserTests"
+
+# What CI runs on every pull request: the two scheduled suites left out
+dotnet test Zphil.ReSharperCli.slnx --filter "Category!=ExternalLinks&Category!=JbContract"
 ```
 
 The test project has exactly two fakeable seams, worth understanding before you add a test:
 
-- `IProcessRunner` is the only process-spawning seam, faked with NSubstitute. A test that needs `jb` output has the substitute return a canned `ProcessResult`, or, for the inspect round trip, write a SARIF fixture to the `-o=` path it received. No test spawns a real `jb`.
+- `IProcessRunner` is the only process-spawning seam, faked with NSubstitute. A test that needs `jb` output has the substitute return a canned `ProcessResult`, or, for the inspect round trip, write a SARIF fixture to the `-o=` path it received. No test in the unit suite spawns a real `jb`; the contract suite below is the one that does.
 - `IEnvironment` is the only environment seam, backed by a hand-rolled `FakeEnvironment` whose current and home directories point at per-test temp dirs. Every environment variable, current directory, and home directory read in product code goes through it.
 
-No test mutates the real process environment. A `SetEnvironmentVariable` call in a test is a defect: it would break the parallel run, which depends on every environment read being routed through `IEnvironment`. `ProcessRunnerTests` is the one class that spawns real processes, and it uses `dotnet` and `ping`/`sleep`, never `jb`.
+No test mutates the real process environment. A `SetEnvironmentVariable` call in a test is a defect: it would break the parallel run, which depends on every environment read being routed through `IEnvironment`. Two places spawn real processes: `ProcessRunnerTests`, which uses `dotnet` and `ping`/`sleep`, and the contract suite, which uses `dotnet` and `jb`.
 
 SARIF fixtures live under `tests/Zphil.ReSharperCli.Tests/Fixtures/Sarif/` and are copied to the output directory as content.
+
+### The jb contract suite
+
+The server depends on `jb` behaviours JetBrains does not document: the SARIF shape, what the `--severity` token selects, the built-in cleanup profile names, the spelling of a compilation error's rule id, and how a cache generation's directory is named. `tests/Zphil.ReSharperCli.Tests/Contract/` checks those against a real `jb`, over the fixture solution in `tests/Fixtures/ContractSolution/` — copied to a temp directory and built there, because cleanup rewrites the files it is given.
+
+These tests carry the `JbContract` trait and are excluded from the every-PR run; `.github/workflows/jb-contract.yml` runs them daily against the latest stable release. They skip themselves when `jb` is not installed, so `dotnet test` with no filter passes on a machine without it. To run them:
+
+```bash
+dotnet tool install -g JetBrains.ReSharper.GlobalTools
+dotnet test tests/Zphil.ReSharperCli.Tests/Zphil.ReSharperCli.Tests.csproj --filter "Category=JbContract"
+```
+
+Each check drives a real analysis, so the suite takes minutes rather than seconds. Findings split in two. A hard-tier break fails the run: those are behaviours the server cannot work without. Soft-tier drift is written to the file named by `JB_CONTRACT_REPORT` and fails nothing, because the code degrades safely on those surfaces and a watcher job that cries wolf stops being read.
 
 ## Pull request expectations
 

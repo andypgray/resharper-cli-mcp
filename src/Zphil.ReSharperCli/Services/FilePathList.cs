@@ -75,10 +75,14 @@ internal static class FilePathList
     ///     <para>
     ///         <c>--include</c> takes "a set of relative paths" and wildcards, per <c>jb</c>'s own help text,
     ///         and it matches them against the solution model rather than against the disk. An absolute entry
-    ///         therefore becomes an Ant pattern that matches nothing: <c>cleanupcode</c> exits 3 with "No items
-    ///         were found to cleanup", and <c>inspectcode</c> exits 0 and reports no issues at all — a silent
-    ///         false negative. Both tools have always documented an absolute path as accepted, so this
-    ///         translation is what makes that true rather than a new restriction.
+    ///         therefore becomes an Ant pattern that matches nothing. Both subcommands refuse it, and not the
+    ///         same way in every release: <c>cleanupcode</c> exits 3 with "No items were found to cleanup",
+    ///         while <c>inspectcode</c> exited 0 and reported no issues at all — a silent false negative —
+    ///         through 2026.1, and exits 3 with "No files to inspect were found." in 2026.2, writing no report
+    ///         file. Which of the two it does changes nothing here, so the <c>JbContract</c> suite watches only
+    ///         for the premise itself failing: an absolute pattern starting to match. Both tools have always
+    ///         documented an absolute path as accepted, so this translation is what makes that true rather
+    ///         than a new restriction.
     ///     </para>
     ///     <para>
     ///         Fully qualified, not merely rooted: on Windows a drive-relative <c>/src/Foo.cs</c> is already

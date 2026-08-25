@@ -32,9 +32,12 @@ internal static class CompilationErrorNote
 {
     /// <summary>
     ///     The rule <c>jb</c> reports every C# compilation error under, phantom or genuine. The leading dot is
-    ///     jb's own and is verified rather than assumed: 2026.1.2 writes <c>.CSharpErrors</c> in both the SARIF
-    ///     results and the driver's rule table, and <c>SarifParser</c> passes the id through untouched. It is
-    ///     also what an agent reads in the rendered result, so the note quotes the same spelling.
+    ///     jb's own and is verified rather than assumed: <c>jb</c> writes <c>.CSharpErrors</c> in both the
+    ///     SARIF results and the driver's rule table, and <c>SarifParser</c> passes the id through untouched.
+    ///     It is also what an agent reads in the rendered result, so the note quotes the same spelling. The
+    ///     <c>JbContract</c> suite re-reads that against each release rather than a version being pinned here,
+    ///     and reports a rename instead of failing, because <see cref="UndottedRuleId" /> already absorbs the
+    ///     likeliest one.
     /// </summary>
     internal const string RuleId = ".CSharpErrors";
 

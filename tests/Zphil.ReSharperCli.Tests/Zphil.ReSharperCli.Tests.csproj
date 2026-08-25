@@ -31,4 +31,16 @@
         <Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
 
+    <!-- The solution the jb contract suite analyses. It sits outside this project's directory on purpose:
+         a csproj nested under another project is swept into that project's **/*.cs compile glob, and these
+         files are deliberate compile warnings. Copied as content so the suite can copy it again into a temp
+         directory of its own — cleanup rewrites the files it is given, so the tree copy is never the one
+         under test. bin/obj are excluded in case someone builds the fixture in place. -->
+    <ItemGroup>
+        <Content Include="../Fixtures/ContractSolution/**"
+                 Exclude="../Fixtures/ContractSolution/**/bin/**;../Fixtures/ContractSolution/**/obj/**"
+                 LinkBase="Fixtures/ContractSolution"
+                 CopyToOutputDirectory="PreserveNewest" />
+    </ItemGroup>
+
 </Project>

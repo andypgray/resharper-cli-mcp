@@ -1,0 +1,147 @@
+# Daily check of what this server assumes about `jb`, against the latest stable ReSharper command-line
+# tools. Every other test in the suite runs against a recorded SARIF fixture or a process-runner double, so
+# a JetBrains release could change any of these and the build would stay green — and they ship roughly
+# thirty stable releases a year.
+#
+# Two tiers, matching the suite's own split. A hard-tier failure turns this run red: those are the
+# behaviours that stop the server working. The soft tier never fails anything — it writes a report the last
+# step turns into ::warning:: annotations and a job summary, because those surfaces are ones the code
+# degrades safely on and a false alarm is what would kill a watcher job.
+#
+# A red run here does not touch the CI badge (which points at ci.yml) or Scorecard's CI-Tests check (which
+# reads pull-request check runs), so red means "look at this", not "the project is broken".
+#
+# Poll rather than push: nuget.org has no webhook, and the only push route would be a third-party service
+# holding a write-scoped token for this repo. `dotnet tool install -g` already resolves latest stable, so
+# the job needs no committed baseline and no version-diffing state — it installs and runs, every day.
+name: jb contract
+
+on:
+  schedule:
+    # Daily 05:37 UTC. Clear of Scorecard (02:30), CodeQL (03:30) and the doc link check (04:30), and off
+    # the contended top of the hour, where GitHub's scheduler queues longest.
+    - cron: '37 5 * * *'
+  workflow_dispatch:
+    inputs:
+      jb-version:
+        description: 'Exact JetBrains.ReSharper.GlobalTools version (blank = latest stable)'
+        required: false
+      prerelease:
+        description: 'Install the latest EAP/RC instead of the latest stable'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    runs-on: ${{ matrix.os }}
+    # The suite takes about seven minutes on a warm developer machine (jb 2026.2, six real analyses of a
+    # three-file solution, plus one dotnet build). The cap leaves room for a slower runner and a cold NuGet
+    # cache without letting a genuinely stuck jb hold the runner all day.
+    timeout-minutes: 30
+
+    # One script body serves both runners. linkcheck.yml is ubuntu-only and never needed this.
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      # The dispatch inputs reach the script through env, never interpolated into the body: direct
+      # ${{ }} interpolation into a run: block is what Scorecard's Dangerous-Workflow check flags.
+      # The tools directory is added to PATH in its native spelling — a Windows runner's bash writes
+      # $HOME as /c/Users/..., which the .NET process spawning jb cannot resolve.
+      - name: Install the ReSharper command-line tools
+        env:
+          JB_VERSION: ${{ inputs.jb-version }}
+          JB_PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          args=()
+          if [ -n "$JB_VERSION" ]; then
+            args+=(--version "$JB_VERSION")
+          fi
+          if [ "$JB_PRERELEASE" = "true" ]; then
+            args+=(--prerelease)
+          fi
+          dotnet tool install JetBrains.ReSharper.GlobalTools -g "${args[@]}"
+
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            echo "$USERPROFILE\\.dotnet\\tools" >> "$GITHUB_PATH"
+          else
+            echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+          fi
+
+      # The contract tests skip themselves when jb is absent — that is what keeps the release workflow's
+      # unfiltered `dotnet test` green on a runner with no jb. So the install has to be asserted here, or a
+      # jb that never arrived would report as a full pass.
+      - name: Record the jb version
+        run: |
+          banner="$(jb inspectcode --version)" || {
+            echo "::error::jb did not run after installation; the contract tests would have skipped silently"
+            exit 1
+          }
+          printf '%s\n' "$banner"
+          {
+            echo "### jb on $RUNNER_OS"
+            echo
+            echo '```'
+            printf '%s\n' "$banner"
+            echo '```'
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # GitHub Actions sets CI=true, so Directory.Build.props turns on RestoreLockedMode. No
+      # --force-evaluate escape hatch: Dependabot does not trigger this workflow.
+      - name: Restore
+        run: dotnet restore tests/Zphil.ReSharperCli.Tests/Zphil.ReSharperCli.Tests.csproj
+
+      - name: Build
+        run: dotnet build tests/Zphil.ReSharperCli.Tests/Zphil.ReSharperCli.Tests.csproj --no-restore
+
+      # runner.temp is unavailable in job-level env, so the report path is resolved here into $GITHUB_ENV:
+      # one definition, shared by the test that writes it and the reporter that reads it.
+      - name: Resolve report path
+        run: echo "JB_CONTRACT_REPORT=$RUNNER_TEMP/jb-contract.md" >> "$GITHUB_ENV"
+
+      - name: Check the jb contracts
+        id: contracts
+        run: dotnet test tests/Zphil.ReSharperCli.Tests/Zphil.ReSharperCli.Tests.csproj --no-build --filter "Category=JbContract" --logger "console;verbosity=normal"
+
+      # The report is written whether or not anything drifted, so the summary always says what this jb did.
+      # Only the finding lines start with "- ", and only those become annotations.
+      #
+      # Its absence after a green test step is the one failure this job could otherwise report as a pass:
+      # `dotnet test` exits 0 when every test skipped, and these tests skip themselves when the .NET process
+      # cannot find jb — which the bash-side version check above cannot see.
+      - name: Surface soft-tier drift as warnings
+        if: always()
+        env:
+          CONTRACTS_OUTCOME: ${{ steps.contracts.outcome }}
+        run: |
+          if [ -s "$JB_CONTRACT_REPORT" ]; then
+            cat "$JB_CONTRACT_REPORT" >> "$GITHUB_STEP_SUMMARY"
+            while IFS= read -r line; do
+              case "$line" in
+                "- "*) echo "::warning::${line#- }" ;;
+              esac
+            done < "$JB_CONTRACT_REPORT"
+          elif [ "$CONTRACTS_OUTCOME" = "success" ]; then
+            echo "::error::The contract tests passed without writing a report, which means they skipped themselves and checked nothing."
+            exit 1
+          else
+            echo "The soft-tier report was never written: the hard tier failed before reaching it." >> "$GITHUB_STEP_SUMMARY"
+          fi

@@ -98,13 +98,20 @@ internal sealed class McpPipelineHarness : IAsyncDisposable
     ///     Runs against the two seams before the host starts, so a test that opted into the pre-warm can plant
     ///     its solution and stub <c>jb</c> before the client's first message reaches the server.
     /// </param>
+    /// <param name="processRunner">
+    ///     The process seam, defaulting to a fresh NSubstitute double. The contract suite passes the real
+    ///     <see cref="ProcessRunner" /> instead, which is the only way to drive a genuine <c>jb</c> through the
+    ///     whole <c>tools/call</c> pipeline — every other test in the suite wants the double, and gets it by
+    ///     saying nothing.
+    /// </param>
     public static async Task<McpPipelineHarness> StartAsync(
         CancellationToken cancellationToken,
         bool preWarm = false,
-        Action<FakeEnvironment, IProcessRunner>? arrange = null)
+        Action<FakeEnvironment, IProcessRunner>? arrange = null,
+        IProcessRunner? processRunner = null)
     {
         FakeEnvironment environment = new();
-        var processRunner = Substitute.For<IProcessRunner>();
+        processRunner ??= Substitute.For<IProcessRunner>();
         CapturingLoggerProvider logs = new();
 
         if (!preWarm) environment.SetVariable(CacheWarmer.EnableVariable, "off");

@@ -16,7 +16,15 @@ internal sealed record JbInstallation(string ExecutablePath, string Version);
 /// </summary>
 internal sealed class JbLocator(IProcessRunner processRunner, IEnvironment environment, ILogger<JbLocator> logger)
 {
-    private static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(30);
+    /// <summary>
+    ///     What a probe runs against a candidate. Internal, with <see cref="ProbeTimeout" /> and
+    ///     <see cref="Candidates" />, because the contract suite's skip gate spawns the same probe under a
+    ///     policy of its own — sharing the data is what keeps the gate finding every <c>jb</c> this class
+    ///     would.
+    /// </summary>
+    internal static readonly string[] ProbeArguments = ["inspectcode", "--version"];
+
+    internal static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(30);
 
     private JbInstallation? _cached;
 
@@ -25,7 +33,7 @@ internal sealed class JbLocator(IProcessRunner processRunner, IEnvironment envir
         if (_cached is not null) return _cached;
 
         List<string> failures = [];
-        foreach (string candidate in Candidates())
+        foreach (string candidate in Candidates(environment.HomeDirectory))
         {
             var elapsed = Stopwatch.StartNew();
             ProbeOutcome outcome = await ProbeAsync(candidate, cancellationToken);
@@ -73,7 +81,7 @@ internal sealed class JbLocator(IProcessRunner processRunner, IEnvironment envir
         {
             result = await processRunner.RunAsync(
                 candidate,
-                ["inspectcode", "--version"],
+                ProbeArguments,
                 ProbeTimeout,
                 cancellationToken);
         }
@@ -103,12 +111,12 @@ internal sealed class JbLocator(IProcessRunner processRunner, IEnvironment envir
             : new ProbeOutcome(version, $"reported version {version}");
     }
 
-    private IEnumerable<string> Candidates()
+    internal static IEnumerable<string> Candidates(string homeDirectory)
     {
         yield return "jb";
 
         string extension = OperatingSystem.IsWindows() ? ".exe" : string.Empty;
-        yield return Path.Combine(environment.HomeDirectory, ".dotnet", "tools", $"jb{extension}");
+        yield return Path.Combine(homeDirectory, ".dotnet", "tools", $"jb{extension}");
     }
 
     /// <summary>

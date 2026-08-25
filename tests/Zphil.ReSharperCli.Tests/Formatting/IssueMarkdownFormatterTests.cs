@@ -318,7 +318,8 @@ public sealed class IssueMarkdownFormatterTests
 
         // Act
         string result = ProgressiveRenderer.Render(
-            issues, IssueMarkdownFormatter.Format, maxChars, IssueMarkdownFormatter.DescribeReduction).Text;
+            issues, IssueMarkdownFormatter.Format, maxChars,
+            level => IssueMarkdownFormatter.DescribeReduction(level, false, false)).Text;
 
         // Assert — this pins the size arithmetic: if a format change pushes High past the budget, this
         // fails loudly instead of silently degrading every solution-wide run to Medium.
@@ -366,7 +367,7 @@ public sealed class IssueMarkdownFormatterTests
         // second is the better answer for a caller reading this note because it wanted the detail.
         foreach (DetailLevel level in (DetailLevel[])[DetailLevel.Medium, DetailLevel.Low, DetailLevel.Minimal])
         {
-            string description = IssueMarkdownFormatter.DescribeReduction(level);
+            string description = IssueMarkdownFormatter.DescribeReduction(level, false, false);
             description.ShouldContain(IssueMarkdownFormatter.NarrowingHint);
             description.ShouldEndWith(IssueMarkdownFormatter.FullReportHint);
         }
@@ -376,7 +377,7 @@ public sealed class IssueMarkdownFormatterTests
     public void DescribeReduction_High_OmitsTheNarrowingHintButOffersTheReport()
     {
         // Act
-        string description = IssueMarkdownFormatter.DescribeReduction(DetailLevel.High);
+        string description = IssueMarkdownFormatter.DescribeReduction(DetailLevel.High, false, false);
 
         // Assert — High is the level essentially every solution-wide run lands on, and re-running scoped is
         // a whole solution's analysis again, so telling the agent to do that here would be noise. A report
@@ -396,8 +397,40 @@ public sealed class IssueMarkdownFormatterTests
 
         // Act / Assert
         foreach (DetailLevel level in reduced)
-            IssueMarkdownFormatter.DescribeReduction(level, true)
+            IssueMarkdownFormatter.DescribeReduction(level, true, false)
                 .ShouldNotContain(IssueMarkdownFormatter.FullReportHint);
+    }
+
+    [Fact]
+    public void DescribeReduction_TheLevelTheCallerAskedFor_DropsNarrowingAndKeepsTheReportOffer()
+    {
+        // Arrange — the same principle the report flag settled, in the other direction: a caller that
+        // passed detail has already asked for less, so "ask for less" is the one remedy that cannot help
+        // it. A report is the opposite trade and still can.
+        DetailLevel[] levelsThatNarrow = [DetailLevel.Medium, DetailLevel.Low, DetailLevel.Minimal];
+
+        // Act / Assert
+        foreach (DetailLevel level in levelsThatNarrow)
+        {
+            string description = IssueMarkdownFormatter.DescribeReduction(level, false, true);
+            description.ShouldNotContain(IssueMarkdownFormatter.NarrowingHint);
+            description.ShouldEndWith(IssueMarkdownFormatter.FullReportHint);
+        }
+    }
+
+    [Fact]
+    public void DescribeReduction_Low_IsOneSentenceWithTheNarrowingHintSpliced()
+    {
+        // The pin over the restructure that made the hint suppressible: the forced-down wording is what
+        // every over-budget solution-wide response has said, and not a byte of it may move.
+        IssueMarkdownFormatter.DescribeReduction(DetailLevel.Low, false, false).ShouldBe(
+            "the per-file listing is replaced by a rollup of the top rules and the top files. "
+            + "Narrow the scan with the files parameter or raise severity. "
+            + "Set report to Markdown to have every finding written to a file with its own message.");
+
+        IssueMarkdownFormatter.DescribeReduction(DetailLevel.Low, false, true).ShouldBe(
+            "the per-file listing is replaced by a rollup of the top rules and the top files. "
+            + "Set report to Markdown to have every finding written to a file with its own message.");
     }
 
     /// <summary>

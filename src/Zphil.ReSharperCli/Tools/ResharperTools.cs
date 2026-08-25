@@ -90,9 +90,21 @@ internal sealed class ResharperTools(
             + "solution-wide run exceeds the output budget. The file lands in a directory this server owns "
             + "and is pruned after 7 days; the response carries the summary either way.")]
         InspectReport report = InspectReport.None,
+        [Description(
+            "Cap on the detail the response carries: Full, the default, lists every issue on its own line, "
+            + "and Minimal is one line of totals. Rendering starts at this level and never goes above it, "
+            + "but still steps below it when the result does not fit the output budget. The DETAIL REDUCED "
+            + "note says which of the two happened. Response shaping only: the same analysis runs whatever "
+            + "the level, so a lower level does not make a call finish sooner. Pair detail=Minimal with "
+            + "report=Markdown for a cheap verdict in the response and every finding in the file.")]
+        InspectDetail detail = InspectDetail.Full,
         [Description(SolutionPathDescription)] string? solutionPath = null,
         CancellationToken cancellationToken = default)
     {
+        // First, ahead of the run: this is the one argument whose translation can fail, and a failure here
+        // after jb has spent minutes would have cost those minutes to learn nothing.
+        DetailLevel cap = CapFor(detail);
+
         ResolvedConfig config = await configResolver.ResolveAsync(solutionPath, cancellationToken);
 
         // An entry joining several paths would reach jb as one --include pattern that matches nothing, and
@@ -119,11 +131,34 @@ internal sealed class ResharperTools(
                         + CompilationErrorNote.For(issues, config.CacheHome)
                         + InspectReportNote.For(written, issues.Count);
 
+        // The level asked for suppresses the narrowing remedy only when the rendering actually settles
+        // there: below the cap, the budget forced the step and the remedy is as useful as it ever was.
         return RenderWithBanner(
             banner,
             issues,
             (data, level) => level == DetailLevel.Full ? RenderFull() : IssueMarkdownFormatter.Format(data, level),
-            level => IssueMarkdownFormatter.DescribeReduction(level, written is { Failure: null }));
+            level => IssueMarkdownFormatter.DescribeReduction(level, written is { Failure: null }, level == cap),
+            cap);
+    }
+
+    /// <summary>
+    ///     The tool-facing <see cref="InspectDetail" /> as the <see cref="DetailLevel" /> the ladder starts
+    ///     from. Spelt out member by member rather than cast or round-tripped through
+    ///     <see cref="Enum.Parse{TEnum}(string)" />: either of those would keep compiling if the two enums
+    ///     diverged and quietly resolve the wrong level, which is the failure keeping them separate exists
+    ///     to prevent.
+    /// </summary>
+    private static DetailLevel CapFor(InspectDetail detail)
+    {
+        return detail switch
+        {
+            InspectDetail.Full => DetailLevel.Full,
+            InspectDetail.High => DetailLevel.High,
+            InspectDetail.Medium => DetailLevel.Medium,
+            InspectDetail.Low => DetailLevel.Low,
+            InspectDetail.Minimal => DetailLevel.Minimal,
+            _ => throw new ArgumentOutOfRangeException(nameof(detail), detail, "Unmapped inspect detail level.")
+        };
     }
 
     /// <summary>
@@ -193,6 +228,8 @@ internal sealed class ResharperTools(
 
         CleanupOutcome outcome = await cleanupService.RunAsync(config, paths, profile, cancellationToken);
 
+        // No detail parameter here, though the plumbing is shared: what this ladder reduces is a status
+        // line per file, over the list the caller supplied and can therefore already shorten itself.
         return RenderWithBanner(
             ConfigWarningBanner.ForCleanup(config.Warnings),
             outcome,
@@ -229,19 +266,23 @@ internal sealed class ResharperTools(
     ///     every step down to Minimal without making truncation any likelier. Inspect must not let an empty
     ///     result read as "nothing to report" when settings were dropped; cleanup must report the profile the
     ///     files were <em>not</em> cleaned with once they are already rewritten.
+    ///     <paramref name="startLevel" /> is where that ladder begins — inspect's <c>detail</c> cap, and for
+    ///     cleanup the default, which is the whole ladder.
     /// </summary>
     private string RenderWithBanner<T>(
         string banner,
         T data,
         Func<T, DetailLevel, string> format,
-        Func<DetailLevel, string> describeReduction)
+        Func<DetailLevel, string> describeReduction,
+        DetailLevel startLevel = DetailLevel.Full)
     {
         int maxChars = ResponseTruncator.ComputeMaxChars(environment);
         ProgressiveRendering rendering = ProgressiveRenderer.Render(
             data,
             format,
             ResponseTruncator.BudgetForBody(maxChars, banner),
-            describeReduction);
+            describeReduction,
+            startLevel);
 
         // Debug: the level a response settled at is shaping, not caching, and it is already stated in the
         // response an agent received. What it buys the log is the answer to whether the ladder has ever had to

@@ -43,6 +43,12 @@ internal static class ProgressiveRenderer
     ///     Optional per-level description appended to the reduction note; a generic message is used when
     ///     <see langword="null" />. Lets each domain (cleanup now, inspect later) explain its own reduction.
     /// </param>
+    /// <param name="startLevel">
+    ///     The most detailed level to try — a cap, not a pin. Levels above it are skipped entirely, and the
+    ///     walk still steps below it when the rendering does not fit. At the default
+    ///     <see cref="DetailLevel.Full" /> nothing is skipped and the ladder behaves exactly as it did before
+    ///     a caller could ask for a level.
+    /// </param>
     /// <returns>
     ///     The first level whose rendering fits within <paramref name="maxChars" /> —
     ///     <see cref="DetailLevel.Full" /> verbatim, lower levels including their appended
@@ -54,14 +60,20 @@ internal static class ProgressiveRenderer
         T data,
         Func<T, DetailLevel, string> format,
         int maxChars,
-        Func<DetailLevel, string>? describeReduction = null)
+        Func<DetailLevel, string>? describeReduction = null,
+        DetailLevel startLevel = DetailLevel.Full)
     {
         Func<DetailLevel, string> describe = describeReduction ?? DefaultReductionDescription;
 
         string previousOutput = null!;
-        var lastTriedLevel = DetailLevel.Full;
 
-        foreach (DetailLevel level in ReductionOrder)
+        // Seeded at the cap rather than at Full: nothing above it is ever rendered, so naming Full in the
+        // failsafe's note would label content no level produced.
+        DetailLevel lastTriedLevel = startLevel;
+
+        // The enum is ordered most-to-least detail, so "greater than or equal to" is "no more detailed
+        // than the cap".
+        foreach (DetailLevel level in ReductionOrder.Where(candidate => candidate >= startLevel))
         {
             string output = format(data, level);
             lastTriedLevel = level;
@@ -77,7 +89,7 @@ internal static class ProgressiveRenderer
             // mid-chop this renderer exists to prevent.
             string candidate = level == DetailLevel.Full
                 ? output
-                : AppendReductionNote(output, level, maxChars, describe);
+                : AppendReductionNote(output, level, maxChars, describe, startLevel);
             if (candidate.Length <= maxChars) return new ProgressiveRendering(candidate, level);
 
             previousOutput = output;
@@ -85,7 +97,7 @@ internal static class ProgressiveRenderer
 
         // Nothing fit — return the smallest rendering for the hard-truncation failsafe.
         return new ProgressiveRendering(
-            AppendReductionNote(previousOutput, lastTriedLevel, maxChars, describe), lastTriedLevel);
+            AppendReductionNote(previousOutput, lastTriedLevel, maxChars, describe, startLevel), lastTriedLevel);
     }
 
     private static string DefaultReductionDescription(DetailLevel level)
@@ -93,9 +105,20 @@ internal static class ProgressiveRenderer
         return "lower-signal detail was collapsed to fit the output budget.";
     }
 
+    /// <summary>
+    ///     Appends the note, led by whichever of the two things happened. A level the caller asked for is
+    ///     not a budget failure, and saying "output exceeded the limit" there would be false; a level below
+    ///     the cap is the budget forcing the ladder down, and reads exactly as it always has. The
+    ///     <c>--- DETAIL REDUCED ---</c> marker stays the one anchor across both, because it is what an agent
+    ///     matches on to know the response is a reduction rather than a full listing.
+    /// </summary>
     private static string AppendReductionNote(
-        string output, DetailLevel level, int maxChars, Func<DetailLevel, string> describe)
+        string output, DetailLevel level, int maxChars, Func<DetailLevel, string> describe, DetailLevel startLevel)
     {
-        return $"{output}\n\n--- DETAIL REDUCED ---\nOutput exceeded the {maxChars:N0} character limit. Reduced to {level}: {describe(level)}";
+        string lead = level == startLevel
+            ? $"Rendered at the requested detail level {level}"
+            : $"Output exceeded the {maxChars:N0} character limit. Reduced to {level}";
+
+        return $"{output}\n\n--- DETAIL REDUCED ---\n{lead}: {describe(level)}";
     }
 }

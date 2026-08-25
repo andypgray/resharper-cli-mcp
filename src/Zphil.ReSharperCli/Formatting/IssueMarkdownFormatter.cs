@@ -58,16 +58,6 @@ internal static class IssueMarkdownFormatter
     }
 
     /// <summary>
-    ///     What was given up at <paramref name="level" />, for <c>ProgressiveRenderer</c>'s reduction note,
-    ///     with no report written. Kept as its own overload because a method group cannot be converted to
-    ///     <c>Func&lt;DetailLevel, string&gt;</c> when the target has an optional second parameter.
-    /// </summary>
-    public static string DescribeReduction(DetailLevel level)
-    {
-        return DescribeReduction(level, false);
-    }
-
-    /// <summary>
     ///     What was given up at <paramref name="level" />, and what to do about it.
     ///     <see cref="DetailLevel.High" /> still carries no <see cref="NarrowingHint" />: re-running scoped is
     ///     a whole solution's analysis over again, and it would be noise on the level that fires for
@@ -81,9 +71,18 @@ internal static class IssueMarkdownFormatter
     ///     every level: <see cref="InspectReportNote" /> has already named the file, and telling a caller to
     ///     do what it just did is worse than saying nothing.
     /// </param>
-    public static string DescribeReduction(DetailLevel level, bool reportWritten)
+    /// <param name="levelWasRequested">
+    ///     Whether <paramref name="level" /> is the one the caller's <c>detail</c> asked for rather than one
+    ///     the budget forced. When it is, <see cref="NarrowingHint" /> is omitted for the same reason
+    ///     <paramref name="reportWritten" /> drops the report offer: a caller that just asked for less does
+    ///     not need to be told to ask for less. Both flags are required rather than optional — a call site
+    ///     that forgets one loses its suppression silently, which is the class of defect this shape exists
+    ///     to make impossible.
+    /// </param>
+    public static string DescribeReduction(DetailLevel level, bool reportWritten, bool levelWasRequested)
     {
         string remedy = reportWritten ? "" : " " + FullReportHint;
+        string narrowing = levelWasRequested ? "" : " " + NarrowingHint;
 
         return level switch
         {
@@ -91,12 +90,12 @@ internal static class IssueMarkdownFormatter
                 "issues repeating a rule within a file are collapsed to one line carrying their line numbers "
                 + "and one example message. Every issue is still counted." + remedy,
             DetailLevel.Medium =>
-                $"only the {MaxListedFiles} most-affected files are listed; the rest are counted. "
-                + NarrowingHint + remedy,
+                $"only the {MaxListedFiles} most-affected files are listed; the rest are counted."
+                + narrowing + remedy,
             DetailLevel.Low =>
-                "the per-file listing is replaced by a rollup of the top rules and the top files. "
-                + NarrowingHint + remedy,
-            _ => "totals, severity counts, and the top rules only. " + NarrowingHint + remedy
+                "the per-file listing is replaced by a rollup of the top rules and the top files."
+                + narrowing + remedy,
+            _ => "totals, severity counts, and the top rules only." + narrowing + remedy
         };
     }
 

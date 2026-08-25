@@ -224,6 +224,45 @@ public sealed class CoercionIntegrationTests
     }
 
     [Fact]
+    public async Task ListTools_InspectDetailParameter_AdvertisesStringWithEnumValues()
+    {
+        // Arrange
+        await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
+
+        // Act
+        IList<McpClientTool> tools = await harness.Client.ListToolsAsync(cancellationToken: Ct);
+
+        // Assert — the five levels travel in the schema, in ladder order, so the description prose never
+        // has to name them and cannot drift from them.
+        McpClientTool inspect = tools.Single(tool => tool.Name == "resharper_inspect");
+        JsonElement detail = PropertySchema(inspect, "detail");
+        detail.GetProperty("type").GetString().ShouldBe("string");
+        EnumValues(detail).ShouldBe(["Full", "High", "Medium", "Low", "Minimal"]);
+    }
+
+    [Fact]
+    public async Task CallTool_InspectInvalidDetail_ReturnsValidValuesErrorAndLogsNothing()
+    {
+        // Arrange
+        await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
+        PlantSolution(harness.Environment, "App.sln");
+        RouteJb(harness.ProcessRunner);
+
+        // Act — "Verbose" is a plausible borrowing from other tools' vocabulary, and is not one of these.
+        CallToolResult result = await harness.Client.CallToolAsync(
+            "resharper_inspect",
+            new Dictionary<string, object?> { ["detail"] = "Verbose" },
+            cancellationToken: Ct);
+
+        // Assert
+        result.IsError.ShouldBe(true);
+        string text = TextOf(result);
+        text.ShouldContain("Verbose");
+        text.ShouldContain("Valid values: Full, High, Medium, Low, Minimal");
+        harness.Logs.Warnings.ShouldBeEmpty();
+    }
+
+    [Fact]
     public async Task CallTool_UnknownParameterKey_ReturnsGuardErrorAndLogsNothing()
     {
         // Arrange

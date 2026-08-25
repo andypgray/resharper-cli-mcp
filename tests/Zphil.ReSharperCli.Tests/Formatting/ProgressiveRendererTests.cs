@@ -190,4 +190,86 @@ public sealed class ProgressiveRendererTests
         // Assert
         result.ShouldContain("custom reduction note for High");
     }
+
+    [Fact]
+    public void Render_StartLevelBelowFull_NeverRendersTheLevelsAboveIt()
+    {
+        // Arrange
+        List<DetailLevel> callLog = [];
+
+        // Act — every level exceeds the limit, so every level the walk is willing to try gets tried.
+        ProgressiveRenderer.Render(
+            "input",
+            (_, level) =>
+            {
+                callLog.Add(level);
+                return new string('x', 200);
+            },
+            100,
+            startLevel: DetailLevel.Medium);
+
+        // Assert — a cap skips the work, rather than doing it and discarding the result. Formatting a
+        // solution-wide result at Full is the expensive step a caller asking for a rollup is avoiding.
+        callLog.ShouldBe([DetailLevel.Medium, DetailLevel.Low, DetailLevel.Minimal]);
+    }
+
+    [Fact]
+    public void Render_StartLevelFits_NoteSaysItWasRequestedRatherThanForced()
+    {
+        // Act — Low renders well inside the budget, so nothing overflowed.
+        string result = ProgressiveRenderer.Render(
+            "input", (_, _) => new string('y', 50), 400, startLevel: DetailLevel.Low).Text;
+
+        // Assert — the marker stays the one anchor across both leads; claiming the budget forced this
+        // would be false, and would send a caller off to narrow a scan that never overflowed.
+        result.ShouldContain("--- DETAIL REDUCED ---");
+        result.ShouldContain("Rendered at the requested detail level Low");
+        result.ShouldNotContain("character limit");
+    }
+
+    [Fact]
+    public void Render_StartLevelDoesNotFit_StepsBelowItAndNamesTheCharacterLimit()
+    {
+        // Act — a cap is not a floor: Low is over the budget, so the walk keeps going.
+        string result = ProgressiveRenderer.Render(
+            "input",
+            (_, level) => level == DetailLevel.Minimal ? new string('y', 50) : new string('x', 1000),
+            400,
+            startLevel: DetailLevel.Low).Text;
+
+        // Assert — below the cap the budget is what decided, and the note reads as it always has.
+        result.ShouldContain("Output exceeded the 400 character limit. Reduced to Minimal");
+        result.ShouldNotContain("requested detail level");
+    }
+
+    [Fact]
+    public void Render_StartLevelFullAndFullFits_ReturnsItVerbatimWithNoNote()
+    {
+        // Arrange
+        var output = new string('x', 50);
+
+        // Act — the explicit Full is the whole test, so it must survive cleanup: stripped as a redundant
+        // default, this becomes a duplicate of Render_FitsAtFull_NoReductionNote and silently stops
+        // pinning anything about the cap.
+        // ReSharper disable once RedundantArgumentDefaultValue
+        string result = ProgressiveRenderer.Render("input", (_, _) => output, 100, startLevel: DetailLevel.Full).Text;
+
+        // Assert — Full is returned verbatim whether or not it was asked for. That is what keeps the
+        // requested-level lead unreachable on the default path, and the default response byte-identical.
+        result.ShouldBe(output);
+        result.ShouldNotContain("DETAIL REDUCED");
+    }
+
+    [Fact]
+    public void Render_StartLevelIsTheLastLevelAndNothingFits_FailsafeNamesItRatherThanFull()
+    {
+        // Arrange — with Minimal capped, no level above it is ever rendered, so a failsafe still seeding
+        // its level at Full would label the returned content with a level nothing produced.
+        string result = ProgressiveRenderer.Render(
+            "input", (_, _) => new string('x', 200), 100, startLevel: DetailLevel.Minimal).Text;
+
+        // Assert — it genuinely is the level asked for; ResponseTruncator's own footer reports the cut.
+        result.ShouldContain("Rendered at the requested detail level Minimal");
+        result.ShouldNotContain("Reduced to Full");
+    }
 }

@@ -651,6 +651,148 @@ public sealed class ToolPipelineTests
         result.ShouldNotContain("File199.cs"); // the response could not carry what the file does
     }
 
+    // detail is the third internal enum on the surface, so the same CS0051 constraint applies: every case
+    // is a Fact with the value as a body literal.
+    [Fact]
+    public async Task InspectAsync_DetailLowOnAResultThatFitsAtFull_ReturnsTheRollupAndSaysItWasAskedFor()
+    {
+        // Arrange — 3 issues render at Full well inside the default 25,000-character budget, so nothing
+        // about this response is the budget's doing. Before the parameter, overflowing was the only way in.
+        using FakeEnvironment environment = new();
+        PlantSolution(environment, "App.sln");
+        StubJb(Fixtures.ReadSarif("inspect-sample.json"));
+        ResharperTools tools = ToolHarness.Build(_processRunner, environment);
+
+        // Act
+        string result = await tools.InspectAsync(detail: InspectDetail.Low, cancellationToken: Ct);
+
+        // Assert — the rollup, under a note that does not blame a limit nothing came near, and without the
+        // remedy that would tell a caller to do what it just did.
+        result.ShouldContain("By rule (");
+        result.ShouldContain("By file (");
+        result.ShouldContain("Rendered at the requested detail level Low");
+        result.ShouldNotContain("character limit");
+        result.ShouldNotContain(IssueMarkdownFormatter.NarrowingHint);
+    }
+
+    [Fact]
+    public async Task InspectAsync_DetailLowAndABudgetTooSmallForIt_StepsBelowTheCapAndNamesTheLimit()
+    {
+        // Arrange — a cap is not a floor. 201 issues do not roll up inside 750 characters, so the ladder
+        // keeps stepping and the note has to stop claiming the level was the caller's choice.
+        using FakeEnvironment environment = new();
+        environment.SetVariable("MAX_MCP_OUTPUT_TOKENS", "300"); // 750 characters
+        PlantSolution(environment, "App.sln");
+        StubJb(ManyIssuesSarif(200));
+        ResharperTools tools = ToolHarness.Build(_processRunner, environment);
+
+        // Act
+        string result = await tools.InspectAsync(detail: InspectDetail.Low, cancellationToken: Ct);
+
+        // Assert — below the cap the budget decided, so both the limit and the narrowing remedy come back.
+        result.ShouldContain("Output exceeded the");
+        result.ShouldContain("Reduced to Minimal");
+        result.ShouldContain(IssueMarkdownFormatter.NarrowingHint);
+    }
+
+    [Fact]
+    public async Task InspectAsync_DetailFull_IsByteIdenticalToTheCallThatPassesNoDetail()
+    {
+        // Arrange — the default-path pin. A fifth parameter may not move a byte of what every existing
+        // caller already gets, which is what makes it free to add.
+        using FakeEnvironment environment = new();
+        PlantSolution(environment, "App.sln");
+        StubJb(Fixtures.ReadSarif("inspect-sample.json"));
+        ResharperTools tools = ToolHarness.Build(_processRunner, environment);
+
+        // Act
+        string withoutDetail = await tools.InspectAsync(cancellationToken: Ct);
+        string withFull = await tools.InspectAsync(detail: InspectDetail.Full, cancellationToken: Ct);
+
+        // Assert
+        withFull.ShouldBe(withoutDetail);
+        withFull.ShouldNotContain("--- DETAIL REDUCED ---");
+    }
+
+    [Fact]
+    public async Task InspectAsync_EveryDetailValue_SettlesAtTheLevelItNames()
+    {
+        // Arrange — a 3-issue result fits at every level, so where a response lands is the parameter's
+        // doing alone. The note is asserted against the enum member's own name, which is also what pins
+        // the tool-facing enum and the formatting ladder to the same five spellings.
+        using FakeEnvironment environment = new();
+        PlantSolution(environment, "App.sln");
+        StubJb(Fixtures.ReadSarif("inspect-sample.json"));
+        ResharperTools tools = ToolHarness.Build(_processRunner, environment);
+
+        // Act / Assert
+        foreach (InspectDetail detail in Enum.GetValues<InspectDetail>())
+        {
+            string result = await tools.InspectAsync(detail: detail, cancellationToken: Ct);
+
+            // Full is the no-cap default and comes back verbatim, so there is nothing to announce.
+            if (detail == InspectDetail.Full)
+            {
+                result.ShouldNotContain("--- DETAIL REDUCED ---");
+                continue;
+            }
+
+            result.ShouldContain($"Rendered at the requested detail level {detail}");
+        }
+    }
+
+    [Fact]
+    public async Task InspectAsync_DetailMinimalAndReportMarkdown_AnswersInOneLineAndFilesEveryFinding()
+    {
+        // Arrange — the composition the pair exists for, and the survey-a-legacy-solution case in one
+        // call: a cheap verdict in the response while every finding stays reachable in the file. Neither
+        // parameter delivers it alone.
+        using FakeEnvironment environment = new();
+        string reportRoot = environment.CreateTempDirectory();
+        PlantSolution(environment, "App.sln");
+        StubJb(ManyIssuesSarif(200));
+        ResharperTools tools = ToolHarness.Build(_processRunner, environment, reportRoot: reportRoot);
+
+        // Act
+        string result = await tools.InspectAsync(
+            report: InspectReport.Markdown, detail: InspectDetail.Minimal, cancellationToken: Ct);
+
+        // Assert — the one-liner, at a level the response says was asked for rather than forced.
+        result.ShouldContain("Rendered at the requested detail level Minimal");
+        result.ShouldContain("Found 201 issue(s) across 201 file(s).");
+        result.ShouldNotContain("File199.cs");
+
+        // Neither remedy fires: a report was written, and the caller chose this level.
+        result.ShouldNotContain(IssueMarkdownFormatter.FullReportHint);
+        result.ShouldNotContain(IssueMarkdownFormatter.NarrowingHint);
+
+        string document = File.ReadAllText(PathFromNote(result));
+        document.ShouldContain("File000.cs");
+        document.ShouldContain("File199.cs");
+    }
+
+    [Fact]
+    public async Task InspectAsync_DetailValueThatIsNoMember_FailsBeforeSpendingAJbRun()
+    {
+        // Arrange — unreachable through the binder, which rejects anything not a member by name. It is
+        // reachable by a member added to InspectDetail and not to the mapping, and the reason the two enums
+        // are mapped by hand is that such a gap must not quietly resolve to a plausible-looking level.
+        using FakeEnvironment environment = new();
+        PlantSolution(environment, "App.sln");
+        StubJb(Fixtures.ReadSarif("inspect-sample.json"));
+        ResharperTools tools = ToolHarness.Build(_processRunner, environment);
+
+        // Act
+        await Should.ThrowAsync<ArgumentOutOfRangeException>(() => tools.InspectAsync(detail: (InspectDetail)99, cancellationToken: Ct));
+
+        // Assert — and it fails ahead of the analysis, so a bad argument never costs the minutes a run does.
+        await _processRunner.DidNotReceive().RunAsync(
+            Arg.Any<string>(),
+            Arg.Is<IReadOnlyList<string>>(args => args != null && args.Count > 0 && args[0] == "inspectcode"),
+            Arg.Any<TimeSpan>(),
+            Arg.Any<CancellationToken>());
+    }
+
     [Fact]
     public async Task ResetCacheAsync_SolutionWithACachedGeneration_DropsItAndReportsTheColdNextCall()
     {

@@ -73,6 +73,12 @@ public sealed class SetupResourceTests
         text.ShouldContain("`report=Markdown`");
         text.ShouldContain($"{(int)InspectReportWriter.RetentionPeriod.TotalDays} days old");
 
+        // The other half of that pair: asking for a level rather than overflowing into one, the cap-not-pin
+        // rule, and the composition that answers the survey-a-legacy-solution case in one call.
+        text.ShouldContain("pass `detail`");
+        text.ShouldContain("Rendered at the requested detail level"); // the note's own lead, quoted
+        text.ShouldContain("`detail=Minimal report=Markdown`");
+
         text.ShouldContain("CSharpErrors"); // the rule that identifies a stale solution-wide index
         text.ShouldContain(ResharperTools.ResetCacheToolName); // and the tool that clears it
         text.ShouldContain("worktree"); // the always-cold case, and the only place the seeding is described

@@ -265,6 +265,16 @@ reduction level, so a `DETAIL REDUCED` response is safe to conclude from — unl
 4. **Low** — the per-file listing is replaced by a rollup of the top rules and the top files.
 5. **Minimal** — one line: totals, severity counts, and the top rules.
 
+**To land on one of those levels deliberately, pass `detail`.** It names the most detailed level the
+response may use, and `Full` — the default — leaves the ladder to decide exactly as it always has. It caps
+rather than pins: rendering starts at the level you name and still steps below it when the result does not
+fit, so the mid-line chop the ladder exists to prevent stays prevented. The note says which of the two
+happened — `Rendered at the requested detail level Low` for a level you asked for, `Output exceeded the
+25,000 character limit. Reduced to Low` for one the budget forced — and on the first it drops the "narrow
+the scan" remedy, because a caller that asked for less has already done that. The `jb` run is unaffected:
+the same analysis runs and the same issues are parsed, and `detail` decides only how many of them the
+response spells out. It will not make a call finish sooner.
+
 **When you need every finding with its own message, pass `report=Markdown`.** It is off by default. Set it
 and `resharper_inspect` writes the whole listing at Full detail to a file and names that file at the top of
 its response, which still carries the summary the ladder produced. The two answer different questions: the
@@ -275,10 +285,15 @@ writes one report per run and this server needs the SARIF to build the summary, 
 would each cost a second full run of `jb`. The file is written under the system temp directory, in a
 directory this server owns, and is deleted once it is 7 days old.
 
+The two compose, and neither subsumes the other: `detail` decides how much lands in the response, `report`
+whether all of it also lands in a file. `detail=Minimal report=Markdown` surveys a legacy solution in a
+single call — a one-line verdict in the response, every finding with its own message in the file — and the
+response offers neither remedy, having already done both.
+
 `resharper_cleanup` steps down the same ladder over its per-file statuses, collapsing them toward counts.
-The cleanup itself always ran in full; only the report shrank. It has no `report` parameter: `jb
-cleanupcode` writes no report of its own, and what the ladder reduces there is a status list of the files
-you supplied.
+The cleanup itself always ran in full; only the report shrank. It has neither parameter: `jb cleanupcode`
+writes no report of its own, and what the ladder reduces there is a status list of the files you supplied,
+which you can already shorten by supplying fewer.
 
 A `RESPONSE TRUNCATED` footer survives only as a last-resort backstop, for when even the smallest
 rendering overflows the budget — a very small `MAX_MCP_OUTPUT_TOKENS`, essentially. It cuts at the last

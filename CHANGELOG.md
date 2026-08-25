@@ -17,6 +17,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to build the summary, so XML, HTML or raw SARIF would each cost a second full run. The file lands under the
   system temp directory, in a directory the server owns, and is deleted once it is 7 days old.
 
+- A `detail` argument on `resharper_inspect`, naming the most detailed level its response may use — `Full`
+  down to a one-line `Minimal`. Until now the only way to reach the rollup was to overflow the output
+  budget and let the ladder fall into it. It caps rather than pins: rendering starts at the level named and
+  still steps below it when the result does not fit, so nothing is chopped mid-line, and the
+  `DETAIL REDUCED` note says which of the two happened. A level that was asked for no longer suggests
+  narrowing the scan, since the caller has just done that. The `jb` run is unaffected — the same analysis,
+  the same issues, fewer of them spelt out — and `Full`, the default, leaves every existing response
+  byte-for-byte as it was. Pairs with `report`: `detail=Minimal report=Markdown` gives a one-line verdict
+  in the response and every finding in the file.
+
 - The file log records what each call did to the ReSharper cache. At `Information`, a `jb` run is bracketed by
   two lines: one as it starts, naming whether the cache was warm, cold, part-built or dropped by a reset and
   how long the run queued behind another, and one as it ends, with the exit code and the duration. Cache

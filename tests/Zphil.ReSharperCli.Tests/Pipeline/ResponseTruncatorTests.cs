@@ -131,9 +131,9 @@ public sealed class ResponseTruncatorTests
     [Fact]
     public void TruncationHintFor_KnownTools_MapEachToItsOwnRemedy()
     {
-        // Assert — inspect's remedy is a narrower next scan; cleanup's and reset's are the reassurance that
-        // the work was done in full, so a chopped report cannot read as chopped work.
-        ResharperTools.TruncationHintFor(ResharperTools.InspectToolName).ShouldBe(IssueMarkdownFormatter.NarrowingHint);
+        // Assert — inspect's remedy is a narrower next scan or a report file; cleanup's and reset's are the
+        // reassurance that the work was done in full, so a chopped report cannot read as chopped work.
+        ResharperTools.TruncationHintFor(ResharperTools.InspectToolName).ShouldBe(IssueMarkdownFormatter.TruncationRemedy);
         ResharperTools.TruncationHintFor(ResharperTools.CleanupToolName).ShouldBe(CleanupSummaryFormatter.CleanupRanInFull);
         ResharperTools.TruncationHintFor(ResharperTools.ResetCacheToolName).ShouldBe(CacheResetFormatter.ResetRanInFull);
     }

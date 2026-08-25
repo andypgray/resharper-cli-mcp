@@ -4,6 +4,7 @@ using NSubstitute.Core;
 using Shouldly;
 using Xunit;
 using Zphil.ReSharperCli.Execution;
+using Zphil.ReSharperCli.Formatting;
 using Zphil.ReSharperCli.Services;
 using Zphil.ReSharperCli.Tests.TestDoubles;
 using Zphil.ReSharperCli.Tests.TestSupport;
@@ -550,6 +551,106 @@ public sealed class ToolPipelineTests
         result.ShouldContain("Found 201 issue(s) across 201 file(s)");
     }
 
+    // The report parameter is an internal enum, so every case below is a Fact with the value as a body
+    // literal — the same CS0051 constraint the severity pair above is written around.
+    [Fact]
+    public async Task InspectAsync_NoReportAsked_WritesNothingAndReturnsWhatItAlwaysDid()
+    {
+        // Arrange — the default. Nothing about a response without the parameter may change, which is what
+        // makes the report free for every caller that does not want one.
+        using FakeEnvironment environment = new();
+        string reportRoot = environment.CreateTempDirectory();
+        PlantSolution(environment, "App.sln");
+        StubJb(Fixtures.ReadSarif("inspect-sample.json"));
+        ResharperTools tools = ToolHarness.Build(_processRunner, environment, reportRoot: reportRoot);
+
+        // Act
+        string result = await tools.InspectAsync(cancellationToken: Ct);
+
+        // Assert
+        result.ShouldStartWith("Found 3 issue(s)");
+        result.ShouldNotContain("FULL REPORT");
+        Directory.Exists(Path.Combine(reportRoot, InspectReportWriter.ReportsDirectoryName)).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task InspectAsync_ReportMarkdown_NamesAFileCarryingTheRunAndEveryMessage()
+    {
+        // Arrange
+        using FakeEnvironment environment = new();
+        string reportRoot = environment.CreateTempDirectory();
+        PlantSolution(environment, "App.sln");
+        StubJb(Fixtures.ReadSarif("inspect-sample.json"));
+        ResharperTools tools = ToolHarness.Build(_processRunner, environment, reportRoot: reportRoot);
+
+        // Act
+        string result = await tools.InspectAsync(severity: InspectSeverity.Suggestion, report: InspectReport.Markdown, cancellationToken: Ct);
+
+        // Assert — the note leads, and the path it names holds the provenance a file read later cannot
+        // reconstruct plus the Full listing.
+        result.ShouldStartWith("FULL REPORT: all 3 issue(s)");
+        string reportPath = PathFromNote(result);
+        File.Exists(reportPath).ShouldBeTrue();
+        string document = File.ReadAllText(reportPath);
+        document.ShouldStartWith("# ReSharper inspection report\n");
+        document.ShouldContain("- Minimum severity: SUGGESTION");
+        document.ShouldContain("- Scope: whole solution");
+        document.ShouldContain("Found 3 issue(s)");
+    }
+
+    [Fact]
+    public async Task InspectAsync_ReportMarkdownAndNothingFound_StillWritesTheFile()
+    {
+        // Arrange — "a report was asked for, so the response names a file that exists" is a contract a caller
+        // can script against; one that sometimes yields no file is not.
+        using FakeEnvironment environment = new();
+        string reportRoot = environment.CreateTempDirectory();
+        PlantSolution(environment, "App.sln");
+        StubJb(Fixtures.ReadSarif("empty-runs.json"));
+        ResharperTools tools = ToolHarness.Build(_processRunner, environment, reportRoot: reportRoot);
+
+        // Act
+        string result = await tools.InspectAsync(report: InspectReport.Markdown, cancellationToken: Ct);
+
+        // Assert
+        result.ShouldStartWith("FULL REPORT: all 0 issue(s)");
+        result.ShouldEndWith("No issues found.");
+        File.ReadAllText(PathFromNote(result)).ShouldContain("No issues found.");
+    }
+
+    [Fact]
+    public async Task InspectAsync_ReportMarkdownAndASqueezedBudget_KeepsTheNoteAndHoldsWhatTheResponseDropped()
+    {
+        // Arrange — the case the parameter exists for. The response is reduced to the one-liner while the
+        // file keeps every finding, and the note naming that file has to survive the whole ladder or it
+        // vanishes exactly when it matters.
+        using FakeEnvironment environment = new();
+        environment.SetVariable("MAX_MCP_OUTPUT_TOKENS", "300"); // 750 characters
+        string reportRoot = environment.CreateTempDirectory();
+        PlantSolution(environment, "App.sln");
+        StubJb(ManyIssuesSarif(200));
+        ResharperTools tools = ToolHarness.Build(_processRunner, environment, reportRoot: reportRoot);
+
+        // Act
+        string result = await tools.InspectAsync(report: InspectReport.Markdown, cancellationToken: Ct);
+
+        // Assert — this SARIF also trips the compilation-error note, so both preambles are present and the
+        // report note is the last of them, sitting immediately above the listing it refers to.
+        result.ShouldStartWith("NOTE: 1 of these issue(s) are compilation errors");
+        result.ShouldContain("FULL REPORT: all 201 issue(s)");
+        result.IndexOf("FULL REPORT", StringComparison.Ordinal)
+            .ShouldBeLessThan(result.IndexOf("Found 201 issue(s)", StringComparison.Ordinal));
+        result.ShouldContain("totals, severity counts, and the top rules only.");
+
+        // Having written the file, the reduction note does not go on to suggest writing one.
+        result.ShouldNotContain(IssueMarkdownFormatter.FullReportHint);
+
+        string document = File.ReadAllText(PathFromNote(result));
+        document.ShouldContain("File000.cs");
+        document.ShouldContain("File199.cs");
+        result.ShouldNotContain("File199.cs"); // the response could not carry what the file does
+    }
+
     [Fact]
     public async Task ResetCacheAsync_SolutionWithACachedGeneration_DropsItAndReportsTheColdNextCall()
     {
@@ -732,6 +833,20 @@ public sealed class ToolPipelineTests
                 }
             };
         }
+    }
+
+    /// <summary>
+    ///     The report path out of the response's preamble, read the way an agent would. Anchored on the
+    ///     report note's own wording rather than on the first quotation mark in the response: the
+    ///     compilation-error note leads when it applies, and it quotes the cache home.
+    /// </summary>
+    private static string PathFromNote(string result)
+    {
+        const string anchor = "written to \"";
+        int start = result.IndexOf(anchor, StringComparison.Ordinal) + anchor.Length;
+        int end = result.IndexOf('"', start);
+
+        return result[start..end];
     }
 
     private static string OutputPathFrom(IReadOnlyList<string> arguments)

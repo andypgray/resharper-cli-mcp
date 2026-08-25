@@ -30,19 +30,19 @@ internal static class JbRunners
     /// </summary>
     public static JbRunLock Lock(TimeSpan? cap = null, ILoggerFactory? logs = null)
     {
-        return new JbRunLock(cap ?? JbRunTimeout.Default, LoggerFor<JbRunLock>(logs));
+        return new JbRunLock(cap ?? JbRunTimeout.Default, Logs.For<JbRunLock>(logs));
     }
 
     /// <summary>The yield, built with a logger, for a test driving two callers against the same precedence.</summary>
     public static JbRunYield Yield(ILoggerFactory? logs = null)
     {
-        return new JbRunYield(LoggerFor<JbRunYield>(logs));
+        return new JbRunYield(Logs.For<JbRunYield>(logs));
     }
 
     /// <summary>A cache reset wired to the same lock and yield a runner is, as the composition root wires it.</summary>
     public static CacheResetService Reset(JbRunLock runLock, JbRunYield runYield, ILoggerFactory? logs = null)
     {
-        return new CacheResetService(runLock, runYield, LoggerFor<CacheResetService>(logs));
+        return new CacheResetService(runLock, runYield, Logs.For<CacheResetService>(logs));
     }
 
     public static JbRunner Create(IProcessRunner processRunner, TimeSpan? cap = null, ILoggerFactory? logs = null)
@@ -75,13 +75,8 @@ internal static class JbRunners
             processRunner,
             runLock,
             runYield,
-            new CacheTransplanter(runLock, LoggerFor<CacheTransplanter>(logs)),
+            new CacheTransplanter(runLock, Logs.For<CacheTransplanter>(logs)),
             cap ?? JbRunTimeout.Default,
-            LoggerFor<JbRunner>(logs));
-    }
-
-    private static ILogger<T> LoggerFor<T>(ILoggerFactory? logs)
-    {
-        return logs is null ? NullLogger<T>.Instance : logs.CreateLogger<T>();
+            Logs.For<JbRunner>(logs));
     }
 }

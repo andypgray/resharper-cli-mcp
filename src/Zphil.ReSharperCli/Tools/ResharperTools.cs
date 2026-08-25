@@ -23,6 +23,7 @@ internal sealed class ResharperTools(
     InspectService inspectService,
     CleanupService cleanupService,
     CacheResetService cacheResetService,
+    InspectReportWriter reportWriter,
     IEnvironment environment,
     ILogger<ResharperTools> logger)
 {
@@ -58,6 +59,13 @@ internal sealed class ResharperTools(
         " Each is relative to the solution root, or absolute. jb matches them against the files that belong "
         + "to a project in the solution, so one that is on disk but in no project matches nothing.";
 
+    /// <remarks>
+    ///     Still annotated read-only with <paramref name="report" /> on the surface, and deliberately. A run
+    ///     already creates and deletes a temp directory for <c>jb</c>'s SARIF; the delta here is that one file
+    ///     survives, in a directory this server owns and names in its response. Nothing in the workspace, the
+    ///     solution, or the cache is touched, and at the default <see cref="InspectReport.None" /> nothing is
+    ///     written at all.
+    /// </remarks>
     [McpServerTool(
         Name = InspectToolName,
         Title = "ReSharper Inspect Code",
@@ -76,6 +84,12 @@ internal sealed class ResharperTools(
             "Minimum severity to report. Error is ReSharper's compilation-error level, not a tier of "
             + "high-priority warnings; raising to it usually reports nothing.")]
         InspectSeverity severity = InspectSeverity.Warning,
+        [Description(
+            "Write the complete itemised findings to a file, and name it in the response. Markdown lists "
+            + "every issue with its own message, which is what the response listing collapses once a "
+            + "solution-wide run exceeds the output budget. The file lands in a directory this server owns "
+            + "and is pruned after 7 days; the response carries the summary either way.")]
+        InspectReport report = InspectReport.None,
         [Description(SolutionPathDescription)] string? solutionPath = null,
         CancellationToken cancellationToken = default)
     {
@@ -87,17 +101,56 @@ internal sealed class ResharperTools(
 
         IReadOnlyList<InspectIssue> issues = await inspectService.RunAsync(config, scope, severity, cancellationToken);
 
-        // Two independent preambles, concatenated: configuration that was dropped before the run, then how to
-        // read compilation errors in what came back. Either can be empty, and both ride outside the reduction
-        // ladder.
+        // The Full rendering is both the report file's body and the ladder's first attempt at the default
+        // detail; render it at most once and hand both the same string.
+        string? full = null;
+
+        string RenderFull()
+        {
+            return full ??= IssueMarkdownFormatter.Format(issues, DetailLevel.Full);
+        }
+
+        InspectReportOutcome? written = WriteReport(report, RenderFull, config, severity, scope);
+
+        // Three independent preambles, concatenated: configuration that was dropped before the run, how to
+        // read compilation errors in what came back, and where the full listing went. Each can be empty, and
+        // all ride outside the reduction ladder.
         string banner = ConfigWarningBanner.ForInspect(config.Warnings)
-                        + CompilationErrorNote.For(issues, config.CacheHome);
+                        + CompilationErrorNote.For(issues, config.CacheHome)
+                        + InspectReportNote.For(written, issues.Count);
 
         return RenderWithBanner(
             banner,
             issues,
-            IssueMarkdownFormatter.Format,
-            IssueMarkdownFormatter.DescribeReduction);
+            (data, level) => level == DetailLevel.Full ? RenderFull() : IssueMarkdownFormatter.Format(data, level),
+            level => IssueMarkdownFormatter.DescribeReduction(level, written is { Failure: null }));
+    }
+
+    /// <summary>
+    ///     The report file, or <see langword="null" /> when none was asked for. Rendered here rather than in
+    ///     <see cref="InspectReportWriter" /> so that class stays about files and <c>Formatting/</c> keeps
+    ///     owning what a rendering looks like. Written even when there are no issues: "a report was asked for,
+    ///     so the response names a file that exists" is a contract a caller can script against, and one that
+    ///     sometimes yields no file is not. The body comes in as <paramref name="renderFull" /> so the same
+    ///     rendering serves the response ladder rather than being produced twice.
+    /// </summary>
+    private InspectReportOutcome? WriteReport(
+        InspectReport report,
+        Func<string> renderFull,
+        ResolvedConfig config,
+        InspectSeverity severity,
+        IReadOnlyList<string>? scope)
+    {
+        if (report == InspectReport.None) return null;
+
+        string document = InspectReportDocument.Compose(
+            renderFull(),
+            config.SolutionPath,
+            severity.ToJbToken(),
+            scope,
+            DateTimeOffset.UtcNow);
+
+        return reportWriter.WriteMarkdown(document, config.SolutionPath);
     }
 
     [McpServerTool(
@@ -207,15 +260,20 @@ internal sealed class ResharperTools(
 
     /// <summary>
     ///     The domain remedy <c>ResponseTruncator</c> closes a hard-truncated response with, keyed by tool:
-    ///     inspect points at narrowing the next scan, cleanup at the fact that shrinking the report did not
-    ///     shrink the cleanup. Lives with the tools so the generic backstop needs no per-tool knowledge and
-    ///     a new tool contributes its hint here.
+    ///     inspect points at narrowing the next scan and at the report file, cleanup at the fact that
+    ///     shrinking the report did not shrink the cleanup. Lives with the tools so the generic backstop needs
+    ///     no per-tool knowledge and a new tool contributes its hint here.
     /// </summary>
+    /// <remarks>
+    ///     Keyed by tool name and nothing else, so it cannot know a report was already written and will
+    ///     suggest one anyway. Harmless: the note naming the file is a prefix and survives the cut, so the
+    ///     path is still above the footer that repeats the offer.
+    /// </remarks>
     internal static string TruncationHintFor(string? toolName)
     {
         return toolName switch
         {
-            InspectToolName => IssueMarkdownFormatter.NarrowingHint,
+            InspectToolName => IssueMarkdownFormatter.TruncationRemedy,
             CleanupToolName => CleanupSummaryFormatter.CleanupRanInFull,
             ResetCacheToolName => CacheResetFormatter.ResetRanInFull,
             _ => ""

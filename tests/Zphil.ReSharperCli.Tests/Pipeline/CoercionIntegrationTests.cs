@@ -29,7 +29,7 @@ public sealed class CoercionIntegrationTests
         await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
 
         // Act
-        var tools = await harness.Client.ListToolsAsync(cancellationToken: Ct);
+        IList<McpClientTool> tools = await harness.Client.ListToolsAsync(cancellationToken: Ct);
 
         // Assert — the schema-erasure guard: StringArrayCoercerFactory would collapse this to {} without
         // the re-injection step. type/items must survive, and files must stay schema-required.
@@ -47,7 +47,7 @@ public sealed class CoercionIntegrationTests
         await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
 
         // Act
-        var tools = await harness.Client.ListToolsAsync(cancellationToken: Ct);
+        IList<McpClientTool> tools = await harness.Client.ListToolsAsync(cancellationToken: Ct);
 
         // Assert — EnumValidationConverterFactory erases the enum's shape; re-injection restores both the
         // string type AND the value list, so the allowed severities travel in the schema itself. This is
@@ -67,7 +67,7 @@ public sealed class CoercionIntegrationTests
         await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
 
         // Act
-        var tools = await harness.Client.ListToolsAsync(cancellationToken: Ct);
+        IList<McpClientTool> tools = await harness.Client.ListToolsAsync(cancellationToken: Ct);
 
         // Assert — inspect.solutionPath (nullable, no default) and cleanup.profile (a real default).
         McpClientTool inspect = tools.Single(tool => tool.Name == "resharper_inspect");
@@ -165,6 +165,61 @@ public sealed class CoercionIntegrationTests
         string text = TextOf(result);
         text.ShouldContain("HIGH");
         text.ShouldContain("Valid values: Suggestion, Warning, Error");
+        harness.Logs.Warnings.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task ListTools_InspectReportParameter_AdvertisesStringWithEnumValues()
+    {
+        // Arrange — the second enum on the surface, and therefore the first evidence that the re-injection
+        // above generalises past the one parameter it was written for rather than being special-cased.
+        await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
+
+        // Act
+        IList<McpClientTool> tools = await harness.Client.ListToolsAsync(cancellationToken: Ct);
+
+        // Assert
+        McpClientTool inspect = tools.Single(tool => tool.Name == "resharper_inspect");
+        JsonElement report = PropertySchema(inspect, "report");
+        report.GetProperty("type").GetString().ShouldBe("string");
+        EnumValues(report).ShouldBe(["None", "Markdown"]);
+    }
+
+    [Fact]
+    public async Task ListTools_Inspect_IsStillAdvertisedReadOnly()
+    {
+        // Arrange — the annotation a client gates auto-approval on. It survives the report parameter on
+        // purpose: a run already creates and deletes a temp directory for jb's SARIF, the delta is one file
+        // surviving in a directory this server owns, and at the default nothing is written at all.
+        await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
+
+        // Act
+        IList<McpClientTool> tools = await harness.Client.ListToolsAsync(cancellationToken: Ct);
+
+        // Assert
+        McpClientTool inspect = tools.Single(tool => tool.Name == "resharper_inspect");
+        inspect.ProtocolTool.Annotations?.ReadOnlyHint.ShouldBe(true);
+    }
+
+    [Fact]
+    public async Task CallTool_InspectInvalidReport_ReturnsValidValuesErrorAndLogsNothing()
+    {
+        // Arrange
+        await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
+        PlantSolution(harness.Environment, "App.sln");
+        RouteJb(harness.ProcessRunner);
+
+        // Act
+        CallToolResult result = await harness.Client.CallToolAsync(
+            "resharper_inspect",
+            new Dictionary<string, object?> { ["report"] = "Xml" },
+            cancellationToken: Ct);
+
+        // Assert — the formats jb offers but this server does not are rejected by name, not silently ignored.
+        result.IsError.ShouldBe(true);
+        string text = TextOf(result);
+        text.ShouldContain("Xml");
+        text.ShouldContain("Valid values: None, Markdown");
         harness.Logs.Warnings.ShouldBeEmpty();
     }
 

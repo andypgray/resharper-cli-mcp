@@ -151,6 +151,14 @@ internal sealed class McpPipelineHarness : IAsyncDisposable
         builder.Services.AddSingleton<InspectService>();
         builder.Services.AddSingleton<CleanupService>();
         builder.Services.AddSingleton<CacheResetService>();
+
+        // Registering the writer is not optional even though no harness test asks for a report:
+        // CoercingToolRegistration activates ResharperTools per tools/call, so a missing registration
+        // surfaces as every call returning an error result rather than as anything a build would catch.
+        // Its root is a temp directory of this harness's own, deleted with the environment.
+        builder.Services.AddSingleton(provider => new InspectReportWriter(
+            environment.CreateTempDirectory(),
+            provider.GetRequiredService<ILogger<InspectReportWriter>>()));
         builder.Services.AddSingleton<CacheWarmer>();
         builder.Services.AddHostedService(provider => provider.GetRequiredService<CacheWarmer>());
 

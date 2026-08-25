@@ -6,6 +6,7 @@ using Xunit;
 using Zphil.ReSharperCli.Execution;
 using Zphil.ReSharperCli.Infrastructure;
 using Zphil.ReSharperCli.Resources;
+using Zphil.ReSharperCli.Services;
 using Zphil.ReSharperCli.Tests.TestSupport;
 using Zphil.ReSharperCli.Tools;
 
@@ -66,6 +67,12 @@ public sealed class SetupResourceTests
         text.ShouldContain("queue"); // why a concurrent call waits rather than forking a cold cache
         text.ShouldContain("25,000"); // the output cap when the client sets no budget
         text.ShouldContain("DETAIL REDUCED"); // the marker an agent actually sees on an over-budget result
+
+        // The other way out of the budget, and the retention that decides how long the path it hands back
+        // stays good — derived from its owner, so lengthening the window cannot leave the guide behind.
+        text.ShouldContain("`report=Markdown`");
+        text.ShouldContain($"{(int)InspectReportWriter.RetentionPeriod.TotalDays} days old");
+
         text.ShouldContain("CSharpErrors"); // the rule that identifies a stale solution-wide index
         text.ShouldContain(ResharperTools.ResetCacheToolName); // and the tool that clears it
         text.ShouldContain("worktree"); // the always-cold case, and the only place the seeding is described

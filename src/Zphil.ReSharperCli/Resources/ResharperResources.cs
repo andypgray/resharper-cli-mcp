@@ -13,7 +13,8 @@ namespace Zphil.ReSharperCli.Resources;
 ///     <c>setup-guide.md</c> — how <c>jb</c> and the solution are discovered, the cold-cache slowness, the
 ///     run cap and the queue that keeps concurrent calls off each other's cache (and how far that queue
 ///     reaches, since a <c>jb</c> the user starts is outside it), how output is
-///     shortened to fit the budget, the environment variables, and where logs go. Both bodies load on demand,
+///     shortened to fit the budget and how to get the full listing written to a file instead, the
+///     environment variables, and where logs go. Both bodies load on demand,
 ///     keeping the always-resident server instructions short.
 /// </summary>
 /// <remarks>
@@ -47,7 +48,8 @@ internal sealed class ResharperResources
         + "~/.dotnet/tools), which solution a call runs against (the solutionPath argument, JB_SOLUTION_PATH, "
         + "then a single .sln/.slnx in the working directory with no parent walk), why the first call is slow, "
         + "the run cap (this server's own, and raisable) and why calls against one solution queue, how "
-        + "MAX_MCP_OUTPUT_TOKENS caps output and how a reduced result differs from a truncated one, the "
+        + "MAX_MCP_OUTPUT_TOKENS caps output, how a reduced result differs from a truncated one and how to "
+        + "get the complete itemised findings written to a file instead, the "
         + "JB_SETTINGS_PATH, JB_CACHE_HOME, JB_EXTENSIONS, JB_EXTENSION_SOURCE, "
         + "RESHARPER_MCP_TIMEOUT_SECS, RESHARPER_MCP_PREWARM, and RESHARPER_MCP_LOG_LEVEL variables, "
         + "and where logs go. Load this when a call cannot find jb or the solution, times out, reports "

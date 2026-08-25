@@ -69,6 +69,12 @@ builder.Services.AddSingleton<InspectService>();
 builder.Services.AddSingleton<CleanupService>();
 builder.Services.AddSingleton<CacheResetService>();
 
+// By factory for the same reason JbRunner is: the report root is a value this composition root supplies, not
+// a service. Reading the temp path here rather than inside the writer is what keeps IEnvironment at three
+// members and lets a test point the writer somewhere of its own.
+builder.Services.AddSingleton(provider => new InspectReportWriter(
+    Path.GetTempPath(), provider.GetRequiredService<ILogger<InspectReportWriter>>()));
+
 // First hosted service registered, so its fingerprint is the session's first line and — services stopping in
 // reverse — its uptime line is the last, written after the warmer below has reported whatever it drained.
 builder.Services.AddHostedService(provider => new ServerLifecycle(

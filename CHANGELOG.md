@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A `report` argument on `resharper_inspect`. Set it to `Markdown` and the complete itemised findings are
+  written to a file, which the response names above the summary it already returned. This is the way to get
+  every finding with its own message out of a solution-wide run: such a run always exceeds the output budget,
+  and the rendering that fits collapses issues repeating a rule within a file to one example. It is off by
+  default, and markdown is the only format — `jb` writes one report per run and this server needs the SARIF
+  to build the summary, so XML, HTML or raw SARIF would each cost a second full run. The file lands under the
+  system temp directory, in a directory the server owns, and is deleted once it is 7 days old.
+
 - The file log records what each call did to the ReSharper cache. At `Information`, a `jb` run is bracketed by
   two lines: one as it starts, naming whether the cache was warm, cold, part-built or dropped by a reset and
   how long the run queued behind another, and one as it ends, with the exit code and the duration. Cache

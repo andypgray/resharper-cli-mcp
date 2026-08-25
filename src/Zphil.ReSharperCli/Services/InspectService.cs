@@ -87,7 +87,7 @@ internal sealed class InspectService(JbRunner jbRunner)
             "inspectcode",
             config.SolutionPath,
             $"-o={outputFile}",
-            $"--severity={severity.ToString().ToUpperInvariant()}",
+            $"--severity={severity.ToJbToken()}",
             "--swea",
             "--no-build",
             "--absolute-paths"

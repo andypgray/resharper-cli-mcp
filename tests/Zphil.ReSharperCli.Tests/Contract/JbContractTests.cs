@@ -53,7 +53,7 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
     ///     reach this watcher as false "unmapped level" drift.
     /// </summary>
     private static readonly string[] MappedSeverities =
-        Enum.GetValues<InspectSeverity>().Select(severity => severity.ToString().ToUpperInvariant()).ToArray();
+        Enum.GetValues<InspectSeverity>().Select(severity => severity.ToJbToken()).ToArray();
 
     /// <summary>Read by <c>SkipUnless</c> on every method below.</summary>
     public static bool JbIsInstalled => JbContractFixture.IsInstalled;

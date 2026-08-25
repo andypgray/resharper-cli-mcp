@@ -17,11 +17,23 @@ namespace Zphil.ReSharperCli.Formatting;
 /// </summary>
 internal static class IssueMarkdownFormatter
 {
-    /// <summary>
-    ///     How to make the next scan return less. Shared with <c>ResponseTruncator</c>'s truncation footer so
-    ///     an agent meets one remedy rather than two spellings of it.
-    /// </summary>
+    /// <summary>How to make the next scan return less.</summary>
     internal const string NarrowingHint = "Narrow the scan with the files parameter or raise severity.";
+
+    /// <summary>
+    ///     How to get everything out instead of asking for less — the other direction, and the better answer
+    ///     for a caller reading a reduction note because it wanted the detail that was reduced. It costs no
+    ///     extra <c>jb</c> work: the issues are already parsed by the time the ladder runs.
+    /// </summary>
+    internal const string FullReportHint =
+        "Set report to Markdown to have every finding written to a file with its own message.";
+
+    /// <summary>
+    ///     Both remedies, in the order a caller should consider them. Shared with
+    ///     <c>ResponseTruncator</c>'s truncation footer through <c>ResharperTools.TruncationHintFor</c>, so an
+    ///     agent meets one remedy rather than two spellings of it.
+    /// </summary>
+    internal const string TruncationRemedy = NarrowingHint + " " + FullReportHint;
 
     private const int MaxListedFiles = 8; // Medium: files still listed individually
     private const int MaxRolledUpRules = 15; // Low: rules in the "By rule" rollup
@@ -33,7 +45,7 @@ internal static class IssueMarkdownFormatter
     {
         if (issues.Count == 0) return "No issues found.";
 
-        var files = GroupByFile(issues);
+        List<FileGroup> files = GroupByFile(issues);
 
         return level switch
         {
@@ -46,23 +58,45 @@ internal static class IssueMarkdownFormatter
     }
 
     /// <summary>
-    ///     What was given up at <paramref name="level" />, for <c>ProgressiveRenderer</c>'s reduction note.
-    ///     <see cref="DetailLevel.High" /> deliberately carries no <see cref="NarrowingHint" />: nothing became
-    ///     unreachable there, so telling an agent to re-run scoped would be noise on the level that fires for
-    ///     essentially every solution-wide run.
+    ///     What was given up at <paramref name="level" />, for <c>ProgressiveRenderer</c>'s reduction note,
+    ///     with no report written. Kept as its own overload because a method group cannot be converted to
+    ///     <c>Func&lt;DetailLevel, string&gt;</c> when the target has an optional second parameter.
     /// </summary>
     public static string DescribeReduction(DetailLevel level)
     {
+        return DescribeReduction(level, false);
+    }
+
+    /// <summary>
+    ///     What was given up at <paramref name="level" />, and what to do about it.
+    ///     <see cref="DetailLevel.High" /> still carries no <see cref="NarrowingHint" />: re-running scoped is
+    ///     a whole solution's analysis over again, and it would be noise on the level that fires for
+    ///     essentially every solution-wide run. It does carry <see cref="FullReportHint" />, because the
+    ///     per-issue messages High collapses to one example are exactly what a report recovers, for no extra
+    ///     <c>jb</c> work at all.
+    /// </summary>
+    /// <param name="level">The level the rendering settled at.</param>
+    /// <param name="reportWritten">
+    ///     Whether this call already wrote a report. When it did, <see cref="FullReportHint" /> is omitted at
+    ///     every level: <see cref="InspectReportNote" /> has already named the file, and telling a caller to
+    ///     do what it just did is worse than saying nothing.
+    /// </param>
+    public static string DescribeReduction(DetailLevel level, bool reportWritten)
+    {
+        string remedy = reportWritten ? "" : " " + FullReportHint;
+
         return level switch
         {
             DetailLevel.High =>
                 "issues repeating a rule within a file are collapsed to one line carrying their line numbers "
-                + "and one example message. Every issue is still counted.",
+                + "and one example message. Every issue is still counted." + remedy,
             DetailLevel.Medium =>
-                $"only the {MaxListedFiles} most-affected files are listed; the rest are counted. {NarrowingHint}",
+                $"only the {MaxListedFiles} most-affected files are listed; the rest are counted. "
+                + NarrowingHint + remedy,
             DetailLevel.Low =>
-                $"the per-file listing is replaced by a rollup of the top rules and the top files. {NarrowingHint}",
-            _ => $"totals, severity counts, and the top rules only. {NarrowingHint}"
+                "the per-file listing is replaced by a rollup of the top rules and the top files. "
+                + NarrowingHint + remedy,
+            _ => "totals, severity counts, and the top rules only. " + NarrowingHint + remedy
         };
     }
 
@@ -130,7 +164,7 @@ internal static class IssueMarkdownFormatter
         // Selected by issue count but emitted in first-seen order. That ordering is what makes Medium
         // byte-identical to High whenever the file count is within the cap, so ProgressiveRenderer's
         // content-equality skip drops through the redundant level at no cost.
-        var listed = files
+        HashSet<string> listed = files
             .OrderByDescending(file => file.Issues.Count)
             .Take(maxFiles)
             .Select(file => file.File)
@@ -163,7 +197,7 @@ internal static class IssueMarkdownFormatter
     /// <summary>Low: no per-issue detail at all — the top rules and the top files, each with counts.</summary>
     private static string FormatRollup(IReadOnlyList<InspectIssue> issues, List<FileGroup> files)
     {
-        var rules = RollUpRules(issues);
+        List<RuleRollup> rules = RollUpRules(issues);
 
         List<string> lines =
         [
@@ -180,7 +214,7 @@ internal static class IssueMarkdownFormatter
         lines.Add("");
         lines.Add($"By file ({Math.Min(MaxRolledUpFiles, files.Count)} of {files.Count}):");
 
-        var ranked = files.OrderByDescending(file => file.Issues.Count).Take(MaxRolledUpFiles);
+        IEnumerable<FileGroup> ranked = files.OrderByDescending(file => file.Issues.Count).Take(MaxRolledUpFiles);
         foreach (FileGroup file in ranked) lines.Add($"  {file.File}: {SeverityBreakdown(file.Issues)}");
 
         if (files.Count > MaxRolledUpFiles) lines.Add($"  (+{files.Count - MaxRolledUpFiles} file(s) not listed)");
@@ -191,7 +225,7 @@ internal static class IssueMarkdownFormatter
     /// <summary>Minimal: one line of totals, severity counts, and the top rules.</summary>
     private static string FormatMinimal(IReadOnlyList<InspectIssue> issues, List<FileGroup> files)
     {
-        var rules = RollUpRules(issues);
+        List<RuleRollup> rules = RollUpRules(issues);
 
         string topRules = string.Join(
             ", ", rules.Take(MaxMinimalRules).Select(rule => $"`{rule.RuleId}` x{rule.Count}"));
@@ -287,7 +321,7 @@ internal static class IssueMarkdownFormatter
     /// <summary>Severity counts most-serious-first, for example <c>1 ERROR, 5 WARNING</c>.</summary>
     private static string SeverityBreakdown(IEnumerable<InspectIssue> issues)
     {
-        var parts = issues
+        IEnumerable<string> parts = issues
             .GroupBy(issue => issue.Severity, StringComparer.Ordinal)
             .OrderBy(group => SeverityRank(group.Key))
             .Select(group => $"{group.Count()} {group.Key}");

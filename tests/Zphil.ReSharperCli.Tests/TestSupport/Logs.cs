@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Zphil.ReSharperCli.Tests.TestDoubles;
 
 namespace Zphil.ReSharperCli.Tests.TestSupport;
@@ -21,5 +22,20 @@ internal static class Logs
             builder.SetMinimumLevel(LogLevel.Trace);
             builder.AddProvider(provider);
         });
+    }
+
+    /// <summary>
+    ///     The logger a graph-assembling helper wires for one class: the factory's when the test passed one,
+    ///     and a null logger otherwise. One spelling of that default, so every helper wires the same one.
+    /// </summary>
+    public static ILogger<T> For<T>(ILoggerFactory? logs)
+    {
+        return logs is null ? NullLogger<T>.Instance : logs.CreateLogger<T>();
+    }
+
+    /// <summary>The same default for a test that holds the capturing provider rather than a factory.</summary>
+    public static ILogger<T> For<T>(CapturingLoggerProvider? logs)
+    {
+        return logs is null ? NullLogger<T>.Instance : Capturing(logs).CreateLogger<T>();
     }
 }

@@ -180,6 +180,10 @@ layer `jb` actually mounts — and running `jb` directly for those is reasonable
 separate set of generations, so nothing in it is contended and neither run can fork the other's. It costs
 that run a cold cache of its own, which is the price of working outside the queue.
 
+The complete itemised findings of a solution-wide run are no longer one of those things:
+`resharper_inspect`'s `report=Markdown` writes them to a file from inside the queue. See "Output size"
+below.
+
 **A forked generation is a directory whose name ends `.01` or higher, beside the `.00`.**
 `resharper_reset_cache` drops it with the rest, because a fork of one solution carries the same path hash
 as the generation it forked from — run it with no `jb` live, your own included. Worth knowing too: a run
@@ -255,14 +259,26 @@ reduction level, so a `DETAIL REDUCED` response is safe to conclude from — unl
    returns.
 2. **High** — issues repeating a rule within a file collapse to one line carrying their line numbers and
    one example message (`` `NotAccessedPositionalProperty.Global` [WARNING] x30, lines 13-42 ``). This is
-   where a solution-wide run usually lands, and it drops nothing: the count is exact and every line number
-   is there.
+   where a solution-wide run usually lands. The count is exact and every line number is there; what it
+   gives up is the individual message of each repeat, with one example standing for the group.
 3. **Medium** — only the eight most-affected files are listed; the rest are counted.
 4. **Low** — the per-file listing is replaced by a rollup of the top rules and the top files.
 5. **Minimal** — one line: totals, severity counts, and the top rules.
 
+**When you need every finding with its own message, pass `report=Markdown`.** It is off by default. Set it
+and `resharper_inspect` writes the whole listing at Full detail to a file and names that file at the top of
+its response, which still carries the summary the ladder produced. The two answer different questions: the
+ladder is for a caller reading a verdict in the response, and a reduced verdict is safe to conclude from;
+the report is for working through findings one at a time, which the response cannot serve on a
+solution-wide run because such a run lands on High by construction. Markdown is the only format — `jb`
+writes one report per run and this server needs the SARIF to build the summary, so XML, HTML or raw SARIF
+would each cost a second full run of `jb`. The file is written under the system temp directory, in a
+directory this server owns, and is deleted once it is 7 days old.
+
 `resharper_cleanup` steps down the same ladder over its per-file statuses, collapsing them toward counts.
-The cleanup itself always ran in full; only the report shrank.
+The cleanup itself always ran in full; only the report shrank. It has no `report` parameter: `jb
+cleanupcode` writes no report of its own, and what the ladder reduces there is a status list of the files
+you supplied.
 
 A `RESPONSE TRUNCATED` footer survives only as a last-resort backstop, for when even the smallest
 rendering overflows the budget — a very small `MAX_MCP_OUTPUT_TOKENS`, essentially. It cuts at the last

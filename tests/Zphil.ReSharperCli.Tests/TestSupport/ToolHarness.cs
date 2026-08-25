@@ -15,17 +15,26 @@ namespace Zphil.ReSharperCli.Tests.TestSupport;
 /// </summary>
 internal static class ToolHarness
 {
-    /// <remarks>
-    ///     <c>logs</c> is wired through the whole graph when a test means to assert on what it logged;
-    ///     omitted, every class logs into <see cref="NullLoggerFactory" />.
-    /// </remarks>
+    /// <param name="processRunner">The process seam every jb spawn in the graph goes through.</param>
+    /// <param name="environment">The environment seam: variables, working directory, home directory.</param>
+    /// <param name="logs">
+    ///     Wired through the whole graph when a test means to assert on what it logged; omitted, every class
+    ///     logs into <see cref="NullLoggerFactory" />.
+    /// </param>
+    /// <param name="reportRoot">
+    ///     Where <see cref="InspectReportWriter" /> puts the files it writes. Defaulting to the real temp path
+    ///     looks careless and is not: nothing is written unless a call passes <c>report</c>, and no test does
+    ///     unless it also passes a root of its own. A test that does should pass
+    ///     <c>FakeEnvironment.CreateTempDirectory()</c>, which is deleted with the environment.
+    /// </param>
     public static ResharperTools Build(
         IProcessRunner processRunner,
         IEnvironment environment,
-        ILoggerFactory? logs = null)
+        ILoggerFactory? logs = null,
+        string? reportRoot = null)
     {
-        JbLocator jbLocator = new(processRunner, environment, LoggerFor<JbLocator>(logs));
-        ConfigResolver configResolver = new(jbLocator, environment, LoggerFor<ConfigResolver>(logs));
+        JbLocator jbLocator = new(processRunner, environment, Logs.For<JbLocator>(logs));
+        ConfigResolver configResolver = new(jbLocator, environment, Logs.For<ConfigResolver>(logs));
 
         // One lock and one yield for the whole graph, exactly as the composition root registers them: a
         // cache reset with a lock of its own would serialize against nothing and could delete a generation
@@ -35,15 +44,18 @@ internal static class ToolHarness
         JbRunner jbRunner = JbRunners.Create(processRunner, runLock, runYield, logs: logs);
 
         InspectService inspectService = new(jbRunner);
-        CleanupService cleanupService = new(jbRunner, LoggerFor<CleanupService>(logs));
+        CleanupService cleanupService = new(jbRunner, Logs.For<CleanupService>(logs));
         CacheResetService cacheResetService = JbRunners.Reset(runLock, runYield, logs);
+        InspectReportWriter reportWriter = new(
+            reportRoot ?? Path.GetTempPath(), Logs.For<InspectReportWriter>(logs));
         return new ResharperTools(
             configResolver,
             inspectService,
             cleanupService,
             cacheResetService,
+            reportWriter,
             environment,
-            LoggerFor<ResharperTools>(logs));
+            Logs.For<ResharperTools>(logs));
     }
 
     /// <summary>
@@ -55,20 +67,14 @@ internal static class ToolHarness
     public static WarmerGraph BuildCacheWarmer(
         IProcessRunner processRunner,
         IEnvironment environment,
-        ILogger<CacheWarmer> logger,
-        ILoggerFactory? logs = null)
+        ILogger<CacheWarmer> logger)
     {
-        JbLocator jbLocator = new(processRunner, environment, LoggerFor<JbLocator>(logs));
-        ConfigResolver configResolver = new(jbLocator, environment, LoggerFor<ConfigResolver>(logs));
-        JbRunner jbRunner = JbRunners.Create(processRunner, logs: logs);
+        JbLocator jbLocator = new(processRunner, environment, NullLogger<JbLocator>.Instance);
+        ConfigResolver configResolver = new(jbLocator, environment, NullLogger<ConfigResolver>.Instance);
+        JbRunner jbRunner = JbRunners.Create(processRunner);
         InspectService inspectService = new(jbRunner);
         CacheWarmer warmer = new(configResolver, inspectService, jbRunner, environment, logger);
         return new WarmerGraph(warmer, jbRunner);
-    }
-
-    private static ILogger<T> LoggerFor<T>(ILoggerFactory? logs)
-    {
-        return logs is null ? NullLogger<T>.Instance : logs.CreateLogger<T>();
     }
 }
 

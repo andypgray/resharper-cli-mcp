@@ -16,7 +16,7 @@ resharper-cli-mcp is an MCP server that gives a C# coding agent ReSharper's solu
 
 - A fresh checkout is seeded from a warm one. Caches are keyed to the solution's absolute path, so a new worktree or clone starts cold. When a call finds no cache and a same-named sibling checkout has a warm one, the server copies it across, best-effort and never over a cache a successful run produced. The copy still has to be re-keyed, so a seeded run lands between warm and cold.
 
-- SARIF becomes markdown that fits the client. Issues come back grouped by file, re-rendered at progressively lower detail until they fit the client's output budget, with every issue still counted and every file still named at each step.
+- SARIF becomes markdown that fits the client. Issues come back grouped by file, re-rendered at progressively lower detail until they fit the client's output budget, with every issue still counted and every file still named at each step. When the summary is not enough, `report=Markdown` writes the complete listing to a file and the response names it.
 
 ## Quickstart
 
@@ -75,6 +75,8 @@ Found 2 issue(s) across 1 file(s):
 - **Line 8** [WARNING] `RedundantUsingDirective`: Using directive is not required by the code and can be safely removed.
 - **Line 24** [SUGGESTION] `FieldCanBeMadeReadOnly.Local`: Field can be made readonly.
 ```
+
+A solution-wide sweep lands on the reduced rendering by construction, which collapses issues repeating a rule within a file to one example message. To work through findings one at a time, pass `report=Markdown`: `resharper_inspect` writes every issue with its own message to a file under the system temp directory, names that file at the top of its response, and deletes it after seven days. It is off by default, and markdown is the only format — `jb` writes one report per run and this server needs the SARIF to build the summary.
 
 `resharper_cleanup` changes style, never behavior: formatting, using directives, `var` style, modifier order, redundant qualifiers and parentheses, braces. Write correct logic and let cleanup do the polish: call it once, at the end of a task, with every changed file batched into the one call. It reports which files it actually changed on disk.
 

@@ -601,11 +601,7 @@ public sealed class CacheTransplanterTests : IDisposable
 
     private CacheTransplanter Transplanter(CapturingLoggerProvider? logs = null)
     {
-        ILogger<CacheTransplanter> logger = logs is null
-            ? NullLogger<CacheTransplanter>.Instance
-            : Logs.Capturing(logs).CreateLogger<CacheTransplanter>();
-
-        return new CacheTransplanter(JbRunners.Lock(TimeSpan.FromSeconds(1)), logger, ShortPatience);
+        return new CacheTransplanter(JbRunners.Lock(TimeSpan.FromSeconds(1)), Logs.For<CacheTransplanter>(logs), ShortPatience);
     }
 
     /// <summary>Where a seeded generation for the worktree lands, and where it is built before it lands.</summary>

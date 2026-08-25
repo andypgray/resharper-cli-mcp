@@ -360,28 +360,44 @@ public sealed class IssueMarkdownFormatterTests
     }
 
     [Fact]
-    public void DescribeReduction_LevelsThatDropContent_CarryTheNarrowingHint()
+    public void DescribeReduction_LevelsThatDropContent_CarryBothRemediesWithTheReportLast()
     {
-        // Act / Assert
-        IssueMarkdownFormatter.DescribeReduction(DetailLevel.Medium)
-            .ShouldEndWith(IssueMarkdownFormatter.NarrowingHint);
-        IssueMarkdownFormatter.DescribeReduction(DetailLevel.Low)
-            .ShouldEndWith(IssueMarkdownFormatter.NarrowingHint);
-        IssueMarkdownFormatter.DescribeReduction(DetailLevel.Minimal)
-            .ShouldEndWith(IssueMarkdownFormatter.NarrowingHint);
+        // Act / Assert — narrowing is "ask for less", the report is "get all of it out of band", and the
+        // second is the better answer for a caller reading this note because it wanted the detail.
+        foreach (DetailLevel level in (DetailLevel[])[DetailLevel.Medium, DetailLevel.Low, DetailLevel.Minimal])
+        {
+            string description = IssueMarkdownFormatter.DescribeReduction(level);
+            description.ShouldContain(IssueMarkdownFormatter.NarrowingHint);
+            description.ShouldEndWith(IssueMarkdownFormatter.FullReportHint);
+        }
     }
 
     [Fact]
-    public void DescribeReduction_High_OmitsTheNarrowingHintAndSaysNothingWasLost()
+    public void DescribeReduction_High_OmitsTheNarrowingHintButOffersTheReport()
     {
         // Act
         string description = IssueMarkdownFormatter.DescribeReduction(DetailLevel.High);
 
-        // Assert — High is the level essentially every solution-wide run lands on, and it drops no issue,
-        // so telling the agent to re-run scoped there would be noise. The count reassurance is the one
-        // honest distinction between a reduced result and a truncated one.
+        // Assert — High is the level essentially every solution-wide run lands on, and re-running scoped is
+        // a whole solution's analysis again, so telling the agent to do that here would be noise. A report
+        // is the opposite trade: it recovers the very messages High collapsed, for no extra jb work.
         description.ShouldNotContain("Narrow the scan");
         description.ShouldContain("Every issue is still counted.");
+        description.ShouldEndWith(IssueMarkdownFormatter.FullReportHint);
+    }
+
+    [Fact]
+    public void DescribeReduction_AReportAlreadyWritten_OffersNoReportAtAnyLevel()
+    {
+        // Arrange — InspectReportNote has already named the file in the banner. Telling a caller to do what
+        // it just did is worse than saying nothing. Looped inside a Fact because DetailLevel is internal and
+        // cannot appear in a public Theory signature (CS0051).
+        DetailLevel[] reduced = [DetailLevel.High, DetailLevel.Medium, DetailLevel.Low, DetailLevel.Minimal];
+
+        // Act / Assert
+        foreach (DetailLevel level in reduced)
+            IssueMarkdownFormatter.DescribeReduction(level, true)
+                .ShouldNotContain(IssueMarkdownFormatter.FullReportHint);
     }
 
     /// <summary>

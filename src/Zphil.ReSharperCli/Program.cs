@@ -40,6 +40,10 @@ TimeSpan runTimeout = JbRunTimeout.Resolve(Environment.GetEnvironmentVariable(Jb
 
 // The two fakeable seams plus the pure/concrete graph composed over them — all singletons.
 builder.Services.AddSingleton<IEnvironment, SystemEnvironment>();
+
+// Ahead of the runner that spawns through it. The container disposes it at host shutdown, after the hosted
+// services have stopped, so CacheWarmer's drain still goes first and closing the job stays the backstop.
+builder.Services.AddSingleton<ChildProcessLifetime>();
 builder.Services.AddSingleton<IProcessRunner, ProcessRunner>();
 builder.Services.AddSingleton<JbLocator>();
 builder.Services.AddSingleton<ConfigResolver>();
@@ -70,6 +74,7 @@ builder.Services.AddSingleton<CacheResetService>();
 builder.Services.AddHostedService(provider => new ServerLifecycle(
     provider.GetRequiredService<ConfigResolver>(),
     provider.GetRequiredService<IEnvironment>(),
+    provider.GetRequiredService<ChildProcessLifetime>(),
     runTimeout,
     logLevel,
     provider.GetRequiredService<ILogger<ServerLifecycle>>()));

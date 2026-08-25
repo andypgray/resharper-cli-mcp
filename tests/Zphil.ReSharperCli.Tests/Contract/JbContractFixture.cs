@@ -75,6 +75,12 @@ public sealed class JbContractFixture : IAsyncLifetime
 
     private readonly FakeEnvironment _environment = new();
 
+    /// <summary>
+    ///     Created only once <see cref="InitializeAsync" /> has decided there is a <c>jb</c> to run, so the
+    ///     fixture still costs nothing on a machine without one.
+    /// </summary>
+    private ChildProcessLifetime? _childLifetime;
+
     /// <summary>Whether a <c>jb</c> was found, and so whether any of the members below were ever filled in.</summary>
     public static bool IsInstalled => Presence.Value.ExecutablePath is not null;
 
@@ -116,6 +122,8 @@ public sealed class JbContractFixture : IAsyncLifetime
 
     internal string CacheHome { get; private set; } = "";
 
+    private static string FixtureDirectory => Path.Combine(AppContext.BaseDirectory, "Fixtures", FixtureDirectoryName);
+
     public async ValueTask InitializeAsync()
     {
         if (!IsInstalled) return;
@@ -129,7 +137,8 @@ public sealed class JbContractFixture : IAsyncLifetime
         CacheHome = _environment.CreateTempDirectory();
         _environment.SetVariable("JB_CACHE_HOME", CacheHome);
 
-        ProcessRunner processRunner = new(NullLogger<ProcessRunner>.Instance);
+        _childLifetime = new ChildProcessLifetime(new SystemEnvironment(), NullLogger<ChildProcessLifetime>.Instance);
+        ProcessRunner processRunner = new(_childLifetime, NullLogger<ProcessRunner>.Instance);
 
         SolutionPath = PlantSolution("solution");
         await BuildAsync(processRunner, SolutionPath, cancellationToken);
@@ -174,6 +183,8 @@ public sealed class JbContractFixture : IAsyncLifetime
 
     public ValueTask DisposeAsync()
     {
+        // Every run this fixture made has finished by now, so closing the job kills nothing it still needed.
+        _childLifetime?.Dispose();
         _environment.Dispose();
 
         return ValueTask.CompletedTask;
@@ -302,8 +313,6 @@ public sealed class JbContractFixture : IAsyncLifetime
         }
     }
 
-    private static string FixtureDirectory => Path.Combine(AppContext.BaseDirectory, "Fixtures", FixtureDirectoryName);
-
     private static void ReplaceIncludeWith(List<string> arguments, string absolutePath)
     {
         int index = arguments.FindIndex(argument => argument.StartsWith("--include=", StringComparison.Ordinal));
@@ -314,7 +323,11 @@ public sealed class JbContractFixture : IAsyncLifetime
     private static JbPresence LocateJb()
     {
         SystemEnvironment environment = new();
-        ProcessRunner runner = new(NullLogger<ProcessRunner>.Instance);
+
+        // Scoped to the gate: the two probes below are the only thing it spawns, and both have ended by the
+        // time this is disposed.
+        using ChildProcessLifetime childLifetime = new(environment, NullLogger<ChildProcessLifetime>.Instance);
+        ProcessRunner runner = new(childLifetime, NullLogger<ProcessRunner>.Instance);
 
         foreach (string candidate in JbLocator.Candidates(environment.HomeDirectory))
             try

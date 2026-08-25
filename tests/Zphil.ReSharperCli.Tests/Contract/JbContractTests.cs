@@ -1,6 +1,5 @@
 using System.Text;
 using Microsoft.Extensions.Logging.Abstractions;
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using Shouldly;
 using Xunit;
@@ -186,7 +185,10 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
     public async Task ToolsCall_Inspect_ReturnsIssuesNamingAFixtureFile()
     {
         // Arrange — the production DI graph over the real process seam, so this is a genuine jb run reaching a
-        // real MCP client through the coercion layer, the global filter, and the reduction ladder.
+        // real MCP client through the coercion layer, the global filter, and the reduction ladder. Declared
+        // ahead of the harness so it is disposed after it: closing the job while jb was still in it would
+        // kill the very run this is measuring.
+        using ChildProcessLifetime childLifetime = new(new SystemEnvironment(), NullLogger<ChildProcessLifetime>.Instance);
         await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(
             Ct,
             arrange: (environment, _) =>
@@ -195,7 +197,7 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
                 environment.SetVariable("JB_SOLUTION_PATH", fixture.SolutionPath);
                 environment.SetVariable("JB_CACHE_HOME", fixture.CacheHome);
             },
-            processRunner: new ProcessRunner(NullLogger<ProcessRunner>.Instance));
+            processRunner: new ProcessRunner(childLifetime, NullLogger<ProcessRunner>.Instance));
 
         // Act
         CallToolResult result = await harness.Client.CallToolAsync(
@@ -269,7 +271,7 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
 
         // An unmapped level passes through verbatim and upper-cased, so it would reach an agent as a severity
         // label nothing in the formatter knows — sortable, but not one of the three tiers documented anywhere.
-        var unmapped = fixture.Issues
+        List<string> unmapped = fixture.Issues
             .Select(issue => issue.Severity)
             .Where(severity => !MappedSeverities.Contains(severity))
             .Distinct(StringComparer.Ordinal)

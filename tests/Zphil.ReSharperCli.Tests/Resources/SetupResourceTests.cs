@@ -70,6 +70,14 @@ public sealed class SetupResourceTests
         text.ShouldContain(ResharperTools.ResetCacheToolName); // and the tool that clears it
         text.ShouldContain("worktree"); // the always-cold case, and the only place the seeding is described
         text.ShouldContain("Running `jb` yourself"); // how far the queue reaches: a jb the server never spawned is outside it
+
+        // The other way a fork appears — a client killing the server outright — and the three values the
+        // startup line can report for it, derived from their owner so a renamed guarantee cannot leave the
+        // guide describing a field nobody will find in a log.
+        text.ShouldContain(ChildProcessLifetime.KillOnJobClose);
+        text.ShouldContain(ChildProcessLifetime.ParentDeathSignalled);
+        text.ShouldContain("orphan guard");
+
         text.ShouldContain(ResharperResources.ConfigurationGuideUri); // the onward cross-link
 
         // The log section, which is the only place the level policy is stated for a reader: that raising to

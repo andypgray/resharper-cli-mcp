@@ -9,15 +9,25 @@ namespace Zphil.ReSharperCli.Execution;
 ///     killing the whole process tree. This is the only class in the server that starts a process.
 /// </summary>
 /// <remarks>
-///     It logs the mechanics of a spawn — the command line, the wall clock, the exit code, a tree killed at
-///     the cap — and does so at <c>Debug</c>, because this layer cannot tell one spawn from another. A
-///     <c>jb inspectcode</c> the user is waiting on and the <c>jb inspectcode --version</c> probe
-///     <c>JbLocator</c> makes arrive here identically, and an <c>Information</c> line here would report the
-///     probe as a run. The single <c>Information</c> line per <c>jb</c> run belongs one level up, in
-///     <see cref="Services.JbRunner" />, which knows which is which and knows what the cache looked like
-///     going in.
+///     <para>
+///         It logs the mechanics of a spawn — the command line, the wall clock, the exit code, a tree killed
+///         at the cap — and does so at <c>Debug</c>, because this layer cannot tell one spawn from another. A
+///         <c>jb inspectcode</c> the user is waiting on and the <c>jb inspectcode --version</c> probe
+///         <c>JbLocator</c> makes arrive here identically, and an <c>Information</c> line here would report
+///         the probe as a run. The single <c>Information</c> line per <c>jb</c> run belongs one level up, in
+///         <see cref="Services.JbRunner" />, which knows which is which and knows what the cache looked like
+///         going in.
+///     </para>
+///     <para>
+///         <see cref="ChildProcessLifetime" /> owns the spawn itself, so that a child cannot outlive this
+///         server. That can put a platform wrapper between the caller's command and the process, which
+///         splits the two names a line can use: the "Starting" line takes the <em>effective</em> command,
+///         because its job is to be reproducible by hand, and every other line and message takes the name
+///         the caller asked for — a Linux timeout reporting <c>'setpriv' timed out</c> would name a program
+///         the caller has never heard of.
+///     </para>
 /// </remarks>
-internal sealed class ProcessRunner(ILogger<ProcessRunner> logger) : IProcessRunner
+internal sealed class ProcessRunner(ChildProcessLifetime childLifetime, ILogger<ProcessRunner> logger) : IProcessRunner
 {
     /// <summary>Cap captured stdout/stderr at 10&#160;MB each; past the cap we keep draining but stop appending.</summary>
     private const int MaxCapturedChars = 10 * 1024 * 1024;
@@ -38,9 +48,11 @@ internal sealed class ProcessRunner(ILogger<ProcessRunner> logger) : IProcessRun
         TimeSpan timeout,
         CancellationToken cancellationToken)
     {
+        SpawnCommand command = childLifetime.Rewrite(fileName, arguments);
+
         ProcessStartInfo startInfo = new()
         {
-            FileName = fileName,
+            FileName = command.FileName,
             UseShellExecute = false,
             CreateNoWindow = true,
             RedirectStandardInput = true,
@@ -48,18 +60,18 @@ internal sealed class ProcessRunner(ILogger<ProcessRunner> logger) : IProcessRun
             RedirectStandardError = true
         };
 
-        foreach (string argument in arguments) startInfo.ArgumentList.Add(argument);
+        foreach (string argument in command.Arguments) startInfo.ArgumentList.Add(argument);
 
         using Process process = new();
         process.StartInfo = startInfo;
 
         // The full command line, and the only place it is ever written out: it is the difference between
         // reading "a jb run took nine minutes" and being able to reproduce that run by hand.
-        logger.LogDebug("Starting {FileName} {Arguments}", fileName, arguments);
+        logger.LogDebug("Starting {FileName} {Arguments}", command.FileName, command.Arguments);
         var elapsed = Stopwatch.StartNew();
 
         // A missing executable throws Win32Exception here — deliberately allowed to propagate.
-        process.Start();
+        childLifetime.Start(process, command.Wrapped);
 
         // Close our end of stdin at once so the child sees EOF instead of inheriting — and blocking a
         // reader on — the MCP server's own JSON-RPC stdin handle.

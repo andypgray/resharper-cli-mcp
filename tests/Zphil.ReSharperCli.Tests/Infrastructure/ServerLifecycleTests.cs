@@ -28,10 +28,13 @@ public sealed class ServerLifecycleTests : IDisposable
     private readonly FakeEnvironment _environment = new();
     private readonly CapturingLoggerProvider _logs = new();
 
+    private ChildProcessLifetime? _childLifetime;
+
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     public void Dispose()
     {
+        _childLifetime?.Dispose();
         _environment.Dispose();
     }
 
@@ -57,6 +60,22 @@ public sealed class ServerLifecycleTests : IDisposable
         started.Property("RunCap").ShouldBe("15 minutes 37 seconds");
         started.Property("PreWarm").ShouldBe("on");
         started.Property("LogLevel").ShouldBe(LogEventLevel.Information);
+    }
+
+    [Fact]
+    public async Task StartAsync_ReportsTheOrphanGuardThisPlatformActuallyGot()
+    {
+        // Arrange — asserted against the lifetime the fingerprint was built over rather than a literal, since
+        // the answer is a property of the platform. What is pinned is that the line reports the guarantee in
+        // force: a job object that failed to create leaves a server behaving exactly as it did before, and
+        // this field is the only place that difference is ever visible.
+        ServerLifecycle lifecycle = Lifecycle();
+
+        // Act
+        await lifecycle.StartAsync(Ct);
+
+        // Assert
+        _logs.WithProperty("OrphanGuard").ShouldHaveSingleItem().Property("OrphanGuard").ShouldBe(_childLifetime!.Guarantee);
     }
 
     [Fact]
@@ -111,9 +130,15 @@ public sealed class ServerLifecycleTests : IDisposable
         JbLocator locator = new(Substitute.For<IProcessRunner>(), _environment, NullLogger<JbLocator>.Instance);
         ConfigResolver resolver = new(locator, _environment, NullLogger<ConfigResolver>.Instance);
 
+        // Kept so the assertion can compare against the guarantee this instance resolved. Over the fake
+        // environment rather than the real one on purpose: the fingerprint has to report whatever the
+        // lifetime it was handed says, not whatever the machine happens to offer.
+        _childLifetime = new ChildProcessLifetime(_environment, NullLogger<ChildProcessLifetime>.Instance);
+
         return new ServerLifecycle(
             resolver,
             _environment,
+            _childLifetime,
             cap ?? JbRunTimeout.Default,
             logLevel,
             Logs.Capturing(_logs).CreateLogger<ServerLifecycle>());

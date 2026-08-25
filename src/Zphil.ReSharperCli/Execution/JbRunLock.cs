@@ -21,7 +21,15 @@ namespace Zphil.ReSharperCli.Execution;
 ///         A lock <em>file</em> rather than a named mutex: a mutex has thread affinity and so cannot be
 ///         held across the <c>await</c> on the run, while a file handle has none. The OS also drops the
 ///         handle when a holder crashes or is tree-killed, so a dead holder cannot deadlock the next
-///         caller and there is no abandoned state to recover.
+///         caller and there is no abandoned state to recover here.
+///     </para>
+///     <para>
+///         What the dropped handle does <em>not</em> release is the <c>jb</c> that holder spawned. It keeps
+///         running, and keeps the cache generation open, so the next caller reads a free lock, queues for no
+///         time at all, and meets exactly the fork described above — the guarantee is void across an
+///         ungraceful death unless the child dies with its server.
+///         <see cref="ChildProcessLifetime" /> is what makes it, where the platform offers a primitive for
+///         it, so that a released lock and a free generation mean the same thing again.
 ///     </para>
 ///     <para>
 ///         The lock is an optimisation, never a dependency: anything that goes wrong other than genuine

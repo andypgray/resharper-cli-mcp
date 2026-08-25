@@ -50,6 +50,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   solution rather than extrapolate from its size. The seeded-cache premium is likewise stated as a cost that
   grows with the donor's size and the checkouts' drift, not as a number.
 
+### Fixed
+
+- A server killed outright — as happens when the tool binary is replaced under a running session — no longer
+  strands the `jb` it had going. A stranded `jb` keeps the ReSharper cache generation open after the OS has
+  released the dead server's queue lock, so the next run reads the queue as free, starts anyway, and `jb`
+  forks a second empty generation rather than waiting: that run does cold-cache work, and the fork stays on
+  disk and is counted in the cache from then on. A shutdown the client asks for was never affected — the
+  server already waits for a speculative `jb` to let go before exiting. Each platform now gets the strongest
+  primitive it offers, and they are not equivalent. On Windows a job object with `KILL_ON_JOB_CLOSE` covers
+  `jb` and everything `jb` starts, and holds through a kill no in-process handler can intercept. On Linux
+  `setpriv --pdeathsig SIGKILL` covers `jb` itself but not a worker it forks afterwards, and needs util-linux
+  2.33 or later. macOS has no equivalent and keeps the previous behaviour, as does any machine where the
+  primitive cannot be set up. The startup line names the guarantee in force as `orphan guard`, and
+  `resharper_reset_cache` still clears a fork already on disk.
+
 ## [1.4.0] - 2026-08-16
 
 ### Changed

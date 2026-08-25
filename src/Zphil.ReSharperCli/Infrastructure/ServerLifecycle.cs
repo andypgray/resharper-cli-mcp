@@ -35,9 +35,15 @@ namespace Zphil.ReSharperCli.Infrastructure;
 ///     <paramref name="runTimeout" />: <see cref="SerilogConfiguration.InitializeFileLogger" /> resolved it
 ///     once, and a re-parse here could disagree with the sink it claims to describe.
 /// </param>
+/// <param name="childLifetime">
+///     Read for its guarantee alone. What stops a <c>jb</c> outliving a hard-killed server is an OS primitive
+///     that shows up nowhere in a working session — only in its absence, weeks later, as a forked cache
+///     generation — so the fingerprint is where a reader finds out whether the platform offered one at all.
+/// </param>
 internal sealed class ServerLifecycle(
     ConfigResolver configResolver,
     IEnvironment environment,
+    ChildProcessLifetime childLifetime,
     TimeSpan runTimeout,
     LogEventLevel logLevel,
     ILogger<ServerLifecycle> logger) : IHostedService
@@ -50,7 +56,7 @@ internal sealed class ServerLifecycle(
 
         logger.LogInformation(
             "resharper-cli-mcp {Version} started: pid {ProcessId}, working directory {WorkingDirectory}, cache home {CacheHome}, "
-            + "run cap {RunCap}, pre-warm {PreWarm}, log level {LogLevel}, session id {SessionIdSource}",
+            + "run cap {RunCap}, pre-warm {PreWarm}, orphan guard {OrphanGuard}, log level {LogLevel}, session id {SessionIdSource}",
             ServerVersion.Informational,
             Environment.ProcessId,
             environment.CurrentDirectory,
@@ -59,6 +65,7 @@ internal sealed class ServerLifecycle(
             // a quoted "00:20:00" under this output template, where "20 minutes" is what a reader wants.
             ProcessRunner.FormatDuration(runTimeout),
             CacheWarmer.IsEnabled(environment.GetVariable(CacheWarmer.EnableVariable)) ? "on" : "off",
+            childLifetime.Guarantee,
             logLevel,
             SerilogConfiguration.SessionIdIsClientSupplied ? "from CLAUDE_CODE_SESSION_ID" : "generated");
 

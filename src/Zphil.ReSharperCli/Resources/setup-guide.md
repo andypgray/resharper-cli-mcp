@@ -187,6 +187,23 @@ you start yourself stamps no warm marker, so its work is invisible to the pre-wa
 to the seeding above. A checkout that only ever saw a `jb` of your own reads here as one no run has
 finished.
 
+### A server killed outright, and the `jb` it was running
+
+The queue is a lock file, and the OS releases a dead holder's handle — but not the `jb` that holder
+started. So a client that kills the server rather than shutting it down (replacing the tool binary during
+an upgrade is the usual way) used to leave a `jb` running against a generation the next server would read
+as free, and that next run forked. A shutdown the client asks for has never had this problem: the server
+waits for a speculative `jb` to let go before exiting.
+
+The server now binds each `jb` it starts to its own lifetime, with the strongest primitive the platform
+offers — and they are not equivalent. On **Windows** a job object with `KILL_ON_JOB_CLOSE` covers `jb` and
+everything `jb` starts, and it holds through a kill no code inside the process can intercept. On **Linux**
+`setpriv --pdeathsig SIGKILL` covers `jb` itself but not a worker `jb` forks afterwards, and it needs
+util-linux 2.33 or later. On **macOS** there is no equivalent, and the behaviour is unchanged. The startup
+line names the one in force as `orphan guard` — `kill-on-job-close`, `parent-death-signal` or `none` — and
+where it reads `none`, runs behave exactly as they did before. For a fork already on disk, the remedy is
+the same as for any other: `resharper_reset_cache`.
+
 ## Phantom compilation errors, and resetting the cache
 
 **The signature.** `resharper_inspect` reports `.CSharpErrors` issues — `Cannot resolve symbol 'Foo'`, and
@@ -294,7 +311,7 @@ emits its own startup, shutdown, and per-run lines in their place.
 | Level | Carries |
 |---|---|
 | `Warning` (default) | Unexpected failures, plus the degradations that leave a promise unkept — a settings file named but missing, a run lock that could not be taken, a cache reset that could not be recorded. |
-| `Information` | The startup fingerprint (version, pid, cache home, run cap, pre-warm on/off) · the config each call resolved and how it found its solution · one line as each `jb` run starts, naming its cache state and how long it queued · one as it ends, with its exit code and duration · every transplant decision, seeded or declined, with its reason · a notable lock queue wait · a pre-warm's start and outcome · a speculative pass stood down for a call · what a cache reset dropped. |
+| `Information` | The startup fingerprint (version, pid, cache home, run cap, pre-warm on/off, orphan guard) · the config each call resolved and how it found its solution · one line as each `jb` run starts, naming its cache state and how long it queued · one as it ends, with its exit code and duration · every transplant decision, seeded or declined, with its reason · a notable lock queue wait · a pre-warm's start and outcome · a speculative pass stood down for a call · what a cache reset dropped. |
 | `Debug` | The full `jb` command line · one line per `jb` candidate probed, with what it answered and how long it took, including a candidate that failed before a later one succeeded · the tool-call envelope and argument shape · the detail level a response settled at, and whether it was truncated · cache generation sizes · warm-marker stamps · the declines and skips that cost nothing. |
 
 A typical inspect costs about four `Information` lines, so a day at that level stays readable. Two of them

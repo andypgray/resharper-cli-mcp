@@ -42,8 +42,11 @@ namespace Zphil.ReSharperCli.Services;
 ///     <para>
 ///         It is an <see cref="IHostedService" /> solely for <see cref="StopAsync" />. Cancelling alone would
 ///         kill <c>jb</c> without <em>waiting</em> for it, and a <c>jb</c> outliving this process keeps
-///         ReSharper's own cache-generation lock after the OS has dropped our lock-file handle — the one
-///         orphan the run lock cannot protect the next session from.
+///         ReSharper's own cache-generation lock after the OS has dropped our lock-file handle. This is the
+///         orderly half of that problem, and the only half anything in-process can reach: a server killed
+///         outright never runs this method at all, which is what <see cref="ChildProcessLifetime" /> covers —
+///         completely on Windows, for <c>jb</c> itself on Linux, and not at all on macOS. So the drain still
+///         has to be right on every platform, and on macOS it remains the only thing there is.
 ///     </para>
 /// </remarks>
 internal sealed class CacheWarmer(
@@ -162,9 +165,9 @@ internal sealed class CacheWarmer(
         }
 
         // Said out loud because the alternative is the one thing this method exists to prevent: a jb outliving
-        // the process still holds ReSharper's own cache-generation lock, which is the one orphan the run lock
-        // cannot protect the next session from. "Drained cleanly" and "abandoned at the timeout" look identical
-        // from outside, and only the second explains why the next session found the generation held.
+        // the process still holds ReSharper's own cache-generation lock, which the run lock does nothing about.
+        // "Drained cleanly" and "abandoned at the timeout" look identical from outside, and only the second
+        // explains why the next session found the generation held.
         logger.LogInformation("Drained the background cache pre-warm before shutting down");
     }
 

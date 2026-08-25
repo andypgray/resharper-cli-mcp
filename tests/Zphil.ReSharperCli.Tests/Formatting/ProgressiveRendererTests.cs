@@ -20,7 +20,7 @@ public sealed class ProgressiveRendererTests
         var output = new string('x', 50);
 
         // Act
-        string result = ProgressiveRenderer.Render("input", (_, _) => output, 100);
+        string result = ProgressiveRenderer.Render("input", (_, _) => output, 100).Text;
 
         // Assert
         result.ShouldBe(output);
@@ -34,7 +34,7 @@ public sealed class ProgressiveRendererTests
         var output = new string('x', 100);
 
         // Act
-        string result = ProgressiveRenderer.Render("input", (_, _) => output, 100);
+        string result = ProgressiveRenderer.Render("input", (_, _) => output, 100).Text;
 
         // Assert
         result.ShouldBe(output);
@@ -52,7 +52,7 @@ public sealed class ProgressiveRendererTests
         {
             callLog.Add(level);
             return level == DetailLevel.Full ? new string('x', 1000) : new string('y', 50);
-        }, 400);
+        }, 400).Text;
 
         // Assert
         result.ShouldContain("--- DETAIL REDUCED ---");
@@ -68,7 +68,7 @@ public sealed class ProgressiveRendererTests
         string result = ProgressiveRenderer.Render(
             "input",
             (_, level) => level < DetailLevel.Low ? new string('x', 1000) : new string('y', 50),
-            400);
+            400).Text;
 
         // Assert
         result.ShouldContain("Reduced to Low");
@@ -78,7 +78,7 @@ public sealed class ProgressiveRendererTests
     public void Render_AllLevelsExceed_ReturnsMinimalForFailsafe()
     {
         // Arrange — every level exceeds the limit.
-        string result = ProgressiveRenderer.Render("input", (_, _) => new string('x', 200), 100);
+        string result = ProgressiveRenderer.Render("input", (_, _) => new string('x', 200), 100).Text;
 
         // Assert — the note is appended but the output still exceeds the limit; ResponseTruncator finishes.
         result.ShouldContain("--- DETAIL REDUCED ---");
@@ -96,7 +96,7 @@ public sealed class ProgressiveRendererTests
         string result = ProgressiveRenderer.Render(
             "input",
             (_, level) => level >= DetailLevel.Low ? small : large,
-            400);
+            400).Text;
 
         // Assert — reports Low, not High or Medium (which were byte-identical to Full).
         result.ShouldContain("Reduced to Low");
@@ -128,7 +128,7 @@ public sealed class ProgressiveRendererTests
         string result = ProgressiveRenderer.Render(
             "input",
             (_, level) => level == DetailLevel.Full ? new string('x', 1000) : new string('y', 50),
-            400);
+            400).Text;
 
         // Assert
         result.ShouldContain("400 character limit");
@@ -148,7 +148,7 @@ public sealed class ProgressiveRendererTests
                 DetailLevel.High => new string('H', 190),
                 _ => new string('M', 20)
             },
-            200);
+            200).Text;
 
         // Assert
         result.Length.ShouldBeLessThanOrEqualTo(200);
@@ -169,7 +169,7 @@ public sealed class ProgressiveRendererTests
             DetailLevel.Medium => new string('M', 20),
             DetailLevel.Low => new string('L', 20),
             _ => new string('N', 20)
-        }, 10);
+        }, 10).Text;
 
         // Assert — returned content is the Minimal level (matching the note's label), not stale Full.
         result.ShouldContain("Reduced to Minimal");
@@ -185,7 +185,7 @@ public sealed class ProgressiveRendererTests
             "input",
             (_, level) => level == DetailLevel.Full ? new string('x', 1000) : new string('y', 50),
             400,
-            level => $"custom reduction note for {level}");
+            level => $"custom reduction note for {level}").Text;
 
         // Assert
         result.ShouldContain("custom reduction note for High");

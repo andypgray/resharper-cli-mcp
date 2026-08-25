@@ -51,9 +51,10 @@ internal sealed class InspectService(JbRunner jbRunner)
 
     /// <summary>
     ///     Populate the solution's ReSharper cache generation speculatively, discarding the SARIF unread —
-    ///     the run's value is entirely in the cache it leaves behind. Returns <see langword="null" /> when the
-    ///     run did not happen or was handed back to a real call; a non-zero exit is reported rather than
-    ///     thrown, because there is no user waiting on this.
+    ///     the run's value is entirely in the cache it leaves behind. What comes back is how the pass ended:
+    ///     whether a <c>jb</c> started at all, and if it did, whether it finished, failed, ran out the cap or
+    ///     was handed to a real call. A non-zero exit is reported rather than thrown, because there is no user
+    ///     waiting on this.
     /// </summary>
     /// <remarks>
     ///     Lives here rather than in <see cref="CacheWarmer" /> because a warm-up is only worth anything if it
@@ -64,7 +65,7 @@ internal sealed class InspectService(JbRunner jbRunner)
     ///     <em>when</em>; the warmer never sees a jb argument. Note that <c>--include</c> does not shrink jb's
     ///     work, so a warm-up is inherently a full-solution run.
     /// </remarks>
-    public Task<ProcessResult?> WarmCacheAsync(ResolvedConfig config, CancellationToken cancellationToken)
+    public Task<SpeculativeRunOutcome> WarmCacheAsync(ResolvedConfig config, CancellationToken cancellationToken)
     {
         return WithSarifScratchAsync("resharper-warmup-", outputFile =>
         {

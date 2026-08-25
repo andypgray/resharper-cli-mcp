@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
 using Xunit;
 using Zphil.ReSharperCli.Execution;
@@ -33,15 +34,15 @@ public sealed class JbColdTombstoneTests : IDisposable
     public void WriteThenClear_IsTheWholeLifecycle()
     {
         // Assert — a cache home nothing has reset carries no promise...
-        JbColdTombstone.Exists(SolutionPath, _cacheHome).ShouldBeFalse();
+        JbColdTombstone.Exists(SolutionPath, _cacheHome, NullLogger.Instance).ShouldBeFalse();
 
         // ...a reset makes one...
-        JbColdTombstone.Write(SolutionPath, _cacheHome);
-        JbColdTombstone.Exists(SolutionPath, _cacheHome).ShouldBeTrue();
+        JbColdTombstone.Write(SolutionPath, _cacheHome, NullLogger.Instance);
+        JbColdTombstone.Exists(SolutionPath, _cacheHome, NullLogger.Instance).ShouldBeTrue();
 
         // ...and the run that rebuilt the cache discharges it.
-        JbColdTombstone.Clear(SolutionPath, _cacheHome);
-        JbColdTombstone.Exists(SolutionPath, _cacheHome).ShouldBeFalse();
+        JbColdTombstone.Clear(SolutionPath, _cacheHome, NullLogger.Instance);
+        JbColdTombstone.Exists(SolutionPath, _cacheHome, NullLogger.Instance).ShouldBeFalse();
     }
 
     [Fact]
@@ -49,10 +50,10 @@ public sealed class JbColdTombstoneTests : IDisposable
     {
         // Assert — two resets in a row and a successful run with no reset behind it are both normal, so
         // neither end of the lifecycle may object to being repeated.
-        Should.NotThrow(() => JbColdTombstone.Clear(SolutionPath, _cacheHome));
-        JbColdTombstone.Write(SolutionPath, _cacheHome);
-        Should.NotThrow(() => JbColdTombstone.Write(SolutionPath, _cacheHome));
-        JbColdTombstone.Exists(SolutionPath, _cacheHome).ShouldBeTrue();
+        Should.NotThrow(() => JbColdTombstone.Clear(SolutionPath, _cacheHome, NullLogger.Instance));
+        JbColdTombstone.Write(SolutionPath, _cacheHome, NullLogger.Instance);
+        Should.NotThrow(() => JbColdTombstone.Write(SolutionPath, _cacheHome, NullLogger.Instance));
+        JbColdTombstone.Exists(SolutionPath, _cacheHome, NullLogger.Instance).ShouldBeTrue();
     }
 
     [Fact]
@@ -60,11 +61,11 @@ public sealed class JbColdTombstoneTests : IDisposable
     {
         // Arrange — the tombstone is per cache generation, like the lock and the marker beside it. Resetting
         // one checkout must not stop another being seeded.
-        JbColdTombstone.Write(SolutionPath, _cacheHome);
+        JbColdTombstone.Write(SolutionPath, _cacheHome, NullLogger.Instance);
 
         // Assert
-        JbColdTombstone.Exists("/repo/Other.sln", _cacheHome).ShouldBeFalse();
-        JbColdTombstone.Exists(SolutionPath, _environment.CreateTempDirectory()).ShouldBeFalse();
+        JbColdTombstone.Exists("/repo/Other.sln", _cacheHome, NullLogger.Instance).ShouldBeFalse();
+        JbColdTombstone.Exists(SolutionPath, _environment.CreateTempDirectory(), NullLogger.Instance).ShouldBeFalse();
     }
 
     [Fact]
@@ -75,9 +76,9 @@ public sealed class JbColdTombstoneTests : IDisposable
         string invalid = _cacheHome + "\0invalid";
 
         // Assert — including the discharge, which runs at the end of a jb run that has already succeeded.
-        Should.NotThrow(() => JbColdTombstone.Write(SolutionPath, invalid));
-        JbColdTombstone.Exists(SolutionPath, invalid).ShouldBeTrue();
-        Should.NotThrow(() => JbColdTombstone.Clear(SolutionPath, invalid));
+        Should.NotThrow(() => JbColdTombstone.Write(SolutionPath, invalid, NullLogger.Instance));
+        JbColdTombstone.Exists(SolutionPath, invalid, NullLogger.Instance).ShouldBeTrue();
+        Should.NotThrow(() => JbColdTombstone.Clear(SolutionPath, invalid, NullLogger.Instance));
     }
 
     [Fact]
@@ -88,7 +89,7 @@ public sealed class JbColdTombstoneTests : IDisposable
         string blocked = CacheHomes.BlockedCacheHome(_environment);
 
         // Act & Assert
-        Should.NotThrow(() => JbColdTombstone.Write(SolutionPath, blocked));
+        Should.NotThrow(() => JbColdTombstone.Write(SolutionPath, blocked, NullLogger.Instance));
     }
 
     [Fact]

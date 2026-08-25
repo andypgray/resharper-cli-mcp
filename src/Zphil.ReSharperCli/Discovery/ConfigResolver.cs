@@ -1,4 +1,4 @@
-using Serilog;
+using Microsoft.Extensions.Logging;
 using Zphil.ReSharperCli.Infrastructure;
 
 namespace Zphil.ReSharperCli.Discovery;
@@ -54,18 +54,18 @@ internal sealed record ResolvedConfig(
 ///     is cached for the process inside <see cref="JbLocator" />; what remains here is one directory
 ///     enumeration, a few existence checks, and a small XML read — noise beside the jb run that follows.
 /// </remarks>
-internal sealed class ConfigResolver(JbLocator jbLocator, IEnvironment environment)
+internal sealed class ConfigResolver(JbLocator jbLocator, IEnvironment environment, ILogger<ConfigResolver> logger)
 {
     public async Task<ResolvedConfig> ResolveAsync(string? solutionPathOverride, CancellationToken cancellationToken)
     {
         // jb first, then the solution: a missing toolchain surfaces before any solution-discovery error.
         JbInstallation installation = await jbLocator.LocateAsync(cancellationToken);
-        string solutionPath = ResolveSolutionPath(solutionPathOverride);
-        SettingsResolution settings = ResolveSettingsPath(solutionPath);
-        DeclaredCleanupProfile declaredProfile = CleanupProfileReader.Read(settings.Path);
+        SolutionResolution solution = ResolveSolutionPath(solutionPathOverride);
+        SettingsResolution settings = ResolveSettingsPath(solution.Path);
+        DeclaredCleanupProfile declaredProfile = CleanupProfileReader.Read(settings.Path, logger);
 
-        return new ResolvedConfig(
-            solutionPath,
+        ResolvedConfig config = new(
+            solution.Path,
             settings.Path,
             settings.IsCustomLayer,
             declaredProfile.Name,
@@ -74,16 +74,59 @@ internal sealed class ConfigResolver(JbLocator jbLocator, IEnvironment environme
             EmptyToNull(environment.GetVariable("JB_EXTENSION_SOURCE")),
             installation.ExecutablePath,
             new ConfigWarnings(settings.MissingEnvPath, declaredProfile.Failure));
+
+        Report(config, solution.Source, installation.Version);
+
+        return config;
     }
 
-    private string ResolveSolutionPath(string? solutionPathOverride)
+    /// <summary>
+    ///     Where a solution's ReSharper caches live for this server process: <c>JB_CACHE_HOME</c> if set, else
+    ///     <c>~/.jb-cache</c>.
+    /// </summary>
+    /// <remarks>
+    ///     Internal so the startup line can name it without resolving a whole config — which would mean
+    ///     probing for <c>jb</c>, thirty seconds per candidate on a machine that has none, before the server
+    ///     has said anything at all. This one axis is independent of every other and costs two environment
+    ///     reads.
+    /// </remarks>
+    internal string ResolveCacheHome()
+    {
+        string? cacheHome = EmptyToNull(environment.GetVariable("JB_CACHE_HOME"));
+        return cacheHome is not null
+            ? Path.GetFullPath(cacheHome, environment.CurrentDirectory)
+            : Path.Combine(environment.HomeDirectory, ".jb-cache");
+    }
+
+    /// <summary>
+    ///     Say what this call resolved and how. One line per call, at <c>Information</c>, because every axis on
+    ///     it changes what <c>jb</c> is asked to do and none of them is visible from the outside: which of the
+    ///     three solution sources won, and whether <c>--settings</c> mounts a Custom layer above the whole
+    ///     stack, are exactly the two the 1.4.0 settings-layer defect lived on.
+    /// </summary>
+    private void Report(ResolvedConfig config, string solutionSource, string jbVersion)
+    {
+        logger.LogInformation(
+            "Resolved solution {SolutionPath} ({SolutionSource}) against jb {JbVersion} at {JbPath}, cache home {CacheHome}, "
+            + "settings {SettingsPath} ({SettingsLayer}), extensions {Extensions}",
+            config.SolutionPath,
+            solutionSource,
+            jbVersion,
+            config.JbExecutablePath,
+            config.CacheHome,
+            config.SettingsPath ?? "none found",
+            config.SettingsPathIsCustomLayer ? "passed as --settings, mounting a Custom layer" : "left for jb to mount itself",
+            config.Extensions ?? "none");
+    }
+
+    private SolutionResolution ResolveSolutionPath(string? solutionPathOverride)
     {
         if (solutionPathOverride is not null)
         {
             string resolved = Path.GetFullPath(solutionPathOverride, environment.CurrentDirectory);
             if (!File.Exists(resolved)) throw new UserErrorException($"Specified solution path \"{solutionPathOverride}\" does not exist.");
 
-            return resolved;
+            return new SolutionResolution(resolved, "from the solutionPath argument");
         }
 
         string? envPath = environment.GetVariable("JB_SOLUTION_PATH");
@@ -92,10 +135,10 @@ internal sealed class ConfigResolver(JbLocator jbLocator, IEnvironment environme
             string resolved = Path.GetFullPath(envPath, environment.CurrentDirectory);
             if (!File.Exists(resolved)) throw new UserErrorException($"JB_SOLUTION_PATH is set to \"{envPath}\" but the file does not exist.");
 
-            return resolved;
+            return new SolutionResolution(resolved, "from JB_SOLUTION_PATH");
         }
 
-        return DiscoverSolutionInCurrentDirectory();
+        return new SolutionResolution(DiscoverSolutionInCurrentDirectory(), "discovered in the working directory");
     }
 
     private string DiscoverSolutionInCurrentDirectory()
@@ -133,7 +176,7 @@ internal sealed class ConfigResolver(JbLocator jbLocator, IEnvironment environme
 
             // Never throw on a bad settings path — warn and fall through to the other sources. Recorded as
             // well as logged: it silently drops both configuration axes, so the caller has to be told.
-            Log.Warning("JB_SETTINGS_PATH is set to \"{EnvPath}\" but the file does not exist. Skipping.", envPath);
+            logger.LogWarning("JB_SETTINGS_PATH is set to \"{EnvPath}\" but the file does not exist. Skipping.", envPath);
             missingEnvPath = envPath;
         }
 
@@ -191,14 +234,6 @@ internal sealed class ConfigResolver(JbLocator jbLocator, IEnvironment environme
         return Path.Combine(home, ".local", "share", "JetBrains", "Shared", "vAny");
     }
 
-    private string ResolveCacheHome()
-    {
-        string? cacheHome = EmptyToNull(environment.GetVariable("JB_CACHE_HOME"));
-        return cacheHome is not null
-            ? Path.GetFullPath(cacheHome, environment.CurrentDirectory)
-            : Path.Combine(environment.HomeDirectory, ".jb-cache");
-    }
-
     private static bool IsSolutionFileName(string? name)
     {
         return name is not null
@@ -210,6 +245,13 @@ internal sealed class ConfigResolver(JbLocator jbLocator, IEnvironment environme
     {
         return string.IsNullOrEmpty(value) ? null : value;
     }
+
+    /// <summary>
+    ///     The solution this call landed on, and which of the three sources supplied it. The source is carried
+    ///     for the log alone — nothing about the run depends on it — which is why it stays a private detail
+    ///     here rather than joining <see cref="ResolvedConfig" />.
+    /// </summary>
+    private sealed record SolutionResolution(string Path, string Source);
 
     /// <summary>
     ///     The settings file the chain landed on, plus the <c>JB_SETTINGS_PATH</c> value that named a file

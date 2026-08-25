@@ -1,5 +1,5 @@
 using System.Text;
-using Serilog;
+using Microsoft.Extensions.Logging;
 
 namespace Zphil.ReSharperCli.Execution;
 
@@ -86,7 +86,7 @@ internal static class JbWarmMarker
     ///     file empty — exactly the marker this used to write — so every reader that wants a name is told
     ///     there is none, and the features built on it switch themselves off rather than acting on a guess.
     /// </remarks>
-    internal static void Stamp(string solutionPath, string cacheHome)
+    internal static void Stamp(string solutionPath, string cacheHome, ILogger logger)
     {
         try
         {
@@ -96,15 +96,22 @@ internal static class JbWarmMarker
 
             if (generationName is null)
             {
-                WarnOnceAboutUnrecognisedNaming(solutionPath, cacheHome);
+                WarnOnceAboutUnrecognisedNaming(solutionPath, cacheHome, logger);
                 return;
             }
 
             marker.Write(Encoding.UTF8.GetBytes(generationName));
+
+            // The mechanism donor discovery depends on, and the one step of it nothing else records: a
+            // generation no marker names can never be copied, however warm it is.
+            logger.LogDebug(
+                "Stamped the jb warm marker for solution {SolutionPath}, naming cache generation {GenerationName}",
+                solutionPath,
+                generationName);
         }
         catch (Exception exception) when (FilesystemFailure.Covers(exception))
         {
-            Log.Debug(exception, "Could not stamp the jb warm marker for solution {SolutionPath} in cache home {CacheHome}", solutionPath, cacheHome);
+            logger.LogDebug(exception, "Could not stamp the jb warm marker for solution {SolutionPath} in cache home {CacheHome}", solutionPath, cacheHome);
         }
     }
 
@@ -122,7 +129,7 @@ internal static class JbWarmMarker
     ///     carrying a separator, a drive, or a parent reference is refused before it can address a directory
     ///     outside the cache home.
     /// </remarks>
-    internal static string? TryReadGenerationName(string markerFilePath, string cacheHome)
+    internal static string? TryReadGenerationName(string markerFilePath, string cacheHome, ILogger logger)
     {
         try
         {
@@ -136,7 +143,7 @@ internal static class JbWarmMarker
         }
         catch (Exception exception) when (FilesystemFailure.Covers(exception))
         {
-            Log.Debug(exception, "Could not read the jb warm marker {MarkerFilePath}", markerFilePath);
+            logger.LogDebug(exception, "Could not read the jb warm marker {MarkerFilePath}", markerFilePath);
             return null;
         }
     }
@@ -148,29 +155,45 @@ internal static class JbWarmMarker
     ///     marker that will not go is a redundant pre-warm, which is the direction this file is always
     ///     allowed to fail in.
     /// </summary>
-    internal static void Clear(string solutionPath, string cacheHome)
+    internal static void Clear(string solutionPath, string cacheHome, ILogger logger)
     {
-        JbSidecar.TryDelete(solutionPath, cacheHome, Extension, "jb warm marker");
+        JbSidecar.TryDelete(solutionPath, cacheHome, Extension, "jb warm marker", logger);
+    }
+
+    /// <summary>
+    ///     How long ago a run against this cache generation last succeeded, or <see langword="null" /> when
+    ///     none is recorded — no marker, or one this server cannot read. The one mtime read behind both
+    ///     <see cref="IsFreshWithin" />'s debounce and the cache-state line a run starts with, so "recently
+    ///     warm" and "warm, and this old" cannot come to disagree.
+    /// </summary>
+    /// <remarks>
+    ///     A negative span is possible and is passed through rather than hidden: a moved clock or a cache home
+    ///     copied between machines dates a marker into the future, and each caller decides what to do with
+    ///     that — the debounce reads it as stale so it cannot suppress pre-warming forever, while the log
+    ///     shows the operator the nonsense the filesystem is reporting.
+    /// </remarks>
+    internal static TimeSpan? Age(string solutionPath, string cacheHome, ILogger logger)
+    {
+        try
+        {
+            FileInfo marker = new(PathFor(solutionPath, cacheHome));
+            return marker.Exists ? DateTime.UtcNow - marker.LastWriteTimeUtc : null;
+        }
+        catch (Exception exception) when (FilesystemFailure.Covers(exception))
+        {
+            logger.LogDebug(exception, "Could not read the jb warm marker for solution {SolutionPath} in cache home {CacheHome}", solutionPath, cacheHome);
+            return null;
+        }
     }
 
     /// <summary>
     ///     Whether a run against this cache generation succeeded within <paramref name="window" />. A missing
-    ///     marker reads as stale for free: <see cref="File.GetLastWriteTimeUtc(string)" /> returns 1601-01-01
-    ///     rather than throwing. A future-dated one — a moved clock, or a cache home copied between machines —
-    ///     also reads as stale, so it cannot suppress pre-warming forever.
+    ///     or unreadable marker reads as stale, and so does a future-dated one — a moved clock, or a cache
+    ///     home copied between machines — so it cannot suppress pre-warming forever.
     /// </summary>
-    internal static bool IsFreshWithin(string solutionPath, string cacheHome, TimeSpan window)
+    internal static bool IsFreshWithin(string solutionPath, string cacheHome, TimeSpan window, ILogger logger)
     {
-        try
-        {
-            TimeSpan age = DateTime.UtcNow - File.GetLastWriteTimeUtc(PathFor(solutionPath, cacheHome));
-            return age >= TimeSpan.Zero && age < window;
-        }
-        catch (Exception exception) when (FilesystemFailure.Covers(exception))
-        {
-            Log.Debug(exception, "Could not read the jb warm marker for solution {SolutionPath} in cache home {CacheHome}", solutionPath, cacheHome);
-            return false;
-        }
+        return Age(solutionPath, cacheHome, logger) is { } age && age >= TimeSpan.Zero && age < window;
     }
 
     /// <summary>
@@ -194,7 +217,7 @@ internal static class JbWarmMarker
     ///         donor marker from that search too, so no replace can reach the delete.
     ///     </para>
     /// </remarks>
-    internal static bool Exists(string solutionPath, string cacheHome)
+    internal static bool Exists(string solutionPath, string cacheHome, ILogger logger)
     {
         try
         {
@@ -202,7 +225,7 @@ internal static class JbWarmMarker
         }
         catch (Exception exception) when (FilesystemFailure.Covers(exception))
         {
-            Log.Debug(exception, "Could not look for the jb warm marker for solution {SolutionPath} in cache home {CacheHome}", solutionPath, cacheHome);
+            logger.LogDebug(exception, "Could not look for the jb warm marker for solution {SolutionPath} in cache home {CacheHome}", solutionPath, cacheHome);
             return true;
         }
     }
@@ -229,11 +252,11 @@ internal static class JbWarmMarker
     ///     signal that the derivation has gone stale, so it is a warning rather than a debug line, and said
     ///     once.
     /// </summary>
-    private static void WarnOnceAboutUnrecognisedNaming(string solutionPath, string cacheHome)
+    private static void WarnOnceAboutUnrecognisedNaming(string solutionPath, string cacheHome, ILogger logger)
     {
         if (Interlocked.Exchange(ref _driftWarned, 1) != 0) return;
 
-        Log.Warning(
+        logger.LogWarning(
             "A jb run against solution {SolutionPath} succeeded but left no cache generation directory matching its computed hash under {CacheHome}; "
             + "features that need to name a cache generation are disabled for this server",
             solutionPath,

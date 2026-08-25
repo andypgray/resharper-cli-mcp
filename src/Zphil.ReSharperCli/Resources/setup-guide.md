@@ -21,8 +21,10 @@ order:
 2. `~/.dotnet/tools/jb` (`jb.exe` on Windows).
 
 The second candidate matters because an MCP client starts this server as a child process that often does
-*not* inherit your shell's `PATH` — a `jb` that works in your terminal can still be invisible here. When
-both candidates fail, the error reports what each one said and how to install the tool. Reference:
+*not* inherit your shell's `PATH` — a `jb` that works in your terminal can still be invisible here. At
+`Debug` each candidate leaves a line with what it answered and how long it took, so one that fails before
+a later one succeeds is accounted for rather than reading as an unexplained pause before the first call.
+When both candidates fail, the error reports what each one said and how to install the tool. Reference:
 <https://www.jetbrains.com/help/resharper/ReSharper_Command_Line_Tools.html>
 
 ## Which solution a call runs against
@@ -107,6 +109,11 @@ would have been.
 succeeded within the last hour — a tool call counts, so working in a repo does not earn its next session a
 redundant analysis. It is a full solution analysis when it does run (`--include` does not make `jb` do less
 work), so set `RESHARPER_MCP_PREWARM=off` if you would rather not spend the CPU.
+
+A pass is also **subject to the run cap** like any other `jb` run, and on a large cold solution running the
+whole cap and being killed is the ordinary shape rather than a fault. The log says `Capped` for that and
+`Cancelled` for a pass a tool call took the cache back from; both left the generation part-built, so neither
+is the `Skipped` that means no `jb` ever started. Nothing is reported to you either way.
 
 Exactly one thing arms another pass: **a tool call hitting the run cap**. That is when speculative work is
 worth most — the cache is part-built and you are reading the error rather than waiting on `jb` — so the
@@ -257,18 +264,38 @@ something `jb` itself is told; the `RESHARPER_MCP_` ones govern this server's ow
 | `JB_EXTENSION_SOURCE` | Custom NuGet source for those plugins. |
 | `RESHARPER_MCP_TIMEOUT_SECS` | Cap in seconds on one `jb` run, and on the wait for one already in flight (default `600`). Clamped to 60…86,400; anything unreadable falls back to `600`. |
 | `RESHARPER_MCP_PREWARM` | Set to `off` to stop the background pre-warm above. Anything else, including unset, leaves it on. |
-| `RESHARPER_MCP_LOG_LEVEL` | Minimum level for the file log (default `Warning`). Accepts Serilog or Microsoft level names; anything unrecognised falls back to `Warning`. |
+| `RESHARPER_MCP_LOG_LEVEL` | Minimum level for the file log (default `Warning`). Accepts Serilog or Microsoft level names; anything unrecognised falls back to `Warning`. Set it to `Information` to record what each call did to the cache — see "Logs" below. |
 | `MAX_MCP_OUTPUT_TOKENS` | Set by the MCP client, not by you — the output budget above. |
 
 ## Logs
 
 One daily-rolling file under `%LOCALAPPDATA%\Zphil.ReSharperCli\logs` on Windows, or the platform
-equivalent elsewhere, keeping the last 7 days. It records unexpected failures only: an expected error —
-a missing `jb`, an undiscoverable solution, a bad path, a non-zero `jb` exit — is returned to you in the
-tool result and never written to the log.
+equivalent elsewhere, keeping the last 7 days. `RESHARPER_MCP_LOG_LEVEL` chooses the level; the default is
+`Warning`, which records unexpected failures only. An expected error — a missing `jb`, an undiscoverable
+solution, a bad path, a non-zero `jb` exit — is returned to you in the tool result and is never written to
+the log at any level.
 
-A pre-warm that was skipped, cancelled, or failed is not log-worthy either — it costs the session nothing
-beyond what it would have cost anyway — so it appears only at `Debug`.
+Each line reads
+`[timestamp] [level] [session] [run] [source] message`. **Session** is `CLAUDE_CODE_SESSION_ID` when the
+client sets it, else a short random id, and it separates concurrent server processes sharing the daily file.
+**Run** is a four-digit counter over one process: every tool call and every pre-warm pass gets one, and every
+line that call or pass causes carries it, so interleaved work can be read apart. A line belonging to no run —
+startup, shutdown — reads `----`.
+
+`Information` is what to raise the level to when a call was slower than expected. It carries what this server
+did and nothing else: the MCP SDK's and .NET Hosting's own categories are held at `Warning`, and this server
+emits its own startup, shutdown, and per-run lines in their place.
+
+| Level | Carries |
+|---|---|
+| `Warning` (default) | Unexpected failures, plus the degradations that leave a promise unkept — a settings file named but missing, a run lock that could not be taken, a cache reset that could not be recorded. |
+| `Information` | The startup fingerprint (version, pid, cache home, run cap, pre-warm on/off) · the config each call resolved and how it found its solution · one line as each `jb` run starts, naming its cache state and how long it queued · one as it ends, with its exit code and duration · every transplant decision, seeded or declined, with its reason · a notable lock queue wait · a pre-warm's start and outcome · a speculative pass stood down for a call · what a cache reset dropped. |
+| `Debug` | The full `jb` command line · one line per `jb` candidate probed, with what it answered and how long it took, including a candidate that failed before a later one succeeded · the tool-call envelope and argument shape · the detail level a response settled at, and whether it was truncated · cache generation sizes · warm-marker stamps · the declines and skips that cost nothing. |
+
+A typical inspect costs about four `Information` lines, so a day at that level stays readable. Two of them
+are the pair around the `jb` run, and the first of the pair is written *before* the run: a `jb` run is
+minutes of silence, and that line is how a run still in flight — or one that was killed — can be told from
+one that finished.
 
 Nothing is written to stdout, because that channel carries the MCP JSON-RPC stream and any stray write
 would corrupt the protocol; diagnostics go to stderr and the file. Nothing leaves the machine.

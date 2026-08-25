@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
 using Xunit;
 using Zphil.ReSharperCli.Execution;
@@ -18,7 +19,7 @@ public sealed class ProcessRunnerTests
     public async Task RunAsync_SuccessfulCommand_ReturnsZeroExitAndCapturesStdout()
     {
         // Arrange
-        ProcessRunner runner = new();
+        ProcessRunner runner = new(NullLogger<ProcessRunner>.Instance);
 
         // Act
         ProcessResult result = await runner.RunAsync("dotnet", ["--version"], GenerousTimeout, TestContext.Current.CancellationToken);
@@ -32,7 +33,7 @@ public sealed class ProcessRunnerTests
     public async Task RunAsync_NonZeroExit_ReturnsExitCodeWithoutThrowing()
     {
         // Arrange
-        ProcessRunner runner = new();
+        ProcessRunner runner = new(NullLogger<ProcessRunner>.Instance);
         (string fileName, string[] arguments) = ExitWithCodeCommand(7);
 
         // Act
@@ -46,7 +47,7 @@ public sealed class ProcessRunnerTests
     public async Task RunAsync_ProcessExceedsTimeout_ThrowsProcessTimeoutException()
     {
         // Arrange
-        ProcessRunner runner = new();
+        ProcessRunner runner = new(NullLogger<ProcessRunner>.Instance);
         (string fileName, string[] arguments) = SleepThirtySecondsCommand();
 
         // Act — the distinct type is what lets the caller that chose the timeout recognise its own cap and
@@ -64,7 +65,7 @@ public sealed class ProcessRunnerTests
     {
         // Arrange — the parent exits at once but leaves a background child holding the stdout pipe open
         // for 30 s. The bounded drain must cap on the timeout rather than block waiting for EOF.
-        ProcessRunner runner = new();
+        ProcessRunner runner = new(NullLogger<ProcessRunner>.Instance);
         (string fileName, string[] arguments) = OrphanHoldingStdoutCommand();
         var stopwatch = Stopwatch.StartNew();
 
@@ -107,7 +108,7 @@ public sealed class ProcessRunnerTests
     public async Task RunAsync_MissingExecutable_ThrowsWin32Exception()
     {
         // Arrange
-        ProcessRunner runner = new();
+        ProcessRunner runner = new(NullLogger<ProcessRunner>.Instance);
 
         // Act / Assert
         await Should.ThrowAsync<Win32Exception>(() => runner.RunAsync("this-executable-does-not-exist-9f3a1c", [], GenerousTimeout, TestContext.Current.CancellationToken));

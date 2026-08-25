@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Shouldly;
 using Xunit;
@@ -19,7 +20,10 @@ public sealed class ConfigResolverTests : IDisposable
         _processRunner
             .RunAsync("jb", Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
             .Returns(new ProcessResult(0, "Version: 2026.1.2\n", string.Empty));
-        _resolver = new ConfigResolver(new JbLocator(_processRunner, _environment), _environment);
+        _resolver = new ConfigResolver(
+            new JbLocator(_processRunner, _environment, NullLogger<JbLocator>.Instance),
+            _environment,
+            NullLogger<ConfigResolver>.Instance);
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;

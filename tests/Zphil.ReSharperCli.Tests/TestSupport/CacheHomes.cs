@@ -1,4 +1,5 @@
 using System.Runtime.Versioning;
+using Microsoft.Extensions.Logging.Abstractions;
 using Zphil.ReSharperCli.Execution;
 using Zphil.ReSharperCli.Tests.TestDoubles;
 
@@ -74,10 +75,7 @@ internal static class CacheHomes
     public static IDisposable BlockDeletionOf(string generationPath)
     {
         string directory = Path.Combine(generationPath, "Db");
-        if (OperatingSystem.IsWindows())
-        {
-            return new FileStream(Path.Combine(directory, "CURRENT"), FileMode.Open, FileAccess.Read, FileShare.None);
-        }
+        if (OperatingSystem.IsWindows()) return new FileStream(Path.Combine(directory, "CURRENT"), FileMode.Open, FileAccess.Read, FileShare.None);
 
         return new UnwritableDirectory(directory);
     }
@@ -112,7 +110,7 @@ internal static class CacheHomes
     public static string PlantWarmDonor(string cacheHome, string solutionPath)
     {
         string generation = PlantGenerationFor(cacheHome, solutionPath);
-        JbWarmMarker.Stamp(solutionPath, cacheHome);
+        JbWarmMarker.Stamp(solutionPath, cacheHome, NullLogger.Instance);
         return generation;
     }
 

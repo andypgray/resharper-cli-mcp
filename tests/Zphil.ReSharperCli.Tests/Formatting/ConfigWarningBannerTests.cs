@@ -184,6 +184,6 @@ public sealed class ConfigWarningBannerTests
     private static string Render(CleanupOutcome outcome, int maxChars)
     {
         return ProgressiveRenderer.Render(
-            outcome, CleanupSummaryFormatter.Format, maxChars, CleanupSummaryFormatter.DescribeReduction);
+            outcome, CleanupSummaryFormatter.Format, maxChars, CleanupSummaryFormatter.DescribeReduction).Text;
     }
 }

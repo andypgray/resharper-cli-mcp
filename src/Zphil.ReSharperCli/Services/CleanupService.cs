@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using Microsoft.Extensions.Logging;
 using Zphil.ReSharperCli.Discovery;
 
 namespace Zphil.ReSharperCli.Services;
@@ -12,7 +13,7 @@ namespace Zphil.ReSharperCli.Services;
 ///     <see cref="JbRunner" /> and is restated here as a failed pass — see <see cref="FailedPassMessage" /> —
 ///     rather than being silently swallowed.
 /// </summary>
-internal sealed class CleanupService(JbRunner jbRunner)
+internal sealed class CleanupService(JbRunner jbRunner, ILogger<CleanupService> logger)
 {
     /// <summary>The profile applied when the caller does not specify one.</summary>
     public const string DefaultProfile = "Built-in: Full Cleanup";
@@ -64,6 +65,16 @@ internal sealed class CleanupService(JbRunner jbRunner)
         var entries = new List<CleanupEntry>(files.Count);
         for (var i = 0; i < files.Count; i++)
             entries.Add(new CleanupEntry(files[i], Classify(files[i], beforeHashes[i], solutionDirectory)));
+
+        // Debug: this is already in the response, and its interest to the log is the ratio over time rather
+        // than any one call. A profile that stopped matching anything shows up here as pass after pass
+        // rewriting nothing — the shape the exit-code-3 "No items were found to cleanup" defect had, which an
+        // agent read as "nothing needed changing" and moved on from.
+        logger.LogDebug(
+            "jb cleanupcode with profile {CleanupProfile} rewrote {ChangedCount} of {RequestedCount} requested entries",
+            resolvedProfile,
+            entries.Count(entry => entry.Status == CleanupFileStatus.Changed),
+            files.Count);
 
         return new CleanupOutcome(resolvedProfile, entries);
     }

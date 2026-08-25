@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Zphil.ReSharperCli.Discovery;
@@ -30,8 +31,13 @@ namespace Zphil.ReSharperCli.Services;
 ///     <para>
 ///         Speculative work must never be able to fail, delay, or report through a tool call, so every path
 ///         here ends in a <see cref="WarmUpOutcome" /> and nothing propagates: disabled, no target, already
-///         warm, and someone-else-is-running are all ordinary outcomes that stay out of the log, and only a
-///         genuinely unexpected exception is a warning.
+///         warm, someone-else-is-running, out of budget at the run cap, and handed back to a call are all
+///         ordinary outcomes, and only a genuinely unexpected exception is a warning. The last two are
+///         ordinary without being nothing, which is why they are not spelled
+///         <see cref="WarmUpOutcome.Skipped" />: both spent real analysis, and the run lines above them say
+///         so. Every one of them is nonetheless <em>recorded</em>, at
+///         <c>Information</c> alongside the start — ordinary is not the same as uninteresting, and a pre-warm
+///         that skipped is the difference between a following call being fast and being cold.
 ///     </para>
 ///     <para>
 ///         It is an <see cref="IHostedService" /> solely for <see cref="StopAsync" />. Cancelling alone would
@@ -152,7 +158,14 @@ internal sealed class CacheWarmer(
         catch (TimeoutException)
         {
             logger.LogWarning("The background cache pre-warm did not stop within {DrainTimeout}", DrainTimeout);
+            return;
         }
+
+        // Said out loud because the alternative is the one thing this method exists to prevent: a jb outliving
+        // the process still holds ReSharper's own cache-generation lock, which is the one orphan the run lock
+        // cannot protect the next session from. "Drained cleanly" and "abandoned at the timeout" look identical
+        // from outside, and only the second explains why the next session found the generation held.
+        logger.LogInformation("Drained the background cache pre-warm before shutting down");
     }
 
     /// <summary>
@@ -208,12 +221,32 @@ internal sealed class CacheWarmer(
     }
 
     /// <summary>Never throws: it is the top of a fire-and-forget task, so an escape would be an unobserved exception.</summary>
+    /// <remarks>
+    ///     The enabled check and the target resolution sit here rather than in <see cref="WarmAsync" /> for the
+    ///     sake of the outcome line: they are what produce the solution the pass was aimed at, and a pass that
+    ///     ends in a cancellation or an unexpected fault has to be able to say which solution that was. It also
+    ///     opens the <see cref="RunIdScope" /> every line this pass causes is tagged with — its own, the config
+    ///     resolution's, and the run lines underneath — which is what tells a pre-warm's lines apart from the
+    ///     concurrent tool call they interleave with in one file.
+    /// </remarks>
     private async Task RunAsync(TaskCompletionSource signal, ResolvedConfig? target)
     {
+        using IDisposable? runScope = RunIdScope.Begin(logger);
+        var elapsed = Stopwatch.StartNew();
+
         var outcome = WarmUpOutcome.NotRun;
+        ResolvedConfig? config = target;
         try
         {
-            outcome = await WarmAsync(target);
+            if (!IsEnabled(environment.GetVariable(EnableVariable)))
+            {
+                outcome = WarmUpOutcome.Disabled;
+            }
+            else
+            {
+                config ??= await TryResolveTargetAsync();
+                outcome = config is null ? WarmUpOutcome.NoTarget : await WarmAsync(config);
+            }
         }
         catch (OperationCanceledException)
         {
@@ -230,7 +263,7 @@ internal sealed class CacheWarmer(
         {
             // Outcome before Finished, so a caller that awaits the one can read the other.
             Outcome = outcome;
-            logger.LogDebug("Background cache pre-warm finished: {Outcome}", outcome);
+            ReportOutcome(outcome, config, elapsed.Elapsed);
 
             // The slot before the signal, so `await Finished; Start();` re-arms rather than meeting a pass
             // that has settled but not yet stood down.
@@ -245,25 +278,53 @@ internal sealed class CacheWarmer(
         }
     }
 
-    private async Task<WarmUpOutcome> WarmAsync(ResolvedConfig? target)
+    /// <summary>
+    ///     Record how a pass settled, at <c>Information</c> to pair with the start — where this used to be
+    ///     <c>Debug</c>, and a field log therefore showed pre-warms beginning and never ending, so whether two
+    ///     overlapping passes had contended, and which of them won, was unanswerable.
+    /// </summary>
+    /// <remarks>
+    ///     <see cref="WarmUpOutcome.Disabled" /> is the one exception, and it goes to <c>Debug</c> because the
+    ///     startup line already names the switch's position. Restating a startup fact once per session at
+    ///     <c>Information</c> is exactly the noise this level was cleared out to make room for real events.
+    /// </remarks>
+    private void ReportOutcome(WarmUpOutcome outcome, ResolvedConfig? config, TimeSpan elapsed)
     {
-        if (!IsEnabled(environment.GetVariable(EnableVariable))) return WarmUpOutcome.Disabled;
+        const string template = "Background cache pre-warm finished: {Outcome} for {SolutionPath} after {ElapsedMs} ms";
+        string solutionPath = config?.SolutionPath ?? "no target";
+        var elapsedMs = (long)elapsed.TotalMilliseconds;
 
-        ResolvedConfig? config = target ?? await TryResolveTargetAsync();
-        if (config is null) return WarmUpOutcome.NoTarget;
+        if (outcome == WarmUpOutcome.Disabled)
+            logger.LogDebug(template, outcome, solutionPath, elapsedMs);
+        else
+            logger.LogInformation(template, outcome, solutionPath, elapsedMs);
+    }
 
-        // The debounce governs every pass, re-arms included. It cannot be hoisted above the resolution above
-        // it, because it is keyed on what that resolution produces.
-        if (JbWarmMarker.IsFreshWithin(config.SolutionPath, config.CacheHome, RecentlyWarmWindow))
+    private async Task<WarmUpOutcome> WarmAsync(ResolvedConfig config)
+    {
+        // The debounce governs every pass, re-arms included. It cannot be hoisted above the resolution in the
+        // caller, because it is keyed on what that resolution produces.
+        if (JbWarmMarker.IsFreshWithin(config.SolutionPath, config.CacheHome, RecentlyWarmWindow, logger))
             return WarmUpOutcome.AlreadyWarm;
 
         logger.LogInformation("Pre-warming the ReSharper cache for {SolutionPath}", config.SolutionPath);
 
-        var result = await inspectService.WarmCacheAsync(config, _stopping.Token);
+        SpeculativeRunOutcome run = await inspectService.WarmCacheAsync(config, _stopping.Token);
 
-        if (result is null) return WarmUpOutcome.Skipped;
-
-        return result.Value.ExitCode == 0 ? WarmUpOutcome.Warmed : WarmUpOutcome.Failed;
+        // One arm per ending, because the outcome line this produces sits directly under the run lines
+        // JbRunner wrote, and a summary that collapses them contradicts what they say: a pass killed at the
+        // cap logs that the cap killed it, and then used to call itself a skip in the very next line. The
+        // default throws for the same reason: a new ending absorbed into "skipped" would misreport spent
+        // work as costless, silently.
+        return run switch
+        {
+            SpeculativeRunOutcome.NotStarted => WarmUpOutcome.Skipped,
+            SpeculativeRunOutcome.Completed => WarmUpOutcome.Warmed,
+            SpeculativeRunOutcome.Failed => WarmUpOutcome.Failed,
+            SpeculativeRunOutcome.Capped => WarmUpOutcome.Capped,
+            SpeculativeRunOutcome.StoodDown => WarmUpOutcome.Cancelled,
+            _ => throw new ArgumentOutOfRangeException(nameof(run), run, "Unmapped speculative run outcome.")
+        };
     }
 
     /// <summary>

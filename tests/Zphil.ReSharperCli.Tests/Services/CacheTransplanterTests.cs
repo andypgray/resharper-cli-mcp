@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
 using Xunit;
 using Zphil.ReSharperCli.Discovery;
@@ -75,7 +77,7 @@ public sealed class CacheTransplanterTests : IDisposable
         await Transplanter().TryTransplantAsync(config, Ct);
 
         // Assert
-        JbWarmMarker.IsFreshWithin(config.SolutionPath, _cacheHome, TimeSpan.FromHours(1)).ShouldBeFalse();
+        JbWarmMarker.IsFreshWithin(config.SolutionPath, _cacheHome, TimeSpan.FromHours(1), NullLogger.Instance).ShouldBeFalse();
     }
 
     [Fact]
@@ -146,7 +148,7 @@ public sealed class CacheTransplanterTests : IDisposable
         // outranks the replacement path: the user asked for cold.
         CacheHomes.PlantWarmDonor(_cacheHome, _mainSolution);
         ResolvedConfig config = ConfigFor(_worktreeSolution);
-        CacheResetService reset = new(new JbRunLock(TimeSpan.FromSeconds(1)), new JbRunYield());
+        CacheResetService reset = JbRunners.Reset(JbRunners.Lock(TimeSpan.FromSeconds(1)), JbRunners.Yield());
         await reset.RunAsync(config, Ct);
         string husk = CacheHomes.PlantGenerationFor(_cacheHome, _worktreeSolution);
         File.WriteAllText(Path.Combine(husk, "Db", "CURRENT"), "part-built since the reset");
@@ -168,7 +170,7 @@ public sealed class CacheTransplanterTests : IDisposable
         CacheHomes.PlantWarmDonor(_cacheHome, _mainSolution);
         ResolvedConfig config = ConfigFor(_worktreeSolution);
         CacheHomes.PlantGenerationFor(_cacheHome, _worktreeSolution);
-        CacheResetService reset = new(new JbRunLock(TimeSpan.FromSeconds(1)), new JbRunYield());
+        CacheResetService reset = JbRunners.Reset(JbRunners.Lock(TimeSpan.FromSeconds(1)), JbRunners.Yield());
         await reset.RunAsync(config, Ct);
 
         // Act
@@ -478,8 +480,8 @@ public sealed class CacheTransplanterTests : IDisposable
 
         // Assert — from both sides of the marker: nothing to protect the copy, and nothing to debounce a
         // pre-warm with. Only jb exiting cleanly writes either.
-        JbWarmMarker.Exists(config.SolutionPath, _cacheHome).ShouldBeFalse();
-        JbWarmMarker.IsFreshWithin(config.SolutionPath, _cacheHome, TimeSpan.FromHours(1)).ShouldBeFalse();
+        JbWarmMarker.Exists(config.SolutionPath, _cacheHome, NullLogger.Instance).ShouldBeFalse();
+        JbWarmMarker.IsFreshWithin(config.SolutionPath, _cacheHome, TimeSpan.FromHours(1), NullLogger.Instance).ShouldBeFalse();
     }
 
     [Fact]
@@ -493,9 +495,117 @@ public sealed class CacheTransplanterTests : IDisposable
         (await Transplanter().TryTransplantAsync(config, Ct)).ShouldBeFalse();
     }
 
-    private CacheTransplanter Transplanter()
+    /// <summary>
+    ///     Every decline says why, and a decline that leaves the target <em>cold</em> says it at
+    ///     <see cref="LogLevel.Information" />.
+    /// </summary>
+    /// <remarks>
+    ///     These were five silent <c>return false</c> paths, which made "declined to seed" and "never looked"
+    ///     one observation — and the difference between them is the whole diagnosis when a fresh checkout that
+    ///     should have been seeded runs cold instead, which is the shape a week of field logs showed. The
+    ///     reason text is matched rather than a property name because the reason <em>is</em> the payload here;
+    ///     the level is the part that carries policy.
+    /// </remarks>
+    [Fact]
+    public async Task TryTransplantAsync_NoDonorAtAll_SaysSoAtInformationBecauseTheRunWillBeCold()
     {
-        return new CacheTransplanter(new JbRunLock(TimeSpan.FromSeconds(1)), ShortPatience);
+        // Arrange — a cold solution with nothing beside it: the ordinary first checkout.
+        CapturingLoggerProvider logs = new();
+
+        // Act
+        await Transplanter(logs).TryTransplantAsync(ConfigFor(_worktreeSolution), Ct);
+
+        // Assert
+        LogEntry decline = Decline(logs);
+        decline.Level.ShouldBe(LogLevel.Information);
+        decline.Property("DeclineReason").ShouldBe("no warm cache of another copy of this solution to copy");
+    }
+
+    [Fact]
+    public async Task TryTransplantAsync_AfterAReset_SaysTheColdRunWasAsked_ForAtInformation()
+    {
+        // Arrange — a reset outranks seeding, and the run it makes cold is the run the user asked for.
+        CapturingLoggerProvider logs = new();
+        CacheHomes.PlantWarmDonor(_cacheHome, _mainSolution);
+        JbColdTombstone.Write(_worktreeSolution, _cacheHome, NullLogger.Instance);
+
+        // Act
+        await Transplanter(logs).TryTransplantAsync(ConfigFor(_worktreeSolution), Ct);
+
+        // Assert
+        LogEntry decline = Decline(logs);
+        decline.Level.ShouldBe(LogLevel.Information);
+        decline.Property("DeclineReason").ShouldBe("its cache was reset on purpose");
+    }
+
+    [Fact]
+    public async Task TryTransplantAsync_DonorBusyElsewhere_NamesTheDonorAtInformation()
+    {
+        // Arrange — another session is analysing the donor, so it must not be read mid-write.
+        CapturingLoggerProvider logs = new();
+        string donor = CacheHomes.PlantWarmDonor(_cacheHome, _mainSolution);
+        await using FileStream held = CacheHomes.HoldLockFile(_cacheHome, _mainSolution);
+
+        // Act
+        await Transplanter(logs).TryTransplantAsync(ConfigFor(_worktreeSolution), Ct);
+
+        // Assert
+        LogEntry decline = Decline(logs);
+        decline.Level.ShouldBe(LogLevel.Information);
+        decline.Property("DeclineReason").ShouldBe($"the donor {Path.GetFileName(donor)} is in use elsewhere");
+    }
+
+    [Fact]
+    public async Task TryTransplantAsync_TargetAlreadyWarm_DeclinesAtDebugBecauseNothingIsAboutToBeSlow()
+    {
+        // Arrange — the ordinary case on every call of every session. At Information it would drown the very
+        // lines the level exists to make findable.
+        CapturingLoggerProvider logs = new();
+        CacheHomes.PlantWarmDonor(_cacheHome, _mainSolution);
+        CacheHomes.PlantWarmDonor(_cacheHome, _worktreeSolution);
+
+        // Act
+        await Transplanter(logs).TryTransplantAsync(ConfigFor(_worktreeSolution), Ct);
+
+        // Assert
+        LogEntry decline = Decline(logs);
+        decline.Level.ShouldBe(LogLevel.Debug);
+        decline.Property("DeclineReason").ShouldBe("a run against it already succeeded");
+    }
+
+    [Fact]
+    public async Task TryTransplantAsync_Seeding_ReportsWhatItCopiedAndHowLongItTook()
+    {
+        // Arrange — the numbers the seeded-run premium had to be reconstructed by hand from two tool-call
+        // totals. Two files, so the count is not trivially whatever one directory holds.
+        CapturingLoggerProvider logs = new();
+        string donor = CacheHomes.PlantWarmDonor(_cacheHome, _mainSolution);
+        File.WriteAllText(Path.Combine(donor, "Db", "000001.log"), "leveldb");
+
+        // Act
+        await Transplanter(logs).TryTransplantAsync(ConfigFor(_worktreeSolution), Ct);
+
+        // Assert — 5 bytes of "cache" plus 7 of "leveldb", and a duration that was actually measured.
+        LogEntry seeded = logs.WithProperty("DonorBytes").ShouldHaveSingleItem();
+        seeded.Level.ShouldBe(LogLevel.Information);
+        seeded.Property("DonorFiles").ShouldBe(2);
+        seeded.Property("DonorBytes").ShouldBe(12L);
+        seeded.Property("CopiedMs").ShouldNotBeNull();
+    }
+
+    /// <summary>The one decline line this transplant wrote, whatever level it chose.</summary>
+    private static LogEntry Decline(CapturingLoggerProvider logs)
+    {
+        return logs.WithProperty("DeclineReason").ShouldHaveSingleItem();
+    }
+
+    private CacheTransplanter Transplanter(CapturingLoggerProvider? logs = null)
+    {
+        ILogger<CacheTransplanter> logger = logs is null
+            ? NullLogger<CacheTransplanter>.Instance
+            : Logs.Capturing(logs).CreateLogger<CacheTransplanter>();
+
+        return new CacheTransplanter(JbRunners.Lock(TimeSpan.FromSeconds(1)), logger, ShortPatience);
     }
 
     /// <summary>Where a seeded generation for the worktree lands, and where it is built before it lands.</summary>
@@ -519,7 +629,7 @@ public sealed class CacheTransplanterTests : IDisposable
     {
         string generationName = Path.GetFileName(generationPath);
         string markerPath = JbWarmMarker.FindAll(_cacheHome)
-            .Single(marker => JbWarmMarker.TryReadGenerationName(marker.MarkerPath, _cacheHome) == generationName)
+            .Single(marker => JbWarmMarker.TryReadGenerationName(marker.MarkerPath, _cacheHome, NullLogger.Instance) == generationName)
             .MarkerPath;
 
         File.SetLastWriteTimeUtc(markerPath, DateTime.UtcNow - age);

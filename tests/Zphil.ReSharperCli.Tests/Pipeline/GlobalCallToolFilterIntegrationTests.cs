@@ -4,8 +4,11 @@ using ModelContextProtocol.Protocol;
 using NSubstitute;
 using Shouldly;
 using Xunit;
+using Zphil.ReSharperCli.Discovery;
 using Zphil.ReSharperCli.Execution;
+using Zphil.ReSharperCli.Infrastructure;
 using Zphil.ReSharperCli.Pipeline;
+using Zphil.ReSharperCli.Services;
 using Zphil.ReSharperCli.Tests.TestDoubles;
 using Zphil.ReSharperCli.Tests.TestSupport;
 
@@ -121,6 +124,55 @@ public sealed class GlobalCallToolFilterIntegrationTests
         text.ShouldContain("x12, lines 13-24");
         text.ShouldNotContain("--- RESPONSE TRUNCATED ---");
         harness.Logs.Warnings.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task CallTool_OneCall_TagsEveryLineItCausedWithOneRunId()
+    {
+        // Arrange — the reason the column exists: a pre-warm and a tool call overlap by design, and their
+        // config, cache-state and run lines interleave in one shared daily file with nothing else to tell them
+        // apart. The scope is opened at the outermost frame that knows a call has begun, so it has to reach
+        // classes several layers down that never see it.
+        await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
+        PlantSolution(harness.Environment, "App.sln");
+        string sarif = Fixtures.ReadSarif("inspect-sample.json");
+        RouteJb(harness.ProcessRunner, arguments =>
+        {
+            File.WriteAllText(OutputPathFrom(arguments), sarif);
+            return new ProcessResult(0, string.Empty, string.Empty);
+        });
+
+        // Act
+        CallToolResult result = await harness.Client.CallToolAsync("resharper_inspect", cancellationToken: Ct);
+
+        // Assert — the id the filter opened the scope with reached both ends of the call: the config
+        // resolution, and JbRunner four constructor hops down, neither of which has a parameter for it.
+        result.IsError.ShouldNotBe(true);
+        IReadOnlyList<LogEntry> filterLines = LinesFrom(harness, typeof(GlobalCallToolFilter));
+        filterLines.ShouldNotBeEmpty();
+
+        object? callRunId = filterLines[0].ScopeValue(RunIdScope.PropertyName);
+        callRunId.ShouldNotBeNull();
+        List<string> underTheCall = harness.Logs.Entries
+            .Where(entry => Equals(entry.ScopeValue(RunIdScope.PropertyName), callRunId))
+            .Select(entry => entry.Category)
+            .ToList();
+
+        underTheCall.ShouldContain(typeof(ConfigResolver).FullName!);
+        underTheCall.ShouldContain(typeof(JbRunner).FullName!);
+
+        // And the pre-warm pass the handshake triggered is under a *different* id, which is the whole reason
+        // for having one: the two overlap by design and their lines interleave in one file.
+        LinesFrom(harness, typeof(CacheWarmer))
+            .Select(entry => entry.ScopeValue(RunIdScope.PropertyName))
+            .ShouldAllBe(runId => !Equals(runId, callRunId));
+
+        harness.Logs.Warnings.ShouldBeEmpty();
+    }
+
+    private static IReadOnlyList<LogEntry> LinesFrom(McpPipelineHarness harness, Type category)
+    {
+        return harness.Logs.Entries.Where(entry => entry.Category == category.FullName).ToList();
     }
 
     [Fact]

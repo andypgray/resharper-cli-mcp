@@ -143,7 +143,7 @@ public sealed class CleanupSummaryFormatterTests
 
         // Act
         string result = ProgressiveRenderer.Render(
-            outcome, CleanupSummaryFormatter.Format, maxChars, CleanupSummaryFormatter.DescribeReduction);
+            outcome, CleanupSummaryFormatter.Format, maxChars, CleanupSummaryFormatter.DescribeReduction).Text;
 
         // Assert
         full.Length.ShouldBeGreaterThan(maxChars); // precondition: Full genuinely did not fit

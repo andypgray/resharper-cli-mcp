@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 using Shouldly;
@@ -35,7 +36,7 @@ public sealed class CleanupServiceTests : IDisposable
         // The cache home is a real directory: JbRunLock creates it and takes its lock file there, so a
         // literal like "/cache" would leave a stray folder at the drive root.
         _config = Configs.Bare(solutionPath, _environment.CreateTempDirectory());
-        _service = new CleanupService(JbRunners.Create(_processRunner));
+        _service = new CleanupService(JbRunners.Create(_processRunner), NullLogger<CleanupService>.Instance);
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;

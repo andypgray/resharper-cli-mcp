@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
 using Xunit;
 using Zphil.ReSharperCli.Discovery;
@@ -27,7 +28,7 @@ public sealed class CleanupProfileReaderTests : IDisposable
         string path = Write(DotSettingsFixtures.Declaring("House: Keep Named Arguments"));
 
         // Act
-        DeclaredCleanupProfile declared = CleanupProfileReader.Read(path);
+        DeclaredCleanupProfile declared = CleanupProfileReader.Read(path, NullLogger.Instance);
 
         // Assert
         declared.Name.ShouldBe("House: Keep Named Arguments");
@@ -44,7 +45,7 @@ public sealed class CleanupProfileReaderTests : IDisposable
         string path = Write(DotSettingsFixtures.DeclaringBehindIllegalComment("House: Keep Named Arguments"));
 
         // Act
-        DeclaredCleanupProfile declared = CleanupProfileReader.Read(path);
+        DeclaredCleanupProfile declared = CleanupProfileReader.Read(path, NullLogger.Instance);
 
         // Assert
         declared.Name.ShouldBe("House: Keep Named Arguments");
@@ -67,7 +68,7 @@ public sealed class CleanupProfileReaderTests : IDisposable
             """);
 
         // Act
-        DeclaredCleanupProfile declared = CleanupProfileReader.Read(path);
+        DeclaredCleanupProfile declared = CleanupProfileReader.Read(path, NullLogger.Instance);
 
         // Assert
         declared.Name.ShouldBe("House: Keep Named Arguments");
@@ -80,7 +81,7 @@ public sealed class CleanupProfileReaderTests : IDisposable
         string path = Write(DotSettingsFixtures.Unparseable());
 
         // Act
-        DeclaredCleanupProfile declared = CleanupProfileReader.Read(path);
+        DeclaredCleanupProfile declared = CleanupProfileReader.Read(path, NullLogger.Instance);
 
         // Assert — no exception escapes, and the caller gets enough to act on rather than a bare null.
         declared.Name.ShouldBeNull();
@@ -98,7 +99,7 @@ public sealed class CleanupProfileReaderTests : IDisposable
         string path = Write(DotSettingsFixtures.Unparseable());
 
         // Act
-        DeclaredCleanupProfile declared = CleanupProfileReader.Read(path);
+        DeclaredCleanupProfile declared = CleanupProfileReader.Read(path, NullLogger.Instance);
 
         // Assert
         declared.Failure.ShouldNotBeNull();
@@ -120,7 +121,7 @@ public sealed class CleanupProfileReaderTests : IDisposable
             """);
 
         // Act
-        DeclaredCleanupProfile declared = CleanupProfileReader.Read(path);
+        DeclaredCleanupProfile declared = CleanupProfileReader.Read(path, NullLogger.Instance);
 
         // Assert
         declared.Name.ShouldBeNull();
@@ -134,7 +135,7 @@ public sealed class CleanupProfileReaderTests : IDisposable
         string path = Write(DotSettingsFixtures.Declaring("   "));
 
         // Act
-        DeclaredCleanupProfile declared = CleanupProfileReader.Read(path);
+        DeclaredCleanupProfile declared = CleanupProfileReader.Read(path, NullLogger.Instance);
 
         // Assert
         declared.Name.ShouldBeNull();
@@ -147,7 +148,7 @@ public sealed class CleanupProfileReaderTests : IDisposable
     public void Read_NoSettingsPath_ReturnsNeitherNameNorFailure(string? path)
     {
         // Act
-        DeclaredCleanupProfile declared = CleanupProfileReader.Read(path);
+        DeclaredCleanupProfile declared = CleanupProfileReader.Read(path, NullLogger.Instance);
 
         // Assert — no settings file is the default state, not a misconfiguration.
         declared.Name.ShouldBeNull();
@@ -162,7 +163,7 @@ public sealed class CleanupProfileReaderTests : IDisposable
         string path = Path.Combine(_environment.CurrentDirectory, "gone.DotSettings");
 
         // Act
-        DeclaredCleanupProfile declared = CleanupProfileReader.Read(path);
+        DeclaredCleanupProfile declared = CleanupProfileReader.Read(path, NullLogger.Instance);
 
         // Assert
         declared.Name.ShouldBeNull();

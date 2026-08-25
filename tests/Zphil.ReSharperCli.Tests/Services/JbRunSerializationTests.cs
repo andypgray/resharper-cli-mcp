@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
 using Xunit;
 using Zphil.ReSharperCli.Discovery;
@@ -60,7 +61,7 @@ public sealed class JbRunSerializationTests : IDisposable
     public async Task CleanupService_TwoConcurrentCallsAgainstOneSolution_RunOneAtATime()
     {
         // Arrange
-        CleanupService service = new(_runner);
+        CleanupService service = new(_runner, NullLogger<CleanupService>.Instance);
         PlantFile("src/A.cs");
 
         // Act
@@ -78,7 +79,7 @@ public sealed class JbRunSerializationTests : IDisposable
     {
         // Arrange — the two tools share one cache generation, so they contend with each other too.
         InspectService inspect = new(_runner);
-        CleanupService cleanup = new(_runner);
+        CleanupService cleanup = new(_runner, NullLogger<CleanupService>.Instance);
         PlantFile("src/A.cs");
 
         // Act

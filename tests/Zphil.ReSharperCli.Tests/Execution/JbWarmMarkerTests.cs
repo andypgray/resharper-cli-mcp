@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
 using Xunit;
 using Zphil.ReSharperCli.Execution;
@@ -41,17 +42,17 @@ public sealed class JbWarmMarkerTests : IDisposable
     public void IsFreshWithin_NoMarkerAtAll_ReportsStale()
     {
         // Assert — a cache home nothing has ever warmed must not read as warm.
-        JbWarmMarker.IsFreshWithin(SolutionPath, _cacheHome, OneHour).ShouldBeFalse();
+        JbWarmMarker.IsFreshWithin(SolutionPath, _cacheHome, OneHour, NullLogger.Instance).ShouldBeFalse();
     }
 
     [Fact]
     public void IsFreshWithin_JustStamped_ReportsFresh()
     {
         // Act
-        JbWarmMarker.Stamp(SolutionPath, _cacheHome);
+        JbWarmMarker.Stamp(SolutionPath, _cacheHome, NullLogger.Instance);
 
         // Assert — the debounce reads the mtime alone, so a marker with nothing in it is still a fresh one.
-        JbWarmMarker.IsFreshWithin(SolutionPath, _cacheHome, OneHour).ShouldBeTrue();
+        JbWarmMarker.IsFreshWithin(SolutionPath, _cacheHome, OneHour, NullLogger.Instance).ShouldBeTrue();
     }
 
     [Fact]
@@ -62,10 +63,10 @@ public sealed class JbWarmMarkerTests : IDisposable
         string generation = CacheHomes.PlantGenerationFor(_cacheHome, SolutionPath);
 
         // Act
-        JbWarmMarker.Stamp(SolutionPath, _cacheHome);
+        JbWarmMarker.Stamp(SolutionPath, _cacheHome, NullLogger.Instance);
 
         // Assert
-        JbWarmMarker.TryReadGenerationName(JbWarmMarker.PathFor(SolutionPath, _cacheHome), _cacheHome)
+        JbWarmMarker.TryReadGenerationName(JbWarmMarker.PathFor(SolutionPath, _cacheHome), _cacheHome, NullLogger.Instance)
             .ShouldBe(Path.GetFileName(generation));
     }
 
@@ -81,10 +82,10 @@ public sealed class JbWarmMarkerTests : IDisposable
         Directory.SetLastWriteTimeUtc(first, DateTime.UtcNow);
 
         // Act
-        JbWarmMarker.Stamp(SolutionPath, _cacheHome);
+        JbWarmMarker.Stamp(SolutionPath, _cacheHome, NullLogger.Instance);
 
         // Assert
-        JbWarmMarker.TryReadGenerationName(JbWarmMarker.PathFor(SolutionPath, _cacheHome), _cacheHome)
+        JbWarmMarker.TryReadGenerationName(JbWarmMarker.PathFor(SolutionPath, _cacheHome), _cacheHome, NullLogger.Instance)
             .ShouldBe(Path.GetFileName(first));
     }
 
@@ -96,20 +97,20 @@ public sealed class JbWarmMarkerTests : IDisposable
         CacheHomes.PlantGeneration(_cacheHome, "_App.999.00");
 
         // Act
-        JbWarmMarker.Stamp(SolutionPath, _cacheHome);
+        JbWarmMarker.Stamp(SolutionPath, _cacheHome, NullLogger.Instance);
 
         // Assert — the debounce still works, and every feature that needs a name is told there is none rather
         // than being handed the nearest-looking directory. That is the self-disable, not a degradation.
-        JbWarmMarker.IsFreshWithin(SolutionPath, _cacheHome, OneHour).ShouldBeTrue();
+        JbWarmMarker.IsFreshWithin(SolutionPath, _cacheHome, OneHour, NullLogger.Instance).ShouldBeTrue();
         new FileInfo(JbWarmMarker.PathFor(SolutionPath, _cacheHome)).Length.ShouldBe(0);
-        JbWarmMarker.TryReadGenerationName(JbWarmMarker.PathFor(SolutionPath, _cacheHome), _cacheHome).ShouldBeNull();
+        JbWarmMarker.TryReadGenerationName(JbWarmMarker.PathFor(SolutionPath, _cacheHome), _cacheHome, NullLogger.Instance).ShouldBeNull();
     }
 
     [Fact]
     public void TryReadGenerationName_MarkerThatIsNotThere_IsNullRatherThanThrowing()
     {
         // Assert — nothing has ever warmed this generation, which is an answer and not a fault.
-        JbWarmMarker.TryReadGenerationName(JbWarmMarker.PathFor(SolutionPath, _cacheHome), _cacheHome).ShouldBeNull();
+        JbWarmMarker.TryReadGenerationName(JbWarmMarker.PathFor(SolutionPath, _cacheHome), _cacheHome, NullLogger.Instance).ShouldBeNull();
     }
 
     [Fact]
@@ -118,11 +119,11 @@ public sealed class JbWarmMarkerTests : IDisposable
         // Arrange — a cache reset, or jb's own stale-cache collection, between the stamp and the read. The
         // name is still true about the past and useless about now.
         string generation = CacheHomes.PlantGenerationFor(_cacheHome, SolutionPath);
-        JbWarmMarker.Stamp(SolutionPath, _cacheHome);
+        JbWarmMarker.Stamp(SolutionPath, _cacheHome, NullLogger.Instance);
         Directory.Delete(generation, true);
 
         // Assert
-        JbWarmMarker.TryReadGenerationName(JbWarmMarker.PathFor(SolutionPath, _cacheHome), _cacheHome).ShouldBeNull();
+        JbWarmMarker.TryReadGenerationName(JbWarmMarker.PathFor(SolutionPath, _cacheHome), _cacheHome, NullLogger.Instance).ShouldBeNull();
     }
 
     [Theory]
@@ -143,7 +144,7 @@ public sealed class JbWarmMarkerTests : IDisposable
         File.WriteAllText(markerPath, content);
 
         // Assert
-        JbWarmMarker.TryReadGenerationName(markerPath, _cacheHome).ShouldBeNull();
+        JbWarmMarker.TryReadGenerationName(markerPath, _cacheHome, NullLogger.Instance).ShouldBeNull();
     }
 
     [Fact]
@@ -151,7 +152,7 @@ public sealed class JbWarmMarkerTests : IDisposable
     {
         // Assert — no run against this generation has ever succeeded, which is what lets a transplant treat
         // whatever is on disk as the leftovers of one that never finished.
-        JbWarmMarker.Exists(SolutionPath, _cacheHome).ShouldBeFalse();
+        JbWarmMarker.Exists(SolutionPath, _cacheHome, NullLogger.Instance).ShouldBeFalse();
     }
 
     [Fact]
@@ -163,7 +164,7 @@ public sealed class JbWarmMarkerTests : IDisposable
 
         // Assert — existence is the whole statement, so a marker this server cannot read a name out of
         // still protects the cache it was written for.
-        JbWarmMarker.Exists(SolutionPath, _cacheHome).ShouldBeTrue();
+        JbWarmMarker.Exists(SolutionPath, _cacheHome, NullLogger.Instance).ShouldBeTrue();
     }
 
     [Fact]
@@ -173,10 +174,10 @@ public sealed class JbWarmMarkerTests : IDisposable
         CacheHomes.PlantGenerationFor(_cacheHome, SolutionPath);
 
         // Act
-        JbWarmMarker.Stamp(SolutionPath, _cacheHome);
+        JbWarmMarker.Stamp(SolutionPath, _cacheHome, NullLogger.Instance);
 
         // Assert
-        JbWarmMarker.Exists(SolutionPath, _cacheHome).ShouldBeTrue();
+        JbWarmMarker.Exists(SolutionPath, _cacheHome, NullLogger.Instance).ShouldBeTrue();
     }
 
     [Fact]
@@ -188,18 +189,18 @@ public sealed class JbWarmMarkerTests : IDisposable
         // Assert — this one reader fails the opposite way to the rest of the class, and deliberately: a
         // caller only wants a false so it can delete a directory, so an unanswerable question has to read as
         // a cache worth keeping. That is JbColdTombstone.Exists's direction, not IsFreshWithin's.
-        JbWarmMarker.Exists(SolutionPath, invalid).ShouldBeTrue();
+        JbWarmMarker.Exists(SolutionPath, invalid, NullLogger.Instance).ShouldBeTrue();
     }
 
     [Fact]
     public void IsFreshWithin_MarkerOlderThanTheWindow_ReportsStale()
     {
         // Arrange — age the marker rather than the test: no sleeping, and the real window stays pinned.
-        JbWarmMarker.Stamp(SolutionPath, _cacheHome);
+        JbWarmMarker.Stamp(SolutionPath, _cacheHome, NullLogger.Instance);
         File.SetLastWriteTimeUtc(JbWarmMarker.PathFor(SolutionPath, _cacheHome), DateTime.UtcNow - TimeSpan.FromHours(2));
 
         // Assert
-        JbWarmMarker.IsFreshWithin(SolutionPath, _cacheHome, OneHour).ShouldBeFalse();
+        JbWarmMarker.IsFreshWithin(SolutionPath, _cacheHome, OneHour, NullLogger.Instance).ShouldBeFalse();
     }
 
     [Fact]
@@ -207,11 +208,11 @@ public sealed class JbWarmMarkerTests : IDisposable
     {
         // Arrange — a moved clock, or a cache home copied from another machine. Treating a negative age as
         // "fresh" would suppress pre-warming until the clock caught up, which could be forever.
-        JbWarmMarker.Stamp(SolutionPath, _cacheHome);
+        JbWarmMarker.Stamp(SolutionPath, _cacheHome, NullLogger.Instance);
         File.SetLastWriteTimeUtc(JbWarmMarker.PathFor(SolutionPath, _cacheHome), DateTime.UtcNow.AddDays(1));
 
         // Assert
-        JbWarmMarker.IsFreshWithin(SolutionPath, _cacheHome, OneHour).ShouldBeFalse();
+        JbWarmMarker.IsFreshWithin(SolutionPath, _cacheHome, OneHour, NullLogger.Instance).ShouldBeFalse();
     }
 
     [Fact]
@@ -222,10 +223,10 @@ public sealed class JbWarmMarkerTests : IDisposable
         string blocked = CacheHomes.BlockedCacheHome(_environment);
 
         // Act
-        Should.NotThrow(() => JbWarmMarker.Stamp(SolutionPath, blocked));
+        Should.NotThrow(() => JbWarmMarker.Stamp(SolutionPath, blocked, NullLogger.Instance));
 
         // Assert — an unwritable marker reads as stale, so the next pre-warm runs rather than being skipped.
-        JbWarmMarker.IsFreshWithin(SolutionPath, blocked, OneHour).ShouldBeFalse();
+        JbWarmMarker.IsFreshWithin(SolutionPath, blocked, OneHour, NullLogger.Instance).ShouldBeFalse();
     }
 
     [Fact]
@@ -236,9 +237,9 @@ public sealed class JbWarmMarkerTests : IDisposable
 
         // Assert — every entry point, including the one a cache reset calls once it has already deleted
         // directories, where throwing would fail a call whose work is done.
-        Should.NotThrow(() => JbWarmMarker.Stamp(SolutionPath, invalid));
-        JbWarmMarker.IsFreshWithin(SolutionPath, invalid, OneHour).ShouldBeFalse();
-        Should.NotThrow(() => JbWarmMarker.Clear(SolutionPath, invalid));
+        Should.NotThrow(() => JbWarmMarker.Stamp(SolutionPath, invalid, NullLogger.Instance));
+        JbWarmMarker.IsFreshWithin(SolutionPath, invalid, OneHour, NullLogger.Instance).ShouldBeFalse();
+        Should.NotThrow(() => JbWarmMarker.Clear(SolutionPath, invalid, NullLogger.Instance));
     }
 
     [Fact]
@@ -246,11 +247,11 @@ public sealed class JbWarmMarkerTests : IDisposable
     {
         // Arrange — the marker is per cache generation, exactly like the lock: warming one solution says
         // nothing about the next one in the same cache home.
-        JbWarmMarker.Stamp(SolutionPath, _cacheHome);
+        JbWarmMarker.Stamp(SolutionPath, _cacheHome, NullLogger.Instance);
 
         // Assert
-        JbWarmMarker.IsFreshWithin("/repo/Other.sln", _cacheHome, OneHour).ShouldBeFalse();
-        JbWarmMarker.IsFreshWithin(SolutionPath, _environment.CreateTempDirectory(), OneHour).ShouldBeFalse();
+        JbWarmMarker.IsFreshWithin("/repo/Other.sln", _cacheHome, OneHour, NullLogger.Instance).ShouldBeFalse();
+        JbWarmMarker.IsFreshWithin(SolutionPath, _environment.CreateTempDirectory(), OneHour, NullLogger.Instance).ShouldBeFalse();
     }
 
     [Fact]

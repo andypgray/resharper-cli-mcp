@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Zphil.ReSharperCli.Discovery;
 using Zphil.ReSharperCli.Execution;
 using Zphil.ReSharperCli.Infrastructure;
@@ -14,22 +15,35 @@ namespace Zphil.ReSharperCli.Tests.TestSupport;
 /// </summary>
 internal static class ToolHarness
 {
-    public static ResharperTools Build(IProcessRunner processRunner, IEnvironment environment)
+    /// <remarks>
+    ///     <c>logs</c> is wired through the whole graph when a test means to assert on what it logged;
+    ///     omitted, every class logs into <see cref="NullLoggerFactory" />.
+    /// </remarks>
+    public static ResharperTools Build(
+        IProcessRunner processRunner,
+        IEnvironment environment,
+        ILoggerFactory? logs = null)
     {
-        JbLocator jbLocator = new(processRunner, environment);
-        ConfigResolver configResolver = new(jbLocator, environment);
+        JbLocator jbLocator = new(processRunner, environment, LoggerFor<JbLocator>(logs));
+        ConfigResolver configResolver = new(jbLocator, environment, LoggerFor<ConfigResolver>(logs));
 
         // One lock and one yield for the whole graph, exactly as the composition root registers them: a
         // cache reset with a lock of its own would serialize against nothing and could delete a generation
         // mid-run, and one with a yield of its own would queue behind the pre-warm it is meant to displace.
-        JbRunLock runLock = new(JbRunTimeout.Default);
-        JbRunYield runYield = new();
-        JbRunner jbRunner = JbRunners.Create(processRunner, runLock, runYield);
+        JbRunLock runLock = JbRunners.Lock(logs: logs);
+        JbRunYield runYield = JbRunners.Yield(logs);
+        JbRunner jbRunner = JbRunners.Create(processRunner, runLock, runYield, logs: logs);
 
         InspectService inspectService = new(jbRunner);
-        CleanupService cleanupService = new(jbRunner);
-        CacheResetService cacheResetService = new(runLock, runYield);
-        return new ResharperTools(configResolver, inspectService, cleanupService, cacheResetService, environment);
+        CleanupService cleanupService = new(jbRunner, LoggerFor<CleanupService>(logs));
+        CacheResetService cacheResetService = JbRunners.Reset(runLock, runYield, logs);
+        return new ResharperTools(
+            configResolver,
+            inspectService,
+            cleanupService,
+            cacheResetService,
+            environment,
+            LoggerFor<ResharperTools>(logs));
     }
 
     /// <summary>
@@ -41,14 +55,20 @@ internal static class ToolHarness
     public static WarmerGraph BuildCacheWarmer(
         IProcessRunner processRunner,
         IEnvironment environment,
-        ILogger<CacheWarmer> logger)
+        ILogger<CacheWarmer> logger,
+        ILoggerFactory? logs = null)
     {
-        JbLocator jbLocator = new(processRunner, environment);
-        ConfigResolver configResolver = new(jbLocator, environment);
-        JbRunner jbRunner = JbRunners.Create(processRunner);
+        JbLocator jbLocator = new(processRunner, environment, LoggerFor<JbLocator>(logs));
+        ConfigResolver configResolver = new(jbLocator, environment, LoggerFor<ConfigResolver>(logs));
+        JbRunner jbRunner = JbRunners.Create(processRunner, logs: logs);
         InspectService inspectService = new(jbRunner);
         CacheWarmer warmer = new(configResolver, inspectService, jbRunner, environment, logger);
         return new WarmerGraph(warmer, jbRunner);
+    }
+
+    private static ILogger<T> LoggerFor<T>(ILoggerFactory? logs)
+    {
+        return logs is null ? NullLogger<T>.Instance : logs.CreateLogger<T>();
     }
 }
 

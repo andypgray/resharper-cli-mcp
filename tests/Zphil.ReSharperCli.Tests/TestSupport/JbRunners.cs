@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Zphil.ReSharperCli.Execution;
 using Zphil.ReSharperCli.Services;
 
@@ -12,17 +14,50 @@ namespace Zphil.ReSharperCli.Tests.TestSupport;
 ///     with a yield of its own would compile, pass, and arbitrate against nothing at all. Both are
 ///     invariants to assemble in one place rather than re-establish in every test constructor.
 /// </summary>
+/// <remarks>
+///     It is also the one place the graph's loggers are wired, which is why every overload takes an optional
+///     <see cref="ILoggerFactory" />: the runner, its lock and its transplanter all write lines a test may
+///     want to assert on, and handing one factory to the whole graph is what lets a single
+///     <c>CapturingLoggerProvider</c> see all of them. Omitted, everything logs into
+///     <see cref="NullLoggerFactory" /> — the right default for the tests that are about behaviour rather
+///     than about what got recorded.
+/// </remarks>
 internal static class JbRunners
 {
-    public static JbRunner Create(IProcessRunner processRunner, TimeSpan? cap = null)
+    /// <summary>
+    ///     The lock, built with a logger, for a test that has to hold or contend it itself. Spelled here
+    ///     rather than at each call site so the cap and the logger stay one decision.
+    /// </summary>
+    public static JbRunLock Lock(TimeSpan? cap = null, ILoggerFactory? logs = null)
     {
-        return Create(processRunner, new JbRunLock(cap ?? JbRunTimeout.Default), cap);
+        return new JbRunLock(cap ?? JbRunTimeout.Default, LoggerFor<JbRunLock>(logs));
+    }
+
+    /// <summary>The yield, built with a logger, for a test driving two callers against the same precedence.</summary>
+    public static JbRunYield Yield(ILoggerFactory? logs = null)
+    {
+        return new JbRunYield(LoggerFor<JbRunYield>(logs));
+    }
+
+    /// <summary>A cache reset wired to the same lock and yield a runner is, as the composition root wires it.</summary>
+    public static CacheResetService Reset(JbRunLock runLock, JbRunYield runYield, ILoggerFactory? logs = null)
+    {
+        return new CacheResetService(runLock, runYield, LoggerFor<CacheResetService>(logs));
+    }
+
+    public static JbRunner Create(IProcessRunner processRunner, TimeSpan? cap = null, ILoggerFactory? logs = null)
+    {
+        return Create(processRunner, Lock(cap, logs), cap, logs);
     }
 
     /// <summary>For tests that hold or contend the lock themselves, so the lock has to be theirs.</summary>
-    public static JbRunner Create(IProcessRunner processRunner, JbRunLock runLock, TimeSpan? cap = null)
+    public static JbRunner Create(
+        IProcessRunner processRunner,
+        JbRunLock runLock,
+        TimeSpan? cap = null,
+        ILoggerFactory? logs = null)
     {
-        return Create(processRunner, runLock, new JbRunYield(), cap);
+        return Create(processRunner, runLock, Yield(logs), cap, logs);
     }
 
     /// <summary>
@@ -33,8 +68,20 @@ internal static class JbRunners
         IProcessRunner processRunner,
         JbRunLock runLock,
         JbRunYield runYield,
-        TimeSpan? cap = null)
+        TimeSpan? cap = null,
+        ILoggerFactory? logs = null)
     {
-        return new JbRunner(processRunner, runLock, runYield, new CacheTransplanter(runLock), cap ?? JbRunTimeout.Default);
+        return new JbRunner(
+            processRunner,
+            runLock,
+            runYield,
+            new CacheTransplanter(runLock, LoggerFor<CacheTransplanter>(logs)),
+            cap ?? JbRunTimeout.Default,
+            LoggerFor<JbRunner>(logs));
+    }
+
+    private static ILogger<T> LoggerFor<T>(ILoggerFactory? logs)
+    {
+        return logs is null ? NullLogger<T>.Instance : logs.CreateLogger<T>();
     }
 }

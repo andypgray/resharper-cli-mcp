@@ -48,11 +48,11 @@ public sealed class JbRunYieldTests : IDisposable
         _cacheHome = _environment.CreateTempDirectory();
         _config = Configs.Bare("/sln/App.sln", _cacheHome);
 
-        JbRunLock runLock = new(Cap);
-        JbRunYield runYield = new();
+        JbRunLock runLock = JbRunners.Lock(Cap);
+        JbRunYield runYield = JbRunners.Yield();
 
         _runner = JbRunners.Create(_probe, runLock, runYield, Cap);
-        _reset = new CacheResetService(runLock, runYield);
+        _reset = JbRunners.Reset(runLock, runYield);
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -67,7 +67,7 @@ public sealed class JbRunYieldTests : IDisposable
     public async Task ForegroundRun_ArrivingDuringAPreWarm_ReclaimsTheCacheGeneration()
     {
         // Arrange — a pre-warm holding the lease and mid-analysis.
-        Task<ProcessResult?> preWarm = _runner.TryRunAsync(_config, WarmUpArguments, Ct);
+        Task<SpeculativeRunOutcome> preWarm = _runner.TryRunAsync(_config, WarmUpArguments, Ct);
         await _probe.WaitForNextStartAsync(Ct);
 
         // Act — the real call cancels it on entry, so the lease frees up and this run gets to start.
@@ -75,9 +75,11 @@ public sealed class JbRunYieldTests : IDisposable
         await _probe.WaitForNextStartAsync(Ct);
         _probe.ReleaseAll();
 
-        // Assert — and the abandoned pre-warm reports a skip rather than an error: nothing went wrong.
+        // Assert — and the abandoned pre-warm says it stood down rather than that it never ran: nothing went
+        // wrong, but a jb did minutes of work here, and the word for having done none belongs to the pass
+        // below that genuinely did none.
         (await foreground).ExitCode.ShouldBe(0);
-        (await preWarm).ShouldBeNull();
+        (await preWarm).ShouldBe(SpeculativeRunOutcome.StoodDown);
         _probe.Cancelled.ShouldBe(1);
     }
 
@@ -103,7 +105,7 @@ public sealed class JbRunYieldTests : IDisposable
         // still held a reference to it could cancel it after the fact; withdrawing it as the run ends is
         // what stops that.
         _probe.ReleaseAll();
-        (await _runner.TryRunAsync(_config, WarmUpArguments, Ct)).ShouldNotBeNull();
+        (await _runner.TryRunAsync(_config, WarmUpArguments, Ct)).ShouldBe(SpeculativeRunOutcome.Completed);
         CancellationToken preWarmToken = _probe.Tokens.ShouldHaveSingleItem();
 
         // Act
@@ -125,11 +127,12 @@ public sealed class JbRunYieldTests : IDisposable
         await _probe.WaitForNextStartAsync(Ct);
 
         // Act
-        ProcessResult? preWarm = await _runner.TryRunAsync(_config, WarmUpArguments, Ct);
+        SpeculativeRunOutcome preWarm = await _runner.TryRunAsync(_config, WarmUpArguments, Ct);
 
         // Assert — it stands down rather than racing: a real run analyses the same solution into the same
-        // cache generation, so while one is in flight there is nothing for a speculative run to buy.
-        preWarm.ShouldBeNull();
+        // cache generation, so while one is in flight there is nothing for a speculative run to buy. And this
+        // is the pass that really did nothing, which is what the word above it has to stay reserved for.
+        preWarm.ShouldBe(SpeculativeRunOutcome.NotStarted);
         _probe.Runs.ShouldBe(1);
 
         _probe.ReleaseAll();
@@ -147,10 +150,10 @@ public sealed class JbRunYieldTests : IDisposable
         await _runner.RunAsync(_config, ForegroundArguments, Ct);
 
         // Act
-        ProcessResult? preWarm = await _runner.TryRunAsync(_config, WarmUpArguments, Ct);
+        SpeculativeRunOutcome preWarm = await _runner.TryRunAsync(_config, WarmUpArguments, Ct);
 
         // Assert
-        preWarm.ShouldNotBeNull();
+        preWarm.ShouldBe(SpeculativeRunOutcome.Completed);
         _probe.Runs.ShouldBe(2);
     }
 
@@ -158,7 +161,7 @@ public sealed class JbRunYieldTests : IDisposable
     public async Task TwoForegroundRunsRacingOnePreWarm_BothComplete()
     {
         // Arrange
-        Task<ProcessResult?> preWarm = _runner.TryRunAsync(_config, WarmUpArguments, Ct);
+        Task<SpeculativeRunOutcome> preWarm = _runner.TryRunAsync(_config, WarmUpArguments, Ct);
         await _probe.WaitForNextStartAsync(Ct);
 
         // Act — only one of the two can win the pre-warm's token source; the loser must find nothing rather
@@ -171,7 +174,7 @@ public sealed class JbRunYieldTests : IDisposable
         // Assert
         (await first).ExitCode.ShouldBe(0);
         (await second).ExitCode.ShouldBe(0);
-        (await preWarm).ShouldBeNull();
+        (await preWarm).ShouldBe(SpeculativeRunOutcome.StoodDown);
         _probe.Cancelled.ShouldBe(1);
     }
 
@@ -182,7 +185,7 @@ public sealed class JbRunYieldTests : IDisposable
         // below can be explained by the pass finishing on its own: left to queue, this reset would wait out
         // the whole cap and then fail.
         string generation = CacheHomes.PlantGenerationFor(_cacheHome, _config.SolutionPath);
-        Task<ProcessResult?> preWarm = _runner.TryRunAsync(_config, WarmUpArguments, Ct);
+        Task<SpeculativeRunOutcome> preWarm = _runner.TryRunAsync(_config, WarmUpArguments, Ct);
         await _probe.WaitForNextStartAsync(Ct);
 
         // Act
@@ -192,7 +195,7 @@ public sealed class JbRunYieldTests : IDisposable
         // runs jb never covered it.
         outcome.Dropped.ShouldBe([Path.GetFileName(generation)]);
         Directory.Exists(generation).ShouldBeFalse();
-        (await preWarm).ShouldBeNull();
+        (await preWarm).ShouldBe(SpeculativeRunOutcome.StoodDown);
         _probe.Cancelled.ShouldBe(1);
     }
 
@@ -204,7 +207,7 @@ public sealed class JbRunYieldTests : IDisposable
         FileStream otherSession = CacheHomes.HoldLockFile(_cacheHome, _config.SolutionPath);
         Task<CacheResetOutcome> reset = _reset.RunAsync(_config, Ct);
 
-        ProcessResult? preWarm;
+        SpeculativeRunOutcome preWarm;
         try
         {
             // Act — aimed at a second solution, whose own lock nothing holds. Bounded, because the failure
@@ -225,7 +228,7 @@ public sealed class JbRunYieldTests : IDisposable
 
         // Assert — the lock cannot be the explanation, so the claim is the only thing left. Rebuilding a
         // cache while the call to drop it is in flight is the one thing a pre-warm must never do.
-        preWarm.ShouldBeNull();
+        preWarm.ShouldBe(SpeculativeRunOutcome.NotStarted);
         _probe.Runs.ShouldBe(0);
     }
 
@@ -253,10 +256,10 @@ public sealed class JbRunYieldTests : IDisposable
         await _reset.RunAsync(_config, Ct);
 
         // Act
-        ProcessResult? preWarm = await _runner.TryRunAsync(_config, WarmUpArguments, Ct);
+        SpeculativeRunOutcome preWarm = await _runner.TryRunAsync(_config, WarmUpArguments, Ct);
 
         // Assert
-        preWarm.ShouldNotBeNull();
+        preWarm.ShouldBe(SpeculativeRunOutcome.Completed);
         _probe.Runs.ShouldBe(1);
     }
 
@@ -265,7 +268,7 @@ public sealed class JbRunYieldTests : IDisposable
     {
         // Arrange
         string generation = CacheHomes.PlantGenerationFor(_cacheHome, _config.SolutionPath);
-        Task<ProcessResult?> preWarm = _runner.TryRunAsync(_config, WarmUpArguments, Ct);
+        Task<SpeculativeRunOutcome> preWarm = _runner.TryRunAsync(_config, WarmUpArguments, Ct);
         await _probe.WaitForNextStartAsync(Ct);
 
         // Act — the atomic exchange is now raced by two different *kinds* of caller. Only one can win the
@@ -279,7 +282,7 @@ public sealed class JbRunYieldTests : IDisposable
         // cancelled once.
         (await reset).Dropped.ShouldBe([Path.GetFileName(generation)]);
         (await foreground).ExitCode.ShouldBe(0);
-        (await preWarm).ShouldBeNull();
+        (await preWarm).ShouldBe(SpeculativeRunOutcome.StoodDown);
         _probe.Cancelled.ShouldBe(1);
     }
 
@@ -290,7 +293,7 @@ public sealed class JbRunYieldTests : IDisposable
         // the reference could cancel it after the fact; withdrawing the claim as the pass ends is what stops
         // that, and the invariant now has two kinds of caller able to break it.
         _probe.ReleaseAll();
-        (await _runner.TryRunAsync(_config, WarmUpArguments, Ct)).ShouldNotBeNull();
+        (await _runner.TryRunAsync(_config, WarmUpArguments, Ct)).ShouldBe(SpeculativeRunOutcome.Completed);
         CancellationToken preWarmToken = _probe.Tokens.ShouldHaveSingleItem();
 
         // Act
@@ -311,7 +314,7 @@ public sealed class JbRunYieldTests : IDisposable
         var stillThereWhenCancelled = false;
         _probe.OnCancelled = () => stillThereWhenCancelled = Directory.Exists(generation);
 
-        Task<ProcessResult?> preWarm = _runner.TryRunAsync(_config, WarmUpArguments, Ct);
+        Task<SpeculativeRunOutcome> preWarm = _runner.TryRunAsync(_config, WarmUpArguments, Ct);
         await _probe.WaitForNextStartAsync(Ct);
 
         // Act
@@ -320,7 +323,7 @@ public sealed class JbRunYieldTests : IDisposable
         // Assert
         stillThereWhenCancelled.ShouldBeTrue();
         outcome.Dropped.ShouldBe([Path.GetFileName(generation)]);
-        (await preWarm).ShouldBeNull();
+        (await preWarm).ShouldBe(SpeculativeRunOutcome.StoodDown);
     }
 
     /// <summary>

@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Zphil.ReSharperCli.Discovery;
 using Zphil.ReSharperCli.Execution;
 using Zphil.ReSharperCli.Formatting;
@@ -59,7 +60,7 @@ internal sealed record CacheResetOutcome(
 ///         moment ago and has not finished reaping.
 ///     </para>
 /// </remarks>
-internal sealed class CacheResetService(JbRunLock runLock, JbRunYield runYield)
+internal sealed class CacheResetService(JbRunLock runLock, JbRunYield runYield, ILogger<CacheResetService> logger)
 {
     /// <summary>
     ///     How hard to try one generation before reporting it, and how long to leave between attempts.
@@ -106,11 +107,23 @@ internal sealed class CacheResetService(JbRunLock runLock, JbRunYield runYield)
         // session pre-warming. After a reset that claim is false however the deletes went, and the marker's
         // one safe failure direction is a redundant pre-warm. Clearing it also withdraws this solution as a
         // donor for anything else, which is the same statement pointed outwards.
-        JbWarmMarker.Clear(config.SolutionPath, config.CacheHome);
+        JbWarmMarker.Clear(config.SolutionPath, config.CacheHome, logger);
 
         // Unconditional, including the reset that dropped nothing: what the caller asked for is a cold next
         // run, and the one mechanism that could quietly supply a warm cache instead has to be told.
-        JbColdTombstone.Write(config.SolutionPath, config.CacheHome);
+        JbColdTombstone.Write(config.SolutionPath, config.CacheHome, logger);
+
+        // The one tool that spawns no jb, and until now the one that left no trace: a reset is the reason the
+        // next call is slow, and read from the log afterwards that call looked cold for no reason.
+        logger.LogInformation(
+            "Reset the ReSharper cache for solution {SolutionPath}: dropped {DroppedCount} generation(s) {Dropped}, "
+            + "left {LeftAloneCount} belonging to another copy of this solution alone, {FailureCount} could not be deleted; "
+            + "the next run against it is cold on purpose",
+            config.SolutionPath,
+            dropped.Count,
+            dropped,
+            leftAlone.Count,
+            failures.Count);
 
         return new CacheResetOutcome(config.SolutionPath, config.CacheHome, dropped, leftAlone, failures);
     }

@@ -117,8 +117,11 @@ internal sealed class McpPipelineHarness : IAsyncDisposable
         HostApplicationBuilder builder = Host.CreateApplicationBuilder();
 
         // Capture everything the server logs and nothing else, so "no warning" / "exactly one warning"
-        // assertions see the filter alone rather than the default console/debug providers.
+        // assertions see the filter alone rather than the default console/debug providers. Down to Trace,
+        // because the filter's own call envelope is Debug and the default minimum of Information would hide
+        // it — and would hide it in a way that looks exactly like a filter that never logged.
         builder.Logging.ClearProviders();
+        builder.Logging.SetMinimumLevel(LogLevel.Trace);
         builder.Logging.AddProvider(logs);
 
         // The Program.cs service graph, with the two seams faked.
@@ -126,12 +129,18 @@ internal sealed class McpPipelineHarness : IAsyncDisposable
         builder.Services.AddSingleton(processRunner);
         builder.Services.AddSingleton<JbLocator>();
         builder.Services.AddSingleton<ConfigResolver>();
-        builder.Services.AddSingleton(_ => new JbRunLock(JbRunTimeout.Default));
+
+        // The lock and the runner are the two the composition root builds by factory, because the run cap is a
+        // value rather than a service; the loggers come from the host's own factory, so everything the graph
+        // writes reaches the capturing provider above.
+        builder.Services.AddSingleton(provider => new JbRunLock(
+            JbRunTimeout.Default, provider.GetRequiredService<ILogger<JbRunLock>>()));
         builder.Services.AddSingleton<JbRunYield>();
         builder.Services.AddSingleton(provider => JbRunners.Create(
             processRunner,
             provider.GetRequiredService<JbRunLock>(),
-            provider.GetRequiredService<JbRunYield>()));
+            provider.GetRequiredService<JbRunYield>(),
+            logs: provider.GetRequiredService<ILoggerFactory>()));
         builder.Services.AddSingleton<InspectService>();
         builder.Services.AddSingleton<CleanupService>();
         builder.Services.AddSingleton<CacheResetService>();

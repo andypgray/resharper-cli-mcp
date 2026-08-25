@@ -2,7 +2,7 @@ using System.Security;
 using System.Text.RegularExpressions;
 using System.Xml;
 using System.Xml.Linq;
-using Serilog;
+using Microsoft.Extensions.Logging;
 
 namespace Zphil.ReSharperCli.Discovery;
 
@@ -35,7 +35,7 @@ internal static partial class CleanupProfileReader
     ///     <see cref="SettingsReadFailure" /> so the caller can say so out loud. Never throws: an unreadable
     ///     settings file must degrade to the built-in default, not fail the tool call.
     /// </summary>
-    public static DeclaredCleanupProfile Read(string? settingsPath)
+    public static DeclaredCleanupProfile Read(string? settingsPath, ILogger logger)
     {
         if (string.IsNullOrEmpty(settingsPath)) return new DeclaredCleanupProfile(null, null);
 
@@ -54,11 +54,11 @@ internal static partial class CleanupProfileReader
             // Strictness is the defect: ReSharper's own settings reader accepts files XDocument rejects, so a
             // file jb reads happily would otherwise turn this whole feature off silently. Retry leniently
             // rather than give up.
-            return ReadPastIllegalComments(settingsPath);
+            return ReadPastIllegalComments(settingsPath, logger);
         }
         catch (Exception exception) when (IsExpectedReadFailure(exception))
         {
-            return Failed(settingsPath, exception);
+            return Failed(settingsPath, exception, logger);
         }
     }
 
@@ -81,7 +81,7 @@ internal static partial class CleanupProfileReader
     ///     normalization rather than a guess — and doing it only on the failure path means a well-formed file
     ///     can never be mangled by it.
     /// </summary>
-    private static DeclaredCleanupProfile ReadPastIllegalComments(string settingsPath)
+    private static DeclaredCleanupProfile ReadPastIllegalComments(string settingsPath, ILogger logger)
     {
         try
         {
@@ -94,7 +94,7 @@ internal static partial class CleanupProfileReader
         {
             // Reported against the comment-stripped text, whose line numbers still match the file — the
             // remaining fault is the one worth naming, not the comment we deliberately tolerated.
-            return Failed(settingsPath, exception);
+            return Failed(settingsPath, exception, logger);
         }
     }
 
@@ -126,9 +126,9 @@ internal static partial class CleanupProfileReader
         return null;
     }
 
-    private static DeclaredCleanupProfile Failed(string settingsPath, Exception exception)
+    private static DeclaredCleanupProfile Failed(string settingsPath, Exception exception, ILogger logger)
     {
-        Log.Warning(
+        logger.LogWarning(
             exception,
             "Could not read the cleanup profile from \"{SettingsPath}\". Falling back to the built-in default.",
             settingsPath);

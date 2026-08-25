@@ -1,4 +1,4 @@
-using Serilog;
+using Microsoft.Extensions.Logging;
 
 namespace Zphil.ReSharperCli.Execution;
 
@@ -47,7 +47,7 @@ namespace Zphil.ReSharperCli.Execution;
 ///         <c>CacheTransplanter</c> nests — which is the deadlock this codebase is careful not to build.
 ///     </para>
 /// </remarks>
-internal sealed class JbRunYield
+internal sealed class JbRunYield(ILogger<JbRunYield> logger)
 {
     /// <summary>
     ///     How many callers the user is waiting on hold a claim right now. Two different reasons to stand a
@@ -132,6 +132,10 @@ internal sealed class JbRunYield
         if (Volatile.Read(ref _foregroundCallers) == 0) return mine;
 
         mine.Dispose();
+
+        // Debug, not Information: standing aside for a call the user made is the design working, and a
+        // session that makes back-to-back calls would otherwise say so once per call for no reader's benefit.
+        logger.LogDebug("Not starting speculative work: a call the user is waiting on is already in flight");
         return null;
     }
 
@@ -147,11 +151,19 @@ internal sealed class JbRunYield
     {
         try
         {
-            Interlocked.Exchange(ref _speculativeRun, null)?.Cancel();
+            if (Interlocked.Exchange(ref _speculativeRun, null) is not { } speculative) return;
+
+            speculative.Cancel();
+
+            // Information, unlike the refusal above, because this one costs the caller time it cannot
+            // otherwise account for: the lease drops only once the killed jb tree has been reaped, so
+            // seconds of a call's wall clock are spent here and nothing else in the log would say why.
+            logger.LogInformation(
+                "Took the ReSharper cache generation back from the background pre-warm for a call the user is waiting on");
         }
         catch (Exception exception)
         {
-            Log.Warning(exception, "Could not cancel the background cache pre-warm; this call will queue behind it instead");
+            logger.LogWarning(exception, "Could not cancel the background cache pre-warm; this call will queue behind it instead");
         }
     }
 

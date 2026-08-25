@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using Serilog;
+using Microsoft.Extensions.Logging;
 
 namespace Zphil.ReSharperCli.Execution;
 
@@ -36,9 +36,17 @@ namespace Zphil.ReSharperCli.Execution;
 ///     <see cref="Services.JbRunner" />, so a queued call is bounded by wait + run and the two caps cannot
 ///     drift apart — including when <c>RESHARPER_MCP_TIMEOUT_SECS</c> moves them.
 /// </param>
-internal sealed class JbRunLock(TimeSpan maxWait)
+internal sealed class JbRunLock(TimeSpan maxWait, ILogger<JbRunLock> logger)
 {
     private static readonly TimeSpan RetryInterval = TimeSpan.FromMilliseconds(250);
+
+    /// <summary>
+    ///     How long a caller has to have queued for the wait to be worth an <c>Information</c> line rather
+    ///     than a <c>Debug</c> one. An uncontended acquire is sub-millisecond, so anything past this is
+    ///     another <c>jb</c> the caller sat behind — which is one of the three things that make a call slow,
+    ///     and the only one nothing else in the log records.
+    /// </summary>
+    private static readonly TimeSpan NotableWait = TimeSpan.FromSeconds(1);
 
     /// <summary>
     ///     One gate per lock key, so callers inside this process queue on a semaphore instead of polling
@@ -69,8 +77,8 @@ internal sealed class JbRunLock(TimeSpan maxWait)
         }
         catch (Exception exception) when (CannotDeriveLock(exception))
         {
-            Log.Warning(exception, "Could not derive a jb run lock for solution {SolutionPath} in cache home {CacheHome}; running unserialized", solutionPath, cacheHome);
-            return new Holder(null, null);
+            logger.LogWarning(exception, "Could not derive a jb run lock for solution {SolutionPath} in cache home {CacheHome}; running unserialized", solutionPath, cacheHome);
+            return new Holder(null, null, logger);
         }
 
         SemaphoreSlim gate = _gates.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
@@ -83,13 +91,42 @@ internal sealed class JbRunLock(TimeSpan maxWait)
                 ? await OpenExclusiveAsync(lockFilePath, solutionPath, waited, cancellationToken).ConfigureAwait(false)
                 : null;
 
-            return new Holder(gate, file);
+            ReportAcquisition(solutionPath, waited.Elapsed, file is not null);
+
+            return new Holder(gate, file, logger);
         }
         catch
         {
             gate.Release();
             throw;
         }
+    }
+
+    /// <summary>
+    ///     Say how long this caller queued, and whether the lock it got is the cross-process one. The wait
+    ///     is the whole point: nothing else records that a call spent four minutes behind another session's
+    ///     <c>jb</c>, and read from the outside that call is indistinguishable from a slow one.
+    /// </summary>
+    private void ReportAcquisition(string solutionPath, TimeSpan waited, bool crossProcess)
+    {
+        string scope = crossProcess ? "cross-process" : "in-process only";
+
+        if (waited >= NotableWait)
+        {
+            logger.LogInformation(
+                "Queued {WaitedMs} ms for the ReSharper cache generation of {SolutionPath} before another jb run released it ({LockScope})",
+                (long)waited.TotalMilliseconds,
+                solutionPath,
+                scope);
+
+            return;
+        }
+
+        logger.LogDebug(
+            "Took the ReSharper cache generation of {SolutionPath} after {WaitedMs} ms ({LockScope})",
+            solutionPath,
+            (long)waited.TotalMilliseconds,
+            scope);
     }
 
     /// <summary>
@@ -109,7 +146,8 @@ internal sealed class JbRunLock(TimeSpan maxWait)
     ///         prove exclusivity and starts regardless causes exactly the cold-cache fork this lock exists to
     ///         prevent, for nobody's benefit. So every degradation — an underivable key, an unusable cache
     ///         home, a lock file that will not open for any reason at all — returns <see langword="null" />
-    ///         and the speculative run is simply skipped.
+    ///         and the speculative run never starts, which is the one ending it can report as having cost
+    ///         nothing.
     ///     </para>
     /// </remarks>
     public IDisposable? TryAcquire(string solutionPath, string cacheHome)
@@ -140,7 +178,7 @@ internal sealed class JbRunLock(TimeSpan maxWait)
             throw;
         }
 
-        return HolderOrRelease(gate, file);
+        return HolderOrRelease(gate, file, logger);
     }
 
     /// <summary>
@@ -201,7 +239,7 @@ internal sealed class JbRunLock(TimeSpan maxWait)
             throw;
         }
 
-        return HolderOrRelease(gate, file);
+        return HolderOrRelease(gate, file, logger);
     }
 
     /// <summary>
@@ -230,7 +268,7 @@ internal sealed class JbRunLock(TimeSpan maxWait)
     ///     leaving the gate taken on the null path would wedge every later caller of this generation —
     ///     foreground ones included — for the life of the process.
     /// </summary>
-    private static IDisposable? HolderOrRelease(SemaphoreSlim gate, FileStream? file)
+    private static IDisposable? HolderOrRelease(SemaphoreSlim gate, FileStream? file, ILogger logger)
     {
         if (file is null)
         {
@@ -238,7 +276,7 @@ internal sealed class JbRunLock(TimeSpan maxWait)
             return null;
         }
 
-        return new Holder(gate, file);
+        return new Holder(gate, file, logger);
     }
 
     /// <summary>
@@ -267,7 +305,7 @@ internal sealed class JbRunLock(TimeSpan maxWait)
             }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or NotSupportedException)
             {
-                Log.Warning(exception, "Could not take the jb run lock file {LockFilePath}; concurrent runs against this solution will not be serialized", lockFilePath);
+                logger.LogWarning(exception, "Could not take the jb run lock file {LockFilePath}; concurrent runs against this solution will not be serialized", lockFilePath);
                 return null;
             }
     }
@@ -330,7 +368,7 @@ internal sealed class JbRunLock(TimeSpan maxWait)
     ///     Create the cache home so the lock file has somewhere to live (jb would create it anyway),
     ///     reporting whether the file lock can be attempted at all.
     /// </summary>
-    private static bool TryPrepareCacheHome(string cacheHome)
+    private bool TryPrepareCacheHome(string cacheHome)
     {
         try
         {
@@ -339,7 +377,7 @@ internal sealed class JbRunLock(TimeSpan maxWait)
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or NotSupportedException)
         {
-            Log.Warning(exception, "Could not prepare cache home {CacheHome} for the jb run lock; concurrent runs against this solution will not be serialized", cacheHome);
+            logger.LogWarning(exception, "Could not prepare cache home {CacheHome} for the jb run lock; concurrent runs against this solution will not be serialized", cacheHome);
             return false;
         }
     }
@@ -381,7 +419,7 @@ internal sealed class JbRunLock(TimeSpan maxWait)
     ///     Releases whichever layers were actually taken, innermost first, and only once — a double
     ///     dispose must not over-release the semaphore and let a second caller in.
     /// </summary>
-    private sealed class Holder(SemaphoreSlim? gate, FileStream? file) : IDisposable
+    private sealed class Holder(SemaphoreSlim? gate, FileStream? file, ILogger logger) : IDisposable
     {
         private int _disposed;
 
@@ -395,7 +433,7 @@ internal sealed class JbRunLock(TimeSpan maxWait)
             }
             catch (IOException exception)
             {
-                Log.Warning(exception, "Failed to release the jb run lock file cleanly");
+                logger.LogWarning(exception, "Failed to release the jb run lock file cleanly");
             }
 
             gate?.Release();

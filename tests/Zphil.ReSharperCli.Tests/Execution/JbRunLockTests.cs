@@ -44,7 +44,7 @@ public sealed class JbRunLockTests : IDisposable
     public async Task AcquireAsync_SecondCallerInSameProcess_WaitsUntilTheFirstReleases()
     {
         // Arrange
-        JbRunLock runLock = new(JbRunTimeout.Default);
+        JbRunLock runLock = JbRunners.Lock(JbRunTimeout.Default);
         IDisposable first = await runLock.AcquireAsync(SolutionPath, _cacheHome, Ct);
 
         // Act
@@ -63,7 +63,7 @@ public sealed class JbRunLockTests : IDisposable
     {
         // Arrange — a handle taken outside this JbRunLock instance, standing in for another server process.
         // Without the file half of the lock this test fails: the in-process semaphore is uncontended here.
-        JbRunLock runLock = new(JbRunTimeout.Default);
+        JbRunLock runLock = JbRunners.Lock(JbRunTimeout.Default);
         FileStream otherProcess = OpenLockFileExclusively();
 
         // Act
@@ -81,7 +81,7 @@ public sealed class JbRunLockTests : IDisposable
     public async Task AcquireAsync_DifferentSolutionsInOneCacheHome_DoNotBlockEachOther()
     {
         // Arrange — the lock is per cache generation, not per server: unrelated solutions must run at once.
-        JbRunLock runLock = new(ShortWait);
+        JbRunLock runLock = JbRunners.Lock(ShortWait);
         using IDisposable first = await runLock.AcquireAsync("/repo/One.sln", _cacheHome, Ct);
         var waited = Stopwatch.StartNew();
 
@@ -96,7 +96,7 @@ public sealed class JbRunLockTests : IDisposable
     public async Task AcquireAsync_OneSolutionAcrossDifferentCacheHomes_DoNotBlockEachOther()
     {
         // Arrange — the same solution analysed into two cache homes has two generations, so no contention.
-        JbRunLock runLock = new(ShortWait);
+        JbRunLock runLock = JbRunners.Lock(ShortWait);
         string otherCacheHome = _environment.CreateTempDirectory();
         using IDisposable first = await runLock.AcquireAsync(SolutionPath, _cacheHome, Ct);
         var waited = Stopwatch.StartNew();
@@ -112,7 +112,7 @@ public sealed class JbRunLockTests : IDisposable
     public async Task AcquireAsync_WaitCapExceeded_ThrowsUserErrorNamingTheSolution()
     {
         // Arrange — a holder that never releases.
-        JbRunLock runLock = new(ShortWait);
+        JbRunLock runLock = JbRunners.Lock(ShortWait);
         await using FileStream otherProcess = OpenLockFileExclusively();
 
         // Act
@@ -129,7 +129,7 @@ public sealed class JbRunLockTests : IDisposable
     {
         // Arrange — the lock is an optimisation, never a dependency: the jb run must still go ahead
         // without it.
-        JbRunLock runLock = new(ShortWait);
+        JbRunLock runLock = JbRunners.Lock(ShortWait);
         string blocked = CacheHomes.BlockedCacheHome(_environment);
 
         // Act
@@ -147,7 +147,7 @@ public sealed class JbRunLockTests : IDisposable
     {
         // Arrange — a *directory* sitting where the lock file goes: the cache home is fine, so the run gets
         // that far, but the file can never be opened. Still not a reason to fail a jb run.
-        JbRunLock runLock = new(ShortWait);
+        JbRunLock runLock = JbRunners.Lock(ShortWait);
         Directory.CreateDirectory(LockFilePath());
         var waited = Stopwatch.StartNew();
 
@@ -162,7 +162,7 @@ public sealed class JbRunLockTests : IDisposable
     public async Task AcquireAsync_CacheHomeIsNotAValidPath_DegradesInsteadOfFailingTheRun()
     {
         // Arrange — a cache home no path API will accept, so even the lock's key cannot be derived.
-        JbRunLock runLock = new(ShortWait);
+        JbRunLock runLock = JbRunners.Lock(ShortWait);
         string invalid = _cacheHome + "\0invalid";
 
         // Act
@@ -178,7 +178,7 @@ public sealed class JbRunLockTests : IDisposable
         // Arrange — a raw handle abandoned the way a crashed or tree-killed process abandons one: no orderly
         // release, no cleanup. This is why the lock is a file rather than a named mutex, which would instead
         // leave the next caller an AbandonedMutexException to recover from.
-        JbRunLock runLock = new(ShortWait);
+        JbRunLock runLock = JbRunners.Lock(ShortWait);
         SafeFileHandle crashed = File.OpenHandle(LockFilePath(), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
         crashed.Dispose();
         var waited = Stopwatch.StartNew();
@@ -195,7 +195,7 @@ public sealed class JbRunLockTests : IDisposable
     public async Task Dispose_CalledTwice_DoesNotAdmitAnExtraCaller()
     {
         // Arrange — an over-release would let a second jb onto the cache while the first still holds it.
-        JbRunLock runLock = new(ShortWait);
+        JbRunLock runLock = JbRunners.Lock(ShortWait);
         IDisposable first = await runLock.AcquireAsync(SolutionPath, _cacheHome, Ct);
         first.Dispose();
         first.Dispose();
@@ -213,7 +213,7 @@ public sealed class JbRunLockTests : IDisposable
     {
         // Arrange — the full production wait cap on purpose. If the zero-wait were a shorter promise rather
         // than structural, this test would hang instead of failing, which is the distinction worth pinning.
-        JbRunLock runLock = new(JbRunTimeout.Default);
+        JbRunLock runLock = JbRunners.Lock(JbRunTimeout.Default);
         await using FileStream otherProcess = OpenLockFileExclusively();
         var waited = Stopwatch.StartNew();
 
@@ -229,7 +229,7 @@ public sealed class JbRunLockTests : IDisposable
     public async Task TryAcquire_WhileACallerInThisProcessHoldsTheLease_SkipsWithoutWaiting()
     {
         // Arrange — the in-process half: the speculative caller never queues behind a real one.
-        JbRunLock runLock = new(JbRunTimeout.Default);
+        JbRunLock runLock = JbRunners.Lock(JbRunTimeout.Default);
         using IDisposable foreground = await runLock.AcquireAsync(SolutionPath, _cacheHome, Ct);
         var waited = Stopwatch.StartNew();
 
@@ -245,7 +245,7 @@ public sealed class JbRunLockTests : IDisposable
     public void TryAcquire_Granted_HoldsBothHalvesUntilDisposed()
     {
         // Arrange
-        JbRunLock runLock = new(JbRunTimeout.Default);
+        JbRunLock runLock = JbRunners.Lock(JbRunTimeout.Default);
 
         // Act
         IDisposable? lease = runLock.TryAcquire(SolutionPath, _cacheHome);
@@ -262,7 +262,7 @@ public sealed class JbRunLockTests : IDisposable
     public async Task TryAcquire_OnceDisposed_ReadmitsAForegroundCaller()
     {
         // Arrange
-        JbRunLock runLock = new(ShortWait);
+        JbRunLock runLock = JbRunners.Lock(ShortWait);
         IDisposable? lease = runLock.TryAcquire(SolutionPath, _cacheHome);
         lease.ShouldNotBeNull();
         lease.Dispose();
@@ -281,7 +281,7 @@ public sealed class JbRunLockTests : IDisposable
         // Arrange — AcquireAsync degrades here and runs anyway, because a call the user asked for outranks
         // the optimisation; a speculative run has no such claim, and running it unserialized would fork the
         // cold cache the lock exists to prevent.
-        JbRunLock runLock = new(ShortWait);
+        JbRunLock runLock = JbRunners.Lock(ShortWait);
         string blocked = CacheHomes.BlockedCacheHome(_environment);
 
         // Act
@@ -297,7 +297,7 @@ public sealed class JbRunLockTests : IDisposable
     {
         // Arrange — a *directory* sitting where the lock file goes: the cache home is fine, the file can
         // never be opened.
-        JbRunLock runLock = new(ShortWait);
+        JbRunLock runLock = JbRunners.Lock(ShortWait);
         Directory.CreateDirectory(LockFilePath());
 
         // Act & Assert
@@ -308,7 +308,7 @@ public sealed class JbRunLockTests : IDisposable
     public void TryAcquire_CacheHomeIsNotAValidPath_SkipsInsteadOfDegrading()
     {
         // Arrange — a cache home no path API will accept, so even the lock's key cannot be derived.
-        JbRunLock runLock = new(ShortWait);
+        JbRunLock runLock = JbRunners.Lock(ShortWait);
 
         // Act & Assert
         runLock.TryAcquire(SolutionPath, _cacheHome + "\0invalid").ShouldBeNull();
@@ -321,7 +321,7 @@ public sealed class JbRunLockTests : IDisposable
         // open the lock file and *returns* null rather than throwing, so AcquireAsync's release-on-throw does
         // not cover it. A leak here would be paid by a real call: it would queue against nothing, burn the
         // whole wait cap, and fail with a contention error naming a run that never existed.
-        JbRunLock runLock = new(ShortWait);
+        JbRunLock runLock = JbRunners.Lock(ShortWait);
         Directory.CreateDirectory(LockFilePath());
         runLock.TryAcquire(SolutionPath, _cacheHome).ShouldBeNull();
         var waited = Stopwatch.StartNew();
@@ -339,7 +339,7 @@ public sealed class JbRunLockTests : IDisposable
         // Arrange — the key-addressed entry point exists for a caller holding only a cache home and a sidecar
         // file name. If it did not land on the same gate and the same lock file as the pathed ones, it would
         // serialize against nothing and copy from a generation a live jb was writing.
-        JbRunLock runLock = new(ShortWait);
+        JbRunLock runLock = JbRunners.Lock(ShortWait);
         using IDisposable pathed = await runLock.AcquireAsync(SolutionPath, _cacheHome, Ct);
 
         // Act
@@ -355,7 +355,7 @@ public sealed class JbRunLockTests : IDisposable
     {
         // Arrange — the production wait cap on the lock, and a short patience for this acquire: a caller that
         // already holds another lease must not be able to sit on it for the run cap, and must not fail either.
-        JbRunLock runLock = new(JbRunTimeout.Default);
+        JbRunLock runLock = JbRunners.Lock(JbRunTimeout.Default);
         await using FileStream otherProcess = OpenLockFileExclusively();
         var waited = Stopwatch.StartNew();
 
@@ -373,7 +373,7 @@ public sealed class JbRunLockTests : IDisposable
     {
         // Arrange — the reason it waits at all rather than trying once: a donor is normally free within a
         // moment, and the run it was busy with is exactly what made it worth copying.
-        JbRunLock runLock = new(JbRunTimeout.Default);
+        JbRunLock runLock = JbRunners.Lock(JbRunTimeout.Default);
         FileStream otherProcess = OpenLockFileExclusively();
         Task release = Task.Run(async () =>
         {
@@ -396,7 +396,7 @@ public sealed class JbRunLockTests : IDisposable
     {
         // Arrange — the gate-leak guard, in the form this entry point can fail in: the cache home is usable,
         // the lock file can never be opened, and the answer is a return rather than a throw.
-        JbRunLock runLock = new(ShortWait);
+        JbRunLock runLock = JbRunners.Lock(ShortWait);
         Directory.CreateDirectory(LockFilePath());
         string key = JbSidecar.ComputeKey(SolutionPath, _cacheHome);
         (await runLock.TryAcquireByKeyAsync(_cacheHome, key, ShortWait, Ct)).ShouldBeNull();
@@ -414,7 +414,7 @@ public sealed class JbRunLockTests : IDisposable
     {
         // Arrange — a cache home no path API will accept. This runs on the way into a copy nobody asked for,
         // so there is nothing here worth failing a call over.
-        JbRunLock runLock = new(ShortWait);
+        JbRunLock runLock = JbRunners.Lock(ShortWait);
 
         // Act & Assert
         (await runLock.TryAcquireByKeyAsync(_cacheHome + "\0invalid", "abc123", ShortWait, Ct)).ShouldBeNull();

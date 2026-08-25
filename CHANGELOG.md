@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The file log records what each call did to the ReSharper cache. At `Information`, a `jb` run is bracketed by
+  two lines: one as it starts, naming whether the cache was warm, cold, part-built or dropped by a reset and
+  how long the run queued behind another, and one as it ends, with the exit code and the duration. Cache
+  transplants state whether they seeded and why not when they declined, and a seeded run reports the donor's
+  size and how long the copy took. A cache reset says what it dropped. A pre-warm names how its pass ended —
+  `Warmed`, `Failed`, `Capped` for one killed at the run cap, `Cancelled` for one a tool call took the cache
+  generation back from, and `Skipped` only when no `jb` started at all. Raise the level with
+  `RESHARPER_MCP_LOG_LEVEL=Information`; the default stays `Warning`.
+- A startup line naming the version, process id, cache home, resolved run cap and pre-warm setting, so the
+  configuration a server is actually running under can be read rather than inferred.
+- A `run` column: a four-digit counter over one process, carried by every line one tool call or one pre-warm
+  pass causes. Concurrent work shares the daily log file, and this is what reads it apart. Lines belonging to
+  no run — startup, shutdown — show `----`.
+- One `Debug` line per `jb` candidate probed during discovery, naming the candidate, what it answered and how
+  long the probe took. A candidate that fails before a later one succeeds left no trace at any level: the
+  common case is `jb` missing from the `PATH` an MCP client hands its child, so discovery falls through to
+  `~/.dotnet/tools`, and the probe that failed first escapes before the process lines are written. Its cost
+  reached the reader only as an unexplained delay ahead of the first call.
+
+### Changed
+
+- The pre-warm's outcome moved from `Debug` to `Information`, pairing with the start it already logged. At
+  `Information` a log previously showed pre-warms beginning and never ending.
+- `ModelContextProtocol` and `Microsoft.Hosting` are held at `Warning`, so `Information` carries what this
+  server did rather than framework chatter. The per-request timing the MCP SDK used to supply is replaced by
+  this server's own run lines.
+- Every log line now carries the class that wrote it. Most previously came from a static logger that bypassed
+  the logging pipeline and rendered with an empty source field.
+
 ## [1.4.0] - 2026-08-16
 
 ### Changed

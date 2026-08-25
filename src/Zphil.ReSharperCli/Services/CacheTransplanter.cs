@@ -1,4 +1,5 @@
-using Serilog;
+using System.Diagnostics;
+using Microsoft.Extensions.Logging;
 using Zphil.ReSharperCli.Discovery;
 using Zphil.ReSharperCli.Execution;
 
@@ -66,7 +67,10 @@ namespace Zphil.ReSharperCli.Services;
 ///     <see cref="DefaultDonorLockPatience" />. Small on purpose: it is spent while holding the target's
 ///     lease, and a donor that is busy is a donor to skip rather than to queue for.
 /// </param>
-internal sealed class CacheTransplanter(JbRunLock runLock, TimeSpan? donorLockPatience = null)
+internal sealed class CacheTransplanter(
+    JbRunLock runLock,
+    ILogger<CacheTransplanter> logger,
+    TimeSpan? donorLockPatience = null)
 {
     /// <summary>
     ///     Marks a directory as a copy still being made. The trailing token is not digits, so
@@ -114,9 +118,33 @@ internal sealed class CacheTransplanter(JbRunLock runLock, TimeSpan? donorLockPa
         }
         catch (Exception exception) when (FilesystemFailure.Covers(exception))
         {
-            Log.Debug(exception, "Could not look for a ReSharper cache to seed solution {SolutionPath} from", config.SolutionPath);
+            logger.LogDebug(exception, "Could not look for a ReSharper cache to seed solution {SolutionPath} from", config.SolutionPath);
             return false;
         }
+    }
+
+    /// <summary>
+    ///     Say that nothing was planted and why. Every one of these was a silent <c>return false</c>, which
+    ///     made "declined to seed" and "never looked" the same observation — and the distinction is the whole
+    ///     diagnosis when a checkout that should have been seeded runs cold instead. Split by level on what
+    ///     the decline leaves behind rather than on how interesting the reason sounds: a target that is still
+    ///     <em>cold</em> is about to cost minutes and the reason is the explanation for them, while declining
+    ///     over a cache that is already warm is the ordinary case on every call of every session.
+    /// </summary>
+    private void Declined(string solutionPath, string reason, bool leavesTargetCold)
+    {
+        if (leavesTargetCold)
+        {
+            logger.LogInformation(
+                "Did not seed the ReSharper cache for solution {SolutionPath} ({DeclineReason}); the run about to start builds it from cold",
+                solutionPath,
+                reason);
+
+            return;
+        }
+
+        logger.LogDebug(
+            "Did not seed the ReSharper cache for solution {SolutionPath} ({DeclineReason})", solutionPath, reason);
     }
 
     private async Task<bool> SeedAsync(ResolvedConfig config, CancellationToken cancellationToken)
@@ -131,16 +159,32 @@ internal sealed class CacheTransplanter(JbRunLock runLock, TimeSpan? donorLockPa
         // less than the copy, and the reason a first run that dies at the cap would otherwise never be
         // seeded again.
         JbSolutionGenerations generations = JbCacheGenerations.FindFor(config.CacheHome, config.SolutionPath);
-        if (generations.Owned.Count > 0 && JbWarmMarker.Exists(config.SolutionPath, config.CacheHome)) return false;
+        if (generations.Owned.Count > 0 && JbWarmMarker.Exists(config.SolutionPath, config.CacheHome, logger))
+        {
+            Declined(config.SolutionPath, "a run against it already succeeded", false);
+            return false;
+        }
 
-        if (JbColdTombstone.Exists(config.SolutionPath, config.CacheHome)) return false;
+        if (JbColdTombstone.Exists(config.SolutionPath, config.CacheHome, logger))
+        {
+            Declined(config.SolutionPath, "its cache was reset on purpose", true);
+            return false;
+        }
 
-        if (FindDonor(config) is not { } donor) return false;
+        if (FindDonor(config) is not { } donor)
+        {
+            Declined(config.SolutionPath, "no warm cache of another copy of this solution to copy", true);
+            return false;
+        }
 
         using IDisposable? donorLease = await runLock.TryAcquireByKeyAsync(
             config.CacheHome, donor.Key, _donorLockPatience, cancellationToken);
 
-        if (donorLease is null) return false;
+        if (donorLease is null)
+        {
+            Declined(config.SolutionPath, $"the donor {donor.GenerationName} is in use elsewhere", true);
+            return false;
+        }
 
         string generationName = JbSolutionCacheHash.FirstGenerationDirectoryName(config.SolutionPath);
         return Copy(
@@ -162,7 +206,7 @@ internal sealed class CacheTransplanter(JbRunLock runLock, TimeSpan? donorLockPa
     ///     The first candidate is the only candidate: falling through to a second-best donor would spend the
     ///     caller's time on a chain of attempts to save a cold run that is already running late.
     /// </remarks>
-    private static Donor? FindDonor(ResolvedConfig config)
+    private Donor? FindDonor(ResolvedConfig config)
     {
         string ourKey = JbSidecar.ComputeKey(config.SolutionPath, config.CacheHome);
 
@@ -171,7 +215,7 @@ internal sealed class CacheTransplanter(JbRunLock runLock, TimeSpan? donorLockPa
         {
             if (string.Equals(key, ourKey, StringComparison.Ordinal)) continue;
 
-            if (JbWarmMarker.TryReadGenerationName(markerPath, config.CacheHome) is not { } generationName) continue;
+            if (JbWarmMarker.TryReadGenerationName(markerPath, config.CacheHome, logger) is not { } generationName) continue;
 
             if (!JbCacheGenerations.IsNeighbourOf(generationName, config.SolutionPath)) continue;
 
@@ -196,7 +240,7 @@ internal sealed class CacheTransplanter(JbRunLock runLock, TimeSpan? donorLockPa
     ///     fails part way through, on the same terms as the reset's own: <c>jb</c> validates a generation
     ///     against its format version and rebuilds it in place, so the worst residue is a cold run.
     /// </remarks>
-    private static bool Copy(
+    private bool Copy(
         string donorPath,
         string targetPath,
         string solutionPath,
@@ -211,7 +255,13 @@ internal sealed class CacheTransplanter(JbRunLock runLock, TimeSpan? donorLockPa
             // holds the target's lease, so nothing else can be building it.
             if (Directory.Exists(inProgressPath)) Directory.Delete(inProgressPath, true);
 
-            CopyTree(donorPath, inProgressPath, cancellationToken);
+            // Measured while copying rather than by a second walk, and reported because the seeded-run premium
+            // scales with it: the copy itself is seconds, but re-keying what was copied is what a seeded run
+            // then spends minutes on, and that arithmetic used to have to be reconstructed by hand from two
+            // tool-call totals.
+            var copied = Stopwatch.StartNew();
+            (long bytes, int files) = CopyTree(donorPath, inProgressPath, cancellationToken);
+            copied.Stop();
 
             if (!TryClearTargetSlot(targetPath, solutionPath))
             {
@@ -224,19 +274,25 @@ internal sealed class CacheTransplanter(JbRunLock runLock, TimeSpan? donorLockPa
 
             if (replaced.Count > 0)
             {
-                Log.Information(
-                    "Seeded the ReSharper cache for solution {SolutionPath} by copying {DonorGeneration} over {ReplacedGenerations}, the part-built remnant of a run that never finished; the run about to start re-keys it",
+                logger.LogInformation(
+                    "Seeded the ReSharper cache for solution {SolutionPath} by copying {DonorGeneration} ({DonorBytes} bytes across {DonorFiles} files in {CopiedMs} ms) over {ReplacedGenerations}, the part-built remnant of a run that never finished; the run about to start re-keys it",
                     solutionPath,
                     Path.GetFileName(donorPath),
+                    bytes,
+                    files,
+                    copied.ElapsedMilliseconds,
                     replaced.Select(generation => generation.Name).ToList());
 
                 return true;
             }
 
-            Log.Information(
-                "Seeded the ReSharper cache for solution {SolutionPath} by copying {DonorGeneration} to {TargetGeneration}; the run about to start re-keys it",
+            logger.LogInformation(
+                "Seeded the ReSharper cache for solution {SolutionPath} by copying {DonorGeneration} ({DonorBytes} bytes across {DonorFiles} files in {CopiedMs} ms) to {TargetGeneration}; the run about to start re-keys it",
                 solutionPath,
                 Path.GetFileName(donorPath),
+                bytes,
+                files,
+                copied.ElapsedMilliseconds,
                 Path.GetFileName(targetPath));
 
             return true;
@@ -249,7 +305,7 @@ internal sealed class CacheTransplanter(JbRunLock runLock, TimeSpan? donorLockPa
         catch (Exception exception) when (FilesystemFailure.Covers(exception))
         {
             Discard(inProgressPath);
-            Log.Warning(
+            logger.LogWarning(
                 exception,
                 "Could not seed the ReSharper cache for solution {SolutionPath} from {DonorGeneration}; the run will build it from cold instead",
                 solutionPath,
@@ -270,7 +326,7 @@ internal sealed class CacheTransplanter(JbRunLock runLock, TimeSpan? donorLockPa
     ///     <em>file</em> at the slot is not a directory to delete and reads as clear, so it goes on to fail at
     ///     the move, which is what it did before this method existed.
     /// </remarks>
-    private static bool TryClearTargetSlot(string targetPath, string solutionPath)
+    private bool TryClearTargetSlot(string targetPath, string solutionPath)
     {
         if (!Directory.Exists(targetPath)) return true;
 
@@ -281,7 +337,7 @@ internal sealed class CacheTransplanter(JbRunLock runLock, TimeSpan? donorLockPa
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
-            Log.Warning(
+            logger.LogWarning(
                 exception,
                 "Could not clear the part-built ReSharper cache {TargetGeneration} for solution {SolutionPath}; the run about to start resumes it instead of the copy that was ready to replace it",
                 Path.GetFileName(targetPath),
@@ -302,7 +358,7 @@ internal sealed class CacheTransplanter(JbRunLock runLock, TimeSpan? donorLockPa
     ///     stamps names that one too — so a survivor is reclaimed by the next cache reset rather than being
     ///     worth failing over.
     /// </remarks>
-    private static void SweepReplacedForks(string targetPath, IReadOnlyList<JbCacheGeneration> replaced)
+    private void SweepReplacedForks(string targetPath, IReadOnlyList<JbCacheGeneration> replaced)
     {
         string slotName = Path.GetFileName(targetPath);
 
@@ -317,7 +373,7 @@ internal sealed class CacheTransplanter(JbRunLock runLock, TimeSpan? donorLockPa
             }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
             {
-                Log.Debug(
+                logger.LogDebug(
                     exception,
                     "Could not remove {ForkGeneration}, a fork of the part-built cache just replaced; a cache reset reclaims it",
                     generation.Name);
@@ -335,9 +391,16 @@ internal sealed class CacheTransplanter(JbRunLock runLock, TimeSpan? donorLockPa
     ///     skipping costs nothing real, and following one in a cache home somebody has been rearranging could
     ///     copy a directory tree into itself.
     /// </remarks>
-    private static void CopyTree(string sourcePath, string destinationPath, CancellationToken cancellationToken)
+    /// <returns>The bytes and file count copied, tallied from the same enumeration rather than by a second walk.</returns>
+    private static (long Bytes, int Files) CopyTree(
+        string sourcePath,
+        string destinationPath,
+        CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(destinationPath);
+
+        long bytes = 0;
+        var files = 0;
 
         // One enumeration serves both kinds of entry, and Attributes comes from its find data — no
         // per-directory re-stat on the only path in this server that walks hundreds of megabytes.
@@ -345,23 +408,33 @@ internal sealed class CacheTransplanter(JbRunLock runLock, TimeSpan? donorLockPa
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (entry is not DirectoryInfo)
+            if (entry is DirectoryInfo directory)
             {
-                File.Copy(entry.FullName, Path.Combine(destinationPath, entry.Name));
+                if (directory.Attributes.HasFlag(FileAttributes.ReparsePoint)) continue;
+
+                (long nestedBytes, int nestedFiles) =
+                    CopyTree(directory.FullName, Path.Combine(destinationPath, directory.Name), cancellationToken);
+
+                bytes += nestedBytes;
+                files += nestedFiles;
                 continue;
             }
 
-            if (entry.Attributes.HasFlag(FileAttributes.ReparsePoint)) continue;
+            File.Copy(entry.FullName, Path.Combine(destinationPath, entry.Name));
 
-            CopyTree(entry.FullName, Path.Combine(destinationPath, entry.Name), cancellationToken);
+            // Off the find data this enumeration already carries, so the tally costs no extra stat.
+            bytes += (entry as FileInfo)?.Length ?? 0;
+            files++;
         }
+
+        return (bytes, files);
     }
 
     /// <summary>
     ///     Remove a copy that will not be finished. Best effort: what is left behind if this fails is inert —
     ///     no parser reads it as a cache generation — and the next attempt deletes it before starting.
     /// </summary>
-    private static void Discard(string inProgressPath)
+    private void Discard(string inProgressPath)
     {
         try
         {
@@ -369,7 +442,7 @@ internal sealed class CacheTransplanter(JbRunLock runLock, TimeSpan? donorLockPa
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
-            Log.Debug(exception, "Could not remove the abandoned partial cache copy {InProgressPath}", inProgressPath);
+            logger.LogDebug(exception, "Could not remove the abandoned partial cache copy {InProgressPath}", inProgressPath);
         }
     }
 

@@ -4,6 +4,7 @@ using ModelContextProtocol.Protocol;
 using Shouldly;
 using Xunit;
 using Zphil.ReSharperCli.Execution;
+using Zphil.ReSharperCli.Infrastructure;
 using Zphil.ReSharperCli.Resources;
 using Zphil.ReSharperCli.Tests.TestSupport;
 using Zphil.ReSharperCli.Tools;
@@ -70,6 +71,11 @@ public sealed class SetupResourceTests
         text.ShouldContain("worktree"); // the always-cold case, and the only place the seeding is described
         text.ShouldContain("Running `jb` yourself"); // how far the queue reaches: a jb the server never spawned is outside it
         text.ShouldContain(ResharperResources.ConfigurationGuideUri); // the onward cross-link
+
+        // The log section, which is the only place the level policy is stated for a reader: that raising to
+        // Information buys the cache story, and that the frameworks are held down so it is findable.
+        text.ShouldContain("held at `Warning`");
+        text.ShouldContain(RunIdScope.OutsideARun); // the run column on a line belonging to no run
     }
 
     // The full set the server reads, hardcoded rather than reflected so that adding a variable to the

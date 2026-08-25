@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
 using Xunit;
 using Zphil.ReSharperCli.Discovery;
@@ -20,7 +22,7 @@ public sealed class CacheResetServiceTests : IDisposable
     private readonly string _cacheHome;
     private readonly ResolvedConfig _config;
     private readonly FakeEnvironment _environment = new();
-    private readonly CacheResetService _service = new(new JbRunLock(TimeSpan.FromSeconds(1)), new JbRunYield());
+    private readonly CacheResetService _service = JbRunners.Reset(JbRunners.Lock(TimeSpan.FromSeconds(1)), JbRunners.Yield());
 
     public CacheResetServiceTests()
     {
@@ -103,13 +105,13 @@ public sealed class CacheResetServiceTests : IDisposable
         // the cold run this reset just guaranteed — and would leave this solution advertised as a donor for a
         // cache that no longer exists.
         CacheHomes.PlantWarmDonor(_cacheHome, _config.SolutionPath);
-        JbWarmMarker.IsFreshWithin(_config.SolutionPath, _cacheHome, TimeSpan.FromHours(1)).ShouldBeTrue();
+        JbWarmMarker.IsFreshWithin(_config.SolutionPath, _cacheHome, TimeSpan.FromHours(1), NullLogger.Instance).ShouldBeTrue();
 
         // Act
         await _service.RunAsync(_config, Ct);
 
         // Assert
-        JbWarmMarker.IsFreshWithin(_config.SolutionPath, _cacheHome, TimeSpan.FromHours(1)).ShouldBeFalse();
+        JbWarmMarker.IsFreshWithin(_config.SolutionPath, _cacheHome, TimeSpan.FromHours(1), NullLogger.Instance).ShouldBeFalse();
     }
 
     [Fact]
@@ -124,7 +126,7 @@ public sealed class CacheResetServiceTests : IDisposable
 
         // Assert
         outcome.Dropped.ShouldBeEmpty();
-        JbColdTombstone.Exists(_config.SolutionPath, _cacheHome).ShouldBeTrue();
+        JbColdTombstone.Exists(_config.SolutionPath, _cacheHome, NullLogger.Instance).ShouldBeTrue();
     }
 
     [Fact]
@@ -172,7 +174,7 @@ public sealed class CacheResetServiceTests : IDisposable
         // what lets the test hit the cap.
         string ours = CacheHomes.PlantGenerationFor(_cacheHome, _config.SolutionPath);
         await using FileStream held = CacheHomes.HoldLockFile(_cacheHome, _config.SolutionPath);
-        CacheResetService service = new(new JbRunLock(TimeSpan.FromMilliseconds(250)), new JbRunYield());
+        CacheResetService service = JbRunners.Reset(JbRunners.Lock(TimeSpan.FromMilliseconds(250)), JbRunners.Yield());
 
         // Act
         var exception = await Should.ThrowAsync<UserErrorException>(() => service.RunAsync(_config, Ct));
@@ -186,6 +188,38 @@ public sealed class CacheResetServiceTests : IDisposable
     ///     A config naming a solution in a directory of this test's own. Only the solution path and cache home
     ///     matter here: a reset runs no <c>jb</c>, so settings, extensions, and the profile play no part.
     /// </summary>
+    /// <summary>
+    ///     The reset says what it did, at <see cref="LogLevel.Information" />.
+    /// </summary>
+    /// <remarks>
+    ///     It is the one tool that spawns no <c>jb</c>, and was the one that left no trace at all. Since a
+    ///     reset is precisely why the <em>next</em> call runs cold, a log without it shows that call taking
+    ///     minutes against a cache home that a moment earlier looked populated, for no visible reason.
+    /// </remarks>
+    [Fact]
+    public async Task RunAsync_WhateverItDropped_RecordsTheOutcomeAtInformation()
+    {
+        // Arrange — one generation of this solution's own, and one belonging to another checkout, so the line
+        // has both halves of the split to report.
+        CapturingLoggerProvider logs = new();
+        string ours = CacheHomes.PlantGenerationFor(_cacheHome, _config.SolutionPath);
+        CacheHomes.PlantGenerationFor(_cacheHome, _environment.CreateSolutionPath("App.sln"));
+
+        CacheResetService service = JbRunners.Reset(
+            JbRunners.Lock(TimeSpan.FromSeconds(1)), JbRunners.Yield(), Logs.Capturing(logs));
+
+        // Act
+        await service.RunAsync(_config, Ct);
+
+        // Assert
+        LogEntry reported = logs.WithProperty("Dropped").ShouldHaveSingleItem();
+        reported.Level.ShouldBe(LogLevel.Information);
+        reported.Property("SolutionPath").ShouldBe(_config.SolutionPath);
+        reported.Property("Dropped").ShouldBe(new List<string> { Path.GetFileName(ours) });
+        reported.Property("LeftAloneCount").ShouldBe(1);
+        reported.Property("FailureCount").ShouldBe(0);
+    }
+
     private ResolvedConfig ConfigFor(string solutionFileName, string cacheHome)
     {
         string solutionPath = Path.Combine(_environment.CurrentDirectory, solutionFileName);

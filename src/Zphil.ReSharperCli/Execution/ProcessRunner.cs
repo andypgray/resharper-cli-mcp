@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text;
+using Microsoft.Extensions.Logging;
 
 namespace Zphil.ReSharperCli.Execution;
 
@@ -7,7 +8,16 @@ namespace Zphil.ReSharperCli.Execution;
 ///     Spawns an external process directly (no shell), captures its output, and enforces a timeout by
 ///     killing the whole process tree. This is the only class in the server that starts a process.
 /// </summary>
-internal sealed class ProcessRunner : IProcessRunner
+/// <remarks>
+///     It logs the mechanics of a spawn — the command line, the wall clock, the exit code, a tree killed at
+///     the cap — and does so at <c>Debug</c>, because this layer cannot tell one spawn from another. A
+///     <c>jb inspectcode</c> the user is waiting on and the <c>jb inspectcode --version</c> probe
+///     <c>JbLocator</c> makes arrive here identically, and an <c>Information</c> line here would report the
+///     probe as a run. The single <c>Information</c> line per <c>jb</c> run belongs one level up, in
+///     <see cref="Services.JbRunner" />, which knows which is which and knows what the cache looked like
+///     going in.
+/// </remarks>
+internal sealed class ProcessRunner(ILogger<ProcessRunner> logger) : IProcessRunner
 {
     /// <summary>Cap captured stdout/stderr at 10&#160;MB each; past the cap we keep draining but stop appending.</summary>
     private const int MaxCapturedChars = 10 * 1024 * 1024;
@@ -43,6 +53,11 @@ internal sealed class ProcessRunner : IProcessRunner
         using Process process = new();
         process.StartInfo = startInfo;
 
+        // The full command line, and the only place it is ever written out: it is the difference between
+        // reading "a jb run took nine minutes" and being able to reproduce that run by hand.
+        logger.LogDebug("Starting {FileName} {Arguments}", fileName, arguments);
+        var elapsed = Stopwatch.StartNew();
+
         // A missing executable throws Win32Exception here — deliberately allowed to propagate.
         process.Start();
 
@@ -75,6 +90,15 @@ internal sealed class ProcessRunner : IProcessRunner
                 // The reap itself timed out or faulted; nothing more we can usefully do.
             }
 
+            // Both endings say the tree was killed, and which of the two it was matters: a caller standing a
+            // speculative pass down looks nothing like a run that ran out of budget, and only this frame can
+            // still tell them apart.
+            logger.LogDebug(
+                "Killed the {FileName} process tree after {ElapsedMs} ms — {Reason}",
+                fileName,
+                elapsed.ElapsedMilliseconds,
+                cancellationToken.IsCancellationRequested ? "cancelled by its caller" : $"the {FormatDuration(timeout)} cap");
+
             // External cancellation (the caller's token) propagates as a normal OperationCanceledException.
             if (cancellationToken.IsCancellationRequested) throw;
 
@@ -85,6 +109,12 @@ internal sealed class ProcessRunner : IProcessRunner
         // timeout so a leaked grandchild holding a pipe open can't hang the call past `timeout`.
         string standardOutput = await DrainWithinBudgetAsync(standardOutputTask, timeoutCts.Token, cancellationToken).ConfigureAwait(false);
         string standardError = await DrainWithinBudgetAsync(standardErrorTask, timeoutCts.Token, cancellationToken).ConfigureAwait(false);
+
+        logger.LogDebug(
+            "{FileName} exited with code {ExitCode} after {ElapsedMs} ms",
+            fileName,
+            process.ExitCode,
+            elapsed.ElapsedMilliseconds);
 
         return new ProcessResult(process.ExitCode, standardOutput, standardError);
     }

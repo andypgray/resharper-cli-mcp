@@ -1,8 +1,10 @@
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
 using Xunit;
 using Zphil.ReSharperCli.Discovery;
 using Zphil.ReSharperCli.Execution;
+using Zphil.ReSharperCli.Infrastructure;
 using Zphil.ReSharperCli.Services;
 using Zphil.ReSharperCli.Tests.TestDoubles;
 using Zphil.ReSharperCli.Tests.TestSupport;
@@ -67,13 +69,13 @@ public sealed class CacheWarmerTests : IDisposable
         // Assert — a full solution run, because --include does not shrink jb's work, so there is no cheaper
         // shape a warm-up could take.
         warmer.Outcome.ShouldBe(WarmUpOutcome.Warmed);
-        var arguments = _probe.Runs.ShouldHaveSingleItem();
+        IReadOnlyList<string> arguments = _probe.Runs.ShouldHaveSingleItem();
         arguments[0].ShouldBe("inspectcode");
         arguments.ShouldContain(_solutionPath);
         arguments.Any(argument => argument.StartsWith("--include", StringComparison.Ordinal)).ShouldBeFalse();
 
         // ...and the debounce closes the loop, so the next session start finds this generation warm.
-        JbWarmMarker.IsFreshWithin(_solutionPath, _cacheHome, CacheWarmer.RecentlyWarmWindow).ShouldBeTrue();
+        JbWarmMarker.IsFreshWithin(_solutionPath, _cacheHome, CacheWarmer.RecentlyWarmWindow, NullLogger.Instance).ShouldBeTrue();
         _logs.Warnings.ShouldBeEmpty();
     }
 
@@ -135,7 +137,7 @@ public sealed class CacheWarmerTests : IDisposable
     {
         // Arrange — something warmed this generation moments ago: a call in this session, or another
         // session entirely.
-        JbWarmMarker.Stamp(_solutionPath, _cacheHome);
+        JbWarmMarker.Stamp(_solutionPath, _cacheHome, NullLogger.Instance);
         using CacheWarmer warmer = BuildWarmer();
 
         // Act
@@ -152,7 +154,7 @@ public sealed class CacheWarmerTests : IDisposable
     {
         // Arrange — aged against the shipped window itself, so the real threshold is pinned rather than an
         // injectable stand-in for it.
-        JbWarmMarker.Stamp(_solutionPath, _cacheHome);
+        JbWarmMarker.Stamp(_solutionPath, _cacheHome, NullLogger.Instance);
         File.SetLastWriteTimeUtc(
             JbWarmMarker.PathFor(_solutionPath, _cacheHome),
             DateTime.UtcNow - CacheWarmer.RecentlyWarmWindow - TimeSpan.FromMinutes(1));
@@ -179,7 +181,8 @@ public sealed class CacheWarmerTests : IDisposable
         warmer.Start();
         await warmer.Finished.WaitAsync(Generous, Ct);
 
-        // Assert — and it gave up rather than queueing, which is what the bounded wait above proves.
+        // Assert — and it gave up rather than queueing, which is what the bounded wait above proves. This is
+        // now the whole of what Skipped claims: no jb was spawned, and the empty run list is the proof.
         warmer.Outcome.ShouldBe(WarmUpOutcome.Skipped);
         _probe.Runs.ShouldBeEmpty();
     }
@@ -309,8 +312,56 @@ public sealed class CacheWarmerTests : IDisposable
         // Assert — a failed background run is an outcome, not an incident: the session simply pays the cold
         // cost it would have paid anyway, and the log stays for genuine surprises.
         warmer.Outcome.ShouldBe(WarmUpOutcome.Failed);
-        JbWarmMarker.IsFreshWithin(_solutionPath, _cacheHome, CacheWarmer.RecentlyWarmWindow).ShouldBeFalse();
+        JbWarmMarker.IsFreshWithin(_solutionPath, _cacheHome, CacheWarmer.RecentlyWarmWindow, NullLogger.Instance).ShouldBeFalse();
         _logs.Warnings.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Start_JbKilledAtTheRunCap_ReportsCappedWithoutStampingOrWarning()
+    {
+        // Arrange — on a large cold solution this is the *normal* shape of a pass, not an incident: the cap
+        // exists to stop a call the user is waiting on hanging, and nobody is waiting on this one.
+        _probe.Fault = new ProcessTimeoutException("'jb' timed out.");
+        using CacheWarmer warmer = BuildWarmer();
+
+        // Act
+        warmer.Start();
+        await warmer.Finished.WaitAsync(Generous, Ct);
+
+        // Assert — its own word, distinct from both a failure and a skip. The run line above it says the cap
+        // killed a jb after N ms, and a summary reading "Skipped" beside that is a contradiction; nothing is
+        // stamped either way, so the next call still finds this generation unvouched-for.
+        warmer.Outcome.ShouldBe(WarmUpOutcome.Capped);
+        JbWarmMarker.IsFreshWithin(_solutionPath, _cacheHome, CacheWarmer.RecentlyWarmWindow, NullLogger.Instance).ShouldBeFalse();
+        _logs.Warnings.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Start_AToolCallReclaimingTheGeneration_ReportsCancelledRatherThanSkipped()
+    {
+        // Arrange — a pass provably mid-analysis, so this is an observation rather than a race with a sleep.
+        // The graph hands back the runner the warmer is wired to, which is the only way a foreground call in
+        // a test reaches that pass's claim at all.
+        _probe.BlockUntilCancelled = true;
+        WarmerGraph graph = BuildGraph();
+        using CacheWarmer warmer = graph.Warmer;
+        warmer.Start();
+        await _probe.Started.WaitAsync(Generous, Ct);
+
+        // Act — a call the user made, which takes the cache generation back on entry.
+        using CancellationTokenSource callerGivesUp = new();
+        Task<ProcessResult> foreground = graph.Runner.RunAsync(
+            Configs.Bare(_solutionPath, _cacheHome), ["inspectcode", _solutionPath], callerGivesUp.Token);
+        await warmer.Finished.WaitAsync(Generous, Ct);
+
+        // Assert — a running jb was stopped from outside, which is what Cancelled means; the shutdown path
+        // reaches the same word for the same reason. Reporting a skip here would deny minutes of analysis
+        // that the run line above it has already recorded as cancelled.
+        warmer.Outcome.ShouldBe(WarmUpOutcome.Cancelled);
+
+        // The foreground call parks on the probe in its turn, so it is cancelled rather than left running.
+        await callerGivesUp.CancelAsync();
+        await Should.ThrowAsync<OperationCanceledException>(() => foreground.WaitAsync(Generous, Ct));
     }
 
     [Fact]
@@ -382,6 +433,99 @@ public sealed class CacheWarmerTests : IDisposable
         // Assert — unrecognised falls back to the shipped default, in the same register as the log-level
         // variable. `off` is the spelling the docs teach; the rest are what a user might reasonably try.
         CacheWarmer.IsEnabled(value).ShouldBe(expected);
+    }
+
+    /// <summary>
+    ///     The pre-warm records how it ended, at <see cref="LogLevel.Information" />, pairing with the
+    ///     <c>Information</c> start it already wrote.
+    /// </summary>
+    /// <remarks>
+    ///     A week of field logs showed pre-warms beginning and never ending, because the outcome was a
+    ///     <c>LogDebug</c> and the deployment runs at <c>Information</c>. Two passes from two sessions started
+    ///     an hour apart and whether they contended, and which of them won, was unanswerable. Both halves of
+    ///     the pair have to be at the same level or the pair is not one.
+    /// </remarks>
+    [Fact]
+    public async Task Start_APassThatRanJb_RecordsTheOutcomeAtInformationWithItsTargetAndDuration()
+    {
+        // Arrange
+        using CacheWarmer warmer = BuildWarmer();
+
+        // Act
+        warmer.Start();
+        await warmer.Finished.WaitAsync(Generous, Ct);
+
+        // Assert
+        LogEntry finished = OutcomeLine();
+        finished.Level.ShouldBe(LogLevel.Information);
+        finished.Property("Outcome").ShouldBe(WarmUpOutcome.Warmed);
+        finished.Property("SolutionPath").ShouldBe(_solutionPath);
+        finished.Property("ElapsedMs").ShouldNotBeNull();
+    }
+
+    [Fact]
+    public async Task Start_APassThatFoundNothingToWarm_StillRecordsItsOutcomeAtInformation()
+    {
+        // Arrange — the line has to be written on every path, not only the interesting one, or the pairing
+        // with the start breaks exactly where the reader most needs it: a pass that did nothing. A server in a
+        // repo that is not a .NET one lands here, and nothing else in the log would say so.
+        _environment.CurrentDirectory = _environment.CreateTempDirectory();
+        using CacheWarmer warmer = BuildWarmer();
+
+        // Act
+        warmer.Start();
+        await warmer.Finished.WaitAsync(Generous, Ct);
+
+        // Assert
+        LogEntry finished = OutcomeLine();
+        finished.Level.ShouldBe(LogLevel.Information);
+        finished.Property("Outcome").ShouldBe(WarmUpOutcome.NoTarget);
+        finished.Property("SolutionPath").ShouldBe("no target");
+    }
+
+    [Fact]
+    public async Task Start_TurnedOff_KeepsItsOutcomeAtDebugBecauseTheStartupLineAlreadySaysSo()
+    {
+        // Arrange — the one outcome that is not worth an Information line: the switch's position is in the
+        // startup fingerprint already, and restating it once per session is the noise that level was cleared
+        // out to make room for real events.
+        _environment.SetVariable(CacheWarmer.EnableVariable, "off");
+        using CacheWarmer warmer = BuildWarmer();
+
+        // Act
+        warmer.Start();
+        await warmer.Finished.WaitAsync(Generous, Ct);
+
+        // Assert
+        LogEntry finished = OutcomeLine();
+        finished.Level.ShouldBe(LogLevel.Debug);
+        finished.Property("Outcome").ShouldBe(WarmUpOutcome.Disabled);
+    }
+
+    [Fact]
+    public async Task Start_APassThatRan_TagsEveryLineItCausedWithOneRunId()
+    {
+        // Arrange — a pass overlaps a tool call by design, and in one shared log file their cache-state, queue
+        // wait and run lines interleave with nothing to tell them apart. The scope is what separates them.
+        using CacheWarmer warmer = BuildWarmer();
+
+        // Act
+        warmer.Start();
+        await warmer.Finished.WaitAsync(Generous, Ct);
+
+        // Assert — the start and the outcome are the two lines this class writes, and both carry it.
+        IReadOnlyList<LogEntry> mine = _logs.Entries
+            .Where(entry => entry.ScopeValue(RunIdScope.PropertyName) is not null)
+            .ToList();
+
+        mine.Count.ShouldBeGreaterThanOrEqualTo(2);
+        mine.Select(entry => entry.ScopeValue(RunIdScope.PropertyName)).Distinct().ShouldHaveSingleItem();
+    }
+
+    /// <summary>The one line saying how the pass settled.</summary>
+    private LogEntry OutcomeLine()
+    {
+        return _logs.WithProperty("Outcome").ShouldHaveSingleItem();
     }
 
     private CacheWarmer BuildWarmer()

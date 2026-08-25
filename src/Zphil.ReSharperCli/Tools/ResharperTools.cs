@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
 using Zphil.ReSharperCli.Discovery;
 using Zphil.ReSharperCli.Formatting;
@@ -22,7 +23,8 @@ internal sealed class ResharperTools(
     InspectService inspectService,
     CleanupService cleanupService,
     CacheResetService cacheResetService,
-    IEnvironment environment)
+    IEnvironment environment,
+    ILogger<ResharperTools> logger)
 {
     internal const string InspectToolName = "resharper_inspect";
     internal const string CleanupToolName = "resharper_cleanup";
@@ -182,13 +184,25 @@ internal sealed class ResharperTools(
         Func<DetailLevel, string> describeReduction)
     {
         int maxChars = ResponseTruncator.ComputeMaxChars(environment);
-        string body = ProgressiveRenderer.Render(
+        ProgressiveRendering rendering = ProgressiveRenderer.Render(
             data,
             format,
             ResponseTruncator.BudgetForBody(maxChars, banner),
             describeReduction);
 
-        return banner + body;
+        // Debug: the level a response settled at is shaping, not caching, and it is already stated in the
+        // response an agent received. What it buys the log is the answer to whether the ladder has ever had to
+        // step down on real results at all — which, from the outside, a mechanism that never fires and one
+        // that is broken cannot be told apart on.
+        logger.LogDebug(
+            "Rendered {ResultType} at {DetailLevel} in {BodyChars} of {MaxChars} characters, {BannerChars} of them banner",
+            typeof(T).Name,
+            rendering.Level,
+            rendering.Text.Length,
+            maxChars,
+            banner.Length);
+
+        return banner + rendering.Text;
     }
 
     /// <summary>

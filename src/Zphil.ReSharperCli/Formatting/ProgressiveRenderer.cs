@@ -1,6 +1,18 @@
 namespace Zphil.ReSharperCli.Formatting;
 
 /// <summary>
+///     A rendering and the <see cref="DetailLevel" /> it settled at.
+/// </summary>
+/// <remarks>
+///     The level is returned rather than logged here, because <c>Formatting/</c> is pure by convention and a
+///     logger threaded into it would be the first exception. It is worth returning at all because whether the
+///     ladder has <em>ever</em> stepped down in the field is not currently knowable: a reduced response says
+///     so to the agent that received it and nowhere else, so the mechanism could be dead and look identical to
+///     one that never had to fire.
+/// </remarks>
+internal sealed record ProgressiveRendering(string Text, DetailLevel Level);
+
+/// <summary>
 ///     Renders structured data at progressively lower <see cref="DetailLevel" />s until the formatted
 ///     output fits a character budget, avoiding a hard mid-response chop. Ported from roz's
 ///     <c>ProgressiveRenderer</c>, with one deliberate deviation: roz reads the budget from a static
@@ -34,16 +46,17 @@ internal static class ProgressiveRenderer
     /// <returns>
     ///     The first level whose rendering fits within <paramref name="maxChars" /> —
     ///     <see cref="DetailLevel.Full" /> verbatim, lower levels including their appended
-    ///     <c>--- DETAIL REDUCED ---</c> note in the fit check. If nothing fits, the smallest rendering plus
-    ///     the note — the char-level truncation failsafe (<c>ResponseTruncator</c>) handles the rest.
+    ///     <c>--- DETAIL REDUCED ---</c> note in the fit check — paired with the level it settled at. If
+    ///     nothing fits, the smallest rendering plus the note — the char-level truncation failsafe
+    ///     (<c>ResponseTruncator</c>) handles the rest.
     /// </returns>
-    public static string Render<T>(
+    public static ProgressiveRendering Render<T>(
         T data,
         Func<T, DetailLevel, string> format,
         int maxChars,
         Func<DetailLevel, string>? describeReduction = null)
     {
-        var describe = describeReduction ?? DefaultReductionDescription;
+        Func<DetailLevel, string> describe = describeReduction ?? DefaultReductionDescription;
 
         string previousOutput = null!;
         var lastTriedLevel = DetailLevel.Full;
@@ -65,13 +78,14 @@ internal static class ProgressiveRenderer
             string candidate = level == DetailLevel.Full
                 ? output
                 : AppendReductionNote(output, level, maxChars, describe);
-            if (candidate.Length <= maxChars) return candidate;
+            if (candidate.Length <= maxChars) return new ProgressiveRendering(candidate, level);
 
             previousOutput = output;
         }
 
         // Nothing fit — return the smallest rendering for the hard-truncation failsafe.
-        return AppendReductionNote(previousOutput, lastTriedLevel, maxChars, describe);
+        return new ProgressiveRendering(
+            AppendReductionNote(previousOutput, lastTriedLevel, maxChars, describe), lastTriedLevel);
     }
 
     private static string DefaultReductionDescription(DetailLevel level)

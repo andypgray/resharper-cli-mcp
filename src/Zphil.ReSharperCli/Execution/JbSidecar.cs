@@ -1,6 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
-using Serilog;
+using Microsoft.Extensions.Logging;
 
 namespace Zphil.ReSharperCli.Execution;
 
@@ -82,7 +82,18 @@ internal static class JbSidecar
     ///     of them may fail the call it runs inside. <paramref name="artifact" /> is how the log names what
     ///     would not go.
     /// </summary>
-    internal static void TryDelete(string solutionPath, string cacheHome, string extension, string artifact)
+    /// <remarks>
+    ///     The logger is a parameter because this class is static by design and its callers are not. Passing
+    ///     theirs in is what keeps the whole server on one logging system: a static <c>Serilog.Log</c> here
+    ///     would bypass the <c>ILogger</c> pipeline, render with no <c>SourceContext</c>, and be invisible to
+    ///     the test suite.
+    /// </remarks>
+    internal static void TryDelete(
+        string solutionPath,
+        string cacheHome,
+        string extension,
+        string artifact,
+        ILogger logger)
     {
         try
         {
@@ -90,7 +101,7 @@ internal static class JbSidecar
         }
         catch (Exception exception) when (FilesystemFailure.Covers(exception))
         {
-            Log.Debug(exception, "Could not clear the {Artifact} for solution {SolutionPath} in cache home {CacheHome}", artifact, solutionPath, cacheHome);
+            logger.LogDebug(exception, "Could not clear the {Artifact} for solution {SolutionPath} in cache home {CacheHome}", artifact, solutionPath, cacheHome);
         }
     }
 

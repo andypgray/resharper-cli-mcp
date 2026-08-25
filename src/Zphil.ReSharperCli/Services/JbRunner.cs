@@ -1,4 +1,5 @@
-using Serilog;
+using System.Diagnostics;
+using Microsoft.Extensions.Logging;
 using Zphil.ReSharperCli.Discovery;
 using Zphil.ReSharperCli.Execution;
 
@@ -45,7 +46,9 @@ internal sealed class JbExitCodeException(string message, int exitCode, string s
 ///         Two entry points, one spawn. <see cref="RunAsync" /> serves a call the user made: it queues for
 ///         the lock and throws on failure. <see cref="TryRunAsync" /> serves speculative work — today only
 ///         <see cref="CacheWarmer" /> — and does the opposite at every turn: it skips rather than queues, and
-///         reports rather than throws. Both go through <see cref="SpawnAsync" />, which keeps this class the
+///         reports rather than throws. What it reports is a <see cref="SpeculativeRunOutcome" /> naming
+///         <em>which</em> of those it did, so a caller summarising a pass cannot contradict the run lines
+///         underneath it. Both go through <see cref="SpawnAsync" />, which keeps this class the
 ///         sole place a <c>jb</c> process starts. Which of the two wins when they collide is
 ///         <see cref="JbRunYield" />'s to say, not this class's: the rule belongs to every caller the user is
 ///         waiting on, and a cache reset is one that runs no <c>jb</c> at all.
@@ -68,9 +71,15 @@ internal sealed class JbRunner(
     JbRunLock runLock,
     JbRunYield runYield,
     CacheTransplanter transplanter,
-    TimeSpan runTimeout)
+    TimeSpan runTimeout,
+    ILogger<JbRunner> logger)
 {
     private const int StandardErrorTailLength = 2000;
+
+    /// <summary>How the two entry points name themselves in the run lines below.</summary>
+    private const string ForACall = "for a call";
+
+    private const string Speculative = "speculative";
 
     /// <summary>
     ///     Raised when a call the user made hit the run cap, carrying the configuration that run used. A
@@ -105,18 +114,24 @@ internal sealed class JbRunner(
             // never pre-warming.
             using IDisposable foreground = runYield.EnterForeground();
 
+            // Timed here rather than read back from the lock, because what the run line reports is what this
+            // call waited — the reclaim above it included, since standing a pre-warm down costs the reap of a
+            // killed jb tree and that time is just as much the caller's as the queue is.
+            var queued = Stopwatch.StartNew();
+
             // Both scoped inside this try on purpose, so the lease is released and the claim stood down
             // before the finally below announces a timeout. Announce while still holding either and the
             // re-armed pass would settle as a skip — the re-arm would buy nothing, silently. Disposal is the
             // reverse of declaration, so the lease goes first and the count outlives it by a hair.
             using IDisposable runLease = await runLock.AcquireAsync(config.SolutionPath, config.CacheHome, cancellationToken);
+            TimeSpan queueWait = queued.Elapsed;
 
-            await transplanter.TryTransplantAsync(config, cancellationToken);
+            bool seeded = await transplanter.TryTransplantAsync(config, cancellationToken);
 
             ProcessResult result;
             try
             {
-                result = await SpawnAsync(config, arguments, cancellationToken);
+                result = await SpawnAsync(config, arguments, queueWait, ForACall, seeded, cancellationToken);
             }
             catch (ProcessTimeoutException exception)
             {
@@ -141,27 +156,35 @@ internal sealed class JbRunner(
 
     /// <summary>
     ///     Run <c>jb</c> speculatively: only if no real call is in flight in this process, only if the cache
-    ///     generation is free right now, and only until a real call wants it. Returns <see langword="null" />
-    ///     when the run did not happen or was given up — neither is an error — and otherwise the result,
-    ///     non-zero exit codes included, because background work has no channel to report a failure through
-    ///     and its caller decides what a failure means.
+    ///     generation is free right now, and only until a real call wants it. Names how the pass ended rather
+    ///     than reporting a result, because no ending here is an error and the caller's whole job is to tell
+    ///     them apart — a run given up after minutes of analysis is not the run that never started. A non-zero
+    ///     exit is one of those endings rather than a throw, since background work has no channel to raise a
+    ///     failure through and its caller decides what a failure means.
     /// </summary>
-    public async Task<ProcessResult?> TryRunAsync(
+    public async Task<SpeculativeRunOutcome> TryRunAsync(
         ResolvedConfig config,
         IReadOnlyList<string> arguments,
         CancellationToken cancellationToken)
     {
         // Claimed before the lease is taken: the claim is what a caller the user is waiting on cancels, and
-        // a null answer means one is already in flight.
+        // no claim means one is already in flight.
         using JbRunYield.SpeculativeRun? speculative = runYield.TryEnterSpeculative(cancellationToken);
-        if (speculative is null) return null;
+        if (speculative is null) return SpeculativeRunOutcome.NotStarted;
 
         try
         {
             using IDisposable? runLease = runLock.TryAcquire(config.SolutionPath, config.CacheHome);
-            if (runLease is null) return null;
+            if (runLease is null)
+            {
+                logger.LogDebug(
+                    "Skipping speculative work on {SolutionPath}: its ReSharper cache generation is already in use",
+                    config.SolutionPath);
 
-            await transplanter.TryTransplantAsync(config, speculative.Token);
+                return SpeculativeRunOutcome.NotStarted;
+            }
+
+            bool seeded = await transplanter.TryTransplantAsync(config, speculative.Token);
 
             // ProcessRunner calls process.Start() before it ever looks at its token, so a pre-warm cancelled
             // in this window would fork a jb only to tree-kill and reap it — holding, for those seconds, the
@@ -169,22 +192,30 @@ internal sealed class JbRunner(
             // than once per process.
             speculative.Token.ThrowIfCancellationRequested();
 
-            return await SpawnAsync(config, arguments, speculative.Token);
+            // Zero queue wait by construction: TryAcquire does not wait, so a lease in hand was uncontended.
+            ProcessResult result = await SpawnAsync(
+                config, arguments, TimeSpan.Zero, Speculative, seeded, speculative.Token);
+
+            return result.ExitCode == 0 ? SpeculativeRunOutcome.Completed : SpeculativeRunOutcome.Failed;
         }
         catch (ProcessTimeoutException)
         {
-            // The cap is a foreground protection: it is there so a call the user is waiting on cannot hang
-            // on a stuck jb. Nobody is waiting on this one, and a cold solution big enough to exceed the cap
-            // is precisely the solution pre-warming exists for — so running out of budget here is an
-            // ordinary skip, not the "unexpected failure" the warmer would otherwise log a warning for.
-            return null;
+            // Not a failure, and the exception type is what says so: ProcessRunner raises this one only after
+            // killing the tree at the cap, while a jb that decided something went wrong exits non-zero above.
+            // The cap is a foreground protection — it is there so a call the user is waiting on cannot hang on
+            // a stuck jb — and nobody is waiting on this one, so a cold solution big enough to exceed it is
+            // precisely the solution pre-warming exists for. It leaves the generation part-built rather than
+            // untouched, which is why it is also not the ending that reports nothing happened.
+            return SpeculativeRunOutcome.Capped;
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             // A caller the user is waiting on took over. ProcessRunner surfaces that and our own caller's
             // cancellation identically — an OCE on the token it was handed — so this filter is the only
-            // discriminator.
-            return null;
+            // discriminator. It catches the two reclaims that land before jb starts as well as the one that
+            // kills it mid-run, and reports all three the same way on purpose: JbRunYield records every
+            // reclaim at Information, and a transplant can copy for minutes before the guard above is reached.
+            return SpeculativeRunOutcome.StoodDown;
         }
     }
 
@@ -195,18 +226,78 @@ internal sealed class JbRunner(
     ///     than relying on one call site remembering to. The same exit discharges any cold tombstone a reset
     ///     left: the cache this run rebuilt is the solution's own, so there is no longer a reset to protect.
     /// </summary>
+    /// <remarks>
+    ///     It is also where the pair of <c>Information</c> lines a <c>jb</c> run costs the log are written,
+    ///     one before and one after, and both halves earn their place. The opening line is what makes a run
+    ///     legible <em>while</em> it is happening: a <c>jb</c> run is minutes of silence, and a run that is
+    ///     killed or never returns would otherwise leave nothing at all behind — the exact "starts, never
+    ///     ends" shape the pre-warm's own logging used to have. It also carries the two facts that predict the
+    ///     duration about to follow, the cache state and the queue wait, which are unrecoverable afterwards.
+    ///     Placed here rather than in <see cref="ProcessRunner" /> because this is the frame that knows a run
+    ///     from a version probe, and one level down they are the same spawn.
+    /// </remarks>
     private async Task<ProcessResult> SpawnAsync(
         ResolvedConfig config,
         IReadOnlyList<string> arguments,
+        TimeSpan queueWait,
+        string runKind,
+        bool seeded,
         CancellationToken cancellationToken)
     {
-        ProcessResult result = await processRunner.RunAsync(
-            config.JbExecutablePath, arguments, runTimeout, cancellationToken);
+        string subcommand = arguments[0];
+        JbCacheState cache = JbCacheState.Read(config.SolutionPath, config.CacheHome, seeded, logger);
+
+        logger.LogInformation(
+            "jb {Subcommand} starting on {SolutionPath} ({RunKind}): {CacheState}, queued {QueueWaitMs} ms",
+            subcommand,
+            config.SolutionPath,
+            runKind,
+            cache.Summary,
+            (long)queueWait.TotalMilliseconds);
+
+        // Guarded because it is the one reading here that walks the whole tree, and the tree is hundreds of
+        // megabytes.
+        if (logger.IsEnabled(LogLevel.Debug) && cache.TryMeasure(config.CacheHome) is { } measured)
+            logger.LogDebug(
+                "Its cache generations hold {CacheBytes} bytes across {CacheFiles} files",
+                measured.Bytes,
+                measured.Files);
+
+        var elapsed = Stopwatch.StartNew();
+        ProcessResult result;
+        try
+        {
+            result = await processRunner.RunAsync(
+                config.JbExecutablePath, arguments, runTimeout, cancellationToken);
+        }
+        catch (ProcessTimeoutException)
+        {
+            logger.LogInformation(
+                "jb {Subcommand} was killed at the {RunCap} cap after {ElapsedMs} ms",
+                subcommand,
+                ProcessRunner.FormatDuration(runTimeout),
+                elapsed.ElapsedMilliseconds);
+
+            throw;
+        }
+        catch (OperationCanceledException)
+        {
+            logger.LogInformation(
+                "jb {Subcommand} was cancelled after {ElapsedMs} ms", subcommand, elapsed.ElapsedMilliseconds);
+
+            throw;
+        }
+
+        logger.LogInformation(
+            "jb {Subcommand} exited with code {ExitCode} after {ElapsedMs} ms",
+            subcommand,
+            result.ExitCode,
+            elapsed.ElapsedMilliseconds);
 
         if (result.ExitCode != 0) return result;
 
-        JbWarmMarker.Stamp(config.SolutionPath, config.CacheHome);
-        JbColdTombstone.Clear(config.SolutionPath, config.CacheHome);
+        JbWarmMarker.Stamp(config.SolutionPath, config.CacheHome, logger);
+        JbColdTombstone.Clear(config.SolutionPath, config.CacheHome, logger);
 
         return result;
     }
@@ -243,7 +334,7 @@ internal sealed class JbRunner(
         }
         catch (Exception exception)
         {
-            Log.Warning(exception, "A listener for the run-timed-out signal threw; the timeout itself is still reported to the caller");
+            logger.LogWarning(exception, "A listener for the run-timed-out signal threw; the timeout itself is still reported to the caller");
         }
     }
 

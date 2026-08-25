@@ -1,4 +1,4 @@
-using Serilog;
+using Microsoft.Extensions.Logging;
 
 namespace Zphil.ReSharperCli.Execution;
 
@@ -43,7 +43,7 @@ internal static class JbColdTombstone
     ///     Record that this solution's cache has just been dropped on purpose. The content carries nothing;
     ///     existence is the whole statement.
     /// </summary>
-    internal static void Write(string solutionPath, string cacheHome)
+    internal static void Write(string solutionPath, string cacheHome, ILogger logger)
     {
         try
         {
@@ -51,7 +51,7 @@ internal static class JbColdTombstone
         }
         catch (Exception exception) when (FilesystemFailure.Covers(exception))
         {
-            Log.Warning(
+            logger.LogWarning(
                 exception,
                 "Could not record that the cache for solution {SolutionPath} in cache home {CacheHome} was reset; a later run may seed it from another copy of this solution instead of rebuilding it",
                 solutionPath,
@@ -64,7 +64,7 @@ internal static class JbColdTombstone
     ///     answers <see langword="true" />: the caller's only use for a <see langword="false" /> is to start
     ///     copying, and it must not do that on a question this could not answer.
     /// </summary>
-    internal static bool Exists(string solutionPath, string cacheHome)
+    internal static bool Exists(string solutionPath, string cacheHome, ILogger logger)
     {
         try
         {
@@ -72,7 +72,7 @@ internal static class JbColdTombstone
         }
         catch (Exception exception) when (FilesystemFailure.Covers(exception))
         {
-            Log.Debug(exception, "Could not read the cache reset record for solution {SolutionPath} in cache home {CacheHome}", solutionPath, cacheHome);
+            logger.LogDebug(exception, "Could not read the cache reset record for solution {SolutionPath} in cache home {CacheHome}", solutionPath, cacheHome);
             return true;
         }
     }
@@ -82,8 +82,8 @@ internal static class JbColdTombstone
     ///     this solution's own and there is nothing left to protect. Failing to clear it costs a later
     ///     optimisation and nothing else, which is the safe direction, so it goes no louder than debug.
     /// </summary>
-    internal static void Clear(string solutionPath, string cacheHome)
+    internal static void Clear(string solutionPath, string cacheHome, ILogger logger)
     {
-        JbSidecar.TryDelete(solutionPath, cacheHome, Extension, "cache reset record");
+        JbSidecar.TryDelete(solutionPath, cacheHome, Extension, "cache reset record", logger);
     }
 }

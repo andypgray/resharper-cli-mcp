@@ -299,7 +299,7 @@ public sealed class IssueMarkdownFormatterTests
         IReadOnlyList<InspectIssue> issues = SolutionWideRepetition();
 
         // Act
-        var lengths = Enum.GetValues<DetailLevel>()
+        List<int> lengths = Enum.GetValues<DetailLevel>()
             .Select(level => IssueMarkdownFormatter.Format(issues, level).Length)
             .ToList();
 
@@ -318,7 +318,7 @@ public sealed class IssueMarkdownFormatterTests
 
         // Act
         string result = ProgressiveRenderer.Render(
-            issues, IssueMarkdownFormatter.Format, maxChars, IssueMarkdownFormatter.DescribeReduction);
+            issues, IssueMarkdownFormatter.Format, maxChars, IssueMarkdownFormatter.DescribeReduction).Text;
 
         // Assert — this pins the size arithmetic: if a format change pushes High past the budget, this
         // fails loudly instead of silently degrading every solution-wide run to Medium.
@@ -340,7 +340,7 @@ public sealed class IssueMarkdownFormatterTests
     public void FormatLineRanges_CollapsesRunsAndSortsAscending(string input, string expected)
     {
         // Arrange — string in, string out: the internal InspectIssue never reaches the public signature.
-        var lines = input.Split(',').Select(int.Parse);
+        IEnumerable<int> lines = input.Split(',').Select(int.Parse);
 
         // Act / Assert
         IssueMarkdownFormatter.FormatLineRanges(lines).ShouldBe(expected);
@@ -350,7 +350,7 @@ public sealed class IssueMarkdownFormatterTests
     public void FormatLineRanges_MoreRangesThanTheCap_ListsTwelveThenCountsTheRest()
     {
         // Arrange — 30 alternating lines never collapse, so each is its own range.
-        var lines = Enumerable.Range(0, 30).Select(i => 1 + i * 2).ToList();
+        List<int> lines = Enumerable.Range(0, 30).Select(i => 1 + i * 2).ToList();
 
         // Act
         string result = IssueMarkdownFormatter.FormatLineRanges(lines);

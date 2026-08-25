@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 using Shouldly;
@@ -15,7 +16,8 @@ namespace Zphil.ReSharperCli.Tests.Services;
 ///     error, bounding how much of a failed run's standard error comes back with it, and stamping the warm
 ///     marker on every run that succeeds. Also the shape of the speculative entry point — it skips instead
 ///     of queueing, and reports instead of throwing — which is what lets background work never affect a
-///     call the user made.
+///     call the user made, and the ending it names for each of those, since a caller that cannot tell a run
+///     given up after minutes from one that never started will say the wrong one out loud.
 /// </summary>
 public sealed class JbRunnerTests : IDisposable
 {
@@ -25,7 +27,7 @@ public sealed class JbRunnerTests : IDisposable
     private readonly ResolvedConfig _config;
     private readonly FakeEnvironment _environment = new();
     private readonly IProcessRunner _processRunner = Substitute.For<IProcessRunner>();
-    private readonly JbRunLock _runLock = new(JbRunTimeout.Default);
+    private readonly JbRunLock _runLock = JbRunners.Lock();
     private readonly JbRunner _runner;
 
     public JbRunnerTests()
@@ -95,7 +97,7 @@ public sealed class JbRunnerTests : IDisposable
         await _runner.RunAsync(_config, ["inspectcode", _config.SolutionPath], Ct);
 
         // Assert
-        JbWarmMarker.IsFreshWithin(_config.SolutionPath, _config.CacheHome, RecentlyEnough).ShouldBeTrue();
+        JbWarmMarker.IsFreshWithin(_config.SolutionPath, _config.CacheHome, RecentlyEnough, NullLogger.Instance).ShouldBeTrue();
     }
 
     [Fact]
@@ -108,7 +110,7 @@ public sealed class JbRunnerTests : IDisposable
         await Should.ThrowAsync<UserErrorException>(() => _runner.RunAsync(_config, ["inspectcode", _config.SolutionPath], Ct));
 
         // Assert
-        JbWarmMarker.IsFreshWithin(_config.SolutionPath, _config.CacheHome, RecentlyEnough).ShouldBeFalse();
+        JbWarmMarker.IsFreshWithin(_config.SolutionPath, _config.CacheHome, RecentlyEnough, NullLogger.Instance).ShouldBeFalse();
     }
 
     [Fact]
@@ -116,14 +118,14 @@ public sealed class JbRunnerTests : IDisposable
     {
         // Arrange — a reset promises the next run is cold, and this is that run: the cache it just built is
         // this solution's own, so the promise is kept and there is nothing left to hold anything back from.
-        JbColdTombstone.Write(_config.SolutionPath, _config.CacheHome);
+        JbColdTombstone.Write(_config.SolutionPath, _config.CacheHome, NullLogger.Instance);
         StubExit(0, string.Empty);
 
         // Act
         await _runner.RunAsync(_config, ["inspectcode", _config.SolutionPath], Ct);
 
         // Assert
-        JbColdTombstone.Exists(_config.SolutionPath, _config.CacheHome).ShouldBeFalse();
+        JbColdTombstone.Exists(_config.SolutionPath, _config.CacheHome, NullLogger.Instance).ShouldBeFalse();
     }
 
     [Fact]
@@ -131,14 +133,14 @@ public sealed class JbRunnerTests : IDisposable
     {
         // Arrange — a jb that exited non-zero may have built nothing, so the reset's promise still stands and
         // the next attempt must not be allowed to shortcut it.
-        JbColdTombstone.Write(_config.SolutionPath, _config.CacheHome);
+        JbColdTombstone.Write(_config.SolutionPath, _config.CacheHome, NullLogger.Instance);
         StubExit(2, "boom");
 
         // Act
         await Should.ThrowAsync<UserErrorException>(() => _runner.RunAsync(_config, ["inspectcode", _config.SolutionPath], Ct));
 
         // Assert
-        JbColdTombstone.Exists(_config.SolutionPath, _config.CacheHome).ShouldBeTrue();
+        JbColdTombstone.Exists(_config.SolutionPath, _config.CacheHome, NullLogger.Instance).ShouldBeTrue();
     }
 
     [Fact]
@@ -148,12 +150,11 @@ public sealed class JbRunnerTests : IDisposable
         StubExit(0, string.Empty);
 
         // Act
-        var result = await _runner.TryRunAsync(_config, ["inspectcode", _config.SolutionPath], Ct);
+        SpeculativeRunOutcome result = await _runner.TryRunAsync(_config, ["inspectcode", _config.SolutionPath], Ct);
 
         // Assert
-        result.ShouldNotBeNull();
-        result.Value.ExitCode.ShouldBe(0);
-        JbWarmMarker.IsFreshWithin(_config.SolutionPath, _config.CacheHome, RecentlyEnough).ShouldBeTrue();
+        result.ShouldBe(SpeculativeRunOutcome.Completed);
+        JbWarmMarker.IsFreshWithin(_config.SolutionPath, _config.CacheHome, RecentlyEnough, NullLogger.Instance).ShouldBeTrue();
     }
 
     [Fact]
@@ -225,51 +226,53 @@ public sealed class JbRunnerTests : IDisposable
     }
 
     [Fact]
-    public async Task TryRunAsync_RunHitsTheCap_SkipsInsteadOfReportingAFailure()
+    public async Task TryRunAsync_RunHitsTheCap_ReportsCappedRatherThanAFailureOrASkip()
     {
         // Arrange — the cap protects a caller who is waiting, and nobody waits on speculative work. A big
         // cold solution is both the likeliest to exceed it and the one pre-warming exists for, so treating
-        // that as a fault would make the warmer log a warning for its own best-case workload.
+        // that as a fault would make the warmer log a warning for its own best-case workload. Nor is it the
+        // word for having done nothing: a run killed at the cap spent the whole cap building this cache.
         StubTimeout();
 
         // Act
-        var result = await _runner.TryRunAsync(_config, ["inspectcode", _config.SolutionPath], Ct);
+        SpeculativeRunOutcome result = await _runner.TryRunAsync(_config, ["inspectcode", _config.SolutionPath], Ct);
 
         // Assert
-        result.ShouldBeNull();
-        JbWarmMarker.IsFreshWithin(_config.SolutionPath, _config.CacheHome, RecentlyEnough).ShouldBeFalse();
+        result.ShouldBe(SpeculativeRunOutcome.Capped);
+        JbWarmMarker.IsFreshWithin(_config.SolutionPath, _config.CacheHome, RecentlyEnough, NullLogger.Instance).ShouldBeFalse();
     }
 
     [Fact]
-    public async Task TryRunAsync_CacheGenerationAlreadyTaken_SkipsWithoutSpawningJb()
+    public async Task TryRunAsync_CacheGenerationAlreadyTaken_ReportsNotStartedWithoutSpawningJb()
     {
         // Arrange — a lease held by someone else, standing in for a real call or another server process.
         using IDisposable? held = _runLock.TryAcquire(_config.SolutionPath, _config.CacheHome);
         held.ShouldNotBeNull();
 
         // Act
-        var result = await _runner.TryRunAsync(_config, ["inspectcode", _config.SolutionPath], Ct);
+        SpeculativeRunOutcome result = await _runner.TryRunAsync(_config, ["inspectcode", _config.SolutionPath], Ct);
 
         // Assert — not merely "did not wait": speculative work that cannot prove exclusivity never starts jb
-        // at all, because a second jb on one cache generation forks a cold one.
-        result.ShouldBeNull();
+        // at all, because a second jb on one cache generation forks a cold one. This is one of the two
+        // endings that genuinely cost nothing, and the only kind the summary may call a skip.
+        result.ShouldBe(SpeculativeRunOutcome.NotStarted);
         await _processRunner.DidNotReceive().RunAsync(
             Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task TryRunAsync_NonZeroExit_ReportsTheResultInsteadOfThrowing()
+    public async Task TryRunAsync_NonZeroExit_ReportsFailedInsteadOfThrowing()
     {
-        // Arrange — background work has no channel to raise an error through, so its caller decides.
+        // Arrange — background work has no channel to raise an error through, so its caller decides. The exit
+        // code itself is nobody's to read: the spawn already turned it into the stamp-or-not decision.
         StubExit(4, "something went wrong");
 
         // Act
-        var result = await _runner.TryRunAsync(_config, ["inspectcode", _config.SolutionPath], Ct);
+        SpeculativeRunOutcome result = await _runner.TryRunAsync(_config, ["inspectcode", _config.SolutionPath], Ct);
 
         // Assert
-        result.ShouldNotBeNull();
-        result.Value.ExitCode.ShouldBe(4);
-        JbWarmMarker.IsFreshWithin(_config.SolutionPath, _config.CacheHome, RecentlyEnough).ShouldBeFalse();
+        result.ShouldBe(SpeculativeRunOutcome.Failed);
+        JbWarmMarker.IsFreshWithin(_config.SolutionPath, _config.CacheHome, RecentlyEnough, NullLogger.Instance).ShouldBeFalse();
     }
 
     [Fact]
@@ -298,15 +301,14 @@ public sealed class JbRunnerTests : IDisposable
         await _runner.RunAsync(_config, ["inspectcode", _config.SolutionPath], Ct);
 
         // Act
-        var result = await _runner.TryRunAsync(_config, ["inspectcode", _config.SolutionPath], Ct);
+        SpeculativeRunOutcome result = await _runner.TryRunAsync(_config, ["inspectcode", _config.SolutionPath], Ct);
 
         // Assert
-        result.ShouldNotBeNull();
-        result.Value.ExitCode.ShouldBe(0);
+        result.ShouldBe(SpeculativeRunOutcome.Completed);
     }
 
     [Fact]
-    public async Task TryRunAsync_ForegroundRunStillInFlight_SkipsEvenThoughItsOwnGenerationIsFree()
+    public async Task TryRunAsync_ForegroundRunStillInFlight_NeverStartsEvenThoughItsOwnGenerationIsFree()
     {
         // Arrange — a *second* solution, so the run lock cannot be the explanation: its cache generation is
         // free throughout, and the in-flight count is the only thing left that could stop this.
@@ -315,14 +317,14 @@ public sealed class JbRunnerTests : IDisposable
         TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
         StubBlocking(started, release);
 
-        var foreground = _runner.RunAsync(_config, ["inspectcode", _config.SolutionPath], Ct);
+        Task<ProcessResult> foreground = _runner.RunAsync(_config, ["inspectcode", _config.SolutionPath], Ct);
         await started.Task.WaitAsync(Generous, Ct);
 
         // Act
-        var result = await _runner.TryRunAsync(other, ["inspectcode", other.SolutionPath], Ct).WaitAsync(Generous, Ct);
+        SpeculativeRunOutcome result = await _runner.TryRunAsync(other, ["inspectcode", other.SolutionPath], Ct).WaitAsync(Generous, Ct);
 
         // Assert
-        result.ShouldBeNull();
+        result.ShouldBe(SpeculativeRunOutcome.NotStarted);
 
         release.SetResult();
         await foreground.WaitAsync(Generous, Ct);
@@ -375,10 +377,10 @@ public sealed class JbRunnerTests : IDisposable
         _runner.ForegroundRunTimedOut += announced.Add;
 
         // Act
-        var result = await _runner.TryRunAsync(_config, ["inspectcode", _config.SolutionPath], Ct);
+        SpeculativeRunOutcome result = await _runner.TryRunAsync(_config, ["inspectcode", _config.SolutionPath], Ct);
 
         // Assert
-        result.ShouldBeNull();
+        result.ShouldBe(SpeculativeRunOutcome.Capped);
         announced.ShouldBeEmpty();
     }
 
@@ -391,7 +393,7 @@ public sealed class JbRunnerTests : IDisposable
         // settles as a skip and the whole feature quietly buys nothing.
         StubTimeout();
         var leaseWasFree = false;
-        Task<ProcessResult?>? speculative = null;
+        Task<SpeculativeRunOutcome>? speculative = null;
 
         _runner.ForegroundRunTimedOut += timedOut =>
         {
@@ -408,8 +410,8 @@ public sealed class JbRunnerTests : IDisposable
 
         // Assert
         leaseWasFree.ShouldBeTrue();
-        var reArmed = speculative.ShouldNotBeNull();
-        (await reArmed.WaitAsync(Generous, Ct)).ShouldNotBeNull();
+        Task<SpeculativeRunOutcome> reArmed = speculative.ShouldNotBeNull();
+        (await reArmed.WaitAsync(Generous, Ct)).ShouldBe(SpeculativeRunOutcome.Completed);
     }
 
     [Fact]

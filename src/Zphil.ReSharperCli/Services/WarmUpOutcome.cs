@@ -21,18 +21,31 @@ internal enum WarmUpOutcome
     AlreadyWarm,
 
     /// <summary>
-    ///     The pre-warm stood aside rather than fork a cold cache generation: either something already held
-    ///     it, or a real call in this process reclaimed it mid-run. The two are one outcome because they are
-    ///     one decision — the cache belongs to whoever actually needs it.
+    ///     The pre-warm stood aside rather than fork a cold cache generation, without ever starting
+    ///     <c>jb</c>: a call the user was waiting on was already in flight, or another process held the
+    ///     generation. The two are one outcome because they are one decision — the cache belongs to whoever
+    ///     actually needs it — and both cost nothing, which is what keeps this word honest.
     /// </summary>
     Skipped,
 
     /// <summary>The pre-warm ran <c>jb</c> to a clean exit; the cache generation is warm.</summary>
     Warmed,
 
+    /// <summary>
+    ///     The pass ran out the whole run cap and its <c>jb</c> was killed. No warm marker, so the next call
+    ///     is not treated as warm, but the generation is substantially further along than it was — which is
+    ///     the normal shape of a pre-warm on a large cold solution, and why it is not a
+    ///     <see cref="Skipped" />.
+    /// </summary>
+    Capped,
+
     /// <summary><c>jb</c> exited non-zero, or the pre-warm threw. The session simply pays the cold cost as before.</summary>
     Failed,
 
-    /// <summary>The server shut down while the pre-warm was still working.</summary>
+    /// <summary>
+    ///     A <c>jb</c> that was already working was stopped: the server shut down, or a caller the user was
+    ///     waiting on took the cache generation back. One word for both because both are a running pass
+    ///     cancelled from outside, and the log line naming the cancellation is written either way.
+    /// </summary>
     Cancelled
 }

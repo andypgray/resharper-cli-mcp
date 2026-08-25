@@ -1,6 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
+using Serilog.Events;
 using Zphil.ReSharperCli.Discovery;
 using Zphil.ReSharperCli.Execution;
 using Zphil.ReSharperCli.Infrastructure;
@@ -24,8 +26,9 @@ if (!Console.IsInputRedirected)
 }
 
 // A real MCP client launched us over piped stdio. Bring up the file logger and crash handlers
-// before host building so a catastrophic startup failure still lands in the post-mortem log.
-SerilogConfiguration.InitializeFileLogger();
+// before host building so a catastrophic startup failure still lands in the post-mortem log. The
+// resolved level is kept for the startup fingerprint, which must report the sink's actual level.
+LogEventLevel logLevel = SerilogConfiguration.InitializeFileLogger();
 SerilogConfiguration.RegisterCrashHandlers();
 
 HostApplicationBuilder builder = Host.CreateApplicationBuilder(args);
@@ -40,7 +43,8 @@ builder.Services.AddSingleton<IEnvironment, SystemEnvironment>();
 builder.Services.AddSingleton<IProcessRunner, ProcessRunner>();
 builder.Services.AddSingleton<JbLocator>();
 builder.Services.AddSingleton<ConfigResolver>();
-builder.Services.AddSingleton(_ => new JbRunLock(runTimeout));
+builder.Services.AddSingleton(provider => new JbRunLock(
+    runTimeout, provider.GetRequiredService<ILogger<JbRunLock>>()));
 
 // Shared on purpose, like the lock and for the same reason: the lock decides who waits, the yield decides
 // who is made to wait, and a second instance of either would arbitrate against nothing.
@@ -55,10 +59,20 @@ builder.Services.AddSingleton(provider => new JbRunner(
     provider.GetRequiredService<JbRunLock>(),
     provider.GetRequiredService<JbRunYield>(),
     provider.GetRequiredService<CacheTransplanter>(),
-    runTimeout));
+    runTimeout,
+    provider.GetRequiredService<ILogger<JbRunner>>()));
 builder.Services.AddSingleton<InspectService>();
 builder.Services.AddSingleton<CleanupService>();
 builder.Services.AddSingleton<CacheResetService>();
+
+// First hosted service registered, so its fingerprint is the session's first line and — services stopping in
+// reverse — its uptime line is the last, written after the warmer below has reported whatever it drained.
+builder.Services.AddHostedService(provider => new ServerLifecycle(
+    provider.GetRequiredService<ConfigResolver>(),
+    provider.GetRequiredService<IEnvironment>(),
+    runTimeout,
+    logLevel,
+    provider.GetRequiredService<ILogger<ServerLifecycle>>()));
 
 // The factory overload is required: the generic AddHostedService<T> would build a *second* CacheWarmer, and
 // the one whose run has to be drained at shutdown is the one the notification handler below started.

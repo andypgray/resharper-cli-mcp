@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using Microsoft.Extensions.Logging;
+using ModelContextProtocol;
 using ModelContextProtocol.Server;
 using Zphil.ReSharperCli.Discovery;
 using Zphil.ReSharperCli.Formatting;
@@ -99,6 +100,7 @@ internal sealed class ResharperTools(
             + "report=Markdown for a cheap verdict in the response and every finding in the file.")]
         InspectDetail detail = InspectDetail.Full,
         [Description(SolutionPathDescription)] string? solutionPath = null,
+        IProgress<ProgressNotificationValue>? progress = null,
         CancellationToken cancellationToken = default)
     {
         // First, ahead of the run: this is the one argument whose translation can fail, and a failure here
@@ -111,7 +113,8 @@ internal sealed class ResharperTools(
         // this tool would report "No issues found." for a scan that never looked at the files asked for.
         IReadOnlyList<string>? scope = FilePathList.Split(files, config.SolutionDirectory);
 
-        IReadOnlyList<InspectIssue> issues = await inspectService.RunAsync(config, scope, severity, cancellationToken);
+        IReadOnlyList<InspectIssue> issues = await inspectService.RunAsync(
+            config, scope, severity, cancellationToken, ProgressSink(progress));
 
         // The Full rendering is both the report file's body and the ladder's first attempt at the default
         // detail; render it at most once and hand both the same string.
@@ -139,6 +142,42 @@ internal sealed class ResharperTools(
             (data, level) => level == DetailLevel.Full ? RenderFull() : IssueMarkdownFormatter.Format(data, level),
             level => IssueMarkdownFormatter.DescribeReduction(level, written is { Failure: null }, level == cap),
             cap);
+    }
+
+    /// <summary>
+    ///     Turn the SDK's progress channel into the plain string sink the services take, or
+    ///     <see langword="null" /> when there is no channel at all. The one place in this server where a run's
+    ///     advance becomes an MCP notification, and the reason <c>Services/</c> and <c>Execution/</c> import no
+    ///     MCP types.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         The SDK binds this parameter itself and keeps it out of the advertised schema, handing
+    ///         <c>NullProgress.Instance</c> when the client sent no progress token — so a client that does not
+    ///         ask for progress silently gets none, and nothing here has to know which kind it is talking to.
+    ///         Not knowing is worth the handful of discarded messages: the heartbeat runs either way, which is
+    ///         what leaves <c>JbRunProgress</c> with a file count to give the timeout message even for a client
+    ///         that never asked to watch.
+    ///     </para>
+    ///     <para>
+    ///         The counter is this call's own and only ever rises, which is the one thing the protocol asks of
+    ///         <c>progress</c>. It counts notifications rather than files on purpose: <c>jb</c>'s two sweeps
+    ///         report different file totals for the same solution, so a file-derived counter would fall back to
+    ///         zero halfway through a run. There is deliberately no <c>total</c> — see
+    ///         <see cref="RunProgressFormatter" />.
+    ///     </para>
+    /// </remarks>
+    private static Action<string>? ProgressSink(IProgress<ProgressNotificationValue>? progress)
+    {
+        if (progress is null) return null;
+
+        var sent = 0;
+
+        return message => progress.Report(new ProgressNotificationValue
+        {
+            Progress = Interlocked.Increment(ref sent),
+            Message = message
+        });
     }
 
     /// <summary>
@@ -207,6 +246,7 @@ internal sealed class ResharperTools(
         [Description("ReSharper cleanup profile name. Defaults to the profile the solution declares, else full cleanup.")]
         string? profile = null,
         [Description(SolutionPathDescription)] string? solutionPath = null,
+        IProgress<ProgressNotificationValue>? progress = null,
         CancellationToken cancellationToken = default)
     {
         if (files is null || files.Length == 0) throw new UserErrorException("At least one file must be specified.");
@@ -226,7 +266,8 @@ internal sealed class ResharperTools(
         // was going to fail — the bar a tool that rewrites files has to clear.
         IReadOnlyList<string> paths = FilePathList.Split(files, config.SolutionDirectory);
 
-        CleanupOutcome outcome = await cleanupService.RunAsync(config, paths, profile, cancellationToken);
+        CleanupOutcome outcome = await cleanupService.RunAsync(
+            config, paths, profile, cancellationToken, ProgressSink(progress));
 
         // No detail parameter here, though the plumbing is shared: what this ladder reduces is a status
         // line per file, over the list the caller supplied and can therefore already shorten itself.
@@ -247,11 +288,15 @@ internal sealed class ResharperTools(
     [Description(ResetCacheDescription)]
     public async Task<string> ResetCacheAsync(
         [Description(SolutionPathDescription)] string? solutionPath = null,
+        IProgress<ProgressNotificationValue>? progress = null,
         CancellationToken cancellationToken = default)
     {
         ResolvedConfig config = await configResolver.ResolveAsync(solutionPath, cancellationToken);
 
-        CacheResetOutcome outcome = await cacheResetService.RunAsync(config, cancellationToken);
+        // The one thing this tool can be slow at is queueing behind another session's jb, and it spawns no
+        // process of its own to stream — so that wait is the whole of what there is to report.
+        CacheResetOutcome outcome = await cacheResetService.RunAsync(
+            config, cancellationToken, ProgressSink(progress));
 
         // No banner and no reduction ladder, unlike the two tools above. The config warnings both describe
         // settings that shape a jb run, and this call makes none; the ladder is answered on the formatter.

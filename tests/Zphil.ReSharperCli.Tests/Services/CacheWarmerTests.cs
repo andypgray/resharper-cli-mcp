@@ -586,14 +586,15 @@ public sealed class CacheWarmerTests : IDisposable
             string fileName,
             IReadOnlyList<string> arguments,
             TimeSpan timeout,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            Action<string>? onOutputLine = null)
         {
             Interlocked.Increment(ref _calls);
 
-            if (arguments.Contains("--version"))
+            if (JbStubs.IsVersionProbe(arguments))
                 return JbMissing
                     ? new ProcessResult(1, string.Empty, "jb: command not found")
-                    : new ProcessResult(0, "Version: 2026.1.2", string.Empty);
+                    : JbStubs.VersionProbeAnswer;
 
             int runNumber;
             lock (_runs)
@@ -608,21 +609,12 @@ public sealed class CacheWarmerTests : IDisposable
 
             if (BlockUntilCancelled) await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
 
-            WriteEmptySarifIfRequested(arguments);
+            JbStubs.WriteEmptySarifIfRequested(arguments);
 
             // And a run that exits 0 has left its cache generation behind, for the same reason.
             if (ExitCode == 0) CacheHomes.PlantGenerationFromJbRun(arguments);
 
             return new ProcessResult(ExitCode, string.Empty, string.Empty);
-        }
-
-        /// <summary>inspectcode is asked for a SARIF file; the warm-up discards it, but jb would still write it.</summary>
-        private static void WriteEmptySarifIfRequested(IReadOnlyList<string> arguments)
-        {
-            string? outputArgument = arguments.FirstOrDefault(argument => argument.StartsWith("-o=", StringComparison.Ordinal));
-            if (outputArgument is null) return;
-
-            File.WriteAllText(outputArgument["-o=".Length..], """{"runs":[{"results":[]}]}""");
         }
     }
 }

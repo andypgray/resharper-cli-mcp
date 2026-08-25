@@ -173,7 +173,7 @@ public sealed class JbRunLoggingTests : IDisposable
     {
         // Arrange
         _processRunner
-            .RunAsync("jb", Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .AnyRunOf("jb")
             .Returns<ProcessResult>(_ => throw new ProcessTimeoutException("'jb' timed out."));
 
         // Act
@@ -220,7 +220,7 @@ public sealed class JbRunLoggingTests : IDisposable
     private void StubExit(int exitCode)
     {
         _processRunner
-            .RunAsync("jb", Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .AnyRunOf("jb")
             .Returns(new ProcessResult(exitCode, string.Empty, string.Empty));
     }
 }

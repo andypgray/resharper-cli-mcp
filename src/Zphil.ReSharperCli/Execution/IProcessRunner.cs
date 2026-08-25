@@ -31,9 +31,25 @@ internal interface IProcessRunner
     ///     <see cref="ProcessTimeoutException" />; a missing executable surfaces as a
     ///     <see cref="System.ComponentModel.Win32Exception" />.
     /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         <paramref name="onOutputLine" />, when given, is called with each complete line of
+    ///         <em>standard output</em> as it arrives, for a caller that has to report a long run's advance
+    ///         rather than wait for its result. Standard error gets no callback: one observed stream is all
+    ///         any caller here needs, and it keeps a callback from being invoked concurrently by the two
+    ///         readers that drain the pipes in parallel.
+    ///     </para>
+    ///     <para>
+    ///         It runs on the read loop that keeps the child from blocking on a full pipe, so it must be
+    ///         prompt and must not throw. It may also fire after this method has returned or thrown — the
+    ///         timeout path unwinds while the readers are still live — so a caller has to be able to take a
+    ///         late line harmlessly.
+    ///     </para>
+    /// </remarks>
     Task<ProcessResult> RunAsync(
         string fileName,
         IReadOnlyList<string> arguments,
         TimeSpan timeout,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        Action<string>? onOutputLine = null);
 }

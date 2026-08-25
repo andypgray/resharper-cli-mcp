@@ -86,6 +86,8 @@ For a legacy codebase where the fallback `Built-in: Full Cleanup` profile would 
 
 Each run is capped at 10 minutes; `RESHARPER_MCP_TIMEOUT_SECS` moves the cap. Narrowing a call with `files` will not make it finish sooner: resolving symbols across projects takes the whole solution model, so `files` decides what is reported, not how much is analysed. When an MCP client's own tool-call timeout is shorter than a cold run needs, the client gives up first; in Claude Code, raise it with a per-server `"timeout"` in `.mcp.json` or `MCP_TOOL_TIMEOUT`. The `resharper://guides/setup` resource carries all of this at troubleshooting depth, for an agent to pull when a call cannot find `jb`, times out, or comes back shortened.
 
+A run in flight reports itself every ten seconds as an MCP progress notification: first the wait for another run on the same cache, then the cache state `jb` opened, then a running count of the files it has analysed, each with the elapsed time and the cap. That last one is what tells a slow run from a hung one, and a caller watching "8 minutes 2 seconds, cap 10 minutes" can raise `RESHARPER_MCP_TIMEOUT_SECS` before the call fails rather than after. Notifications go only to a client that asks for progress by sending a `progressToken` with the call; one that does not gets the same result and no notifications.
+
 ## Configuration
 
 Set these in the MCP client config's `env` block. All are optional. Each `JB_` variable becomes something `jb` itself is told; the `RESHARPER_MCP_` ones govern this server's own behaviour and never reach `jb`.

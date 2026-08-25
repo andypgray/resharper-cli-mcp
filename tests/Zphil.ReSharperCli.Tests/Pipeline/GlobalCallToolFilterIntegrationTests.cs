@@ -52,7 +52,7 @@ public sealed class GlobalCallToolFilterIntegrationTests
         // Arrange — jb is found (probe succeeds) and a solution is present, so the tool reaches the
         // inspectcode run; that run throws a non-UserError exception, which must escape the tool method.
         await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
-        PlantSolution(harness.Environment, "App.sln");
+        harness.Environment.PlantSolution("App.sln");
         RouteJb(harness.ProcessRunner, _ => throw new IOException("SARIF output target vanished"));
 
         // Act
@@ -76,7 +76,7 @@ public sealed class GlobalCallToolFilterIntegrationTests
         // the cap — and the truncator cuts at the cap itself.
         await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
         harness.Environment.SetVariable("MAX_MCP_OUTPUT_TOKENS", "40");
-        PlantSolution(harness.Environment, "App.sln");
+        harness.Environment.PlantSolution("App.sln");
         string sarif = Fixtures.ReadSarif("inspect-sample.json");
         RouteJb(harness.ProcessRunner, arguments =>
         {
@@ -105,7 +105,7 @@ public sealed class GlobalCallToolFilterIntegrationTests
         // the budget. This is the only end-to-end proof of the tool -> renderer -> filter wiring.
         await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
         harness.Environment.SetVariable("MAX_MCP_OUTPUT_TOKENS", "600");
-        PlantSolution(harness.Environment, "App.sln");
+        harness.Environment.PlantSolution("App.sln");
         string sarif = Fixtures.ReadSarif("inspect-repetitive.json");
         RouteJb(harness.ProcessRunner, arguments =>
         {
@@ -134,7 +134,7 @@ public sealed class GlobalCallToolFilterIntegrationTests
         // apart. The scope is opened at the outermost frame that knows a call has begun, so it has to reach
         // classes several layers down that never see it.
         await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
-        PlantSolution(harness.Environment, "App.sln");
+        harness.Environment.PlantSolution("App.sln");
         string sarif = Fixtures.ReadSarif("inspect-sample.json");
         RouteJb(harness.ProcessRunner, arguments =>
         {
@@ -209,7 +209,7 @@ public sealed class GlobalCallToolFilterIntegrationTests
         // flight. The request carries an id of the test's own choosing, because cancelling a call the way a
         // real client does means naming the request to cancel.
         await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
-        PlantSolution(harness.Environment, "App.sln");
+        harness.Environment.PlantSolution("App.sln");
         TaskCompletionSource started = new(TaskCreationOptions.RunContinuationsAsynchronously);
         TaskCompletionSource<bool> stopped = new(TaskCreationOptions.RunContinuationsAsynchronously);
         RouteParkingJb(harness.ProcessRunner, started, stopped);
@@ -260,11 +260,11 @@ public sealed class GlobalCallToolFilterIntegrationTests
         TaskCompletionSource<bool> stopped)
     {
         processRunner
-            .RunAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .AnyRun()
             .Returns(async callInfo =>
             {
                 var arguments = callInfo.ArgAt<IReadOnlyList<string>>(1);
-                if (arguments.Contains("--version")) return new ProcessResult(0, "Version: 2026.1.2", string.Empty);
+                if (JbStubs.IsVersionProbe(arguments)) return JbStubs.VersionProbeAnswer;
 
                 var cancellationToken = callInfo.ArgAt<CancellationToken>(3);
                 started.TrySetResult();
@@ -291,11 +291,6 @@ public sealed class GlobalCallToolFilterIntegrationTests
         return result.Content.OfType<TextContentBlock>().First().Text;
     }
 
-    private static void PlantSolution(FakeEnvironment environment, string fileName)
-    {
-        File.WriteAllText(Path.Combine(environment.CurrentDirectory, fileName), string.Empty);
-    }
-
     /// <summary>The names in a tool's input-schema <c>required</c> array, or empty when it has none.</summary>
     private static IReadOnlyList<string> RequiredProperties(McpClientTool tool)
     {
@@ -316,12 +311,12 @@ public sealed class GlobalCallToolFilterIntegrationTests
     private static void RouteJb(IProcessRunner processRunner, Func<IReadOnlyList<string>, ProcessResult> onInspect)
     {
         processRunner
-            .RunAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .AnyRun()
             .Returns(callInfo =>
             {
                 var arguments = callInfo.ArgAt<IReadOnlyList<string>>(1);
 
-                if (arguments.Contains("--version")) return new ProcessResult(0, "Version: 2026.1.2", string.Empty);
+                if (JbStubs.IsVersionProbe(arguments)) return JbStubs.VersionProbeAnswer;
 
                 ProcessResult result = arguments.Count > 0 && arguments[0] == "inspectcode"
                     ? onInspect(arguments)

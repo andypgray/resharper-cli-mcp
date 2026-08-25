@@ -131,7 +131,8 @@ public sealed class JbRunSerializationTests : IDisposable
             string fileName,
             IReadOnlyList<string> arguments,
             TimeSpan timeout,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            Action<string>? onOutputLine = null)
         {
             lock (_gate)
             {
@@ -143,7 +144,7 @@ public sealed class JbRunSerializationTests : IDisposable
             try
             {
                 await Task.Delay(TimeSpan.FromMilliseconds(200), cancellationToken);
-                WriteEmptySarifIfRequested(arguments);
+                JbStubs.WriteEmptySarifIfRequested(arguments);
                 return new ProcessResult(0, string.Empty, string.Empty);
             }
             finally
@@ -153,15 +154,6 @@ public sealed class JbRunSerializationTests : IDisposable
                     _inFlight--;
                 }
             }
-        }
-
-        /// <summary>inspectcode is asked for a SARIF file, and its absence is an error the service throws on.</summary>
-        private static void WriteEmptySarifIfRequested(IReadOnlyList<string> arguments)
-        {
-            string? outputArgument = arguments.FirstOrDefault(argument => argument.StartsWith("-o=", StringComparison.Ordinal));
-            if (outputArgument is null) return;
-
-            File.WriteAllText(outputArgument["-o=".Length..], """{"runs":[{"results":[]}]}""");
         }
     }
 }

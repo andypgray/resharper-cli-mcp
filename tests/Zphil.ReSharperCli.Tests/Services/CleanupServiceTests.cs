@@ -122,8 +122,7 @@ public sealed class CleanupServiceTests : IDisposable
 
         // Assert
         outcome.Entries.ShouldHaveSingleItem().Status.ShouldBe(CleanupFileStatus.Pattern);
-        await _processRunner.Received(1).RunAsync(
-            "jb", Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>());
+        await _processRunner.Received(1).AnyRunOf("jb");
     }
 
     [Fact]
@@ -151,7 +150,7 @@ public sealed class CleanupServiceTests : IDisposable
         string absolute = PlantFile("src/A.cs", "x");
         List<string>? arguments = null;
         _processRunner
-            .RunAsync("jb", Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .AnyRunOf("jb")
             .Returns(call =>
             {
                 arguments = [.. call.Arg<IReadOnlyList<string>>()];
@@ -172,7 +171,7 @@ public sealed class CleanupServiceTests : IDisposable
         // Arrange — a non-zero exit throws before any classification.
         PlantFile("A.cs", "x");
         _processRunner
-            .RunAsync("jb", Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .AnyRunOf("jb")
             .Returns(new ProcessResult(1, string.Empty, "Unknown profile 'No Such Profile'"));
 
         // Act
@@ -191,7 +190,7 @@ public sealed class CleanupServiceTests : IDisposable
         PlantFile("src/A.cs", "x");
         PlantFile("src/B.cs", "x");
         _processRunner
-            .RunAsync("jb", Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .AnyRunOf("jb")
             .Returns(new ProcessResult(3, string.Empty, "No items were found to cleanup"));
 
         // Act
@@ -215,7 +214,7 @@ public sealed class CleanupServiceTests : IDisposable
         // translated form is visible. That is what makes "these are the patterns jb was given" true.
         string absolute = PlantFile("src/A.cs", "x");
         _processRunner
-            .RunAsync("jb", Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .AnyRunOf("jb")
             .Returns(new ProcessResult(3, string.Empty, "No items were found to cleanup"));
 
         // Act
@@ -250,7 +249,7 @@ public sealed class CleanupServiceTests : IDisposable
         // the variable that moves the cap.
         PlantFile("src/A.cs", "x");
         _processRunner
-            .RunAsync("jb", Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .AnyRunOf("jb")
             .ThrowsAsync(new ProcessTimeoutException("'jb' timed out."));
 
         // Act
@@ -271,8 +270,7 @@ public sealed class CleanupServiceTests : IDisposable
 
         // Assert
         exception.Message.ShouldContain("src/Missing.cs");
-        await _processRunner.DidNotReceive().RunAsync(
-            Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>());
+        await _processRunner.DidNotReceive().AnyRun();
     }
 
     private string PlantFile(string relativePath, string content = "")
@@ -286,7 +284,7 @@ public sealed class CleanupServiceTests : IDisposable
     private void StubExit(int exitCode)
     {
         _processRunner
-            .RunAsync("jb", Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .AnyRunOf("jb")
             .Returns(new ProcessResult(exitCode, string.Empty, string.Empty));
     }
 
@@ -294,7 +292,7 @@ public sealed class CleanupServiceTests : IDisposable
     private void StubJbRunning(Action duringRun)
     {
         _processRunner
-            .RunAsync("jb", Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .AnyRunOf("jb")
             .Returns(_ =>
             {
                 duringRun();

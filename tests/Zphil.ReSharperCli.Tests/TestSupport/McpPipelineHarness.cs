@@ -27,6 +27,13 @@ namespace Zphil.ReSharperCli.Tests.TestSupport;
 /// </summary>
 internal sealed class McpPipelineHarness : IAsyncDisposable
 {
+    /// <summary>
+    ///     How often anything in this graph that reports itself does so. One number for the runner and the
+    ///     cache reset alike: a test watching progress is watching whichever of them it called, and two
+    ///     intervals would be two ways for one to sit out a wait the other does not.
+    /// </summary>
+    private static readonly TimeSpan BriskHeartbeat = TimeSpan.FromMilliseconds(50);
+
     private readonly IHost _host;
 
     private McpPipelineHarness(
@@ -35,7 +42,8 @@ internal sealed class McpPipelineHarness : IAsyncDisposable
         FakeEnvironment environment,
         IProcessRunner processRunner,
         CapturingLoggerProvider logs,
-        CacheWarmer warmer)
+        CacheWarmer warmer,
+        WireLog wire)
     {
         _host = host;
         Client = client;
@@ -43,6 +51,7 @@ internal sealed class McpPipelineHarness : IAsyncDisposable
         ProcessRunner = processRunner;
         Logs = logs;
         Warmer = warmer;
+        Wire = wire;
     }
 
     /// <summary>The connected client, past the <c>initialize</c> handshake — call <c>ListTools</c>/<c>CallTool</c> on it.</summary>
@@ -65,6 +74,14 @@ internal sealed class McpPipelineHarness : IAsyncDisposable
     ///     triggers. Await its <c>Finished</c> to make a test that opted in deterministic.
     /// </summary>
     public CacheWarmer Warmer { get; }
+
+    /// <summary>
+    ///     Every frame the server wrote, in the order it wrote them — the only place an ordering claim about
+    ///     notifications is a fact rather than an inference about thread-pool scheduling. Always on rather than
+    ///     opt-in: it costs one extra copy of this session's own frames, freed with the harness, and no test
+    ///     should have to opt in to have the wire it is already using be observable.
+    /// </summary>
+    public WireLog Wire { get; }
 
     public async ValueTask DisposeAsync()
     {
@@ -120,6 +137,7 @@ internal sealed class McpPipelineHarness : IAsyncDisposable
         // WithStreamServerTransport, which constructs the server transport eagerly at registration.
         Pipe clientToServer = new();
         Pipe serverToClient = new();
+        WireLog wire = new();
 
         HostApplicationBuilder builder = Host.CreateApplicationBuilder();
 
@@ -143,14 +161,24 @@ internal sealed class McpPipelineHarness : IAsyncDisposable
         builder.Services.AddSingleton(provider => new JbRunLock(
             JbRunTimeout.Default, provider.GetRequiredService<ILogger<JbRunLock>>()));
         builder.Services.AddSingleton<JbRunYield>();
+        // A brisk heartbeat, so a test watching progress notifications sees a second beat in tens of
+        // milliseconds instead of paying the production ten seconds per run of the suite.
         builder.Services.AddSingleton(provider => JbRunners.Create(
             processRunner,
             provider.GetRequiredService<JbRunLock>(),
             provider.GetRequiredService<JbRunYield>(),
-            logs: provider.GetRequiredService<ILoggerFactory>()));
+            logs: provider.GetRequiredService<ILoggerFactory>(),
+            heartbeat: BriskHeartbeat));
         builder.Services.AddSingleton<InspectService>();
         builder.Services.AddSingleton<CleanupService>();
-        builder.Services.AddSingleton<CacheResetService>();
+
+        // By factory for the heartbeat alone: a reset reports the wait it is serving out, so registered by
+        // type it would beat at the production interval and a test watching one would sit out ten seconds.
+        builder.Services.AddSingleton(provider => JbRunners.Reset(
+            provider.GetRequiredService<JbRunLock>(),
+            provider.GetRequiredService<JbRunYield>(),
+            provider.GetRequiredService<ILoggerFactory>(),
+            BriskHeartbeat));
 
         // Registering the writer is not optional even though no harness test asks for a report:
         // CoercingToolRegistration activates ResharperTools per tools/call, so a missing registration
@@ -178,7 +206,8 @@ internal sealed class McpPipelineHarness : IAsyncDisposable
             .WithResources<ResharperResources>()
             .WithGlobalCallToolFilter()
             .WithPreWarmTrigger()
-            .WithStreamServerTransport(clientToServer.Reader.AsStream(), serverToClient.Writer.AsStream());
+            .WithStreamServerTransport(
+                clientToServer.Reader.AsStream(), new WireTapStream(serverToClient.Writer.AsStream(), wire));
 
         IHost host = builder.Build();
 
@@ -192,6 +221,6 @@ internal sealed class McpPipelineHarness : IAsyncDisposable
         var client = await McpClient.CreateAsync(clientTransport, cancellationToken: cancellationToken);
 
         return new McpPipelineHarness(
-            host, client, environment, processRunner, logs, host.Services.GetRequiredService<CacheWarmer>());
+            host, client, environment, processRunner, logs, host.Services.GetRequiredService<CacheWarmer>(), wire);
     }
 }

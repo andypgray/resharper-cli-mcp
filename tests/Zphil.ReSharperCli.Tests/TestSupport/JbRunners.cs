@@ -39,10 +39,18 @@ internal static class JbRunners
         return new JbRunYield(Logs.For<JbRunYield>(logs));
     }
 
-    /// <summary>A cache reset wired to the same lock and yield a runner is, as the composition root wires it.</summary>
-    public static CacheResetService Reset(JbRunLock runLock, JbRunYield runYield, ILoggerFactory? logs = null)
+    /// <summary>
+    ///     A cache reset wired to the same lock and yield a runner is, as the composition root wires it.
+    ///     <paramref name="heartbeat" /> shortens the progress interval for a test that waits out more than
+    ///     one beat of the queue wait; omitted, beats come at the production ten seconds.
+    /// </summary>
+    public static CacheResetService Reset(
+        JbRunLock runLock,
+        JbRunYield runYield,
+        ILoggerFactory? logs = null,
+        TimeSpan? heartbeat = null)
     {
-        return new CacheResetService(runLock, runYield, Logs.For<CacheResetService>(logs));
+        return new CacheResetService(runLock, runYield, Logs.For<CacheResetService>(logs), heartbeat);
     }
 
     public static JbRunner Create(IProcessRunner processRunner, TimeSpan? cap = null, ILoggerFactory? logs = null)
@@ -62,14 +70,16 @@ internal static class JbRunners
 
     /// <summary>
     ///     For tests that drive a second caller — a cache reset — against the same precedence, so the yield
-    ///     has to be theirs too.
+    ///     has to be theirs too. <paramref name="heartbeat" /> shortens the progress interval for a test
+    ///     that waits out more than one beat; omitted, beats come at the production ten seconds.
     /// </summary>
     public static JbRunner Create(
         IProcessRunner processRunner,
         JbRunLock runLock,
         JbRunYield runYield,
         TimeSpan? cap = null,
-        ILoggerFactory? logs = null)
+        ILoggerFactory? logs = null,
+        TimeSpan? heartbeat = null)
     {
         return new JbRunner(
             processRunner,
@@ -77,6 +87,7 @@ internal static class JbRunners
             runYield,
             new CacheTransplanter(runLock, Logs.For<CacheTransplanter>(logs)),
             cap ?? JbRunTimeout.Default,
-            Logs.For<JbRunner>(logs));
+            Logs.For<JbRunner>(logs),
+            heartbeat);
     }
 }

@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Serilog.Events;
 using Zphil.ReSharperCli.Discovery;
 using Zphil.ReSharperCli.Execution;
+using Zphil.ReSharperCli.Formatting;
 using Zphil.ReSharperCli.Services;
 
 namespace Zphil.ReSharperCli.Infrastructure;
@@ -63,7 +64,7 @@ internal sealed class ServerLifecycle(
             configResolver.ResolveCacheHome(),
             // Pre-formatted, like the run-cap message a timeout reports with: a TimeSpan property renders as
             // a quoted "00:20:00" under this output template, where "20 minutes" is what a reader wants.
-            ProcessRunner.FormatDuration(runTimeout),
+            DurationFormatter.Format(runTimeout),
             CacheWarmer.IsEnabled(environment.GetVariable(CacheWarmer.EnableVariable)) ? "on" : "off",
             childLifetime.Guarantee,
             logLevel,
@@ -74,7 +75,7 @@ internal sealed class ServerLifecycle(
 
     public Task StopAsync(CancellationToken cancellationToken)
     {
-        logger.LogInformation("resharper-cli-mcp stopping after {Uptime}", ProcessRunner.FormatDuration(_uptime.Elapsed));
+        logger.LogInformation("resharper-cli-mcp stopping after {Uptime}", DurationFormatter.Format(_uptime.Elapsed));
         return Task.CompletedTask;
     }
 }

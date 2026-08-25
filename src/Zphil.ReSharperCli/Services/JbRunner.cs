@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Zphil.ReSharperCli.Discovery;
 using Zphil.ReSharperCli.Execution;
+using Zphil.ReSharperCli.Formatting;
 
 namespace Zphil.ReSharperCli.Services;
 
@@ -66,13 +67,20 @@ internal sealed class JbExitCodeException(string message, int exitCode, string s
 ///     <see cref="JbRunTimeout" /> at the composition root, which hands the same value to
 ///     <see cref="JbRunLock" /> so wait and run stay one number.
 /// </param>
+/// <param name="heartbeatInterval">
+///     How often a run in flight reports itself, defaulting to
+///     <see cref="JbRunProgress.HeartbeatInterval" />. A parameter for the same reason that default's own
+///     constructor leaves one open: an integration test driving the whole pipeline should not have to wait
+///     ten seconds to see a second beat.
+/// </param>
 internal sealed class JbRunner(
     IProcessRunner processRunner,
     JbRunLock runLock,
     JbRunYield runYield,
     CacheTransplanter transplanter,
     TimeSpan runTimeout,
-    ILogger<JbRunner> logger)
+    ILogger<JbRunner> logger,
+    TimeSpan? heartbeatInterval = null)
 {
     private const int StandardErrorTailLength = 2000;
 
@@ -116,14 +124,28 @@ internal sealed class JbRunner(
     ///     the solution in <paramref name="config" />, returning its result for the caller's own
     ///     post-checks.
     /// </summary>
+    /// <remarks>
+    ///     <paramref name="onProgress" /> is where the run's advance is reported while it is still running —
+    ///     trailing and optional for the same reason <see cref="IProcessRunner.RunAsync" />'s line observer
+    ///     is, since most callers have nowhere to report to. Already-rendered lines rather than structured
+    ///     state, so the MCP types a notification is eventually built from stop at the tool surface.
+    /// </remarks>
     public async Task<ProcessResult> RunAsync(
         ResolvedConfig config,
         IReadOnlyList<string> arguments,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Action<string>? onProgress = null)
     {
         var timedOut = false;
         try
         {
+            // Armed before the queue rather than at the spawn, and that placement is the point: JbRunLock's
+            // wait is bounded by the run cap, so a caller can sit here for ten minutes with no jb in
+            // existence to stream. Streaming jb's output alone could never have covered this stretch, and it
+            // is exactly the stretch a second raw jb against the same cache creates.
+            await using JbRunProgress? progress = JbRunProgress.Reporting(
+                arguments[0], config.SolutionPath, runTimeout, onProgress, logger, heartbeatInterval);
+
             // Entered before queueing, not after: a call arriving ten seconds into a cold pre-warm would
             // otherwise pay the whole queue wait and then its own full run, which is strictly worse than
             // never pre-warming.
@@ -141,17 +163,18 @@ internal sealed class JbRunner(
             using IDisposable runLease = await runLock.AcquireAsync(config.SolutionPath, config.CacheHome, cancellationToken);
             TimeSpan queueWait = queued.Elapsed;
 
+            progress?.Seeding();
             bool seeded = await transplanter.TryTransplantAsync(config, cancellationToken);
 
             ProcessResult result;
             try
             {
-                result = await SpawnAsync(config, arguments, queueWait, ForACall, seeded, cancellationToken);
+                result = await SpawnAsync(config, arguments, queueWait, ForACall, seeded, progress, cancellationToken);
             }
             catch (ProcessTimeoutException exception)
             {
                 timedOut = true;
-                throw new UserErrorException(TimedOutMessage(arguments[0]), exception);
+                throw new UserErrorException(TimedOutMessage(arguments[0], progress?.FilesSeen ?? 0), exception);
             }
 
             if (result.ExitCode != 0)
@@ -208,8 +231,9 @@ internal sealed class JbRunner(
             speculative.Token.ThrowIfCancellationRequested();
 
             // Zero queue wait by construction: TryAcquire does not wait, so a lease in hand was uncontended.
+            // No progress either: nobody is waiting on this run, so there is nobody to report it to.
             ProcessResult result = await SpawnAsync(
-                config, arguments, TimeSpan.Zero, Speculative, seeded, speculative.Token);
+                config, arguments, TimeSpan.Zero, Speculative, seeded, null, speculative.Token);
 
             return result.ExitCode == 0 ? SpeculativeRunOutcome.Completed : SpeculativeRunOutcome.Failed;
         }
@@ -263,10 +287,15 @@ internal sealed class JbRunner(
         TimeSpan queueWait,
         string runKind,
         bool seeded,
+        JbRunProgress? progress,
         CancellationToken cancellationToken)
     {
         string subcommand = arguments[0];
         JbCacheState cache = JbCacheState.Read(config.SolutionPath, config.CacheHome, seeded, logger);
+
+        // The same reading the opening line leads with, and for the same reason: it is what predicts the
+        // minutes about to follow, and jb says nothing at all for the first half-minute of them.
+        progress?.Spawning(cache.Summary);
 
         logger.LogInformation(
             "jb {Subcommand} starting on {SolutionPath} ({RunKind}): {CacheState}, queued {QueueWaitMs} ms",
@@ -288,16 +317,23 @@ internal sealed class JbRunner(
         ProcessResult result;
         try
         {
+            Action<string>? onOutputLine = progress is null ? null : progress.OnOutputLine;
+
             result = await processRunner.RunAsync(
-                config.JbExecutablePath, arguments, runTimeout, cancellationToken);
+                config.JbExecutablePath, arguments, runTimeout, cancellationToken, onOutputLine);
         }
         catch (ProcessTimeoutException)
         {
+            // How far it had got is the fact this line exists to add, and the only place it survives: a run
+            // killed having analysed forty files and one killed at 1,200 are otherwise the same line. The
+            // properties are chosen around the two lines JbRunLoggingTests locates by name — no CacheState
+            // here, no ExitCode — so that a cap is still identifiable as neither of the other two endings.
             logger.LogInformation(
-                "jb {Subcommand} was killed at the {RunCap} cap after {ElapsedMs} ms",
+                "jb {Subcommand} was killed at the {RunCap} cap after {ElapsedMs} ms, having reached {FilesSeen} file(s)",
                 subcommand,
-                ProcessRunner.FormatDuration(runTimeout),
-                elapsed.ElapsedMilliseconds);
+                DurationFormatter.Format(runTimeout),
+                elapsed.ElapsedMilliseconds,
+                progress?.FilesSeen ?? 0);
 
             throw;
         }
@@ -350,14 +386,29 @@ internal sealed class JbRunner(
     ///     that moves it, and the obvious next move does not work — scoping with <c>files</c> narrows what
     ///     <c>jb</c> reports and never what it analyses, so a retry scoped to one file is just as slow.
     /// </summary>
-    private string TimedOutMessage(string subcommand)
+    /// <param name="subcommand">The <c>jb</c> subcommand that ran out of budget.</param>
+    /// <param name="filesSeen">
+    ///     How many files <c>jb</c> had reported reaching, or zero when nothing said. The promise that a
+    ///     retry "resumes rather than starting over" is the one claim here this server cannot verify, and
+    ///     until there was a count it was made with confidence it had not earned. A number is offered as
+    ///     evidence for it and withheld when there is none — which is also what keeps the claim honest for
+    ///     <c>cleanupcode</c>, whose per-file output nothing here can count. Spelled by
+    ///     <see cref="RunProgressFormatter.Files" />, so the count reads here as it read on the progress
+    ///     line the caller just watched.
+    /// </param>
+    private string TimedOutMessage(string subcommand, int filesSeen)
     {
-        return $"jb {subcommand} timed out after {ProcessRunner.FormatDuration(runTimeout)} and was stopped.\n"
+        string reached = filesSeen > 0
+            ? $"jb had reached {RunProgressFormatter.Files(filesSeen)} by the time it was stopped, and the cache keeps that work, so a "
+              + "retry resumes from there rather than starting over."
+            : "The cache keeps most of what this run built, so a retry resumes rather than starting over.";
+
+        return $"jb {subcommand} timed out after {DurationFormatter.Format(runTimeout)} and was stopped.\n"
                + $"That cap is this server's, not jb's own: raise it by setting {JbRunTimeout.Variable} (in seconds) "
                + "in this server's env block in your MCP client config, then restart the server.\n"
                + "A run that long is almost always a cold ReSharper cache. Scoping the next call with `files` will "
-               + "not help — jb analyses the whole solution whatever the report is narrowed to — but the cache keeps "
-               + "most of what this run built, so a retry resumes rather than starting over.";
+               + "not help — jb analyses the whole solution whatever the report is narrowed to. "
+               + reached;
     }
 
     /// <summary>

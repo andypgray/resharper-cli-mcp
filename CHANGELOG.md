@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- MCP progress notifications from `resharper_inspect` and `resharper_cleanup`. A run in flight reports
+  itself every ten seconds: the wait for another run on the same cache, then the cache state `jb` opened,
+  then a running count of the files it has analysed, each message carrying the elapsed time and the run cap.
+  A caller can now see a run approaching the cap and raise `RESHARPER_MCP_TIMEOUT_SECS` before the call
+  fails. Both the ten-second beat and the per-file count come off one timer, so a cold run that names 1,332
+  files sends about fifty notifications rather than 1,332, and the interior gaps in `jb`'s own output —
+  measured at up to 42 seconds mid-stream — are covered by the same mechanism. Notifications reach only a
+  client that sends a `progressToken`; one that does not gets an unchanged result, and the parameter stays
+  out of the advertised tool schema. There is no percentage: `jb` announces no file count up front and its
+  two sweeps report different totals for one solution, so a bar would be measuring the cap rather than the
+  work. The background pre-warm reports nothing, having no caller to report to.
+
+- `resharper_reset_cache` reports its queue wait as MCP progress. A reset takes the same per-solution run
+  lock a `jb` run does, so it can queue behind another session's analysis for up to the full wait budget —
+  and until now it did so silently, since a reset spawns no `jb` to stream. It now sends the same
+  ten-second heartbeat the analysis tools send while queued, reading `cache reset on App.slnx: waiting for
+  another run on this solution's ReSharper cache — 2 minutes 3 seconds`, and goes quiet once it holds the
+  lock, because the deletes take moments and a beat past that point would describe a wait that had ended.
+  The messages name no run cap, since a reset spends none of the run budget. Notifications reach only a
+  client that sends a `progressToken`; the tool's schema, its result, and its log line are unchanged.
+
 - A `report` argument on `resharper_inspect`. Set it to `Markdown` and the complete itemised findings are
   written to a file, which the response names above the summary it already returned. This is the way to get
   every finding with its own message out of a solution-wide run: such a run always exceeds the output budget,
@@ -52,6 +73,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The timeout message no longer promises that a retry "resumes rather than starting over" without evidence.
+  A run killed having analysed forty files and one killed at 1,200 read identically before; the message now
+  names the count when it has one, and keeps the general wording when it does not. The log line for a run
+  killed at the cap carries the same count.
 - The pre-warm's outcome moved from `Debug` to `Information`, pairing with the start it already logged. At
   `Information` a log previously showed pre-warms beginning and never ending.
 - `ModelContextProtocol` and `Microsoft.Hosting` are held at `Warning`, so `Information` carries what this

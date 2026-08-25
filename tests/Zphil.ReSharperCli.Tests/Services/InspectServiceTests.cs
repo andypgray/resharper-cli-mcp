@@ -4,6 +4,7 @@ using Shouldly;
 using Xunit;
 using Zphil.ReSharperCli.Discovery;
 using Zphil.ReSharperCli.Execution;
+using Zphil.ReSharperCli.Sarif;
 using Zphil.ReSharperCli.Services;
 using Zphil.ReSharperCli.Tests.TestDoubles;
 using Zphil.ReSharperCli.Tests.TestSupport;
@@ -46,7 +47,7 @@ public sealed class InspectServiceTests : IDisposable
         });
 
         // Act
-        var issues = await _service.RunAsync(_config, null, InspectSeverity.Warning, Ct);
+        IReadOnlyList<InspectIssue> issues = await _service.RunAsync(_config, null, InspectSeverity.Warning, Ct);
 
         // Assert
         issues.Count.ShouldBe(3);
@@ -109,7 +110,7 @@ public sealed class InspectServiceTests : IDisposable
     private void StubRun(Func<CallInfo, ProcessResult> behavior)
     {
         _processRunner
-            .RunAsync("jb", Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .AnyRunOf("jb")
             .Returns(callInfo => behavior(callInfo));
     }
 

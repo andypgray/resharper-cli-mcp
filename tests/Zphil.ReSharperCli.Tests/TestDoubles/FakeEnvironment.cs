@@ -70,4 +70,16 @@ internal sealed class FakeEnvironment : IEnvironment, IDisposable
     {
         return Path.Combine(CreateTempDirectory(), solutionFileName);
     }
+
+    /// <summary>
+    ///     Write an empty solution file called <paramref name="solutionFileName" /> in
+    ///     <see cref="CurrentDirectory" /> — where discovery looks first — and return its path. For the
+    ///     pipeline tests, whose server resolves its solution the way the production default does.
+    /// </summary>
+    public string PlantSolution(string solutionFileName)
+    {
+        string path = Path.Combine(CurrentDirectory, solutionFileName);
+        File.WriteAllText(path, string.Empty);
+        return path;
+    }
 }

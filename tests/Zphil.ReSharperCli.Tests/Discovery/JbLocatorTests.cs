@@ -88,7 +88,7 @@ public sealed class JbLocatorTests : IDisposable
         // Arrange — jb that exits cleanly and reports nothing identifiable is not a jb worth running. The
         // null row is the shape a defaulted ProcessResult carries, which is how this was found.
         _processRunner
-            .RunAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .AnyRun()
             .Returns(new ProcessResult(0, standardOutput!, string.Empty));
         JbLocator locator = new(_processRunner, _environment, NullLogger<JbLocator>.Instance);
 
@@ -136,7 +136,7 @@ public sealed class JbLocatorTests : IDisposable
     {
         // Arrange
         _processRunner
-            .RunAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .AnyRun()
             .Throws(new Win32Exception("The system cannot find the file specified."));
         JbLocator locator = new(_processRunner, _environment, NullLogger<JbLocator>.Instance);
 
@@ -162,8 +162,7 @@ public sealed class JbLocatorTests : IDisposable
         await locator.LocateAsync(Ct);
 
         // Assert
-        await _processRunner.Received(1).RunAsync(
-            "jb", Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>());
+        await _processRunner.Received(1).AnyRunOf("jb");
     }
 
     [Fact]
@@ -213,14 +212,13 @@ public sealed class JbLocatorTests : IDisposable
         await Should.ThrowAsync<OperationCanceledException>(() => LoggingLocator().LocateAsync(Ct));
 
         // Assert
-        await _processRunner.DidNotReceive().RunAsync(
-            DotnetToolsCandidate, Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>());
+        await _processRunner.DidNotReceive().AnyRunOf(DotnetToolsCandidate);
         _logs.WithProperty("Candidate").ShouldBeEmpty();
     }
 
     private Task<ProcessResult> Probe(string fileName)
     {
-        return _processRunner.RunAsync(fileName, Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>());
+        return _processRunner.AnyRunOf(fileName);
     }
 
     private JbLocator LoggingLocator()

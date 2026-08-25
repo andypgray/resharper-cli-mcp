@@ -19,6 +19,15 @@ namespace Zphil.ReSharperCli.Tests.Services;
 /// </summary>
 public sealed class CacheResetServiceTests : IDisposable
 {
+    /// <summary>The one beat an uncontended reset can fit, spelled once for the tests that pin it.</summary>
+    private const string Starting = "cache reset on App.sln: starting";
+
+    /// <summary>Short enough that a test sees several beats, long enough not to be flaky under load.</summary>
+    private static readonly TimeSpan Brisk = TimeSpan.FromMilliseconds(40);
+
+    /// <summary>Long enough that only a genuine hang reaches it.</summary>
+    private static readonly TimeSpan Generous = TimeSpan.FromSeconds(30);
+
     private readonly string _cacheHome;
     private readonly ResolvedConfig _config;
     private readonly FakeEnvironment _environment = new();
@@ -182,6 +191,95 @@ public sealed class CacheResetServiceTests : IDisposable
         // Assert — it queued on the run rather than deleting the cache underneath it, and gave up intact.
         exception.Message.ShouldContain("Another jb run already holds the ReSharper cache");
         Directory.Exists(ours).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task RunAsync_QueuedBehindAnotherRun_ReportsTheWaitUntilTheLockFrees()
+    {
+        // Arrange — the silence this exists to break. A reset takes the same lock a jb run does, so it can
+        // sit here for the whole wait budget, and it has no process of its own whose output could stand in
+        // for a report. The held lock file is what another session's live jb looks like from here.
+        CacheHomes.PlantGenerationFor(_cacheHome, _config.SolutionPath);
+        FileStream held = CacheHomes.HoldLockFile(_cacheHome, _config.SolutionPath);
+        RecordingSink<string> lines = new(Generous);
+        CacheResetService service = JbRunners.Reset(
+            JbRunners.Lock(Generous), JbRunners.Yield(), heartbeat: Brisk);
+
+        // Act — the wait has to outlast JbRunLock.NotableWait before a beat stops reading "starting", so
+        // this genuinely waits the second out rather than shortening the threshold to suit itself.
+        Task<CacheResetOutcome> reset = service.RunAsync(_config, Ct, lines.Record);
+        try
+        {
+            await lines.WaitUntilAsync(
+                () => lines.Items.Any(line => line.Contains("waiting for another run")),
+                "a beat naming the queue wait",
+                Ct);
+        }
+        finally
+        {
+            // Released on every path rather than at scope exit: the reset is queued on this very lock, so a
+            // failed wait would otherwise leave it parked behind a file nothing was going to let go of.
+            await held.DisposeAsync();
+        }
+
+        CacheResetOutcome outcome = await reset;
+
+        // Assert — it named the wait while serving it out, then went through with the delete.
+        lines.Items[0].ShouldBe(Starting);
+        lines.Items.ShouldContain(line => line.StartsWith(
+            "cache reset on App.sln: waiting for another run on this solution's ReSharper cache — ",
+            StringComparison.Ordinal));
+        outcome.Dropped.ShouldHaveSingleItem();
+
+        // And no cap anywhere in them: a reset spends none of the run budget, so a message charging its wait
+        // against that cap would send a caller to raise the one number that was never the problem.
+        lines.Items.ShouldAllBe(line => !line.Contains("cap"));
+    }
+
+    [Fact]
+    public async Task RunAsync_RefusedAfterTheFullWait_StopsBeatingBeforeTheErrorSurfaces()
+    {
+        // Arrange — the wait runs out and the call fails. A beat landing after that reports against a
+        // request already answered, where the MCP session discards the send task and the fault surfaces only
+        // as an unobserved exception; scoping the reporter to the acquire is what rules it out.
+        await using FileStream held = CacheHomes.HoldLockFile(_cacheHome, _config.SolutionPath);
+        RecordingSink<string> lines = new(Generous);
+        CacheResetService service = JbRunners.Reset(
+            JbRunners.Lock(TimeSpan.FromMilliseconds(250)), JbRunners.Yield(), heartbeat: Brisk);
+
+        // Act — beats first, so this pins a reporter that stopped rather than one that never started.
+        Task<CacheResetOutcome> refused = service.RunAsync(_config, Ct, lines.Record);
+        await lines.WaitForAsync(1, Ct);
+        await Should.ThrowAsync<UserErrorException>(() => refused);
+        int atFailure = lines.Count;
+
+        // Assert — many would-be beats fit in this delay at the interval above, and none of them land.
+        await Task.Delay(Brisk * 10, Ct);
+        lines.Count.ShouldBe(atFailure);
+    }
+
+    [Fact]
+    public async Task RunAsync_UncontendedCall_SaysOnlyStarting()
+    {
+        // Arrange — an uncontended acquire is sub-millisecond, so the immediate first beat is the only one
+        // that can fit, and it must not blame another session for a wait that never happened. The brisk
+        // interval is what makes the other half of the claim testable: the deletes are outside the
+        // reporter's scope, so however long they take, nothing beats over them.
+        RecordingSink<string> lines = new(Generous);
+        CacheHomes.PlantGenerationFor(_cacheHome, _config.SolutionPath);
+        CacheResetService service = JbRunners.Reset(
+            JbRunners.Lock(TimeSpan.FromSeconds(1)), JbRunners.Yield(), heartbeat: Brisk);
+
+        // Act
+        CacheResetOutcome outcome = await service.RunAsync(_config, Ct, lines.Record);
+        await Task.Delay(Brisk * 5, Ct);
+
+        // Assert — the reset did its work and said at most one thing about it. At most, because the first
+        // beat is queued on the thread pool and disposal can outrun it under load; the pin is that nothing
+        // other than "starting" is reachable on this path.
+        outcome.Dropped.ShouldHaveSingleItem();
+        lines.Items.ShouldAllBe(line => line == Starting);
+        lines.Count.ShouldBeLessThanOrEqualTo(1);
     }
 
     /// <summary>

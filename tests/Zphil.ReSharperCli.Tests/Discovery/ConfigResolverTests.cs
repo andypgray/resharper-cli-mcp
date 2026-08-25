@@ -18,7 +18,7 @@ public sealed class ConfigResolverTests : IDisposable
     public ConfigResolverTests()
     {
         _processRunner
-            .RunAsync("jb", Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .AnyRunOf("jb")
             .Returns(new ProcessResult(0, "Version: 2026.1.2\n", string.Empty));
         _resolver = new ConfigResolver(
             new JbLocator(_processRunner, _environment, NullLogger<JbLocator>.Instance),
@@ -652,8 +652,7 @@ public sealed class ConfigResolverTests : IDisposable
         await _resolver.ResolveAsync(null, Ct);
 
         // Assert
-        await _processRunner.Received(1).RunAsync(
-            "jb", Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>());
+        await _processRunner.Received(1).AnyRunOf("jb");
     }
 
     [Fact]

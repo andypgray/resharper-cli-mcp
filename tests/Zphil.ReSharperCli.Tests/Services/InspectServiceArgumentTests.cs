@@ -165,7 +165,7 @@ public sealed class InspectServiceArgumentTests
         var processRunner = Substitute.For<IProcessRunner>();
         IReadOnlyList<string>? captured = null;
         processRunner
-            .RunAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .AnyRun()
             .Returns(call =>
             {
                 captured = call.Arg<IReadOnlyList<string>>();

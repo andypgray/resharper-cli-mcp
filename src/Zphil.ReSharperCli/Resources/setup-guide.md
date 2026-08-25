@@ -79,6 +79,23 @@ flight, and only then starts its own run; if the wait runs out the error says a 
 is already going, and retrying shortly after is the right response. The wait is invisible when nothing
 else is running, which is the normal case.
 
+**A run in flight reports itself every ten seconds**, as an MCP `notifications/progress` message against
+the token the client sent with the call. The messages track the stages above, in order: the wait for
+another run on the same cache, then the cache state `jb` opened (`cold (none on disk)`, `warm`,
+`part-built`, `seeded from a sibling checkout`), then a running count of files as `jb` analyses them.
+Every message sent once `jb` is running carries the elapsed time and the cap, so a call can be seen
+approaching the cap rather than reported as having hit it. There is no percentage: `jb` announces no file
+count up front and its analysis and inspection sweeps report different totals for the same solution, so
+any bar would be measuring the cap rather than the work. `resharper_reset_cache` reports the same way
+while it queues on that lock and goes quiet once it holds it — the deletes that follow take moments, and
+it names no cap, because a reset spends none of the run budget.
+
+Two things this does not do. It reaches only a client that sends a `progressToken` — one that does not
+gets the same result and no notifications, with nothing to configure either way. And it does not extend
+any timeout: a client that resets its own hang detection on progress will now wait on a `jb` that has
+genuinely hung, so the server's cap becomes the thing that ends such a run. That cap names itself and
+`RESHARPER_MCP_TIMEOUT_SECS` in the message it fails with.
+
 A timeout with nothing else running is almost always the cold run. **Scoping the retry with `files` does
 not help**: `jb` analyses the whole solution whatever the report is narrowed to, so a one-file run is no
 faster than a solution-wide one — often marginally slower. What a killed run does leave behind is a
@@ -346,9 +363,12 @@ emits its own startup, shutdown, and per-run lines in their place.
 | `Debug` | The full `jb` command line · one line per `jb` candidate probed, with what it answered and how long it took, including a candidate that failed before a later one succeeded · the tool-call envelope and argument shape · the detail level a response settled at, and whether it was truncated · cache generation sizes · warm-marker stamps · the declines and skips that cost nothing. |
 
 A typical inspect costs about four `Information` lines, so a day at that level stays readable. Two of them
-are the pair around the `jb` run, and the first of the pair is written *before* the run: a `jb` run is
-minutes of silence, and that line is how a run still in flight — or one that was killed — can be told from
-one that finished.
+are the pair around the `jb` run, and the first of the pair is written *before* the run, because a `jb` run
+is minutes of silence: a run with an opening line and no closing one is still going, or was killed. That is
+the log's answer after the fact. The progress notifications described above are the answer during, for a
+client that asks for them; the log is what remains for a client that did not, and for a session that has
+ended. The line closing a run killed at the cap also names how many files `jb` had reached, which is the
+only record of how much a capped run left behind in the cache.
 
 Nothing is written to stdout, because that channel carries the MCP JSON-RPC stream and any stray write
 would corrupt the protocol; diagnostics go to stderr and the file. Nothing leaves the machine.

@@ -18,11 +18,20 @@ internal sealed class CleanupService(JbRunner jbRunner, ILogger<CleanupService> 
     /// <summary>The profile applied when the caller does not specify one.</summary>
     public const string DefaultProfile = "Built-in: Full Cleanup";
 
+    /// <summary>
+    ///     Clean up <paramref name="files" /> in <paramref name="config" />'s solution with
+    ///     <paramref name="profile" />, and classify what changed.
+    /// </summary>
+    /// <remarks>
+    ///     <paramref name="onProgress" /> is passed straight through, as inspect's is, and is omitted when
+    ///     the caller has nowhere to report to.
+    /// </remarks>
     public async Task<CleanupOutcome> RunAsync(
         ResolvedConfig config,
         IReadOnlyList<string> files,
         string? profile,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Action<string>? onProgress = null)
     {
         // An unspecified profile resolves to the solution's own declared profile before the built-in
         // default, so a repo that narrowed its cleanup gets that narrowing on every call — including the
@@ -53,7 +62,7 @@ internal sealed class CleanupService(JbRunner jbRunner, ILogger<CleanupService> 
 
         try
         {
-            await jbRunner.RunAsync(config, arguments, cancellationToken);
+            await jbRunner.RunAsync(config, arguments, cancellationToken, onProgress);
         }
         catch (JbExitCodeException exception)
         {

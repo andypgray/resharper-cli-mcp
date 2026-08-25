@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Text.Json;
+using ModelContextProtocol;
 using ModelContextProtocol.Server;
 using Shouldly;
 using Xunit;
@@ -38,17 +39,19 @@ public sealed class UnknownParameterGuardTests
     public void Validate_EveryDeclaredParameter_ReturnsNull()
     {
         // Arrange — independently reflect every tool's JSON parameter names. Services arrive via
-        // primary constructors, so the only context-bound *method* parameter in this server is
-        // CancellationToken; IsJsonBound encodes exactly that, independently of the guard's own
-        // predicate. A newly introduced context-bound parameter type will (correctly) trip this
-        // test, forcing a matching update here and in UnknownParameterGuard.
+        // primary constructors, so the context-bound *method* parameters in this server are the
+        // CancellationToken every tool takes and the IProgress<> every tool now takes too; IsJsonBound
+        // encodes exactly that, independently of the guard's own predicate. A newly introduced
+        // context-bound parameter type will (correctly) trip this test, forcing an update here — and
+        // in UnknownParameterGuard only if its exclusion is not already generic there, as
+        // IProgress<>'s was when the progress parameter arrived.
         List<string> failures = [];
 
         foreach ((MethodInfo method, McpServerToolAttribute attribute) in ToolAttributeDiscovery.GetToolMethods())
         {
             if (attribute.Name is not { } toolName) continue;
 
-            var arguments = method.GetParameters()
+            Dictionary<string, JsonElement> arguments = method.GetParameters()
                 .Where(IsJsonBound)
                 .ToDictionary(p => p.Name!, _ => DummyValue);
 
@@ -132,11 +135,17 @@ public sealed class UnknownParameterGuardTests
         message.ShouldContain("resharper_cleanup");
     }
 
-    // Independent oracle for "is this a JSON-bound parameter": the only context-bound
-    // method-parameter type in this server is CancellationToken. Deliberately NOT calling the
-    // guard's own predicate, so a divergence is observable.
+    // Independent oracle for "is this a JSON-bound parameter": the context-bound method-parameter
+    // types in this server are CancellationToken and the IProgress<ProgressNotificationValue> the
+    // SDK manufactures for a run that reports its advance. Deliberately NOT calling the guard's own
+    // predicate, so a divergence is observable — and spelled by closed type rather than by open
+    // generic, so a second IProgress<T> of some other T would still trip this.
     private static bool IsJsonBound(ParameterInfo p)
     {
-        return p.Name is not null && p.ParameterType != typeof(CancellationToken);
+        if (p.Name is null) return false;
+
+        Type type = p.ParameterType;
+
+        return type != typeof(CancellationToken) && type != typeof(IProgress<ProgressNotificationValue>);
     }
 }

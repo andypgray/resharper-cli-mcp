@@ -81,7 +81,7 @@ public sealed class CoercionIntegrationTests
     {
         // Arrange — a bare string where files : string[] is advertised. Must be single-coerced.
         await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
-        PlantSolution(harness.Environment, "App.sln");
+        harness.Environment.PlantSolution("App.sln");
         PlantFile(harness.Environment, "src/A.cs");
         List<string>? cleanupArguments = null;
         RouteJb(harness.ProcessRunner, arguments => cleanupArguments = [.. arguments]);
@@ -103,7 +103,7 @@ public sealed class CoercionIntegrationTests
     {
         // Arrange — the dominant malformed shape: a JSON array encoded as a string.
         await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
-        PlantSolution(harness.Environment, "App.sln");
+        harness.Environment.PlantSolution("App.sln");
         PlantFile(harness.Environment, "src/A.cs");
         PlantFile(harness.Environment, "src/B.cs");
         List<string>? cleanupArguments = null;
@@ -126,7 +126,7 @@ public sealed class CoercionIntegrationTests
     {
         // Arrange — a single-element array where solutionPath : string? is advertised. Must be unwrapped.
         await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
-        PlantSolution(harness.Environment, "App.sln");
+        harness.Environment.PlantSolution("App.sln");
         string expectedSolution = Path.GetFullPath("App.sln", harness.Environment.CurrentDirectory);
         List<string>? inspectArguments = null;
         RouteJb(
@@ -151,7 +151,7 @@ public sealed class CoercionIntegrationTests
     {
         // Arrange — the coercer throws inside the SDK argument binder, which wraps it in JsonException(s).
         await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
-        PlantSolution(harness.Environment, "App.sln");
+        harness.Environment.PlantSolution("App.sln");
         RouteJb(harness.ProcessRunner);
 
         // Act
@@ -206,7 +206,7 @@ public sealed class CoercionIntegrationTests
     {
         // Arrange
         await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
-        PlantSolution(harness.Environment, "App.sln");
+        harness.Environment.PlantSolution("App.sln");
         RouteJb(harness.ProcessRunner);
 
         // Act
@@ -245,7 +245,7 @@ public sealed class CoercionIntegrationTests
     {
         // Arrange
         await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
-        PlantSolution(harness.Environment, "App.sln");
+        harness.Environment.PlantSolution("App.sln");
         RouteJb(harness.ProcessRunner);
 
         // Act — "Verbose" is a plausible borrowing from other tools' vocabulary, and is not one of these.
@@ -308,11 +308,6 @@ public sealed class CoercionIntegrationTests
         return result.Content.OfType<TextContentBlock>().First().Text;
     }
 
-    private static void PlantSolution(FakeEnvironment environment, string fileName)
-    {
-        File.WriteAllText(Path.Combine(environment.CurrentDirectory, fileName), string.Empty);
-    }
-
     private static void PlantFile(FakeEnvironment environment, string relativePath)
     {
         string fullPath = Path.Combine(environment.CurrentDirectory, relativePath);
@@ -333,12 +328,12 @@ public sealed class CoercionIntegrationTests
         string? inspectSarif = null)
     {
         processRunner
-            .RunAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .AnyRun()
             .Returns(callInfo =>
             {
                 var arguments = callInfo.ArgAt<IReadOnlyList<string>>(1);
 
-                if (arguments.Contains("--version")) return new ProcessResult(0, "Version: 2026.1.2", string.Empty);
+                if (JbStubs.IsVersionProbe(arguments)) return JbStubs.VersionProbeAnswer;
 
                 onCommand?.Invoke(arguments);
 

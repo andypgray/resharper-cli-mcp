@@ -62,11 +62,7 @@ public sealed class PreWarmTriggerTests
         await harness.Warmer.Finished.WaitAsync(Generous, Ct);
         harness.Warmer.Outcome.ShouldBe(WarmUpOutcome.Warmed);
 
-        await harness.ProcessRunner.Received(1).RunAsync(
-            Arg.Any<string>(),
-            Arg.Is<IReadOnlyList<string>>(arguments => !IsVersionProbe(arguments)),
-            Arg.Any<TimeSpan>(),
-            Arg.Any<CancellationToken>());
+        await harness.ProcessRunner.Received(1).AnyRunWith(arguments => !JbStubs.IsVersionProbe(arguments));
     }
 
     [Fact]
@@ -80,8 +76,7 @@ public sealed class PreWarmTriggerTests
         // Assert — it still settles, so this is a deterministic assertion rather than a wait for nothing.
         await harness.Warmer.Finished.WaitAsync(Generous, Ct);
         harness.Warmer.Outcome.ShouldBe(WarmUpOutcome.Disabled);
-        await harness.ProcessRunner.DidNotReceive().RunAsync(
-            Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>());
+        await harness.ProcessRunner.DidNotReceive().AnyRun();
     }
 
     [Fact]
@@ -113,12 +108,12 @@ public sealed class PreWarmTriggerTests
         PlantSolution(environment);
 
         processRunner
-            .RunAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .AnyRun()
             .Returns(call =>
             {
                 var arguments = call.Arg<IReadOnlyList<string>>();
 
-                if (IsVersionProbe(arguments)) return new ProcessResult(0, "Version: 2026.1.2", string.Empty);
+                if (JbStubs.IsVersionProbe(arguments)) return JbStubs.VersionProbeAnswer;
 
                 CacheHomes.PlantGenerationFromJbRun(arguments);
                 return new ProcessResult(0, string.Empty, string.Empty);
@@ -134,11 +129,11 @@ public sealed class PreWarmTriggerTests
         PlantSolution(environment);
 
         processRunner
-            .RunAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .AnyRun()
             .Returns(call =>
             {
-                if (IsVersionProbe(call.Arg<IReadOnlyList<string>>()))
-                    return new ProcessResult(0, "Version: 2026.1.2", string.Empty);
+                if (JbStubs.IsVersionProbe(call.Arg<IReadOnlyList<string>>()))
+                    return JbStubs.VersionProbeAnswer;
 
                 var cancellationToken = call.Arg<CancellationToken>();
                 started.TrySetResult();
@@ -154,12 +149,7 @@ public sealed class PreWarmTriggerTests
 
     private static void PlantSolution(FakeEnvironment environment)
     {
-        File.WriteAllText(Path.Combine(environment.CurrentDirectory, "App.sln"), string.Empty);
+        environment.PlantSolution("App.sln");
         environment.SetVariable("JB_CACHE_HOME", environment.CreateTempDirectory());
-    }
-
-    private static bool IsVersionProbe(IReadOnlyList<string>? arguments)
-    {
-        return arguments is not null && arguments.Contains("--version");
     }
 }

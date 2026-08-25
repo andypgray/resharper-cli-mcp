@@ -33,8 +33,7 @@ public sealed class ToolValidationTests
 
         // Assert
         exception.Message.ShouldBe("At least one file must be specified.");
-        await _processRunner.DidNotReceive().RunAsync(
-            Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>());
+        await _processRunner.DidNotReceive().AnyRun();
     }
 
     [Fact]
@@ -64,7 +63,6 @@ public sealed class ToolValidationTests
 
         // Assert
         exception.Message.ShouldBe("File paths must not be blank (files[1] is empty).");
-        await _processRunner.DidNotReceive().RunAsync(
-            Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>());
+        await _processRunner.DidNotReceive().AnyRun();
     }
 }

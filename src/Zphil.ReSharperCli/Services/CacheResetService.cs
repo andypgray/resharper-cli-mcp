@@ -60,7 +60,16 @@ internal sealed record CacheResetOutcome(
 ///         moment ago and has not finished reaping.
 ///     </para>
 /// </remarks>
-internal sealed class CacheResetService(JbRunLock runLock, JbRunYield runYield, ILogger<CacheResetService> logger)
+/// <param name="heartbeatInterval">
+///     How often a queued reset reports itself, defaulting to
+///     <see cref="JbRunProgress.HeartbeatInterval" />. A parameter for the reason <see cref="JbRunner" />'s
+///     own is: a test waiting out more than one beat should not have to pay ten seconds for it.
+/// </param>
+internal sealed class CacheResetService(
+    JbRunLock runLock,
+    JbRunYield runYield,
+    ILogger<CacheResetService> logger,
+    TimeSpan? heartbeatInterval = null)
 {
     /// <summary>
     ///     How hard to try one generation before reporting it, and how long to leave between attempts.
@@ -72,9 +81,25 @@ internal sealed class CacheResetService(JbRunLock runLock, JbRunYield runYield, 
     /// </summary>
     private const int DeleteAttempts = 3;
 
+    /// <summary>
+    ///     What a progress message calls this work. Not a <c>jb</c> subcommand, because there is no process
+    ///     here to name: a reset takes the lock and deletes directories, and a caller told it was watching
+    ///     <c>inspectcode</c> would be looking for a run that does not exist.
+    /// </summary>
+    private const string ProgressLabel = "cache reset";
+
     private static readonly TimeSpan DeleteRetryDelay = TimeSpan.FromMilliseconds(200);
 
-    public async Task<CacheResetOutcome> RunAsync(ResolvedConfig config, CancellationToken cancellationToken)
+    /// <remarks>
+    ///     <paramref name="onProgress" /> is where the queue wait is reported while it is still being served
+    ///     out — trailing and optional as <see cref="JbRunner.RunAsync" />'s is, and rendered rather than
+    ///     structured for the same reason: the MCP types a notification is built from stop at the tool
+    ///     surface.
+    /// </remarks>
+    public async Task<CacheResetOutcome> RunAsync(
+        ResolvedConfig config,
+        CancellationToken cancellationToken,
+        Action<string>? onProgress = null)
     {
         // First statement, with no await before it, so the claim is provably raised by the time this method
         // hands its task back — a pre-warm starting a moment later reads the count rather than racing it.
@@ -82,7 +107,7 @@ internal sealed class CacheResetService(JbRunLock runLock, JbRunYield runYield, 
         // arriving in that window finds a free generation but a raised count and stands down, which is the
         // safe direction to be wrong in.
         using IDisposable foreground = runYield.EnterForeground();
-        using IDisposable runLease = await runLock.AcquireAsync(config.SolutionPath, config.CacheHome, cancellationToken);
+        using IDisposable runLease = await AcquireReportingAsync(config, onProgress, cancellationToken);
 
         // Enumerated inside the lock, so the set found is the set deleted: outside it, a run starting in the
         // gap could fork a generation this call would then leave behind while reporting a clean reset. Which
@@ -126,6 +151,33 @@ internal sealed class CacheResetService(JbRunLock runLock, JbRunYield runYield, 
             failures.Count);
 
         return new CacheResetOutcome(config.SolutionPath, config.CacheHome, dropped, leftAlone, failures);
+    }
+
+    /// <summary>
+    ///     Queue for the generation's lease, saying so while the wait lasts. This call spawns nothing, so
+    ///     the wait is the whole of the silence it has to break — and up to the lock's own cap of it.
+    /// </summary>
+    /// <remarks>
+    ///     The reporter is scoped to the acquisition and to nothing else, which is why the wait has a method
+    ///     of its own rather than a wider <c>await using</c> in <see cref="RunAsync" />. Two things fall out
+    ///     of it. A beat cannot land during the deletes, which take moments and would be described as a wait
+    ///     that had already ended. And on a contended acquire the reporter is disposed as the
+    ///     <see cref="UserErrorException" /> unwinds past it, so nothing reports against a call that has
+    ///     already been answered with an error.
+    /// </remarks>
+    private async Task<IDisposable> AcquireReportingAsync(
+        ResolvedConfig config,
+        Action<string>? onProgress,
+        CancellationToken cancellationToken)
+    {
+        // The lock's own cap rather than a second copy of it: this caller is bounded by that number, so it
+        // is the only honest one to name. It never reaches a message as things stand — the cap is armed by
+        // Spawning, and nothing here spawns — but a lifecycle that grew a later phase would name the number
+        // that actually bounds it.
+        await using JbRunProgress? progress = JbRunProgress.Reporting(
+            ProgressLabel, config.SolutionPath, runLock.MaxWait, onProgress, logger, heartbeatInterval);
+
+        return await runLock.AcquireAsync(config.SolutionPath, config.CacheHome, cancellationToken);
     }
 
     /// <summary>

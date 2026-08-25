@@ -306,6 +306,56 @@ public sealed class JbRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task RunAsync_RunHitsTheCapWithNoProgressReported_ClaimsNoParticularProgress()
+    {
+        // Arrange — nothing was watching, so nothing knows how far jb got. cleanupcode lands here too: its
+        // per-file output is unrecognisable, so its count is always zero.
+        StubTimeout();
+
+        // Act
+        var exception = await Should.ThrowAsync<UserErrorException>(() => _runner.RunAsync(_config, ["inspectcode", _config.SolutionPath], Ct));
+
+        // Assert — the general claim, hedged, and no invented number.
+        exception.Message.ShouldContain("The cache keeps most of what this run built");
+        exception.Message.ShouldNotContain("by the time it was stopped");
+    }
+
+    [Fact]
+    public async Task RunAsync_RunHitsTheCapAfterAnalysingFiles_NamesHowFarItGot()
+    {
+        // Arrange — a jb that reports 40 files and is then killed at the cap. Until there was a count, the
+        // promise that "a retry resumes rather than starting over" was made with confidence it had not
+        // earned: a run killed having analysed 40 files and one killed at 1,200 read identically.
+        StubTimeoutAfterAnalysing(40);
+
+        // Act
+        var exception = await Should.ThrowAsync<UserErrorException>(() => _runner.RunAsync(_config, ["inspectcode", _config.SolutionPath], Ct, _ => { }));
+
+        // Assert — the count spelled as the progress line spelled it, not as "40 file(s)".
+        exception.Message.ShouldContain("jb had reached 40 files by the time it was stopped");
+        exception.Message.ShouldContain("a retry resumes from there");
+    }
+
+    [Fact]
+    public async Task RunAsync_RunHitsTheCap_TheCapLogLineCarriesTheCountToo()
+    {
+        // Arrange — the log needs it independently of the message: a UserErrorException is deliberately never
+        // logged, so without this the only record of how far a killed run got dies with the response.
+        CapturingLoggerProvider logs = new();
+        JbRunner runner = JbRunners.Create(_processRunner, _runLock, logs: Logs.Capturing(logs));
+        StubTimeoutAfterAnalysing(7);
+
+        // Act
+        await Should.ThrowAsync<UserErrorException>(() => runner.RunAsync(_config, ["inspectcode", _config.SolutionPath], Ct, _ => { }));
+
+        // Assert — still identified by RunCap alone, with no CacheState or ExitCode of its own: those two
+        // properties are how JbRunLoggingTests tells the opening and closing lines apart.
+        LogEntry killed = logs.WithProperty("RunCap").ShouldHaveSingleItem();
+        killed.Property("FilesSeen").ShouldBe(7);
+        logs.WithProperty("ExitCode").ShouldBeEmpty();
+    }
+
+    [Fact]
     public async Task RunAsync_RunHitsARaisedCap_ReportsThatCapExactlyAsItWasSet()
     {
         // Arrange — a raised cap that still ran out must say so with the raised number, or the advice to
@@ -353,8 +403,7 @@ public sealed class JbRunnerTests : IDisposable
         // at all, because a second jb on one cache generation forks a cold one. This is one of the two
         // endings that genuinely cost nothing, and the only kind the summary may call a skip.
         result.ShouldBe(SpeculativeRunOutcome.NotStarted);
-        await _processRunner.DidNotReceive().RunAsync(
-            Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>());
+        await _processRunner.DidNotReceive().AnyRun();
     }
 
     [Fact]
@@ -379,7 +428,7 @@ public sealed class JbRunnerTests : IDisposable
         // The runner sees the same OperationCanceledException either way, so only the caller's token tells
         // "I was shut down" apart from "a foreground run reclaimed the cache".
         _processRunner
-            .RunAsync("jb", Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .AnyRunOf("jb")
             .ThrowsAsync(new OperationCanceledException());
         using CancellationTokenSource callerCancelled = new();
         await callerCancelled.CancelAsync();
@@ -541,8 +590,7 @@ public sealed class JbRunnerTests : IDisposable
         await Should.ThrowAsync<OperationCanceledException>(() => _runner.TryRunAsync(_config, ["inspectcode", _config.SolutionPath], cancelled.Token));
 
         // Assert
-        await _processRunner.DidNotReceive().RunAsync(
-            Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>());
+        await _processRunner.DidNotReceive().AnyRun();
     }
 
     /// <summary>
@@ -552,8 +600,26 @@ public sealed class JbRunnerTests : IDisposable
     private void StubTimeout()
     {
         _processRunner
-            .RunAsync("jb", Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .AnyRunOf("jb")
             .ThrowsAsync(new ProcessTimeoutException("'jb' timed out."));
+    }
+
+    /// <summary>
+    ///     A jb that reports <paramref name="files" /> analysed files and is then killed at the cap — the
+    ///     shape of every cold run that runs out of budget, and the only one that can say how far it got.
+    /// </summary>
+    private void StubTimeoutAfterAnalysing(int files)
+    {
+        _processRunner
+            .AnyRunOf("jb")
+            .Returns<ProcessResult>(callInfo =>
+            {
+                Action<string> onLine = callInfo.OutputLineObserver()!;
+                onLine(JbProgressLines.AnalyzingPhaseLine);
+                for (var i = 0; i < files; i++) onLine($"Analyzing File{i}.cs");
+
+                throw new ProcessTimeoutException("'jb' timed out.");
+            });
     }
 
     /// <summary>
@@ -563,7 +629,7 @@ public sealed class JbRunnerTests : IDisposable
     private void StubBlocking(TaskCompletionSource started, TaskCompletionSource release)
     {
         _processRunner
-            .RunAsync("jb", Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .AnyRunOf("jb")
             .Returns(async _ =>
             {
                 started.TrySetResult();
@@ -575,7 +641,7 @@ public sealed class JbRunnerTests : IDisposable
     private void StubExit(int exitCode, string standardError, Action? whileRunning = null)
     {
         _processRunner
-            .RunAsync("jb", Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .AnyRunOf("jb")
             .Returns(_ =>
             {
                 whileRunning?.Invoke();

@@ -75,6 +75,9 @@ public sealed class JbContractFixture : IAsyncLifetime
 
     private readonly FakeEnvironment _environment = new();
 
+    /// <summary>Filled as the runs below go past, keyed by subcommand.</summary>
+    private readonly Dictionary<string, ProgressVocabulary> _progressVocabularies = new(StringComparer.Ordinal);
+
     /// <summary>
     ///     Created only once <see cref="InitializeAsync" /> has decided there is a <c>jb</c> to run, so the
     ///     fixture still costs nothing on a machine without one.
@@ -117,6 +120,13 @@ public sealed class JbContractFixture : IAsyncLifetime
     /// <summary>How each subcommand answered an <c>--include</c> that was left absolute.</summary>
     internal RawIncludeProbe RawAbsoluteInclude { get; private set; } = null!;
 
+    /// <summary>
+    ///     What <see cref="JbProgressLines" /> made of the standard output of the real runs above, per
+    ///     subcommand. The progress heartbeat is driven entirely off that classification, and it is reading
+    ///     someone else's undocumented output — so it is watched here rather than assumed.
+    /// </summary>
+    internal IReadOnlyDictionary<string, ProgressVocabulary> ProgressVocabularies => _progressVocabularies;
+
     /// <summary>The solution the runs above analysed, and the cache home they filled.</summary>
     internal string SolutionPath { get; private set; } = "";
 
@@ -138,7 +148,12 @@ public sealed class JbContractFixture : IAsyncLifetime
         _environment.SetVariable("JB_CACHE_HOME", CacheHome);
 
         _childLifetime = new ChildProcessLifetime(new SystemEnvironment(), NullLogger<ChildProcessLifetime>.Instance);
-        ProcessRunner processRunner = new(_childLifetime, NullLogger<ProcessRunner>.Instance);
+        ProcessRunner realProcessRunner = new(_childLifetime, NullLogger<ProcessRunner>.Instance);
+
+        // Every run below goes through the recorder, so the runs that answer the other contracts answer the
+        // progress-vocabulary one for free — and answer it from the same bytes jb actually wrote, split by
+        // the product's own reader rather than by a re-spelling of it.
+        IProcessRunner processRunner = new LineRecordingRunner(realProcessRunner, RecordProgressLine);
 
         SolutionPath = PlantSolution("solution");
         await BuildAsync(processRunner, SolutionPath, cancellationToken);
@@ -319,6 +334,21 @@ public sealed class JbContractFixture : IAsyncLifetime
         arguments[index] = $"--include={absolutePath}";
     }
 
+    /// <summary>
+    ///     File one line of a real run's standard output under the subcommand that produced it, and record
+    ///     what <see cref="JbProgressLines" /> made of it.
+    /// </summary>
+    private void RecordProgressLine(string subcommand, string line)
+    {
+        lock (_progressVocabularies)
+        {
+            if (!_progressVocabularies.TryGetValue(subcommand, out ProgressVocabulary? vocabulary))
+                _progressVocabularies[subcommand] = vocabulary = new ProgressVocabulary();
+
+            vocabulary.Add(line);
+        }
+    }
+
     /// <summary>The <c>jb</c> the gate found, and the version banner it printed.</summary>
     private static JbPresence LocateJb()
     {
@@ -362,6 +392,70 @@ public sealed class JbContractFixture : IAsyncLifetime
 
     /// <summary>A <c>jb</c> executable the gate probe accepted, with the banner it printed.</summary>
     private sealed record JbPresence(string? ExecutablePath, ProcessResult? Probe);
+
+    /// <summary>
+    ///     Tees every line of a run's standard output to <paramref name="record" /> on its way to whatever
+    ///     the product asked for, keyed by the subcommand that produced it.
+    /// </summary>
+    /// <remarks>
+    ///     A decorator rather than a progress sink threaded through the services, because the two see
+    ///     different things: a progress sink receives this server's own rendering, on a ten-second heartbeat,
+    ///     which says nothing about the words <c>jb</c> used. The observation this suite exists to make is
+    ///     about <c>jb</c>'s vocabulary, so it has to be made where the vocabulary is.
+    /// </remarks>
+    private sealed class LineRecordingRunner(IProcessRunner inner, Action<string, string> record) : IProcessRunner
+    {
+        public Task<ProcessResult> RunAsync(
+            string fileName,
+            IReadOnlyList<string> arguments,
+            TimeSpan timeout,
+            CancellationToken cancellationToken,
+            Action<string>? onOutputLine = null)
+        {
+            string subcommand = arguments.Count > 0 ? arguments[0] : "";
+
+            return inner.RunAsync(fileName, arguments, timeout, cancellationToken, line =>
+            {
+                record(subcommand, line);
+                onOutputLine?.Invoke(line);
+            });
+        }
+    }
+}
+
+/// <summary>
+///     What one subcommand's real standard output looked like to <see cref="JbProgressLines" />: how much of
+///     it was recognised, and which phases it announced.
+/// </summary>
+internal sealed class ProgressVocabulary
+{
+    private readonly HashSet<JbRunPhase> _phases = [];
+
+    /// <summary>Every non-blank line the run wrote.</summary>
+    public int Lines { get; private set; }
+
+    /// <summary>Of those, the ones this server understood.</summary>
+    public int Recognised { get; private set; }
+
+    /// <summary>Of those, the per-file lines a heartbeat's count is made of.</summary>
+    public int FileLines { get; private set; }
+
+    /// <summary>The phases the run announced.</summary>
+    public IReadOnlySet<JbRunPhase> Phases => _phases;
+
+    public void Add(string line)
+    {
+        if (line.Trim().Length == 0) return;
+
+        Lines++;
+
+        if (JbProgressLines.Classify(line) is not { } step) return;
+
+        Recognised++;
+        _phases.Add(step.Phase);
+
+        if (step.NamesAFile) FileLines++;
+    }
 }
 
 /// <summary>

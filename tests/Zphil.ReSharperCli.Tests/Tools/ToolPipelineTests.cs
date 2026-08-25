@@ -28,7 +28,7 @@ public sealed class ToolPipelineTests
     {
         // Arrange
         using FakeEnvironment environment = new();
-        PlantSolution(environment, "App.sln");
+        environment.PlantSolution("App.sln");
         string sarif = Fixtures.ReadSarif("inspect-sample.json");
         StubJb(sarif);
         ResharperTools tools = ToolHarness.Build(_processRunner, environment);
@@ -51,7 +51,7 @@ public sealed class ToolPipelineTests
     {
         // Arrange
         using FakeEnvironment environment = new();
-        PlantSolution(environment, "App.sln");
+        environment.PlantSolution("App.sln");
         List<string>? inspectArguments = null;
         StubJb(
             Fixtures.ReadSarif("inspect-sample.json"),
@@ -71,7 +71,7 @@ public sealed class ToolPipelineTests
     {
         // Arrange
         using FakeEnvironment environment = new();
-        PlantSolution(environment, "App.sln");
+        environment.PlantSolution("App.sln");
         List<string>? inspectArguments = null;
         StubJb(
             Fixtures.ReadSarif("inspect-sample.json"),
@@ -92,7 +92,7 @@ public sealed class ToolPipelineTests
         // Arrange — the jb stub returns exit 0 without touching the files, so both hash identically before
         // and after: a small batch renders at DetailLevel.Full, classifying each entry.
         using FakeEnvironment environment = new();
-        PlantSolution(environment, "App.sln");
+        environment.PlantSolution("App.sln");
         PlantFile(environment, "src/A.cs");
         PlantFile(environment, "src/B.cs");
         StubJb();
@@ -114,7 +114,7 @@ public sealed class ToolPipelineTests
         // Arrange — the measured caller mistake: several paths joined into one array element. It used to fail
         // the whole call as a missing file, wasting a round trip on a list every path of which is real.
         using FakeEnvironment environment = new();
-        PlantSolution(environment, "App.sln");
+        environment.PlantSolution("App.sln");
         PlantFile(environment, "src/A.cs");
         PlantFile(environment, "src/B.cs");
         List<string>? cleanupArguments = null;
@@ -140,7 +140,7 @@ public sealed class ToolPipelineTests
         // came back as exit 3 with "No items were found to cleanup"; the same list passed relative cleaned all
         // 27. The tool has always documented an absolute path as accepted, so this is that promise kept.
         using FakeEnvironment environment = new();
-        PlantSolution(environment, "App.sln");
+        environment.PlantSolution("App.sln");
         PlantFile(environment, "src/A.cs");
         PlantFile(environment, "src/B.cs");
         string[] absolute =
@@ -171,7 +171,7 @@ public sealed class ToolPipelineTests
         // Arrange — the same defect, and the dangerous half: jb exits 0 having matched nothing, so an
         // unmatched absolute path came back as "No issues found." with no error anywhere.
         using FakeEnvironment environment = new();
-        PlantSolution(environment, "App.sln");
+        environment.PlantSolution("App.sln");
         List<string>? inspectArguments = null;
         StubJb(
             Fixtures.ReadSarif("inspect-sample.json"),
@@ -192,7 +192,7 @@ public sealed class ToolPipelineTests
         // Arrange — a file that is on disk but in no project: jb exits 3 and says "No items were found to
         // cleanup", which an agent that has just made 27 edits reads as "nothing needed changing".
         using FakeEnvironment environment = new();
-        PlantSolution(environment, "App.sln");
+        environment.PlantSolution("App.sln");
         PlantFile(environment, "src/Orphan.cs");
         StubJbCleanupFailing(3, "No items were found to cleanup");
         ResharperTools tools = ToolHarness.Build(_processRunner, environment);
@@ -211,7 +211,7 @@ public sealed class ToolPipelineTests
         // Arrange — the same mistake is worse here: the joined string reaches jb as one pattern that matches
         // nothing, and the tool reports "No issues found." for a scan that never looked at the files asked for.
         using FakeEnvironment environment = new();
-        PlantSolution(environment, "App.sln");
+        environment.PlantSolution("App.sln");
         List<string>? inspectArguments = null;
         StubJb(
             Fixtures.ReadSarif("inspect-sample.json"),
@@ -232,7 +232,7 @@ public sealed class ToolPipelineTests
         // Arrange — splitting must not blur which path is wrong: the error names the fragment that does not
         // exist, not the joined string the caller sent, and nothing is rewritten.
         using FakeEnvironment environment = new();
-        PlantSolution(environment, "App.sln");
+        environment.PlantSolution("App.sln");
         PlantFile(environment, "src/A.cs");
         StubJb();
         ResharperTools tools = ToolHarness.Build(_processRunner, environment);
@@ -244,11 +244,7 @@ public sealed class ToolPipelineTests
         exception.Message.ShouldContain("The following files were not found");
         exception.Message.ShouldContain("- src/Missing.cs");
         exception.Message.ShouldNotContain("src/A.cs,src/Missing.cs");
-        await _processRunner.DidNotReceive().RunAsync(
-            Arg.Any<string>(),
-            Arg.Is<IReadOnlyList<string>>(args => args != null && args.Count > 0 && args[0] == "cleanupcode"),
-            Arg.Any<TimeSpan>(),
-            Arg.Any<CancellationToken>());
+        await _processRunner.DidNotReceive().AnyRunWith(args => args != null && args.Count > 0 && args[0] == "cleanupcode");
     }
 
     [Fact]
@@ -257,7 +253,7 @@ public sealed class ToolPipelineTests
         // Arrange — the whole point of the declared profile: a caller that does not know it exists still
         // gets it. Without this, a repo that narrowed its cleanup silently gets Full Cleanup instead.
         using FakeEnvironment environment = new();
-        PlantSolution(environment, "App.sln");
+        environment.PlantSolution("App.sln");
         PlantSettingsDeclaringProfile(environment, "House: Keep Named Arguments");
         PlantFile(environment, "src/A.cs");
         StubJb();
@@ -275,7 +271,7 @@ public sealed class ToolPipelineTests
     {
         // Arrange
         using FakeEnvironment environment = new();
-        PlantSolution(environment, "App.sln");
+        environment.PlantSolution("App.sln");
         PlantSettingsDeclaringProfile(environment, "House: Keep Named Arguments");
         PlantFile(environment, "src/A.cs");
         StubJb();
@@ -294,7 +290,7 @@ public sealed class ToolPipelineTests
         // Arrange — a blank argument would reach jb as --profile= and fail the run. It has to read as
         // "unspecified" and fall through, exactly as a blank declared profile does.
         using FakeEnvironment environment = new();
-        PlantSolution(environment, "App.sln");
+        environment.PlantSolution("App.sln");
         PlantSettingsDeclaringProfile(environment, "House: Keep Named Arguments");
         PlantFile(environment, "src/A.cs");
         StubJb();
@@ -312,7 +308,7 @@ public sealed class ToolPipelineTests
     {
         // Arrange
         using FakeEnvironment environment = new();
-        PlantSolution(environment, "App.sln");
+        environment.PlantSolution("App.sln");
         PlantFile(environment, "src/A.cs");
         StubJb();
         ResharperTools tools = ToolHarness.Build(_processRunner, environment);
@@ -330,7 +326,7 @@ public sealed class ToolPipelineTests
     {
         // Arrange
         using FakeEnvironment environment = new();
-        PlantSolution(environment, "App.sln");
+        environment.PlantSolution("App.sln");
         PlantFile(environment, "src/A.cs");
         StubJb();
         ResharperTools tools = ToolHarness.Build(_processRunner, environment);
@@ -348,7 +344,7 @@ public sealed class ToolPipelineTests
         // Arrange — end to end over the field failure: `--` inside a comment is illegal XML, so this file
         // used to resolve no profile at all and silently clean up with Full Cleanup instead.
         using FakeEnvironment environment = new();
-        PlantSolution(environment, "App.sln");
+        environment.PlantSolution("App.sln");
         PlantSettings(environment, DotSettingsFixtures.DeclaringBehindIllegalComment("House: Keep Named Arguments"));
         PlantFile(environment, "src/A.cs");
         StubJb();
@@ -369,7 +365,7 @@ public sealed class ToolPipelineTests
         // they were rewritten with a broader profile than the solution declares, so the result has to say so
         // rather than leaving it in a log nobody reads.
         using FakeEnvironment environment = new();
-        PlantSolution(environment, "App.sln");
+        environment.PlantSolution("App.sln");
         PlantSettings(environment, DotSettingsFixtures.Unparseable());
         PlantFile(environment, "src/A.cs");
         StubJb();
@@ -392,7 +388,7 @@ public sealed class ToolPipelineTests
         // unaffected; only this server's own profile lookup failed. Warning here would report a
         // consequence that does not exist.
         using FakeEnvironment environment = new();
-        PlantSolution(environment, "App.sln");
+        environment.PlantSolution("App.sln");
         PlantSettings(environment, DotSettingsFixtures.Unparseable());
         StubJb(Fixtures.ReadSarif("inspect-sample.json"));
         ResharperTools tools = ToolHarness.Build(_processRunner, environment);
@@ -414,7 +410,7 @@ public sealed class ToolPipelineTests
         // result especially, a bare "No issues found." would read as a clean bill of health for a scan
         // that ran unconfigured.
         using FakeEnvironment environment = new();
-        PlantSolution(environment, "App.sln");
+        environment.PlantSolution("App.sln");
         string missing = Path.Combine(environment.CurrentDirectory, "missing.DotSettings");
         environment.SetVariable("JB_SETTINGS_PATH", missing);
         StubJb(Fixtures.ReadSarif("empty-runs.json"));
@@ -438,7 +434,7 @@ public sealed class ToolPipelineTests
         // solution file as --settings would re-mount it as a Custom layer above the project layer and
         // resurrect every finding the project scoped away (measured in the field: 0 findings became 83).
         using FakeEnvironment environment = new();
-        PlantSolution(environment, "App.sln");
+        environment.PlantSolution("App.sln");
         PlantSettings(environment, DotSettingsFixtures.SettingSeverity("MethodHasAsyncOverload", "WARNING"));
         PlantFile(environment, "Proj/Proj.csproj");
         PlantFile(environment, "Proj/Proj.csproj.DotSettings", DotSettingsFixtures.SettingSeverity("MethodHasAsyncOverload", "DO_NOT_SHOW"));
@@ -462,7 +458,7 @@ public sealed class ToolPipelineTests
         // Arrange — the other half of the split: this failure drops both configuration axes, so both tools
         // report it.
         using FakeEnvironment environment = new();
-        PlantSolution(environment, "App.sln");
+        environment.PlantSolution("App.sln");
         string missing = Path.Combine(environment.CurrentDirectory, "missing.DotSettings");
         environment.SetVariable("JB_SETTINGS_PATH", missing);
         PlantFile(environment, "src/A.cs");
@@ -485,7 +481,7 @@ public sealed class ToolPipelineTests
         // 400-token client budget is 1,000 characters, and 20 files do not list in full inside what is left.
         using FakeEnvironment environment = new();
         environment.SetVariable("MAX_MCP_OUTPUT_TOKENS", "400");
-        PlantSolution(environment, "App.sln");
+        environment.PlantSolution("App.sln");
         PlantSettings(environment, DotSettingsFixtures.Unparseable());
         string[] files = [.. Enumerable.Range(0, 20).Select(i => $"src/very/long/path/to/File{i:D3}.cs")];
         foreach (string file in files) PlantFile(environment, file);
@@ -510,7 +506,7 @@ public sealed class ToolPipelineTests
         using FakeEnvironment environment = new();
         string cacheHome = environment.CreateTempDirectory();
         environment.SetVariable("JB_CACHE_HOME", cacheHome);
-        PlantSolution(environment, "App.sln");
+        environment.PlantSolution("App.sln");
         StubJb(Fixtures.ReadSarif("inspect-phantom-errors.json"));
         ResharperTools tools = ToolHarness.Build(_processRunner, environment);
 
@@ -534,7 +530,7 @@ public sealed class ToolPipelineTests
         environment.SetVariable("MAX_MCP_OUTPUT_TOKENS", "300"); // 750 characters
         string cacheHome = environment.CreateTempDirectory();
         environment.SetVariable("JB_CACHE_HOME", cacheHome);
-        PlantSolution(environment, "App.sln");
+        environment.PlantSolution("App.sln");
         StubJb(ManyIssuesSarif(200));
         ResharperTools tools = ToolHarness.Build(_processRunner, environment);
 
@@ -560,7 +556,7 @@ public sealed class ToolPipelineTests
         // makes the report free for every caller that does not want one.
         using FakeEnvironment environment = new();
         string reportRoot = environment.CreateTempDirectory();
-        PlantSolution(environment, "App.sln");
+        environment.PlantSolution("App.sln");
         StubJb(Fixtures.ReadSarif("inspect-sample.json"));
         ResharperTools tools = ToolHarness.Build(_processRunner, environment, reportRoot: reportRoot);
 
@@ -579,7 +575,7 @@ public sealed class ToolPipelineTests
         // Arrange
         using FakeEnvironment environment = new();
         string reportRoot = environment.CreateTempDirectory();
-        PlantSolution(environment, "App.sln");
+        environment.PlantSolution("App.sln");
         StubJb(Fixtures.ReadSarif("inspect-sample.json"));
         ResharperTools tools = ToolHarness.Build(_processRunner, environment, reportRoot: reportRoot);
 
@@ -605,7 +601,7 @@ public sealed class ToolPipelineTests
         // can script against; one that sometimes yields no file is not.
         using FakeEnvironment environment = new();
         string reportRoot = environment.CreateTempDirectory();
-        PlantSolution(environment, "App.sln");
+        environment.PlantSolution("App.sln");
         StubJb(Fixtures.ReadSarif("empty-runs.json"));
         ResharperTools tools = ToolHarness.Build(_processRunner, environment, reportRoot: reportRoot);
 
@@ -627,7 +623,7 @@ public sealed class ToolPipelineTests
         using FakeEnvironment environment = new();
         environment.SetVariable("MAX_MCP_OUTPUT_TOKENS", "300"); // 750 characters
         string reportRoot = environment.CreateTempDirectory();
-        PlantSolution(environment, "App.sln");
+        environment.PlantSolution("App.sln");
         StubJb(ManyIssuesSarif(200));
         ResharperTools tools = ToolHarness.Build(_processRunner, environment, reportRoot: reportRoot);
 
@@ -659,7 +655,7 @@ public sealed class ToolPipelineTests
         // Arrange — 3 issues render at Full well inside the default 25,000-character budget, so nothing
         // about this response is the budget's doing. Before the parameter, overflowing was the only way in.
         using FakeEnvironment environment = new();
-        PlantSolution(environment, "App.sln");
+        environment.PlantSolution("App.sln");
         StubJb(Fixtures.ReadSarif("inspect-sample.json"));
         ResharperTools tools = ToolHarness.Build(_processRunner, environment);
 
@@ -682,7 +678,7 @@ public sealed class ToolPipelineTests
         // keeps stepping and the note has to stop claiming the level was the caller's choice.
         using FakeEnvironment environment = new();
         environment.SetVariable("MAX_MCP_OUTPUT_TOKENS", "300"); // 750 characters
-        PlantSolution(environment, "App.sln");
+        environment.PlantSolution("App.sln");
         StubJb(ManyIssuesSarif(200));
         ResharperTools tools = ToolHarness.Build(_processRunner, environment);
 
@@ -701,7 +697,7 @@ public sealed class ToolPipelineTests
         // Arrange — the default-path pin. A fifth parameter may not move a byte of what every existing
         // caller already gets, which is what makes it free to add.
         using FakeEnvironment environment = new();
-        PlantSolution(environment, "App.sln");
+        environment.PlantSolution("App.sln");
         StubJb(Fixtures.ReadSarif("inspect-sample.json"));
         ResharperTools tools = ToolHarness.Build(_processRunner, environment);
 
@@ -721,7 +717,7 @@ public sealed class ToolPipelineTests
         // doing alone. The note is asserted against the enum member's own name, which is also what pins
         // the tool-facing enum and the formatting ladder to the same five spellings.
         using FakeEnvironment environment = new();
-        PlantSolution(environment, "App.sln");
+        environment.PlantSolution("App.sln");
         StubJb(Fixtures.ReadSarif("inspect-sample.json"));
         ResharperTools tools = ToolHarness.Build(_processRunner, environment);
 
@@ -749,7 +745,7 @@ public sealed class ToolPipelineTests
         // parameter delivers it alone.
         using FakeEnvironment environment = new();
         string reportRoot = environment.CreateTempDirectory();
-        PlantSolution(environment, "App.sln");
+        environment.PlantSolution("App.sln");
         StubJb(ManyIssuesSarif(200));
         ResharperTools tools = ToolHarness.Build(_processRunner, environment, reportRoot: reportRoot);
 
@@ -778,7 +774,7 @@ public sealed class ToolPipelineTests
         // reachable by a member added to InspectDetail and not to the mapping, and the reason the two enums
         // are mapped by hand is that such a gap must not quietly resolve to a plausible-looking level.
         using FakeEnvironment environment = new();
-        PlantSolution(environment, "App.sln");
+        environment.PlantSolution("App.sln");
         StubJb(Fixtures.ReadSarif("inspect-sample.json"));
         ResharperTools tools = ToolHarness.Build(_processRunner, environment);
 
@@ -786,11 +782,7 @@ public sealed class ToolPipelineTests
         await Should.ThrowAsync<ArgumentOutOfRangeException>(() => tools.InspectAsync(detail: (InspectDetail)99, cancellationToken: Ct));
 
         // Assert — and it fails ahead of the analysis, so a bad argument never costs the minutes a run does.
-        await _processRunner.DidNotReceive().RunAsync(
-            Arg.Any<string>(),
-            Arg.Is<IReadOnlyList<string>>(args => args != null && args.Count > 0 && args[0] == "inspectcode"),
-            Arg.Any<TimeSpan>(),
-            Arg.Any<CancellationToken>());
+        await _processRunner.DidNotReceive().AnyRunWith(args => args != null && args.Count > 0 && args[0] == "inspectcode");
     }
 
     [Fact]
@@ -800,7 +792,7 @@ public sealed class ToolPipelineTests
         using FakeEnvironment environment = new();
         string cacheHome = environment.CreateTempDirectory();
         environment.SetVariable("JB_CACHE_HOME", cacheHome);
-        PlantSolution(environment, "App.sln");
+        environment.PlantSolution("App.sln");
         string ours = CacheHomes.PlantGenerationFor(cacheHome, Path.Combine(environment.CurrentDirectory, "App.sln"));
         CacheHomes.PlantGeneration(cacheHome, "_Other.99.00");
         StubJb();
@@ -825,7 +817,7 @@ public sealed class ToolPipelineTests
         using FakeEnvironment environment = new();
         string cacheHome = environment.CreateTempDirectory();
         environment.SetVariable("JB_CACHE_HOME", cacheHome);
-        PlantSolution(environment, "App.sln");
+        environment.PlantSolution("App.sln");
         StubJb();
         ResharperTools tools = ToolHarness.Build(_processRunner, environment);
 
@@ -833,16 +825,8 @@ public sealed class ToolPipelineTests
         await tools.ResetCacheAsync(cancellationToken: Ct);
 
         // Assert — the version probe (which is itself an "inspectcode" invocation) and nothing else.
-        await _processRunner.Received(1).RunAsync(
-            Arg.Any<string>(),
-            Arg.Is<IReadOnlyList<string>>(args => args != null && args.Contains("--version")),
-            Arg.Any<TimeSpan>(),
-            Arg.Any<CancellationToken>());
-        await _processRunner.DidNotReceive().RunAsync(
-            Arg.Any<string>(),
-            Arg.Is<IReadOnlyList<string>>(args => args != null && !args.Contains("--version")),
-            Arg.Any<TimeSpan>(),
-            Arg.Any<CancellationToken>());
+        await _processRunner.Received(1).AnyRunWith(args => args != null && args.Contains("--version"));
+        await _processRunner.DidNotReceive().AnyRunWith(args => args != null && !args.Contains("--version"));
     }
 
     [Fact]
@@ -858,11 +842,6 @@ public sealed class ToolPipelineTests
 
         // Assert
         exception.Message.ShouldContain("JB_SOLUTION_PATH");
-    }
-
-    private static void PlantSolution(FakeEnvironment environment, string fileName)
-    {
-        File.WriteAllText(Path.Combine(environment.CurrentDirectory, fileName), string.Empty);
     }
 
     private static void PlantSettingsDeclaringProfile(FakeEnvironment environment, string profileName)
@@ -893,7 +872,7 @@ public sealed class ToolPipelineTests
         Action<IReadOnlyList<string>>? onCleanup = null)
     {
         _processRunner
-            .RunAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .AnyRun()
             .Returns(Route);
 
         return;
@@ -902,7 +881,7 @@ public sealed class ToolPipelineTests
         {
             var arguments = callInfo.ArgAt<IReadOnlyList<string>>(1);
 
-            if (arguments.Contains("--version")) return new ProcessResult(0, "Version: 2026.1.2", string.Empty);
+            if (JbStubs.IsVersionProbe(arguments)) return JbStubs.VersionProbeAnswer;
 
             if (arguments.Count > 0 && arguments[0] == "inspectcode")
             {
@@ -924,13 +903,13 @@ public sealed class ToolPipelineTests
     private void StubJbCleanupFailing(int exitCode, string standardError)
     {
         _processRunner
-            .RunAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .AnyRun()
             .Returns(callInfo =>
             {
                 var arguments = callInfo.ArgAt<IReadOnlyList<string>>(1);
 
-                return arguments.Contains("--version")
-                    ? new ProcessResult(0, "Version: 2026.1.2", string.Empty)
+                return JbStubs.IsVersionProbe(arguments)
+                    ? JbStubs.VersionProbeAnswer
                     : new ProcessResult(exitCode, string.Empty, standardError);
             });
     }

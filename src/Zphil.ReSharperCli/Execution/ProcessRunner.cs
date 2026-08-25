@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text;
 using Microsoft.Extensions.Logging;
+using Zphil.ReSharperCli.Formatting;
 
 namespace Zphil.ReSharperCli.Execution;
 
@@ -32,6 +33,16 @@ internal sealed class ProcessRunner(ChildProcessLifetime childLifetime, ILogger<
     /// <summary>Cap captured stdout/stderr at 10&#160;MB each; past the cap we keep draining but stop appending.</summary>
     private const int MaxCapturedChars = 10 * 1024 * 1024;
 
+    /// <summary>How much of a pipe is taken in one read.</summary>
+    private const int ReadChunkChars = 8192;
+
+    /// <summary>
+    ///     The most of one line that is carried across chunk boundaries for a line observer. Generous against
+    ///     any real line — <c>jb</c>'s longest is a file path — and the reason a stream that never emits a
+    ///     newline cannot grow the carry to the size of the whole output.
+    /// </summary>
+    private const int MaxCarriedLineChars = 8192;
+
     /// <summary>
     ///     How long a killed process tree is given to be reaped before this gives up on it and unwinds. Named
     ///     rather than left inline because it is the width of a window the rest of the server can see: a run
@@ -46,7 +57,8 @@ internal sealed class ProcessRunner(ChildProcessLifetime childLifetime, ILogger<
         string fileName,
         IReadOnlyList<string> arguments,
         TimeSpan timeout,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Action<string>? onOutputLine = null)
     {
         SpawnCommand command = childLifetime.Rewrite(fileName, arguments);
 
@@ -78,7 +90,7 @@ internal sealed class ProcessRunner(ChildProcessLifetime childLifetime, ILogger<
         process.StandardInput.Close();
 
         // Drain both pipes concurrently and immediately so a chatty child never blocks on a full buffer.
-        Task<string> standardOutputTask = ReadCappedAsync(process.StandardOutput);
+        Task<string> standardOutputTask = ReadCappedAsync(process.StandardOutput, onOutputLine);
         Task<string> standardErrorTask = ReadCappedAsync(process.StandardError);
 
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -109,12 +121,12 @@ internal sealed class ProcessRunner(ChildProcessLifetime childLifetime, ILogger<
                 "Killed the {FileName} process tree after {ElapsedMs} ms — {Reason}",
                 fileName,
                 elapsed.ElapsedMilliseconds,
-                cancellationToken.IsCancellationRequested ? "cancelled by its caller" : $"the {FormatDuration(timeout)} cap");
+                cancellationToken.IsCancellationRequested ? "cancelled by its caller" : $"the {DurationFormatter.Format(timeout)} cap");
 
             // External cancellation (the caller's token) propagates as a normal OperationCanceledException.
             if (cancellationToken.IsCancellationRequested) throw;
 
-            throw new ProcessTimeoutException($"'{fileName}' timed out after {FormatDuration(timeout)}.");
+            throw new ProcessTimeoutException($"'{fileName}' timed out after {DurationFormatter.Format(timeout)}.");
         }
 
         // The process has exited and its exit code is final. Bound the pipe drain by the still-armed
@@ -156,37 +168,24 @@ internal sealed class ProcessRunner(ChildProcessLifetime childLifetime, ILogger<
     }
 
     /// <summary>
-    ///     Human-readable, correctly-pluralized run duration: "30 seconds", "5 minutes", "1 minute
-    ///     30 seconds". The leftover seconds are spelled out rather than rounded into the minute count
-    ///     because the run cap is configured <em>in</em> seconds — a cap someone set to 90 must not report
-    ///     itself as two minutes, or the message contradicts the value they chose.
-    /// </summary>
-    internal static string FormatDuration(TimeSpan duration)
-    {
-        int totalSeconds = Math.Max(1, (int)Math.Round(duration.TotalSeconds, MidpointRounding.AwayFromZero));
-        if (totalSeconds < 60) return Pluralize(totalSeconds, "second");
-
-        int minutes = totalSeconds / 60;
-        int seconds = totalSeconds % 60;
-
-        return seconds == 0
-            ? Pluralize(minutes, "minute")
-            : $"{Pluralize(minutes, "minute")} {Pluralize(seconds, "second")}";
-    }
-
-    private static string Pluralize(int count, string unit)
-    {
-        return count == 1 ? $"1 {unit}" : $"{count} {unit}s";
-    }
-
-    /// <summary>
     ///     Read a redirected stream to EOF, keeping at most <see cref="MaxCapturedChars" /> characters but
-    ///     always draining the rest so the child process never blocks on a full pipe.
+    ///     always draining the rest so the child process never blocks on a full pipe. When
+    ///     <paramref name="onLine" /> is given, each complete line is handed to it as it arrives — the same
+    ///     stream, observed in flight as well as captured.
     /// </summary>
-    private static async Task<string> ReadCappedAsync(StreamReader reader)
+    /// <remarks>
+    ///     Chunks fall wherever the pipe happens to break, so a line routinely straddles two of them and the
+    ///     tail of a chunk has to be carried into the next. That carry is bounded by
+    ///     <see cref="MaxCarriedLineChars" />: a stream with no newline in it at all would otherwise grow one
+    ///     line to the size of the whole output.
+    /// </remarks>
+    private async Task<string> ReadCappedAsync(StreamReader reader, Action<string>? onLine = null)
     {
         StringBuilder builder = new();
-        var buffer = new char[8192];
+        var buffer = new char[ReadChunkChars];
+
+        // Only allocated when someone is watching, so the ordinary capture-only read is exactly what it was.
+        StringBuilder? carry = onLine is null ? null : new StringBuilder();
 
         try
         {
@@ -195,6 +194,8 @@ internal sealed class ProcessRunner(ChildProcessLifetime childLifetime, ILogger<
             {
                 int remaining = MaxCapturedChars - builder.Length;
                 if (remaining > 0) builder.Append(buffer, 0, Math.Min(read, remaining));
+
+                if (carry is not null) EmitLines(buffer.AsSpan(0, read), carry, onLine!);
             }
         }
         catch (IOException)
@@ -202,7 +203,68 @@ internal sealed class ProcessRunner(ChildProcessLifetime childLifetime, ILogger<
             // The pipe was torn down (e.g. the process was killed on timeout); return what we captured.
         }
 
+        // A last line with no newline after it — the shape a killed process tends to leave — is still a line.
+        if (carry is { Length: > 0 }) EmitLine(carry, onLine!);
+
         return builder.ToString();
+    }
+
+    /// <summary>
+    ///     Split <paramref name="chunk" /> on newlines, emitting each complete line and leaving the remainder
+    ///     in <paramref name="carry" /> for the next chunk.
+    /// </summary>
+    private void EmitLines(ReadOnlySpan<char> chunk, StringBuilder carry, Action<string> onLine)
+    {
+        while (true)
+        {
+            int newline = chunk.IndexOf('\n');
+            if (newline < 0) break;
+
+            Append(carry, chunk[..newline]);
+            EmitLine(carry, onLine);
+            chunk = chunk[(newline + 1)..];
+        }
+
+        Append(carry, chunk);
+    }
+
+    /// <summary>
+    ///     Hand what has been carried so far to <paramref name="onLine" /> as one line, and reset the carry.
+    ///     <c>jb</c> writes CRLF, so the trailing carriage return is dropped here rather than left for every
+    ///     consumer to trim — off the carry before materializing, since trimming the string instead would
+    ///     recopy every line on a stream where every line ends in one.
+    /// </summary>
+    private void EmitLine(StringBuilder carry, Action<string> onLine)
+    {
+        if (carry.Length > 0 && carry[^1] == '\r') carry.Length--;
+
+        var line = carry.ToString();
+        carry.Clear();
+
+        try
+        {
+            onLine(line);
+        }
+        catch (Exception exception)
+        {
+            // This runs on the loop that keeps the child from blocking on a full pipe, so a throwing observer
+            // must not be able to stop the drain. Debug because the caller in this server — JbRunProgress —
+            // is documented never to throw, which makes anything here a defect rather than an expected state.
+            logger.LogDebug(exception, "An output-line observer threw while draining a child process; the drain continues");
+        }
+    }
+
+    /// <summary>
+    ///     Add <paramref name="text" /> to the carried line, stopping at <see cref="MaxCarriedLineChars" />.
+    ///     Past the bound the rest of that line is dropped and the next newline resynchronises, so a stream
+    ///     with no line breaks costs a bounded buffer rather than an unbounded one.
+    /// </summary>
+    private static void Append(StringBuilder carry, ReadOnlySpan<char> text)
+    {
+        int room = MaxCarriedLineChars - carry.Length;
+        if (room <= 0) return;
+
+        carry.Append(text.Length <= room ? text : text[..room]);
     }
 
     private static void KillTree(Process process)

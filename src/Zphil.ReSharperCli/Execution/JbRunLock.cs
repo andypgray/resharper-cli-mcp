@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
+using Zphil.ReSharperCli.Formatting;
 
 namespace Zphil.ReSharperCli.Execution;
 
@@ -54,7 +55,13 @@ internal sealed class JbRunLock(TimeSpan maxWait, ILogger<JbRunLock> logger)
     ///     another <c>jb</c> the caller sat behind — which is one of the three things that make a call slow,
     ///     and the only one nothing else in the log records.
     /// </summary>
-    private static readonly TimeSpan NotableWait = TimeSpan.FromSeconds(1);
+    /// <remarks>
+    ///     <c>JbRunProgressSnapshot.JustArrived</c> applies it for the same judgement rather than choosing a
+    ///     threshold of its own: a progress message too has to decide whether a caller has genuinely queued
+    ///     behind someone, and the answer should not be able to differ between the log and the message
+    ///     describing the same wait.
+    /// </remarks>
+    internal static readonly TimeSpan NotableWait = TimeSpan.FromSeconds(1);
 
     /// <summary>
     ///     One gate per lock key, so callers inside this process queue on a semaphore instead of polling
@@ -63,7 +70,12 @@ internal sealed class JbRunLock(TimeSpan maxWait, ILogger<JbRunLock> logger)
     /// </summary>
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _gates = new(StringComparer.Ordinal);
 
-    private readonly TimeSpan _maxWait = maxWait;
+    /// <summary>
+    ///     The wait this lock enforces, for a caller that has to report the wait it is serving out.
+    ///     Exposed rather than injected a second time so the number a queued caller is told about and the
+    ///     number it is actually bounded by cannot drift apart.
+    /// </summary>
+    internal TimeSpan MaxWait { get; } = maxWait;
 
     /// <summary>
     ///     Wait for exclusive use of the cache generation behind <paramref name="solutionPath" /> and
@@ -303,7 +315,7 @@ internal sealed class JbRunLock(TimeSpan maxWait, ILogger<JbRunLock> logger)
             {
                 return OpenLockFile(lockFilePath);
             }
-            catch (IOException exception) when (IsContention(exception) && waited.Elapsed < _maxWait)
+            catch (IOException exception) when (IsContention(exception) && waited.Elapsed < MaxWait)
             {
                 await Task.Delay(Shorter(RetryInterval, Remaining(waited)), cancellationToken).ConfigureAwait(false);
             }
@@ -402,14 +414,14 @@ internal sealed class JbRunLock(TimeSpan maxWait, ILogger<JbRunLock> logger)
     private UserErrorException Contended(string solutionPath)
     {
         return new UserErrorException(
-            $"Another jb run already holds the ReSharper cache for \"{solutionPath}\" and did not finish within {ProcessRunner.FormatDuration(_maxWait)}.\n"
+            $"Another jb run already holds the ReSharper cache for \"{solutionPath}\" and did not finish within {DurationFormatter.Format(MaxWait)}.\n"
             + "Work against one solution's cache is serialized on purpose: a second concurrent jb cannot share the warm cache, so it silently forks a new empty one and both runs get slower — and a reset deleting a generation mid-run would take it out from under whoever was using it.\n"
             + "A speculative pre-warm inside this server always yields, so the holder is another session: its inspect, its cleanup, or its own pre-warm. Retry once that run has finished.");
     }
 
     private TimeSpan Remaining(Stopwatch waited)
     {
-        return Remaining(_maxWait, waited);
+        return Remaining(MaxWait, waited);
     }
 
     private static TimeSpan Remaining(TimeSpan budget, Stopwatch waited)

@@ -263,6 +263,33 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
                 $"jb inspectcode now matches an absolute --include ({raw.Inspect.IssueCount} issue(s) at exit 0). "
                 + "The translation in FilePathList.ToIncludePattern may no longer be needed.");
 
+        // The heartbeat reads jb's per-file output to say "analyzing 402 files", and the timeout message
+        // spends that count on a claim about a retry resuming. Losing the vocabulary costs a quieter
+        // notification and a hedged timeout message, never a broken run — so it is watched, not pinned. Only
+        // inspectcode is held to producing per-file lines: cleanupcode names its files as bare paths that
+        // nothing can recognise, which is the measured state of affairs rather than drift.
+        ProgressVocabulary? inspectVocabulary = VocabularyOf("inspectcode");
+        if (inspectVocabulary is null)
+            findings.Add(
+                "No inspectcode output reached the progress reader at all, so a long inspect would report "
+                + "only elapsed time. JbProgressLines is reading a stream that is no longer there.");
+        else if (inspectVocabulary.FileLines == 0)
+            findings.Add(
+                "jb inspectcode wrote no line JbProgressLines reads as a file "
+                + $"({inspectVocabulary.Recognised} of {inspectVocabulary.Lines} lines recognised). A long "
+                + "inspect now reports elapsed time with no file count, and the timeout message can no longer "
+                + "say how far a killed run got.");
+        else if (!inspectVocabulary.Phases.Contains(JbRunPhase.Analyzing))
+            findings.Add(
+                "jb inspectcode never announced its analysis phase. That phase is over 90% of a cold run, so "
+                + "a heartbeat keyed to the inspection phase alone would stay silent for almost all of it.");
+
+        if (VocabularyOf("cleanupcode") is { } cleanupVocabulary
+            && !cleanupVocabulary.Phases.Contains(JbRunPhase.Cleaning))
+            findings.Add(
+                "jb cleanupcode no longer announces its profile, which is the only line of its output this "
+                + "server recognises. A long cleanup now reports elapsed time and nothing else.");
+
         string majorLine = MajorLineOf(fixture.Installation.Version);
         if (majorLine != JbContractFixture.LastVerifiedMajorLine)
             findings.Add(
@@ -312,7 +339,15 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
         builder.Append($"| Compilation-error issues on the broken copy | {BrokenCompilationErrors()} |\n");
         builder.Append($"| Absolute --include, cleanupcode exit | {raw.CleanupExitCode} |\n");
         builder.Append(
-            $"| Absolute --include, inspectcode exit / issues | {raw.Inspect.ExitCode} / {raw.Inspect.IssueCount} |\n\n");
+            $"| Absolute --include, inspectcode exit / issues | {raw.Inspect.ExitCode} / {raw.Inspect.IssueCount} |\n");
+
+        foreach ((string subcommand, ProgressVocabulary vocabulary) in fixture.ProgressVocabularies.OrderBy(entry => entry.Key, StringComparer.Ordinal))
+            builder.Append(
+                $"| Progress lines, {subcommand} (recognised / total, of which files) | "
+                + $"{vocabulary.Recognised} / {vocabulary.Lines}, {vocabulary.FileLines} "
+                + $"[{string.Join(", ", vocabulary.Phases.Order())}] |\n");
+
+        builder.Append('\n');
 
         if (findings.Count == 0)
         {
@@ -338,6 +373,15 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
     private int CountOf(string severity)
     {
         return fixture.Issues.Count(issue => issue.Severity == severity);
+    }
+
+    /// <summary>
+    ///     What one subcommand's real output looked like to the progress reader, or <see langword="null" />
+    ///     when no run of it wrote a line at all.
+    /// </summary>
+    private ProgressVocabulary? VocabularyOf(string subcommand)
+    {
+        return fixture.ProgressVocabularies.GetValueOrDefault(subcommand);
     }
 
     private static string RuleIdsOf(IReadOnlyList<InspectIssue> issues)

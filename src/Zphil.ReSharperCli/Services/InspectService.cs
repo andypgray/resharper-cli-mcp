@@ -20,17 +20,27 @@ internal sealed class InspectService(JbRunner jbRunner)
     /// </summary>
     internal const InspectSeverity WarmUpSeverity = InspectSeverity.Warning;
 
+    /// <summary>
+    ///     Inspect <paramref name="config" />'s solution, optionally scoped to <paramref name="files" />, and
+    ///     parse what <c>jb</c> reported at <paramref name="severity" /> or above.
+    /// </summary>
+    /// <remarks>
+    ///     <paramref name="onProgress" /> is passed straight through: what a progress line says is
+    ///     <see cref="JbRunner" />'s to decide, and how it reaches a client is the tool surface's. Omitted
+    ///     when the caller has nowhere to report to.
+    /// </remarks>
     public async Task<IReadOnlyList<InspectIssue>> RunAsync(
         ResolvedConfig config,
         IReadOnlyList<string>? files,
         InspectSeverity severity,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Action<string>? onProgress = null)
     {
         return await WithSarifScratchAsync("resharper-inspect-", async outputFile =>
         {
             List<string> arguments = BuildArguments(config, outputFile, files, severity);
 
-            ProcessResult result = await jbRunner.RunAsync(config, arguments, cancellationToken);
+            ProcessResult result = await jbRunner.RunAsync(config, arguments, cancellationToken, onProgress);
 
             if (!File.Exists(outputFile))
                 throw new UserErrorException(

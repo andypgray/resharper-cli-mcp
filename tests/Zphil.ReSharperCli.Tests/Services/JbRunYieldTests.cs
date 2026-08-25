@@ -366,7 +366,8 @@ public sealed class JbRunYieldTests : IDisposable
             string fileName,
             IReadOnlyList<string> arguments,
             TimeSpan timeout,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            Action<string>? onOutputLine = null)
         {
             Interlocked.Increment(ref _runs);
             lock (_tokens)

@@ -46,9 +46,10 @@ namespace Zphil.ReSharperCli.Services;
 ///         at all.
 ///     </para>
 ///     <para>
-///         Every step may decline. No donor, an unreadable marker, a busy donor, a copy that fails halfway,
-///         and a solution whose cache was just reset all end the same way — no seed, no error, and the cold
-///         run the call was going to have anyway. The one thing it must never do is act on a maybe. So the
+///         Every step may decline. No donor, an unreadable marker, a donor an earlier <c>jb</c> build wrote, a
+///         busy donor, a copy that fails halfway, and a solution whose cache was just reset all end the same
+///         way — no seed, no error, and the cold run the call was going to have anyway. The one thing it must
+///         never do is act on a maybe. So the
 ///         donor has to be named by a marker a successful run wrote, and it acts on the target only where no
 ///         run against that path has ever succeeded: no generation at all, or generations with no warm marker
 ///         beside them, since every successful run stamps one and any marker — naming a generation or empty —
@@ -215,9 +216,18 @@ internal sealed class CacheTransplanter(
         {
             if (string.Equals(key, ourKey, StringComparison.Ordinal)) continue;
 
-            if (JbWarmMarker.TryReadGenerationName(markerPath, config.CacheHome, logger) is not { } generationName) continue;
+            (string? generationName, string? donorJbVersion) = JbWarmMarker.TryReadMarker(markerPath, config.CacheHome, logger);
+            if (generationName is null) continue;
 
             if (!JbCacheGenerations.IsNeighbourOf(generationName, config.SolutionPath)) continue;
+
+            // A donor another jb build wrote is worse than none: jb rebuilds a generation it did not write
+            // in place, so the copy would buy a cold-shaped run and charge the seeding premium on top of it.
+            // A check rather than a guarantee — the marker records only its cache's LAST writer, and
+            // JbLocator caches per session, so in the hour after an upgrade a session still on the older
+            // build can rewrite a shared generation between this read and the copy. Losing that race costs
+            // one seeded run that rebuilds, which is what declining costs anyway.
+            if (JbWarmMarker.WrittenByAnotherBuild(donorJbVersion, config.JbVersion)) continue;
 
             candidates.Add(new Donor(key, generationName, File.GetLastWriteTimeUtc(markerPath)));
         }

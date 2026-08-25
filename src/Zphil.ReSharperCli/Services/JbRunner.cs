@@ -169,7 +169,8 @@ internal sealed class JbRunner(
             // Read here rather than inside the spawn, and after the transplant decision: this is the state jb
             // is about to open, and the two endings that quote it — the run line and the timeout message —
             // both sit outside the frame that used to own the reading.
-            JbCacheState cache = JbCacheState.Read(config.SolutionPath, config.CacheHome, seeded, logger);
+            JbCacheState cache = JbCacheState.Read(
+                config.SolutionPath, config.CacheHome, seeded, config.JbVersion, logger);
 
             ProcessResult result;
             try
@@ -235,7 +236,8 @@ internal sealed class JbRunner(
             // than once per process.
             speculative.Token.ThrowIfCancellationRequested();
 
-            JbCacheState cache = JbCacheState.Read(config.SolutionPath, config.CacheHome, seeded, logger);
+            JbCacheState cache = JbCacheState.Read(
+                config.SolutionPath, config.CacheHome, seeded, config.JbVersion, logger);
 
             // Zero queue wait by construction: TryAcquire does not wait, so a lease in hand was uncontended.
             // No progress either: nobody is waiting on this run, so there is nobody to report it to.
@@ -362,8 +364,10 @@ internal sealed class JbRunner(
 
         if (result.ExitCode != 0) return result;
 
-        if (JbWarmMarker.Stamp(config.SolutionPath, config.CacheHome, logger) == StampOutcome.NoGenerationMatched)
-            WarnOnceAboutUnrecognisedNaming(config);
+        // The build is stamped alongside the generation: this run is what made the cache warm, so it is the
+        // one thing that can say which jb warmed it, and the next run compares its own against it.
+        StampOutcome stamped = JbWarmMarker.Stamp(config.SolutionPath, config.CacheHome, logger, config.JbVersion);
+        if (stamped == StampOutcome.NoGenerationMatched) WarnOnceAboutUnrecognisedNaming(config);
 
         JbColdTombstone.Clear(config.SolutionPath, config.CacheHome, logger);
 
@@ -426,8 +430,8 @@ internal sealed class JbRunner(
               + "retry resumes from there rather than starting over."
             : "The cache keeps most of what this run built, so a retry resumes rather than starting over.";
 
-        string recorded = cache.CostBand is { } band && cache.LastComparableCost is { } cost
-            ? $"The last {JbCostRecord.Label(band)} run of this solution took {DurationFormatter.Format(cost)}. "
+        string recorded = cache.QuotableCost is { } quotable
+            ? $"The last {JbCostRecord.Label(quotable.Band)} run of this solution took {DurationFormatter.Format(quotable.Cost)}. "
             : string.Empty;
 
         return $"jb {subcommand} timed out after {DurationFormatter.Format(runTimeout)} and was stopped.\n"

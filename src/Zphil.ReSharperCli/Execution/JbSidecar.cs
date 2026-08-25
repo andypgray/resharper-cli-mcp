@@ -6,10 +6,10 @@ namespace Zphil.ReSharperCli.Execution;
 
 /// <summary>
 ///     The naming scheme of every file this server itself writes into a cache home — the run lock file, the
-///     warm marker, the cold tombstone — and the mechanics they share. One prefix, one key per cache
-///     generation, one extension per artifact, so the three always sit side by side, and compose
-///     (<see cref="PathForKey" />) and parse (<see cref="FindAll" />) live in one class a scheme change
-///     cannot move half of.
+///     warm marker, the cold tombstone, the cost record — and the mechanics they share. One prefix, one key
+///     per cache generation, one extension per artifact, so the four always sit side by side, and compose
+///     (<see cref="PathForKey" />), parse (<see cref="FindAll" />) and read (<see cref="ReadLines" />) live
+///     in one class a scheme change cannot move half of.
 /// </summary>
 internal static class JbSidecar
 {
@@ -74,6 +74,37 @@ internal static class JbSidecar
     internal static FileStream OpenToWrite(string solutionPath, string cacheHome, string extension)
     {
         return new FileStream(PathFor(solutionPath, cacheHome, extension), FileMode.Create, FileAccess.Write, FileShare.ReadWrite);
+    }
+
+    /// <summary>
+    ///     The lines of the sidecar at <paramref name="sidecarPath" />, in order, or none when nothing has
+    ///     been recorded yet — the read counterpart of <see cref="OpenToWrite" />, sharing its
+    ///     <see cref="FileShare.ReadWrite" /> for the same reason.
+    /// </summary>
+    /// <remarks>
+    ///     An absent file and an absent cache home both answer "nothing recorded" rather than throwing: the
+    ///     first run of a solution meets one, and a caller that has never spawned <c>jb</c> meets the other,
+    ///     so left to the callers' catches they would raise, swallow and log an exception on every cold run.
+    ///     Any other failure still reaches those catches, which exist for a cache home that is genuinely
+    ///     unusable. Lines come back byte for byte; whether they may be trimmed is each artifact's own
+    ///     judgement, since a read-modify-write caller must not rewrite lines it does not recognise.
+    /// </remarks>
+    internal static List<string> ReadLines(string sidecarPath)
+    {
+        try
+        {
+            using FileStream sidecar = new(sidecarPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            using StreamReader reader = new(sidecar, Encoding.UTF8);
+
+            List<string> lines = [];
+            while (reader.ReadLine() is { } line) lines.Add(line);
+
+            return lines;
+        }
+        catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
+        {
+            return [];
+        }
     }
 
     /// <summary>

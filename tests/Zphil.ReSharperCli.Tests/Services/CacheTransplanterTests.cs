@@ -228,6 +228,44 @@ public sealed class CacheTransplanterTests : IDisposable
     }
 
     [Fact]
+    public async Task TryTransplantAsync_DonorWarmedByAnotherJbBuild_IsNotADonor()
+    {
+        // Arrange — a warm sibling of the right name, left by the jb this machine has just upgraded past.
+        // jb rebuilds a generation it did not write in place, so copying it would charge the seeding premium
+        // for a cold-shaped run: worse than the cold run declining leaves.
+        CacheHomes.PlantWarmDonor(_cacheHome, _mainSolution, "2026.2.0.2");
+
+        // Act & Assert
+        (await Transplanter().TryTransplantAsync(ConfigFor(_worktreeSolution, "2026.2.1"), Ct)).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task TryTransplantAsync_DonorMarkerNamingAGenerationButNoJbBuild_IsNotADonor()
+    {
+        // Arrange — a marker from a build of this server that recorded only the directory. It names a real
+        // generation, so it survives every other check, and nothing can say which jb left it warm.
+        CacheHomes.PlantWarmDonor(_cacheHome, _mainSolution);
+
+        // Act & Assert
+        (await Transplanter().TryTransplantAsync(ConfigFor(_worktreeSolution, "2026.2.1"), Ct)).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task TryTransplantAsync_DonorWarmedByTheSameJbBuild_StillSeeds()
+    {
+        // Arrange — the case the skipping must not swallow: the same build wrote the donor, so the copy is
+        // one this jb resumes rather than rebuilds.
+        CacheHomes.PlantWarmDonor(_cacheHome, _mainSolution, "2026.2.1");
+
+        // Act
+        bool seeded = await Transplanter().TryTransplantAsync(ConfigFor(_worktreeSolution, "2026.2.1"), Ct);
+
+        // Assert
+        seeded.ShouldBeTrue();
+        File.ReadAllText(Path.Combine(TargetPath(), "Db", "CURRENT")).ShouldBe("cache");
+    }
+
+    [Fact]
     public async Task TryTransplantAsync_AnotherSolutionEntirely_IsNotADonor()
     {
         // Arrange — a warm cache for a different solution in the same cache home. It shares nothing with this
@@ -615,9 +653,13 @@ public sealed class CacheTransplanterTests : IDisposable
         return TargetPath() + ".transplanting";
     }
 
-    private ResolvedConfig ConfigFor(string solutionPath)
+    /// <summary>
+    ///     <paramref name="jbVersion" /> defaults to none, which switches the donor's own build out of the
+    ///     decision, so every test not about builds exercises what it always did.
+    /// </summary>
+    private ResolvedConfig ConfigFor(string solutionPath, string? jbVersion = null)
     {
-        return Configs.Bare(solutionPath, _cacheHome);
+        return Configs.Bare(solutionPath, _cacheHome, jbVersion);
     }
 
     /// <summary>Back-date the warm marker that names <paramref name="generationPath" />.</summary>

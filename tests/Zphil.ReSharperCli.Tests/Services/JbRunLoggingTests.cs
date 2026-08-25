@@ -139,6 +139,24 @@ public sealed class JbRunLoggingTests : IDisposable
     }
 
     [Fact]
+    public async Task RunAsync_GenerationWarmedByAnotherJbBuild_ReadsTheCacheAsStale()
+    {
+        // Arrange — the whole plumbing in one run: the marker this generation carries names the build that
+        // warmed it, the config names the build about to open it, and the two disagree. Everything on disk
+        // says warm, and jb is about to rebuild it in place — 220 seconds against the 64 its own second run
+        // took, measured across one patch bump.
+        CacheHomes.PlantWarmDonor(_cacheHome, _solutionPath, "2026.2.0.2");
+        StubExit(0);
+
+        // Act
+        await Runner().RunAsync(Configs.Bare(_solutionPath, _cacheHome, "2026.2.1"), ["inspectcode", _solutionPath], Ct);
+
+        // Assert
+        StartingLine().Property("CacheState")
+            .ShouldBe("stale (cache written by jb 2026.2.0.2, this is 2026.2.1, and jb rebuilds it)");
+    }
+
+    [Fact]
     public async Task RunAsync_GenerationWithNoMarker_ReadsTheCacheAsPartBuilt()
     {
         // Arrange — the remnant of a run that was killed. Neither warm nor quite cold, and the state that

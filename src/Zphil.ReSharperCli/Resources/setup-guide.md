@@ -81,7 +81,7 @@ else is running, which is the normal case.
 
 **A run in flight reports itself every ten seconds**, as an MCP `notifications/progress` message against
 the token the client sent with the call. The messages track the stages above, in order: the wait for
-another run on the same cache, then the cache state `jb` opened (`cold (none on disk)`, `warm`,
+another run on the same cache, then the cache state `jb` opened (`cold (none on disk)`, `warm`, `stale`,
 `part-built`, `seeded from a sibling checkout`), then a running count of files as `jb` analyses them.
 Where this solution has already finished a run from the same cache state, that clause names what it cost —
 `cold (none on disk; the last cold run took 8 minutes 17 seconds)` — which is the other half of telling a
@@ -186,6 +186,11 @@ the copy rather than the cache. It never runs after a reset, because a reset is 
 rebuild and is honoured until a run against that solution succeeds. `jb` remains the judge of what it was
 handed: it validates a cache it opens against its own format and rebuilds in place when it does not like
 it, so a copy it rejects costs the copy and nothing more.
+
+Upgrading `jb` is the routine case of that rebuild — JetBrains ships roughly thirty stable releases a year —
+so a generation the current build did not write is passed over as a donor, and one belonging to this
+solution reads as `stale (cache written by jb 2026.2.0.2, this is 2026.2.1, and jb rebuilds it)` rather
+than `warm`: the run about to start does cold-shaped work whatever the directory on disk suggests.
 
 ### Running `jb` yourself, beside this server
 

@@ -23,6 +23,14 @@ internal sealed record ConfigWarnings(string? MissingSettingsPath, SettingsReadF
 ///     when it is non-null <em>and</em> names a file outside every location <c>jb</c> mounts itself, so the
 ///     flag is reserved for the one case it exists for — a file <c>jb</c> cannot find on its own.
 /// </param>
+/// <param name="JbVersion">
+///     What the located <c>jb</c> reported itself as. It reaches no command line: it is stamped into the warm
+///     marker so a later run can tell a cache <em>this</em> build wrote from one an earlier build left, which
+///     <c>jb</c> rebuilds in place. Nullable and defaulted although
+///     <see cref="JbInstallation.Version" /> is not, because "no build known" has to be representable — it is
+///     what switches the staleness judgement off rather than letting a server that cannot name its own
+///     <c>jb</c> call every cache stale for ever.
+/// </param>
 internal sealed record ResolvedConfig(
     string SolutionPath,
     string? SettingsPath,
@@ -32,7 +40,8 @@ internal sealed record ResolvedConfig(
     string? Extensions,
     string? ExtensionSource,
     string JbExecutablePath,
-    ConfigWarnings Warnings)
+    ConfigWarnings Warnings,
+    string? JbVersion = null)
 {
     /// <summary>
     ///     The directory holding the solution — the root a relative <c>files</c> entry resolves against.
@@ -73,9 +82,10 @@ internal sealed class ConfigResolver(JbLocator jbLocator, IEnvironment environme
             EmptyToNull(environment.GetVariable("JB_EXTENSIONS")),
             EmptyToNull(environment.GetVariable("JB_EXTENSION_SOURCE")),
             installation.ExecutablePath,
-            new ConfigWarnings(settings.MissingEnvPath, declaredProfile.Failure));
+            new ConfigWarnings(settings.MissingEnvPath, declaredProfile.Failure),
+            installation.Version);
 
-        Report(config, solution.Source, installation.Version);
+        Report(config, solution.Source);
 
         return config;
     }
@@ -104,14 +114,14 @@ internal sealed class ConfigResolver(JbLocator jbLocator, IEnvironment environme
     ///     three solution sources won, and whether <c>--settings</c> mounts a Custom layer above the whole
     ///     stack, are exactly the two the 1.4.0 settings-layer defect lived on.
     /// </summary>
-    private void Report(ResolvedConfig config, string solutionSource, string jbVersion)
+    private void Report(ResolvedConfig config, string solutionSource)
     {
         logger.LogInformation(
             "Resolved solution {SolutionPath} ({SolutionSource}) against jb {JbVersion} at {JbPath}, cache home {CacheHome}, "
             + "settings {SettingsPath} ({SettingsLayer}), extensions {Extensions}",
             config.SolutionPath,
             solutionSource,
-            jbVersion,
+            config.JbVersion,
             config.JbExecutablePath,
             config.CacheHome,
             config.SettingsPath ?? "none found",

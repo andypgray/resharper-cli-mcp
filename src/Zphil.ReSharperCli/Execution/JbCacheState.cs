@@ -18,7 +18,7 @@ namespace Zphil.ReSharperCli.Execution;
 ///     <para>
 ///         Every reading is best effort and none of them can fail the run they describe: a cache home this
 ///         server cannot enumerate reports <see cref="Unreadable" /> and the run proceeds exactly as it would
-///         have. The three facts are read together because it is their combination that means something —
+///         have. The readings are taken together because it is their combination that means something —
 ///         a generation with no warm marker beside it is the part-built remnant of a killed run, which is
 ///         neither warm nor quite cold, and is the state <c>CacheTransplanter</c> exists to replace.
 ///     </para>
@@ -45,12 +45,24 @@ namespace Zphil.ReSharperCli.Execution;
 ///     <see cref="Read" /> rather than passed in, so every caller of the summary gets the figure without
 ///     knowing the record exists.
 /// </param>
+/// <param name="MarkerJbVersion">
+///     Which <c>jb</c> build the warm marker says left this generation warm, or <see langword="null" /> when
+///     it names none — every marker written before this server recorded one.
+/// </param>
+/// <param name="CurrentJbVersion">
+///     Which <c>jb</c> build is about to open it, or <see langword="null" /> when the caller cannot say. That
+///     null is the feature's off switch: with no build to compare against, a marker's own build is ignored
+///     and the state reads exactly as it did before either was recorded, rather than a server that cannot
+///     name its <c>jb</c> calling every cache stale for ever.
+/// </param>
 internal sealed record JbCacheState(
     IReadOnlyList<string>? Generations,
     TimeSpan? WarmMarkerAge,
     bool ResetRecorded,
     bool Seeded,
-    TimeSpan? LastComparableCost = null)
+    TimeSpan? LastComparableCost = null,
+    string? MarkerJbVersion = null,
+    string? CurrentJbVersion = null)
 {
     /// <summary>What every reading that could not be made looks like.</summary>
     private static readonly JbCacheState Unreadable = new(null, null, false, false);
@@ -81,6 +93,15 @@ internal sealed record JbCacheState(
             if (WarmMarkerAge is not { } age)
                 return $"part-built ({directories}, no warm marker — a run against it was killed)";
 
+            // Ahead of warm, because this generation has every mark of being warm except the one that
+            // decides what it costs: jb validates a cache against its own format and rebuilds it in place,
+            // so a cache another build wrote buys the run nothing.
+            if (WrittenByAnotherJb)
+            {
+                string writer = MarkerJbVersion is null ? "an earlier jb" : $"jb {MarkerJbVersion}";
+                return $"stale (cache written by {writer}, this is {CurrentJbVersion}, and jb rebuilds it{cost})";
+            }
+
             return $"warm ({FormatAge(age)} old marker, {directories}{cost})";
         }
     }
@@ -96,6 +117,13 @@ internal sealed record JbCacheState(
     ///     remnant of a run that was killed — how much of the work survived depends on when it died, so two
     ///     resumptions are not comparable and quoting one at the other would be a guess dressed as a
     ///     measurement.
+    ///     <para>
+    ///         A stale generation bands as <see cref="JbCostBand.Cold" />, and its sitting next to the arm
+    ///         that names it is the guard rather than a convenience: measured across one patch bump on a
+    ///         static tree, the first run under the new build took 220 seconds against the 64 its own second
+    ///         run took, so a stale state banding as warm would quote a minute at cold-shaped work. Whoever
+    ///         moves one has to move the other.
+    ///     </para>
     /// </remarks>
     internal JbCostBand? CostBand
     {
@@ -104,17 +132,40 @@ internal sealed record JbCacheState(
             if (Generations is null) return null;
             if (Generations.Count == 0) return JbCostBand.Cold;
             if (Seeded) return JbCostBand.Seeded;
+            if (WarmMarkerAge is null) return null;
 
-            return WarmMarkerAge is null ? null : JbCostBand.Warm;
+            return WrittenByAnotherJb ? JbCostBand.Cold : JbCostBand.Warm;
         }
     }
 
     /// <summary>
-    ///     The state of <paramref name="solutionPath" />'s cache under <paramref name="cacheHome" /> right
-    ///     now. Cheap: a single directory enumeration and three file stats — the third read only where the
-    ///     state falls in a band, and a few bytes when it is — against a <c>jb</c> run measured in minutes.
+    ///     Whether the build that left this generation warm is not the one about to open it. The judgement is
+    ///     <see cref="JbWarmMarker.WrittenByAnotherBuild" />'s, shared with donor selection, so the line that
+    ///     promises a rebuild and the transplant that declines a donor cannot come to disagree.
     /// </summary>
-    internal static JbCacheState Read(string solutionPath, string cacheHome, bool seeded, ILogger logger)
+    private bool WrittenByAnotherJb => JbWarmMarker.WrittenByAnotherBuild(MarkerJbVersion, CurrentJbVersion);
+
+    /// <summary>
+    ///     The figure this state may quote and the band that keys it, or <see langword="null" /> when it may
+    ///     quote none. Both halves have to hold — a band to key by and a figure under it — so a state with no
+    ///     band quotes nothing even if handed a duration. The one eligibility rule behind every surface that
+    ///     quotes: the summary's closing clause, and the timeout message's sentence.
+    /// </summary>
+    internal (JbCostBand Band, TimeSpan Cost)? QuotableCost =>
+        CostBand is { } band && LastComparableCost is { } cost ? (band, cost) : null;
+
+    /// <summary>
+    ///     The state of <paramref name="solutionPath" />'s cache under <paramref name="cacheHome" /> right
+    ///     now, as <paramref name="jbVersion" /> is about to open it. Cheap: a single directory enumeration
+    ///     and a handful of small file reads — the recorded cost read only where the state falls in a band —
+    ///     against a <c>jb</c> run measured in minutes.
+    /// </summary>
+    internal static JbCacheState Read(
+        string solutionPath,
+        string cacheHome,
+        bool seeded,
+        string? jbVersion,
+        ILogger logger)
     {
         try
         {
@@ -122,11 +173,15 @@ internal sealed record JbCacheState(
                 .Select(generation => generation.Name)
                 .ToList();
 
+            string markerPath = JbWarmMarker.PathFor(solutionPath, cacheHome);
+
             JbCacheState state = new(
                 owned,
                 JbWarmMarker.Age(solutionPath, cacheHome, logger),
                 JbColdTombstone.Exists(solutionPath, cacheHome, logger),
-                seeded);
+                seeded,
+                MarkerJbVersion: JbWarmMarker.TryReadJbVersion(markerPath, logger),
+                CurrentJbVersion: jbVersion);
 
             // After the rest is settled, because the band the figure is keyed by is derived from it.
             if (state.CostBand is not { } band) return state;
@@ -172,15 +227,14 @@ internal sealed record JbCacheState(
 
     /// <summary>
     ///     What a run like this one last cost, as a clause to close the parenthetical with, or the empty
-    ///     string when nothing comparable is recorded. Both halves have to hold — a band to key by and a
-    ///     figure under it — so a state with no band quotes nothing even if handed a duration, and every arm
-    ///     reads byte for byte as it did before any figure existed.
+    ///     string when <see cref="QuotableCost" /> permits none — which is what keeps every arm reading byte
+    ///     for byte as it did before any figure existed.
     /// </summary>
     private string RecordedCost()
     {
-        if (CostBand is not { } band || LastComparableCost is not { } cost) return string.Empty;
+        if (QuotableCost is not { } quotable) return string.Empty;
 
-        return $"; the last {JbCostRecord.Label(band)} run took {DurationFormatter.Format(cost)}";
+        return $"; the last {JbCostRecord.Label(quotable.Band)} run took {DurationFormatter.Format(quotable.Cost)}";
     }
 
     /// <summary>

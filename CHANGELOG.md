@@ -45,6 +45,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `resharper_reset_cache` clears the record along with the warm marker. With no figure recorded, every
   line reads byte-for-byte as it did.
 
+- The warm marker records the `jb` build that wrote it, and a cache another build wrote reads as `stale`
+  rather than `warm`. Measured across the 2026.2.0.2 → 2026.2.1 patch bump, on a static tree and a fresh
+  cache home: the old build's cold run took 116 seconds, the new build's first run over that same
+  generation took 220, and its immediate second run took 64 — `jb` gets no warm-run value from an earlier
+  build's cache and does cold-shaped work rebuilding it in place, while the cache-state line promised a
+  minute. The line now reads `stale (cache written by jb 2026.2.0.2, this is 2026.2.1, and jb rebuilds it)`,
+  the recorded-cost quote switches to the cold figure for the same reason, and a sibling checkout whose
+  cache an earlier build wrote is passed over as a seeding donor. A marker written before this release
+  names no build and reads as stale until the next clean run rewrites it. JetBrains ships roughly thirty
+  stable releases a year, so an upgrade is routine rather than rare.
+
 - A `report` argument on `resharper_inspect`. Set it to `Markdown` and the complete itemised findings are
   written to a file, which the response names above the summary it already returned. This is the way to get
   every finding with its own message out of a solution-wide run: such a run always exceeds the output budget,

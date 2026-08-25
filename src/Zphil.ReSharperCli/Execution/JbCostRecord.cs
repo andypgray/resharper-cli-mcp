@@ -151,27 +151,13 @@ internal static class JbCostRecord
     }
 
     /// <summary>
-    ///     The file's lines, or none when nothing has been recorded yet. An absent file and an absent cache
-    ///     home are both ordinary — the first run of a solution meets one and a caller that has never spawned
-    ///     <c>jb</c> meets the other — so they answer "nothing recorded" rather than reaching the callers'
-    ///     catch, which exists for a cache home that is genuinely unusable.
+    ///     The file's lines, or none when nothing has been recorded yet — <see cref="JbSidecar.ReadLines" />,
+    ///     byte for byte: no trim, because <see cref="Stamp" /> writes back every line it does not recognise
+    ///     and must not rewrite another build's entries in passing.
     /// </summary>
     private static List<string> ExistingLines(string recordPath)
     {
-        try
-        {
-            using FileStream record = new(recordPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-            using StreamReader reader = new(record, Encoding.UTF8);
-
-            List<string> lines = [];
-            while (reader.ReadLine() is { } line) lines.Add(line);
-
-            return lines;
-        }
-        catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
-        {
-            return [];
-        }
+        return JbSidecar.ReadLines(recordPath);
     }
 
     /// <summary>Whether <paramref name="line" /> is the entry for <paramref name="label" />'s band.</summary>

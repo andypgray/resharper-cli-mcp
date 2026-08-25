@@ -8,16 +8,17 @@ using Zphil.ReSharperCli.Tests.TestSupport;
 namespace Zphil.ReSharperCli.Tests.Execution;
 
 /// <summary>
-///     <see cref="JbWarmMarker" /> answers three questions about one cache generation: "did a <c>jb</c> run
+///     <see cref="JbWarmMarker" /> answers four questions about one cache generation: "did a <c>jb</c> run
 ///     against it succeed recently?", which debounces the background pre-warm; "which directory did that run
-///     leave warm?", which is how one solution's cache becomes findable by another; and "did one ever succeed
-///     at all?", which is what stands between a transplant and a cache it has no business deleting. The
-///     invariant these tests guard is one-sided per reader, and the sides are not the same. The two hints
-///     must read as <em>not</em> warm and <em>no</em> name whatever goes wrong, so they can permit a
-///     redundant pre-warm or a skipped copy but never suppress one forever or point at the wrong directory;
-///     <see cref="JbWarmMarker.Exists" /> must read as <em>protected</em>, because its caller's only use for
-///     the other answer is to delete. Plus the structural fact that a marker bug can never clobber the lock
-///     file it sits beside.
+///     leave warm?", which is how one solution's cache becomes findable by another; "which <c>jb</c> build
+///     left it that way?", which separates a cache the next run resumes from one it rebuilds in place; and
+///     "did one ever succeed at all?", which is what stands between a transplant and a cache it has no
+///     business deleting. The invariant these tests guard is one-sided per reader, and the sides are not the
+///     same. The three hints must read as <em>not</em> warm, <em>no</em> name and <em>not</em> this build
+///     whatever goes wrong, so they can permit a redundant pre-warm or a skipped copy but never suppress one
+///     forever or point at the wrong directory; <see cref="JbWarmMarker.Exists" /> must read as
+///     <em>protected</em>, because its caller's only use for the other answer is to delete. Plus the
+///     structural fact that a marker bug can never clobber the lock file it sits beside.
 /// </summary>
 public sealed class JbWarmMarkerTests : IDisposable
 {
@@ -110,6 +111,47 @@ public sealed class JbWarmMarkerTests : IDisposable
         JbWarmMarker.IsFreshWithin(SolutionPath, _cacheHome, OneHour, NullLogger.Instance).ShouldBeTrue();
         new FileInfo(JbWarmMarker.PathFor(SolutionPath, _cacheHome)).Length.ShouldBe(0);
         JbWarmMarker.TryReadGenerationName(JbWarmMarker.PathFor(SolutionPath, _cacheHome), _cacheHome, NullLogger.Instance).ShouldBeNull();
+    }
+
+    [Fact]
+    public void Stamp_WithTheJbBuildThatWroteIt_RecordsItBesideTheGenerationName()
+    {
+        // Arrange — jb rebuilds a cache another build wrote, so the name alone cannot say what a run against
+        // this generation is about to cost. Both facts have to come back off one marker.
+        string generation = CacheHomes.PlantGenerationFor(_cacheHome, SolutionPath);
+
+        // Act
+        StampOutcome outcome = JbWarmMarker.Stamp(SolutionPath, _cacheHome, NullLogger.Instance, "2026.2.1");
+
+        // Assert
+        outcome.ShouldBe(StampOutcome.NamedGeneration);
+        string markerPath = JbWarmMarker.PathFor(SolutionPath, _cacheHome);
+        JbWarmMarker.TryReadGenerationName(markerPath, _cacheHome, NullLogger.Instance).ShouldBe(Path.GetFileName(generation));
+        JbWarmMarker.TryReadJbVersion(markerPath, NullLogger.Instance).ShouldBe("2026.2.1");
+    }
+
+    [Fact]
+    public void Stamp_WithNoJbBuildKnown_WritesTheOneLineMarkerItAlwaysDid()
+    {
+        // Arrange — the caller that cannot name its jb writes what every build before this one wrote, byte
+        // for byte, so nothing downstream has to tell a blank second line from an absent one.
+        string generation = CacheHomes.PlantGenerationFor(_cacheHome, SolutionPath);
+
+        // Act
+        JbWarmMarker.Stamp(SolutionPath, _cacheHome, NullLogger.Instance);
+
+        // Assert
+        string markerPath = JbWarmMarker.PathFor(SolutionPath, _cacheHome);
+        File.ReadAllText(markerPath).ShouldBe(Path.GetFileName(generation));
+        JbWarmMarker.TryReadJbVersion(markerPath, NullLogger.Instance).ShouldBeNull();
+    }
+
+    [Fact]
+    public void TryReadJbVersion_MarkerThatIsNotThere_IsNullRatherThanThrowing()
+    {
+        // Assert — no marker at all reads as no build, which every caller treats as a cache written by
+        // something other than the jb about to run. That is the direction this file always fails in.
+        JbWarmMarker.TryReadJbVersion(JbWarmMarker.PathFor(SolutionPath, _cacheHome), NullLogger.Instance).ShouldBeNull();
     }
 
     [Fact]

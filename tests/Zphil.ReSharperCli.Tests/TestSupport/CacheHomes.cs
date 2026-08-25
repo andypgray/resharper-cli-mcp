@@ -133,12 +133,15 @@ internal static class CacheHomes
     /// <summary>
     ///     Plant a generation for <paramref name="solutionPath" /> and stamp its warm marker, which is what
     ///     a solution whose last <c>jb</c> run succeeded looks like from the outside — and therefore what a
-    ///     transplant looks for in a donor. Returns the generation's full path.
+    ///     transplant looks for in a donor. Returns the generation's full path. The marker names
+    ///     <paramref name="jbVersion" /> as the build that warmed it, defaulting to none — the marker every
+    ///     build of this server before the version was recorded wrote, and the one a caller that names no
+    ///     build of its own compares against as an equal.
     /// </summary>
-    public static string PlantWarmDonor(string cacheHome, string solutionPath)
+    public static string PlantWarmDonor(string cacheHome, string solutionPath, string? jbVersion = null)
     {
         string generation = PlantGenerationFor(cacheHome, solutionPath);
-        JbWarmMarker.Stamp(solutionPath, cacheHome, NullLogger.Instance);
+        JbWarmMarker.Stamp(solutionPath, cacheHome, NullLogger.Instance, jbVersion);
         return generation;
     }
 

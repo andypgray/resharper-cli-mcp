@@ -587,6 +587,20 @@ public sealed class ConfigResolverTests : IDisposable
     }
 
     [Fact]
+    public async Task ResolveAsync_ProbedJbReportsAVersion_CarriesItOnTheConfig()
+    {
+        // Arrange — the probe already parses it and used to log it and drop it. It is what a run stamps into
+        // the warm marker, so a cache another build wrote can be told from one this build can resume.
+        CreateSolutionInCurrentDirectory("App.sln");
+
+        // Act
+        ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
+
+        // Assert — the version the stubbed probe reported, verbatim.
+        config.JbVersion.ShouldBe("2026.1.2");
+    }
+
+    [Fact]
     public async Task ResolveAsync_JbExtensionsEmptyString_ResolvesToNull()
     {
         // Arrange

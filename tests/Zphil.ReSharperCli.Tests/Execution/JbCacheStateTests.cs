@@ -17,6 +17,11 @@ public sealed class JbCacheStateTests
 {
     private const string Generation = "_App.123.00";
 
+    /// <summary>The two builds of the measured patch bump: one wrote the cache, the other is about to open it.</summary>
+    private const string ThisJb = "2026.2.1";
+
+    private const string AnotherJb = "2026.2.0.2";
+
     private static readonly TimeSpan MarkerAge = TimeSpan.FromMinutes(14);
 
     [Fact]
@@ -67,6 +72,55 @@ public sealed class JbCacheStateTests
     }
 
     [Fact]
+    public void Summary_AGenerationAnotherJbBuildWrote_ReadsAsStaleAndNamesBothBuilds()
+    {
+        // Assert — the lie this arm exists to stop. Measured across one patch bump on a static tree: the run
+        // after the upgrade took 220 seconds where its own second run took 64, so a generation an earlier
+        // build left behind buys the next run nothing and the sentence has to say which build wrote it.
+        Stale().Summary.ShouldBe($"stale (cache written by jb {AnotherJb}, this is {ThisJb}, and jb rebuilds it)");
+    }
+
+    [Fact]
+    public void Summary_AMarkerNamingNoJbBuild_ReadsAsStaleWithoutInventingOne()
+    {
+        // Assert — every marker written before the build was recorded, which is every marker on disk the
+        // first time a server carrying this reads one. It cannot be vouched for, so it reads as the state
+        // that costs work rather than the one that promises none.
+        StaleWithNoRecordedBuild().Summary.ShouldBe($"stale (cache written by an earlier jb, this is {ThisJb}, and jb rebuilds it)");
+    }
+
+    [Fact]
+    public void Summary_AGenerationThisJbBuildWrote_ReadsWarmExactlyAsItAlwaysHas()
+    {
+        // Assert — the other side of the same judgement, and the one that must not have moved: a marker this
+        // build wrote is the ordinary warm cache, spelled the way every consumer already expects.
+        WarmUnderThisJb().Summary.ShouldBe($"warm (14m old marker, {Generation})");
+    }
+
+    [Fact]
+    public void Summary_NoCurrentJbBuildKnown_IgnoresTheMarkersAndReadsWarm()
+    {
+        // Assert — the off switch. A caller that cannot name its own jb has nothing to compare against, and a
+        // server in that position calling every cache stale for ever would be worse than saying nothing.
+        JbCacheState state = Warm() with { MarkerJbVersion = AnotherJb };
+
+        state.Summary.ShouldBe($"warm (14m old marker, {Generation})");
+    }
+
+    [Fact]
+    public void Summary_AStaleCacheWithARecordedCost_QuotesTheColdFigureAndNotTheWarmOne()
+    {
+        // Assert — the band and the arm are one decision. jb rebuilds this generation in place, so what the
+        // run is about to cost is what a cold one cost; quoting the warm figure here is exactly the minute
+        // this arm was added to stop being promised.
+        JbCacheState state = Stale() with { LastComparableCost = TimeSpan.FromSeconds(116) };
+
+        state.Summary.ShouldBe(
+            $"stale (cache written by jb {AnotherJb}, this is {ThisJb}, and jb rebuilds it; "
+            + "the last cold run took 1 minute 56 seconds)");
+    }
+
+    [Fact]
     public void Summary_PartBuiltHandedAFigure_StillQuotesNothing()
     {
         // Assert — a part-built generation is the remnant of a run that was killed, and how much of the work
@@ -92,6 +146,8 @@ public sealed class JbCacheStateTests
     [InlineData("cold after a reset", "cold")]
     [InlineData("seeded", "seeded")]
     [InlineData("part-built", null)]
+    [InlineData("stale", "cold")]
+    [InlineData("stale, no build recorded", "cold")]
     [InlineData("warm", "warm")]
     public void CostBand_MirrorsTheSummaryArms(string arm, string? expected)
     {
@@ -114,6 +170,8 @@ public sealed class JbCacheStateTests
             "cold after a reset" => ColdAfterAReset(),
             "seeded" => Seeded(),
             "part-built" => PartBuilt(),
+            "stale" => Stale(),
+            "stale, no build recorded" => StaleWithNoRecordedBuild(),
             "warm" => Warm(),
             _ => throw new ArgumentOutOfRangeException(nameof(arm), arm, "Unnamed cache-state arm.")
         };
@@ -149,9 +207,30 @@ public sealed class JbCacheStateTests
         return new JbCacheState([Generation], null, false, false);
     }
 
-    /// <summary>A generation of this solution's own, vouched for by a marker.</summary>
+    /// <summary>
+    ///     A generation of this solution's own, vouched for by a marker — and, since no build is named on
+    ///     either side, one the staleness judgement has nothing to say about.
+    /// </summary>
     private static JbCacheState Warm()
     {
         return new JbCacheState([Generation], MarkerAge, false, false);
+    }
+
+    /// <summary>The same generation, vouched for by a marker the build about to open it wrote.</summary>
+    private static JbCacheState WarmUnderThisJb()
+    {
+        return Warm() with { MarkerJbVersion = ThisJb, CurrentJbVersion = ThisJb };
+    }
+
+    /// <summary>The same generation again, left warm by a jb the upgrade has since replaced.</summary>
+    private static JbCacheState Stale()
+    {
+        return Warm() with { MarkerJbVersion = AnotherJb, CurrentJbVersion = ThisJb };
+    }
+
+    /// <summary>A marker from a build of this server that recorded no jb version at all.</summary>
+    private static JbCacheState StaleWithNoRecordedBuild()
+    {
+        return Warm() with { CurrentJbVersion = ThisJb };
     }
 }

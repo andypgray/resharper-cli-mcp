@@ -38,7 +38,7 @@ jobs:
         run: echo "LINKCHECK_REPORT=$RUNNER_TEMP/stale-links.md" >> "$GITHUB_ENV"
 
       - name: Check curated documentation links
-        run: dotnet test tests/Zphil.ReSharperCli.Tests/Zphil.ReSharperCli.Tests.csproj --no-build --filter "Category=ExternalLinks" --logger "console;verbosity=normal"
+        run: dotnet test tests/Zphil.ReSharperCli.Tests/Zphil.ReSharperCli.Tests.csproj --no-build --filter "Category=ExternalLinks" --output Detailed
 
       - name: Surface stale links as warnings
         if: always()

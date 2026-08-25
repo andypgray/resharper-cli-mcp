@@ -47,7 +47,11 @@ jobs:
         # network (linkcheck.yml, weekly), and JbContract installs a real jb and analyses a fixture solution
         # with it (jb-contract.yml, daily). Both need something outside the checkout; leaving them out keeps
         # the every-PR suite fully offline, deterministic, and fast.
-        run: dotnet test tests/Zphil.ReSharperCli.Tests/Zphil.ReSharperCli.Tests.csproj --no-build --filter "Category!=ExternalLinks&Category!=JbContract" --logger "console;verbosity=normal"
+        #
+        # `--output Detailed` is Microsoft.Testing.Platform's spelling of the per-test line VSTest got from
+        # `--logger "console;verbosity=normal"`. The old flag is not ignored under MTP, it is rejected:
+        # `dotnet test` stops with exit code 5 before discovering a single test.
+        run: dotnet test tests/Zphil.ReSharperCli.Tests/Zphil.ReSharperCli.Tests.csproj --no-build --filter "Category!=ExternalLinks&Category!=JbContract" --output Detailed
 
   # Packs on Linux and asserts the MCP manifest lands at exactly `.mcp/server.json` — the
   # path nuget.org scans to generate the VS Code MCP config. A backslash PackagePath

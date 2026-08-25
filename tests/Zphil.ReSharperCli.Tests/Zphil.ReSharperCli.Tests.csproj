@@ -10,13 +10,18 @@
         <NoWarn>$(NoWarn);xUnit1051</NoWarn>
     </PropertyGroup>
 
+    <!-- Microsoft.Testing.Platform, not VSTest. xunit.v3 4.0.0 ships MTP 2.x, which the .NET 10 SDK
+         refuses to run through the VSTest target at all, so the VSTest-era packages that used to sit
+         here — Microsoft.NET.Test.Sdk, xunit.runner.visualstudio, coverlet.collector — have no path
+         left to execute on and are gone rather than dormant. Coverage moves with them: coverlet.collector
+         is a VSTest data collector, and its replacement below still writes Cobertura, so what changes is
+         the flag — the "coverage" option pair MTP supplies, in place of VSTest's "XPlat Code Coverage"
+         collector. The runner itself is selected in global.json at the repo root. -->
     <ItemGroup>
-        <PackageReference Include="coverlet.collector" Version="10.0.1" />
-        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.9.0" />
+        <PackageReference Include="Microsoft.Testing.Extensions.CodeCoverage" Version="18.10.0" />
         <PackageReference Include="NSubstitute" Version="6.2.0" />
         <PackageReference Include="Shouldly" Version="4.3.0" />
-        <PackageReference Include="xunit.v3" Version="3.2.2" />
-        <PackageReference Include="xunit.runner.visualstudio" Version="4.0.0" />
+        <PackageReference Include="xunit.v3" Version="4.0.0" />
     </ItemGroup>
 
     <ItemGroup>

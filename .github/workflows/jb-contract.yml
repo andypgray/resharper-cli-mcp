@@ -136,7 +136,7 @@ jobs:
 
       - name: Check the jb contracts
         id: contracts
-        run: dotnet test tests/Zphil.ReSharperCli.Tests/Zphil.ReSharperCli.Tests.csproj --no-build --filter "Category=JbContract" --logger "console;verbosity=normal"
+        run: dotnet test tests/Zphil.ReSharperCli.Tests/Zphil.ReSharperCli.Tests.csproj --no-build --filter "Category=JbContract" --output Detailed
 
       # The report is written whether or not anything drifted, so the summary always says what this jb did.
       # Only the finding lines start with "- ", and only those become annotations.

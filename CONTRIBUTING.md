@@ -33,6 +33,8 @@ dotnet test Zphil.ReSharperCli.slnx --filter "FullyQualifiedName~SarifParserTest
 dotnet test Zphil.ReSharperCli.slnx --filter "Category!=ExternalLinks&Category!=JbContract"
 ```
 
+The suite runs on Microsoft.Testing.Platform rather than VSTest, because `xunit.v3` 4.0.0 ships a version of that platform the .NET 10 SDK declines to drive through the VSTest target. `global.json` selects the runner. Filter expressions are unchanged, since `xunit.v3` accepts the VSTest filter syntax. VSTest's other options are rejected rather than ignored: `--logger "console;verbosity=normal"` stops the run with exit code 5 before a test is discovered, and `--output Detailed` prints the per-test line it used to. Coverage is `--coverage --coverage-output-format cobertura`, from `Microsoft.Testing.Extensions.CodeCoverage`.
+
 The test project has exactly two fakeable seams, worth understanding before you add a test:
 
 - `IProcessRunner` is the only process-spawning seam, faked with NSubstitute. A test that needs `jb` output has the substitute return a canned `ProcessResult`, or, for the inspect round trip, write a SARIF fixture to the `-o=` path it received. No test in the unit suite spawns a real `jb`; the contract suite below is the one that does.

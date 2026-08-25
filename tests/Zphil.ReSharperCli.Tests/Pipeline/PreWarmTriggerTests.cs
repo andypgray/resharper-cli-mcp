@@ -114,9 +114,15 @@ public sealed class PreWarmTriggerTests
 
         processRunner
             .RunAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
-            .Returns(call => IsVersionProbe(call.Arg<IReadOnlyList<string>>())
-                ? new ProcessResult(0, "Version: 2026.1.2", string.Empty)
-                : new ProcessResult(0, string.Empty, string.Empty));
+            .Returns(call =>
+            {
+                var arguments = call.Arg<IReadOnlyList<string>>();
+
+                if (IsVersionProbe(arguments)) return new ProcessResult(0, "Version: 2026.1.2", string.Empty);
+
+                CacheHomes.PlantGenerationFromJbRun(arguments);
+                return new ProcessResult(0, string.Empty, string.Empty);
+            });
     }
 
     /// <summary>The same, but the inspection parks until its token is cancelled, standing in for a cold run.</summary>

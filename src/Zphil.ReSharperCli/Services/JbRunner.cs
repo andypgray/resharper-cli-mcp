@@ -82,6 +82,21 @@ internal sealed class JbRunner(
     private const string Speculative = "speculative";
 
     /// <summary>
+    ///     Whether this server session has already said that <c>jb</c>'s cache-generation naming no longer
+    ///     matches what <see cref="JbSolutionCacheHash" /> reproduces. One fact about this machine's
+    ///     <c>jb</c> rather than one fact per run, so repeating it on every successful run would bury a
+    ///     session's log in the same sentence.
+    /// </summary>
+    /// <remarks>
+    ///     An instance field, and that is the whole reason the latch lives in this class rather than beside
+    ///     the marker it describes: this is registered once per host, so one instance is one server session
+    ///     and "once" is scoped to the same session as the <see cref="ILogger" /> the warning lands in. A
+    ///     static latch is exact only while a process holds one session, and lets the first session in a
+    ///     process that holds several absorb the warning every later one had to say for itself.
+    /// </remarks>
+    private int _driftWarned;
+
+    /// <summary>
     ///     Raised when a call the user made hit the run cap, carrying the configuration that run used. A
     ///     part-built cache and an idle user is the best moment speculative work ever gets, and nothing else
     ///     in the process can see that moment.
@@ -235,6 +250,12 @@ internal sealed class JbRunner(
     ///     duration about to follow, the cache state and the queue wait, which are unrecoverable afterwards.
     ///     Placed here rather than in <see cref="ProcessRunner" /> because this is the frame that knows a run
     ///     from a version probe, and one level down they are the same spawn.
+    ///     <para>
+    ///         The stamp is also where naming drift is met, and this class — one instance per server session —
+    ///         is what owns the once-per-session latch behind
+    ///         <see cref="WarnOnceAboutUnrecognisedNaming" />. <see cref="JbWarmMarker" /> reports the
+    ///         condition and says nothing, so the warning is scoped to the session whose log it lands in.
+    ///     </para>
     /// </remarks>
     private async Task<ProcessResult> SpawnAsync(
         ResolvedConfig config,
@@ -296,10 +317,30 @@ internal sealed class JbRunner(
 
         if (result.ExitCode != 0) return result;
 
-        JbWarmMarker.Stamp(config.SolutionPath, config.CacheHome, logger);
+        if (JbWarmMarker.Stamp(config.SolutionPath, config.CacheHome, logger) == StampOutcome.NoGenerationMatched)
+            WarnOnceAboutUnrecognisedNaming(config);
+
         JbColdTombstone.Clear(config.SolutionPath, config.CacheHome, logger);
 
         return result;
+    }
+
+    /// <summary>
+    ///     A run succeeded and left no directory this server can recognise as its cache generation, so
+    ///     <c>jb</c>'s naming has moved away from what <see cref="JbSolutionCacheHash" /> reproduces. Nothing
+    ///     is broken by it — every feature reading the name simply stops finding one — but it is the single
+    ///     signal that the derivation has gone stale, so it is a warning rather than a debug line, and said
+    ///     once for as long as this session lasts.
+    /// </summary>
+    private void WarnOnceAboutUnrecognisedNaming(ResolvedConfig config)
+    {
+        if (Interlocked.Exchange(ref _driftWarned, 1) != 0) return;
+
+        logger.LogWarning(
+            "A jb run against solution {SolutionPath} succeeded but left no cache generation directory matching its computed hash under {CacheHome}; "
+            + "features that need to name a cache generation are disabled for this server",
+            config.SolutionPath,
+            config.CacheHome);
     }
 
     /// <summary>

@@ -40,6 +40,34 @@ internal static class CacheHomes
     }
 
     /// <summary>
+    ///     Leave behind what a successful <c>jb</c> run leaves: the cache generation for the solution it was
+    ///     given, under the caches-home it was told to use, both read back out of the argument list the
+    ///     server actually built. For a process-runner double to call on the success path.
+    /// </summary>
+    /// <remarks>
+    ///     A stub that returns exit 0 and creates nothing is claiming a success no real run produces.
+    ///     <see cref="JbWarmMarker.Stamp" /> then finds no directory carrying this solution's computed hash,
+    ///     and the runner warns that <c>jb</c>'s naming has drifted — true of the double, not of <c>jb</c>.
+    ///     That warning is latched per server session, so it lands in the log of the session that ran the
+    ///     stub and it lands there every time: an unplanted exit-0 stub now fails its own
+    ///     <c>Warnings.ShouldBeEmpty()</c> rather than some other test's. Planting is what keeps the double
+    ///     telling the truth, which is why it is here rather than in the assertion.
+    /// </remarks>
+    public static void PlantGenerationFromJbRun(IReadOnlyList<string> arguments)
+    {
+        const string CachesHome = "--caches-home=";
+
+        if (arguments.Count < 2) return;
+
+        string? cacheHome = arguments
+            .FirstOrDefault(argument => argument.StartsWith(CachesHome, StringComparison.Ordinal))?[CachesHome.Length..];
+
+        if (string.IsNullOrEmpty(cacheHome)) return;
+
+        PlantGenerationFor(cacheHome, arguments[1]);
+    }
+
+    /// <summary>
     ///     Where the generation for <paramref name="solutionPath" /> sits under
     ///     <paramref name="cacheHome" />, planted or not — for tests asserting on a directory something else
     ///     is expected to create.

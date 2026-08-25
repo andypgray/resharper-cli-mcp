@@ -609,6 +609,10 @@ public sealed class CacheWarmerTests : IDisposable
             if (BlockUntilCancelled) await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
 
             WriteEmptySarifIfRequested(arguments);
+
+            // And a run that exits 0 has left its cache generation behind, for the same reason.
+            if (ExitCode == 0) CacheHomes.PlantGenerationFromJbRun(arguments);
+
             return new ProcessResult(ExitCode, string.Empty, string.Empty);
         }
 

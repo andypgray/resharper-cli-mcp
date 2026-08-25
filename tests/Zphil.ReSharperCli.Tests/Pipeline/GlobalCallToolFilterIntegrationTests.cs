@@ -310,7 +310,8 @@ public sealed class GlobalCallToolFilterIntegrationTests
     ///     Routes the process-runner substitute by jb sub-command: the version probe succeeds, and an
     ///     <c>inspectcode</c> run is handed to <paramref name="onInspect" /> (which either writes SARIF to the
     ///     <c>-o=</c> path and returns success, or throws to simulate an unexpected failure). Everything else
-    ///     succeeds with exit code 0.
+    ///     succeeds with exit code 0. A run that exits 0 leaves its cache generation behind, because a real
+    ///     one does — see <see cref="CacheHomes.PlantGenerationFromJbRun" />.
     /// </summary>
     private static void RouteJb(IProcessRunner processRunner, Func<IReadOnlyList<string>, ProcessResult> onInspect)
     {
@@ -322,9 +323,13 @@ public sealed class GlobalCallToolFilterIntegrationTests
 
                 if (arguments.Contains("--version")) return new ProcessResult(0, "Version: 2026.1.2", string.Empty);
 
-                if (arguments.Count > 0 && arguments[0] == "inspectcode") return onInspect(arguments);
+                ProcessResult result = arguments.Count > 0 && arguments[0] == "inspectcode"
+                    ? onInspect(arguments)
+                    : new ProcessResult(0, string.Empty, string.Empty);
 
-                return new ProcessResult(0, string.Empty, string.Empty);
+                if (result.ExitCode == 0) CacheHomes.PlantGenerationFromJbRun(arguments);
+
+                return result;
             });
     }
 

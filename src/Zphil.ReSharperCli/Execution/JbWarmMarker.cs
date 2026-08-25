@@ -4,6 +4,38 @@ using Microsoft.Extensions.Logging;
 namespace Zphil.ReSharperCli.Execution;
 
 /// <summary>
+///     What <see cref="JbWarmMarker.Stamp" /> managed to record — the one thing about a stamp its caller
+///     cannot read back off the marker afterwards.
+/// </summary>
+/// <remarks>
+///     Three outcomes rather than a bool, because the last two leave the same evidence and mean opposite
+///     things. <see cref="NoGenerationMatched" /> is a marker written under <c>jb</c> naming this server no
+///     longer recognises — a fact about <c>jb</c> worth saying out loud — while <see cref="NotStamped" /> is
+///     an ordinary filesystem failure that wrote nothing at all. Folded into one answer, an unwritable cache
+///     home would accuse <c>jb</c> of drift.
+/// </remarks>
+internal enum StampOutcome
+{
+    /// <summary>The marker was written and names the cache generation the run left warm.</summary>
+    NamedGeneration,
+
+    /// <summary>
+    ///     The marker was written and names nothing, because no directory under the cache home carries this
+    ///     solution's computed hash: <c>jb</c>'s naming has moved away from what
+    ///     <see cref="JbSolutionCacheHash" /> reproduces. Nothing breaks — every feature that needs a name
+    ///     switches itself off — and nothing else in the server would ever report it.
+    /// </summary>
+    NoGenerationMatched,
+
+    /// <summary>
+    ///     Nothing was written, because the marker file could not be opened. Swallowed rather than raised,
+    ///     and deliberately not <see cref="NoGenerationMatched" />: an unusable cache home says nothing about
+    ///     <c>jb</c>'s naming.
+    /// </summary>
+    NotStamped
+}
+
+/// <summary>
 ///     A file inside the cache home whose modification time records when a <c>jb</c> run against that cache
 ///     generation last <em>succeeded</em>, and whose content names the generation directory that run left
 ///     behind. The speculative pre-warm reads the timestamp to skip a generation something has already
@@ -33,25 +65,19 @@ namespace Zphil.ReSharperCli.Execution;
 ///         a cache worth protecting.
 ///     </para>
 ///     <para>
-///         The single exception to the silence is <see cref="WarnOnceAboutUnrecognisedNaming" />, and it is
-///         not a filesystem failure: it says the derivation this server makes from <c>jb</c>'s directory
-///         naming has stopped matching what <c>jb</c> writes. Nothing breaks when it fires — the features
-///         reading the name switch themselves off — but nothing else would ever say so, which is why it is a
-///         warning, and why it is said once.
+///         The silence is total, which leaves one thing worth saying out loud with nowhere here to say it:
+///         that the derivation this server makes from <c>jb</c>'s directory naming has stopped matching what
+///         <c>jb</c> writes. That is not a filesystem failure and nothing else would ever report it, so
+///         <see cref="Stamp" /> hands it back as <see cref="StampOutcome.NoGenerationMatched" /> and
+///         <see cref="Services.JbRunner" /> is what turns it into a warning said once. Returned rather than
+///         logged because "once" has to mean once per server session, and a latch on a static field here
+///         would be once per <em>process</em>: exact only while a process holds a single session, and under a
+///         parallel test run the first session to see drift absorbs every later session's warning.
 ///     </para>
 /// </remarks>
 internal static class JbWarmMarker
 {
     private const string Extension = "warm";
-
-    /// <summary>
-    ///     Whether the "no generation matched this solution's hash" warning has already been logged. The
-    ///     condition means <c>jb</c>'s directory naming no longer matches what
-    ///     <see cref="JbSolutionCacheHash" /> reproduces, which is one fact about this machine's <c>jb</c>
-    ///     rather than one fact per run — logging it on every stamp would bury the session in a repeat of the
-    ///     same sentence.
-    /// </summary>
-    private static int _driftWarned;
 
     /// <summary>
     ///     Where the marker for one cache generation lives: beside its lock file and cold tombstone, under
@@ -85,8 +111,10 @@ internal static class JbWarmMarker
     ///     used, forks included, and only the filesystem knows which of those exists. Finding none leaves the
     ///     file empty — exactly the marker this used to write — so every reader that wants a name is told
     ///     there is none, and the features built on it switch themselves off rather than acting on a guess.
+    ///     The <see cref="StampOutcome" /> is the only account of that; the empty marker a naming drift leaves
+    ///     is indistinguishable from the one a failure never wrote.
     /// </remarks>
-    internal static void Stamp(string solutionPath, string cacheHome, ILogger logger)
+    internal static StampOutcome Stamp(string solutionPath, string cacheHome, ILogger logger)
     {
         try
         {
@@ -94,11 +122,9 @@ internal static class JbWarmMarker
 
             using FileStream marker = JbSidecar.OpenToWrite(solutionPath, cacheHome, Extension);
 
-            if (generationName is null)
-            {
-                WarnOnceAboutUnrecognisedNaming(solutionPath, cacheHome, logger);
-                return;
-            }
+            // Decided after the open and never before it: a cache home that cannot hold the marker throws on
+            // the line above and leaves by the catch, so a broken filesystem is never reported as drift.
+            if (generationName is null) return StampOutcome.NoGenerationMatched;
 
             marker.Write(Encoding.UTF8.GetBytes(generationName));
 
@@ -108,10 +134,13 @@ internal static class JbWarmMarker
                 "Stamped the jb warm marker for solution {SolutionPath}, naming cache generation {GenerationName}",
                 solutionPath,
                 generationName);
+
+            return StampOutcome.NamedGeneration;
         }
         catch (Exception exception) when (FilesystemFailure.Covers(exception))
         {
             logger.LogDebug(exception, "Could not stamp the jb warm marker for solution {SolutionPath} in cache home {CacheHome}", solutionPath, cacheHome);
+            return StampOutcome.NotStamped;
         }
     }
 
@@ -243,24 +272,6 @@ internal static class JbWarmMarker
             .ThenByDescending(generation => generation.Name, StringComparer.Ordinal)
             .Select(generation => generation.Name)
             .FirstOrDefault();
-    }
-
-    /// <summary>
-    ///     A run succeeded and left no directory this server can recognise as its cache generation, so
-    ///     <c>jb</c>'s naming has moved away from what <see cref="JbSolutionCacheHash" /> reproduces. Nothing
-    ///     is broken by it — every feature reading the name simply stops finding one — but it is the single
-    ///     signal that the derivation has gone stale, so it is a warning rather than a debug line, and said
-    ///     once.
-    /// </summary>
-    private static void WarnOnceAboutUnrecognisedNaming(string solutionPath, string cacheHome, ILogger logger)
-    {
-        if (Interlocked.Exchange(ref _driftWarned, 1) != 0) return;
-
-        logger.LogWarning(
-            "A jb run against solution {SolutionPath} succeeded but left no cache generation directory matching its computed hash under {CacheHome}; "
-            + "features that need to name a cache generation are disabled for this server",
-            solutionPath,
-            cacheHome);
     }
 
     /// <summary>

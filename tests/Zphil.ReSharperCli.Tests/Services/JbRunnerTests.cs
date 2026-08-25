@@ -14,7 +14,8 @@ namespace Zphil.ReSharperCli.Tests.Services;
 /// <summary>
 ///     What <see cref="JbRunner" /> owns on behalf of both services: naming the failed subcommand in the
 ///     error, bounding how much of a failed run's standard error comes back with it, and stamping the warm
-///     marker on every run that succeeds. Also the shape of the speculative entry point — it skips instead
+///     marker on every run that succeeds — and, when that stamp can name no generation, saying so once for
+///     the session it belongs to. Also the shape of the speculative entry point — it skips instead
 ///     of queueing, and reports instead of throwing — which is what lets background work never affect a
 ///     call the user made, and the ending it names for each of those, since a caller that cannot tell a run
 ///     given up after minutes from one that never started will say the wrong one out loud.
@@ -111,6 +112,102 @@ public sealed class JbRunnerTests : IDisposable
 
         // Assert
         JbWarmMarker.IsFreshWithin(_config.SolutionPath, _config.CacheHome, RecentlyEnough, NullLogger.Instance).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task RunAsync_SucceedingRunLeavingNoRecognisableGeneration_WarnsThatNamingHasDrifted()
+    {
+        // Arrange — a jb that exits zero and leaves no directory carrying this solution's computed hash. On a
+        // real machine that means jb's cache-generation naming has moved away from what this server
+        // reproduces, and nothing else in the process would ever report it.
+        CapturingLoggerProvider logs = new();
+        JbRunner runner = JbRunners.Create(_processRunner, _runLock, logs: Logs.Capturing(logs));
+        StubExit(0, string.Empty);
+
+        // Act
+        await runner.RunAsync(_config, ["inspectcode", _config.SolutionPath], Ct);
+
+        // Assert — the two names an operator needs to check the derivation by hand, plus the one phrase that
+        // says which derivation broke. Pinned here because this is the wording's only owner: the marker
+        // reports the condition and says nothing about it.
+        LogEntry drift = logs.Warnings.ShouldHaveSingleItem();
+        drift.Property("SolutionPath").ShouldBe(_config.SolutionPath);
+        drift.Property("CacheHome").ShouldBe(_config.CacheHome);
+        drift.Message.ShouldContain("matching its computed hash");
+    }
+
+    [Fact]
+    public async Task RunAsync_TwoSucceedingRunsBothLeavingNoRecognisableGeneration_WarnsOnlyOnce()
+    {
+        // Arrange — the naming is one fact about this machine's jb rather than one fact per run, so a session
+        // that repeated it would fill its log with the same sentence for as long as the drift lasted.
+        CapturingLoggerProvider logs = new();
+        JbRunner runner = JbRunners.Create(_processRunner, _runLock, logs: Logs.Capturing(logs));
+        StubExit(0, string.Empty);
+
+        // Act
+        await runner.RunAsync(_config, ["inspectcode", _config.SolutionPath], Ct);
+        await runner.RunAsync(_config, ["inspectcode", _config.SolutionPath], Ct);
+
+        // Assert
+        logs.Warnings.ShouldHaveSingleItem();
+    }
+
+    [Fact]
+    public async Task RunAsync_TwoServerSessionsBothSeeingDrift_EachWarnsInItsOwnLog()
+    {
+        // Arrange — two runners is two server sessions, which is what a parallel test run puts inside one
+        // process. Each has a log of its own, and the latch is per instance for exactly this reason: held on
+        // a static, the first session to warn swallows the second's, and the second's log then denies a drift
+        // its own run had just met.
+        CapturingLoggerProvider firstLogs = new();
+        CapturingLoggerProvider secondLogs = new();
+        JbRunner firstSession = JbRunners.Create(_processRunner, _runLock, logs: Logs.Capturing(firstLogs));
+        JbRunner secondSession = JbRunners.Create(_processRunner, _runLock, logs: Logs.Capturing(secondLogs));
+        StubExit(0, string.Empty);
+
+        // Act
+        await firstSession.RunAsync(_config, ["inspectcode", _config.SolutionPath], Ct);
+        await secondSession.RunAsync(_config, ["inspectcode", _config.SolutionPath], Ct);
+
+        // Assert
+        firstLogs.Warnings.ShouldHaveSingleItem();
+        secondLogs.Warnings.ShouldHaveSingleItem();
+    }
+
+    [Fact]
+    public async Task TryRunAsync_SucceedingRunLeavingNoRecognisableGeneration_WarnsThatNamingHasDrifted()
+    {
+        // Arrange — the pre-warm stamps through the same spawn, so on a session that starts by warming it is
+        // the run that meets the drift first. Warning only from the foreground path would leave that session
+        // silent about the thing that has just switched half its cache features off.
+        CapturingLoggerProvider logs = new();
+        JbRunner runner = JbRunners.Create(_processRunner, _runLock, logs: Logs.Capturing(logs));
+        StubExit(0, string.Empty);
+
+        // Act
+        SpeculativeRunOutcome result = await runner.TryRunAsync(_config, ["inspectcode", _config.SolutionPath], Ct);
+
+        // Assert — speculative work reports rather than throws, and this is the one thing it may still say out
+        // loud: the condition is about jb rather than about the pass that happened to notice it.
+        result.ShouldBe(SpeculativeRunOutcome.Completed);
+        logs.Warnings.ShouldHaveSingleItem().Message.ShouldContain("matching its computed hash");
+    }
+
+    [Fact]
+    public async Task RunAsync_SucceedingRunLeavingItsGeneration_WarnsNothing()
+    {
+        // Arrange — the ordinary successful run, which leaves a generation directory carrying this solution's
+        // computed hash. A warning that cannot stay quiet says nothing when it fires.
+        CapturingLoggerProvider logs = new();
+        JbRunner runner = JbRunners.Create(_processRunner, _runLock, logs: Logs.Capturing(logs));
+        StubExit(0, string.Empty, () => CacheHomes.PlantGenerationFor(_config.CacheHome, _config.SolutionPath));
+
+        // Act
+        await runner.RunAsync(_config, ["inspectcode", _config.SolutionPath], Ct);
+
+        // Assert
+        logs.Warnings.ShouldBeEmpty();
     }
 
     [Fact]

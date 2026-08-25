@@ -63,9 +63,10 @@ public sealed class JbWarmMarkerTests : IDisposable
         string generation = CacheHomes.PlantGenerationFor(_cacheHome, SolutionPath);
 
         // Act
-        JbWarmMarker.Stamp(SolutionPath, _cacheHome, NullLogger.Instance);
+        StampOutcome outcome = JbWarmMarker.Stamp(SolutionPath, _cacheHome, NullLogger.Instance);
 
         // Assert
+        outcome.ShouldBe(StampOutcome.NamedGeneration);
         JbWarmMarker.TryReadGenerationName(JbWarmMarker.PathFor(SolutionPath, _cacheHome), _cacheHome, NullLogger.Instance)
             .ShouldBe(Path.GetFileName(generation));
     }
@@ -90,17 +91,22 @@ public sealed class JbWarmMarkerTests : IDisposable
     }
 
     [Fact]
-    public void Stamp_NoDirectoryMatchingTheComputedHash_LeavesTheMarkerEmptyAndTheNameUnavailable()
+    public void Stamp_NoDirectoryMatchingTheComputedHash_ReportsNoGenerationMatchedAndLeavesTheMarkerEmpty()
     {
         // Arrange — what jb changing its directory naming looks like from here: the run succeeded, and
         // nothing on disk answers to the hash this server computes.
         CacheHomes.PlantGeneration(_cacheHome, "_App.999.00");
 
         // Act
-        JbWarmMarker.Stamp(SolutionPath, _cacheHome, NullLogger.Instance);
+        StampOutcome outcome = JbWarmMarker.Stamp(SolutionPath, _cacheHome, NullLogger.Instance);
 
-        // Assert — the debounce still works, and every feature that needs a name is told there is none rather
-        // than being handed the nearest-looking directory. That is the self-disable, not a degradation.
+        // Assert — the empty marker is left behind exactly as before, and the outcome is the only account of
+        // why it is empty. Nothing is logged here: the caller owns the warning, and the once it is said once
+        // per belongs to a session rather than to this process.
+        outcome.ShouldBe(StampOutcome.NoGenerationMatched);
+
+        // The debounce still works, and every feature that needs a name is told there is none rather than
+        // being handed the nearest-looking directory. That is the self-disable, not a degradation.
         JbWarmMarker.IsFreshWithin(SolutionPath, _cacheHome, OneHour, NullLogger.Instance).ShouldBeTrue();
         new FileInfo(JbWarmMarker.PathFor(SolutionPath, _cacheHome)).Length.ShouldBe(0);
         JbWarmMarker.TryReadGenerationName(JbWarmMarker.PathFor(SolutionPath, _cacheHome), _cacheHome, NullLogger.Instance).ShouldBeNull();
@@ -216,16 +222,21 @@ public sealed class JbWarmMarkerTests : IDisposable
     }
 
     [Fact]
-    public void Stamp_CacheHomeThatCannotHoldTheMarker_DoesNotThrowAndStillReportsStale()
+    public void Stamp_CacheHomeThatCannotHoldTheMarker_ReportsNotStampedRatherThanDrift()
     {
         // Arrange — the marker can never be created there. This runs straight after a jb run the user asked
         // for, so throwing here would fail a call that succeeded.
         string blocked = CacheHomes.BlockedCacheHome(_environment);
 
         // Act
-        Should.NotThrow(() => JbWarmMarker.Stamp(SolutionPath, blocked, NullLogger.Instance));
+        StampOutcome outcome = Should.NotThrow(() => JbWarmMarker.Stamp(SolutionPath, blocked, NullLogger.Instance));
 
-        // Assert — an unwritable marker reads as stale, so the next pre-warm runs rather than being skipped.
+        // Assert — the two answers that write no name are kept apart here, because a caller turns one of them
+        // into a warning about jb: no directory matched the hash on this cache home either, so an outcome
+        // decided above the open would blame jb's naming for a filesystem this machine cannot write to.
+        outcome.ShouldBe(StampOutcome.NotStamped);
+
+        // An unwritable marker reads as stale, so the next pre-warm runs rather than being skipped.
         JbWarmMarker.IsFreshWithin(SolutionPath, blocked, OneHour, NullLogger.Instance).ShouldBeFalse();
     }
 

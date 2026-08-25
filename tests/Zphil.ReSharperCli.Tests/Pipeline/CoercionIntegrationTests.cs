@@ -324,7 +324,8 @@ public sealed class CoercionIntegrationTests
     ///     Routes the process-runner substitute by jb sub-command: the version probe succeeds; the
     ///     inspectcode/cleanupcode run is handed to <paramref name="onCommand" /> for argument capture, and
     ///     inspectcode additionally writes <paramref name="inspectSarif" /> to its <c>-o=</c> path when
-    ///     supplied. Everything succeeds with exit code 0.
+    ///     supplied. Everything succeeds with exit code 0, leaving the cache generation behind that a real
+    ///     successful run leaves — see <see cref="CacheHomes.PlantGenerationFromJbRun" />.
     /// </summary>
     private static void RouteJb(
         IProcessRunner processRunner,
@@ -343,6 +344,8 @@ public sealed class CoercionIntegrationTests
 
                 if (arguments.Count > 0 && arguments[0] == "inspectcode" && inspectSarif is not null)
                     File.WriteAllText(OutputPathFrom(arguments), inspectSarif);
+
+                CacheHomes.PlantGenerationFromJbRun(arguments);
 
                 return new ProcessResult(0, string.Empty, string.Empty);
             });

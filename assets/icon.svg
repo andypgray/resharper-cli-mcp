@@ -3,9 +3,11 @@
   Master artwork. The PNGs beside it are renders of this file, at the size each
   distribution channel asks for:
 
-    resvg -w 512 icon.svg icon-512.png   Open Graph, and headroom
+    resvg -w 512 icon.svg icon-512.png   the NuGet package icon, which nuget.org also serves
+                                         as the page's og:image; the Cursor manifest's logo
     resvg -w 400 icon.svg icon-400.png   directory submission forms
-    resvg -w 128 icon.svg icon-128.png   NuGet's recommended package icon
+    resvg -w 128 icon.svg icon-128.png   the MCP handshake icon, embedded in the assembly and
+                                         sent as a data: URI, so its size is paid per session
 
   Flat fills, no gradients, geometry hand-authored here. The tile carries its own
   ground because nuget.org draws no plate behind an icon in dark mode. An original

@@ -65,7 +65,7 @@ internal sealed class ResharperResources
     [Description(ConfigurationGuideDescription)]
     internal static string ConfigurationGuide()
     {
-        return EmbeddedResourceText.Load("Zphil.ReSharperCli.Resources.configuration-guide.md");
+        return EmbeddedResource.LoadText("Zphil.ReSharperCli.Resources.configuration-guide.md");
     }
 
     [McpServerResource(
@@ -76,6 +76,6 @@ internal sealed class ResharperResources
     [Description(SetupGuideDescription)]
     internal static string SetupGuide()
     {
-        return EmbeddedResourceText.Load("Zphil.ReSharperCli.Resources.setup-guide.md");
+        return EmbeddedResource.LoadText("Zphil.ReSharperCli.Resources.setup-guide.md");
     }
 }

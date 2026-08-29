@@ -7,5 +7,5 @@ namespace Zphil.ReSharperCli.Infrastructure;
 internal static class ServerInstructions
 {
     internal static readonly string Text =
-        EmbeddedResourceText.Load("Zphil.ReSharperCli.server-instructions.md");
+        EmbeddedResource.LoadText("Zphil.ReSharperCli.server-instructions.md");
 }

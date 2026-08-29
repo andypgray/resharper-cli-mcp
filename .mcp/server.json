@@ -4,6 +4,18 @@
   "description": "ReSharper CLI inspection/cleanup via MCP. Unofficial: not affiliated with or endorsed by JetBrains.",
   "version": "1.5.0",
   "websiteUrl": "https://github.com/andypgray/resharper-cli-mcp",
+  "icons": [
+    {
+      "src": "https://raw.githubusercontent.com/andypgray/resharper-cli-mcp/main/assets/icon-512.png",
+      "mimeType": "image/png",
+      "sizes": ["512x512"]
+    },
+    {
+      "src": "https://raw.githubusercontent.com/andypgray/resharper-cli-mcp/main/assets/icon-128.png",
+      "mimeType": "image/png",
+      "sizes": ["128x128"]
+    }
+  ],
   "repository": {
     "url": "https://github.com/andypgray/resharper-cli-mcp",
     "source": "github"

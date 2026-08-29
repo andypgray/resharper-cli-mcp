@@ -194,12 +194,7 @@ internal sealed class McpPipelineHarness : IAsyncDisposable
             .AddMcpServer(options =>
             {
                 options.ServerInstructions = ServerInstructions.Text;
-                options.ServerInfo = new Implementation
-                {
-                    Name = "resharper-cli-mcp",
-                    Title = "ReSharper CLI Tools (unofficial)",
-                    Version = ServerVersion.SemVer
-                };
+                options.ServerInfo = ServerIdentity.Create();
             })
             .WithCoercingTools()
             .WithPrompts<ResharperPrompts>()

@@ -203,6 +203,19 @@ public sealed class GlobalCallToolFilterIntegrationTests
     }
 
     [Fact]
+    public async Task Initialize_NegotiatedServerInfo_CarriesTheIconAcrossTheHandshake()
+    {
+        // Arrange / Act
+        await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
+
+        // Assert — the icon is only worth embedding if it survives serialization and the client's own
+        // parse. ServerIdentityTests pins what goes in; this pins what a client is handed.
+        Icon icon = harness.Client.ServerInfo.Icons.ShouldHaveSingleItem();
+        icon.MimeType.ShouldBe("image/png");
+        icon.Source.ShouldStartWith("data:image/png;base64,");
+    }
+
+    [Fact]
     public async Task CallTool_CancelledMidRun_StopsJbAndIsLoggedOnlyByTheSdk()
     {
         // Arrange — a jb run parked mid-analysis, so cancellation lands while the call is genuinely in

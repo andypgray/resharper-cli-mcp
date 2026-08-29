@@ -31,6 +31,6 @@ internal sealed class ResharperPrompts
     [Description(DeriveStyleGuideDescription)]
     internal static string DeriveStyleGuide()
     {
-        return EmbeddedResourceText.Load("Zphil.ReSharperCli.Prompts.derive-style-guide.md");
+        return EmbeddedResource.LoadText("Zphil.ReSharperCli.Prompts.derive-style-guide.md");
     }
 }

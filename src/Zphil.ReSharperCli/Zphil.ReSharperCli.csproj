@@ -20,9 +20,11 @@
         <Copyright>Copyright (c) 2026 Andrew Gray</Copyright>
         <PackageLicenseExpression>MIT</PackageLicenseExpression>
         <PackageReadmeFile>README.md</PackageReadmeFile>
-        <!-- No PackageIcon yet. The project's own mark is at assets/icon.svg with its renders
-             beside it; the property and its Pack item land in the next release. Still ships no
-             JetBrains brand asset. -->
+        <!-- The project's own mark, rendered from assets/icon.svg. nuget.org serves the packed icon
+             as the page's og:image as well as drawing it in listings, and a social card wants more
+             than the 128 px NuGet recommends for the listing itself, so the 512 render is what ships.
+             Still no JetBrains brand asset: the mark is original. -->
+        <PackageIcon>icon-512.png</PackageIcon>
         <PackageTags>resharper;inspectcode;cleanupcode;code-cleanup;static-analysis;code-quality;mcp;model-context-protocol;csharp;dotnet-tool;claude;cursor;copilot;ai</PackageTags>
         <PackageProjectUrl>https://github.com/andypgray/resharper-cli-mcp</PackageProjectUrl>
         <RepositoryUrl>https://github.com/andypgray/resharper-cli-mcp</RepositoryUrl>
@@ -43,6 +45,8 @@
              nuget.org's VS Code MCP config detection (it wants exactly `.mcp/server.json`). -->
         <None Include="..\..\README.md" Pack="true" PackagePath="/" />
         <None Include="..\..\.mcp\server.json" Pack="true" PackagePath=".mcp/server.json" />
+        <!-- PackageIcon names this file by its packed path, so the two move together. -->
+        <None Include="..\..\assets\icon-512.png" Pack="true" PackagePath="/" />
     </ItemGroup>
 
     <ItemGroup>
@@ -59,6 +63,11 @@
     </ItemGroup>
 
     <ItemGroup>
+        <!-- The handshake icon, read back out as a data: URI for serverInfo.icons. Embedded rather
+             than shipped beside the assembly because a data: URI is the one form that does not depend
+             on where a tool install, a dnx cache or a container put the file. LogicalName is explicit:
+             the file lives outside the project directory, so the derived id would not be predictable. -->
+        <EmbeddedResource Include="..\..\assets\icon-128.png" LogicalName="Zphil.ReSharperCli.icon-128.png" />
         <EmbeddedResource Include="server-instructions.md" />
         <EmbeddedResource Include="Prompts\derive-style-guide.md" LogicalName="Zphil.ReSharperCli.Prompts.derive-style-guide.md" />
         <EmbeddedResource Include="Resources\configuration-guide.md" LogicalName="Zphil.ReSharperCli.Resources.configuration-guide.md" />

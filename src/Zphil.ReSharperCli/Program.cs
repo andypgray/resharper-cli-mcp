@@ -1,7 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using ModelContextProtocol.Protocol;
 using Serilog.Events;
 using Zphil.ReSharperCli.Discovery;
 using Zphil.ReSharperCli.Execution;
@@ -99,12 +98,7 @@ builder.Services
     .AddMcpServer(options =>
     {
         options.ServerInstructions = ServerInstructions.Text;
-        options.ServerInfo = new Implementation
-        {
-            Name = "resharper-cli-mcp",
-            Title = "ReSharper CLI Tools (unofficial)",
-            Version = ServerVersion.SemVer
-        };
+        options.ServerInfo = ServerIdentity.Create();
     })
     .WithStdioServerTransport()
     .WithCoercingTools()

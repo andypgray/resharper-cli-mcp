@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The project icon in the three channels that render one. The NuGet package now sets `PackageIcon` and
+  packs the 512 px render, which nuget.org draws in listings and serves as the page's `og:image`;
+  `.mcp/server.json` declares an `icons` array pointing at the same renders in this repository, for the
+  MCP registry and the directories that read it; and the server sends an icon in `serverInfo` on
+  `initialize`, which clients supporting the 2025-11-25 icons specification display beside the server.
+  None of the three substitutes for another — a NuGet icon reaches neither the registry nor a client's
+  MCP UI. The handshake icon is the 128 px render embedded in the assembly and sent as a `data:` URI:
+  this server speaks stdio, so it listens on no authority for a client to match a remote icon against,
+  and it has no install path that survives a tool install, a `dnx` cache and a container image alike.
+  It costs about 2.5 KB of base64 once per session and no network fetch.
+
 - A Cline block in the README's "Other clients" section. Cline stores its servers in
   `cline_mcp_settings.json`, which its MCP Servers panel opens under Configure MCP Servers, and runs the
   same command with no arguments as every other client documented there. `llms-install.md` already

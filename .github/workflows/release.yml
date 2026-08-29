@@ -117,12 +117,24 @@ jobs:
       # before the immutable nuget push. -Z1 lists one entry per line; -Fxq is a whole-line
       # literal match, so the double-slash form fails it. Capturing into a variable first
       # avoids a SIGPIPE false-failure from a live unzip|grep pipe.
-      - name: Verify server.json is packed at .mcp/server.json
+      # The icon is checked in the same pass and for the same reason: <PackageIcon> names a path
+      # inside the package, and a package declaring an icon it does not carry is rejected at push
+      # — after the version has already been burned. The name is read out of the nuspec rather
+      # than written here twice, so renaming the render moves one site.
+      - name: Verify server.json and the package icon are packed
         run: |
           entries="$(unzip -Z1 artifacts/*.nupkg)"
           grep -Fxq '.mcp/server.json' <<<"$entries" || {
             echo "::error::MCP manifest missing or mis-pathed in the packed nupkg (need .mcp/server.json)"
             printf '%s\n' "$entries" | grep -i 'server\.json' || true
+            exit 1
+          }
+          nuspec="$(unzip -p artifacts/*.nupkg '*.nuspec')"
+          icon="$(sed -n 's:.*<icon>\(.*\)</icon>.*:\1:p' <<<"$nuspec")"
+          [ -n "$icon" ] || { echo "::error::nuspec declares no <icon> — the csproj <PackageIcon> is missing"; exit 1; }
+          grep -Fxq "$icon" <<<"$entries" || {
+            echo "::error::nuspec declares <icon>$icon</icon> but the nupkg carries no such entry"
+            printf '%s\n' "$entries" | grep -i '\.png$' || true
             exit 1
           }
 

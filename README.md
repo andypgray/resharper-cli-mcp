@@ -45,9 +45,50 @@ The server finds a single `.sln`/`.slnx` in its working directory; when that dir
 
 [llms-install.md](https://github.com/andypgray/resharper-cli-mcp/blob/main/llms-install.md) is the same setup written as a checklist, with the configuration block for each of the common clients. Point an agent at it to have the server installed for you.
 
-VS Code and Cursor users can add the server in one click, once both tools are installed:
+VS Code, Visual Studio, Cursor and LM Studio can add the server in one click, once both tools are installed:
 
-[![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_Server-0098FF?style=flat-square&logo=visualstudiocode&logoColor=white)](https://insiders.vscode.dev/redirect/mcp/install?name=resharper&config=%7B%22type%22%3A%22stdio%22%2C%22command%22%3A%22resharper-cli-mcp%22%7D) [![Add to Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/en/install-mcp?name=resharper&config=eyJjb21tYW5kIjoicmVzaGFycGVyLWNsaS1tY3AifQ==)
+[![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_Server-0098FF?style=flat-square&logo=visualstudiocode&logoColor=white)](https://insiders.vscode.dev/redirect/mcp/install?name=resharper&config=%7B%22type%22%3A%22stdio%22%2C%22command%22%3A%22resharper-cli-mcp%22%7D) [![Install in Visual Studio](https://img.shields.io/badge/Visual_Studio-Install_Server-5C2D91?style=flat-square&logo=visualstudio&logoColor=white)](https://vs-open.link/mcp-install?%7B%22name%22%3A%22resharper%22%2C%22type%22%3A%22stdio%22%2C%22command%22%3A%22resharper-cli-mcp%22%7D) [![Add to Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/en/install-mcp?name=resharper&config=eyJjb21tYW5kIjoicmVzaGFycGVyLWNsaS1tY3AifQ==) [![Add to LM Studio](https://files.lmstudio.ai/deeplink/mcp-install-light.svg)](https://lmstudio.ai/install-mcp?name=resharper&config=eyJjb21tYW5kIjoicmVzaGFycGVyLWNsaS1tY3AifQ%3D%3D)
+
+## Other clients
+
+Every client runs the same command, `resharper-cli-mcp`, with no arguments. Only the file and the key around it change.
+
+### Visual Studio
+
+Visual Studio 2022 17.14 and later, and Visual Studio 2026, read an `.mcp.json` beside the solution, so a checked-in file registers the server for everyone working on it. The top-level key is `servers`, and the transport is named:
+
+```json
+{
+  "servers": {
+    "resharper": {
+      "type": "stdio",
+      "command": "resharper-cli-mcp"
+    }
+  }
+}
+```
+
+### Rider and Junie
+
+Junie reads `~/.junie/mcp/mcp.json` for every project, or `.junie/mcp/mcp.json` for one. Rider's AI Assistant takes the same JSON under Settings | Tools | AI Assistant | MCP:
+
+```json
+{
+  "mcpServers": {
+    "resharper": {
+      "command": "resharper-cli-mcp"
+    }
+  }
+}
+```
+
+Running the server alongside a JetBrains IDE means two ReSharper engines over one solution, each with its own cache. Point one of them elsewhere with `JB_CACHE_HOME` if disk use matters.
+
+### Codex CLI
+
+```bash
+codex mcp add resharper -- resharper-cli-mcp
+```
 
 ## Install as a Claude Code plugin
 

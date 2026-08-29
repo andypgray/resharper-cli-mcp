@@ -24,6 +24,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   repository directory name, which is why it reads `resharper-cli-mcp` rather than the shorter server
   key the configuration examples use.
 
+- README setup for Visual Studio, Rider and Junie, and the Codex CLI, in a new "Other clients"
+  section. Visual Studio reads an `.mcp.json` beside the solution, so a checked-in file registers the
+  server for everyone working on it; Junie reads `~/.junie/mcp/mcp.json`, and Rider's AI Assistant
+  takes the same JSON. JetBrains ships no MCP directory anywhere in its ecosystem, so for the IDEs
+  this server's users are most likely to be running, the README is the whole route. The one-click row
+  gains Visual Studio and LM Studio buttons beside the VS Code and Cursor ones.
+
 - An `lhm.plugin.json`, the manifest a [LobeHub](https://lobehub.com) listing is published from. It
   records the three tools with their titles, hints and argument schemas, both guide resources and the
   `derive_style_guide` prompt, captured from the running server rather than transcribed. Its `version`

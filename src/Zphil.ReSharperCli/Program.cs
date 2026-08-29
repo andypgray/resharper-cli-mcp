@@ -17,11 +17,16 @@ if (args.Contains("--version"))
     return;
 }
 
-if (!Console.IsInputRedirected)
+// Stdin being a terminal stands in for "a human typed this", and it is wrong for any launcher that
+// allocates a pseudo-terminal around the pipe it then speaks MCP over. Such a launcher gets the
+// message below instead of a server, and the process still exits 0, so the failure is silent at both
+// ends. `--stdio` states the intent the proxy reads wrongly.
+if (!args.Contains("--stdio") && !Console.IsInputRedirected)
 {
     // A human ran the tool at a terminal: don't hang on a silent stdio server.
     Console.WriteLine("resharper-cli-mcp is an MCP stdio server; it is started by an MCP client, not interactively.");
     Console.WriteLine("Add it to your client config with command \"resharper-cli-mcp\", or see https://github.com/andypgray/resharper-cli-mcp.");
+    Console.WriteLine("To start it under a launcher that allocates a terminal, pass --stdio.");
     return;
 }
 

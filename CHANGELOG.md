@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A `--stdio` argument, for launchers that allocate a terminal. The server reads stdin being a terminal
+  as "a person ran this at a prompt" and prints a short message instead of starting, which is right for
+  a person and wrong for a harness that allocates a pseudo-terminal around the pipe it then speaks MCP
+  over. Measured in a container whose stdin was a pseudo-terminal: the message, an exit code of 0 and no
+  MCP output at all, so the run looks successful from outside while the handshake never happened.
+  `--stdio` states the intent the terminal check reads wrongly, and the message now names it. Nothing
+  changes for a client that starts the server over pipes, which is every client the README documents.
+
 - An [Agent Plugins](https://agent-plugins.org) manifest pair at the repository root, `plugin.json` and
   `mcp.json`, so hosts that read that specification — Cursor among them — can install the server without
   hand-written configuration. The launcher names an exact version the way the Claude Code plugin's does,

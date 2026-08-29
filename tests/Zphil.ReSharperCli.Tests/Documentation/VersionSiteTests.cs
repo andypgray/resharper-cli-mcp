@@ -33,6 +33,11 @@ public sealed partial class VersionSiteTests
         "Claude Code ships an installed plugin an update only when the manifest version changes, so a "
         + "version that does not follow the csproj <Version> strands existing installs on an older pin.";
 
+    private const string GeminiRationale =
+        "gemini-extension.json declares the extension's own version, which is what the gallery and the "
+        + "CLI report for an installed extension. One that does not follow the csproj <Version> names a "
+        + "release this is not.";
+
     [GeneratedRegex(@"<Version>(?<version>[^<]+)</Version>")]
     private static partial Regex CsprojVersion();
 
@@ -40,6 +45,7 @@ public sealed partial class VersionSiteTests
     [InlineData(".mcp/server.json", "/version", RegistryRationale)]
     [InlineData(".mcp/server.json", "/packages/0/version", RegistryRationale)]
     [InlineData(".claude-plugin/plugin.json", "/version", PluginRationale)]
+    [InlineData("gemini-extension.json", "/version", GeminiRationale)]
     public void ManifestVersionField_MatchesTheCsprojVersion(string manifestPath, string jsonPointer, string because)
     {
         // Arrange
@@ -57,6 +63,7 @@ public sealed partial class VersionSiteTests
     [Theory]
     [InlineData(".claude-plugin/plugin.json")]
     [InlineData("mcp.json")]
+    [InlineData("gemini-extension.json")]
     public void DnxLauncher_PinsThePackageToTheCsprojVersion(string manifestPath)
     {
         // Arrange

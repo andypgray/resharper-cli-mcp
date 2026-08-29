@@ -52,6 +52,8 @@ Every version site must agree or the release stops at step 1:
 | [`.claude-plugin/plugin.json`](../.claude-plugin/plugin.json) | `.version` | What makes Claude Code offer an installed plugin the update. |
 | `.claude-plugin/plugin.json` | the `Zphil.ReSharperCli@<version>` `dnx` argument | The server a plugin user actually runs. |
 | [`mcp.json`](../mcp.json) | the `Zphil.ReSharperCli@<version>` `dnx` argument | The same, for Agent Plugins hosts. |
+| [`gemini-extension.json`](../gemini-extension.json) | `.version` | The version the Gemini CLI reports for an installed extension. |
+| `gemini-extension.json` | the `Zphil.ReSharperCli@<version>` `dnx` argument | The server a Gemini CLI user actually runs. |
 
 The two `.claude-plugin/plugin.json` fields are one decision, not two: Claude Code ships an installed plugin an update only when its `version` changes, so a pin that moves under a frozen `version` reaches new installs and no existing one.
 
@@ -65,6 +67,8 @@ jq -r '.version, .packages[0].version' .mcp/server.json
 jq -r '.version' .claude-plugin/plugin.json
 jq -r '.mcpServers[].args[] | select(startswith("Zphil.ReSharperCli@")) | ltrimstr("Zphil.ReSharperCli@")' .claude-plugin/plugin.json
 jq -r '.mcpServers[].args[] | select(startswith("Zphil.ReSharperCli@")) | ltrimstr("Zphil.ReSharperCli@")' mcp.json
+jq -r '.version' gemini-extension.json
+jq -r '.mcpServers[].args[] | select(startswith("Zphil.ReSharperCli@")) | ltrimstr("Zphil.ReSharperCli@")' gemini-extension.json
 ```
 
 Then, using `1.0.1` as the example version:

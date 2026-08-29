@@ -18,6 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   users are unaffected — its own manifest under `.claude-plugin/` is unchanged, and the two live side
   by side.
 
+- A `gemini-extension.json`, so the server installs as a [Gemini CLI](https://google-gemini.github.io/gemini-cli/)
+  extension. Its launcher names the same exact package version the other manifests name, and both its
+  fields join the set the release workflow checks against the tag. The extension name has to equal the
+  repository directory name, which is why it reads `resharper-cli-mcp` rather than the shorter server
+  key the configuration examples use.
+
 ### Changed
 
 - The Claude Code plugin launches an exact server version rather than whatever NuGet holds at the

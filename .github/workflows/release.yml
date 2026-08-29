@@ -50,10 +50,11 @@ jobs:
       # declared: the csproj <Version>, BOTH version fields in .mcp/server.json (the
       # top-level `version` and the package entry's `version`), BOTH in
       # .claude-plugin/plugin.json (its `version`, and the version its dnx argument
-      # pins), and the dnx pin in the root mcp.json the Agent Plugins hosts read. Any
-      # mismatch fails the release before anything is pushed. jq ships on the
-      # ubuntu-latest runner. VersionSiteTests holds the same set on every PR, so a
-      # drifted site normally fails there first; this is the gate that cannot be skipped.
+      # pins), the dnx pin in the root mcp.json the Agent Plugins hosts read, and BOTH in
+      # gemini-extension.json (its `version`, and its own dnx pin). Any mismatch fails the
+      # release before anything is pushed. jq ships on the ubuntu-latest runner.
+      # VersionSiteTests holds the same set on every PR, so a drifted site normally fails
+      # there first; this is the gate that cannot be skipped.
       #
       # The two plugin fields move together or the pin never reaches anyone: Claude Code
       # ships an installed plugin updates only when the manifest `version` changes, so a
@@ -80,7 +81,9 @@ jobs:
           PLUGIN_TOP=$(jq -r '.version' .claude-plugin/plugin.json)
           PLUGIN_PIN=$(dnx_pin .claude-plugin/plugin.json)
           MCP_PIN=$(dnx_pin mcp.json)
-          echo "tag=$TAG csproj=$CSPROJ server.json/.version=$SERVER_TOP server.json/.packages[0].version=$SERVER_PKG plugin.json/.version=$PLUGIN_TOP plugin.json/dnx-pin=$PLUGIN_PIN mcp.json/dnx-pin=$MCP_PIN"
+          GEMINI_TOP=$(jq -r '.version' gemini-extension.json)
+          GEMINI_PIN=$(dnx_pin gemini-extension.json)
+          echo "tag=$TAG csproj=$CSPROJ server.json/.version=$SERVER_TOP server.json/.packages[0].version=$SERVER_PKG plugin.json/.version=$PLUGIN_TOP plugin.json/dnx-pin=$PLUGIN_PIN mcp.json/dnx-pin=$MCP_PIN gemini-extension.json/.version=$GEMINI_TOP gemini-extension.json/dnx-pin=$GEMINI_PIN"
           rc=0
           [ "$CSPROJ" = "$TAG" ]     || { echo "::error::csproj <Version> ($CSPROJ) != tag ($TAG)"; rc=1; }
           [ "$SERVER_TOP" = "$TAG" ] || { echo "::error::server.json .version ($SERVER_TOP) != tag ($TAG)"; rc=1; }
@@ -88,6 +91,8 @@ jobs:
           [ "$PLUGIN_TOP" = "$TAG" ] || { echo "::error::.claude-plugin/plugin.json .version ($PLUGIN_TOP) != tag ($TAG) — an unchanged version ships no update"; rc=1; }
           [ "$PLUGIN_PIN" = "$TAG" ] || { echo "::error::.claude-plugin/plugin.json dnx pin ($PLUGIN_PIN) != tag ($TAG) — empty means the launcher is unpinned"; rc=1; }
           [ "$MCP_PIN" = "$TAG" ]    || { echo "::error::mcp.json dnx pin ($MCP_PIN) != tag ($TAG) — empty means the launcher is unpinned"; rc=1; }
+          [ "$GEMINI_TOP" = "$TAG" ] || { echo "::error::gemini-extension.json .version ($GEMINI_TOP) != tag ($TAG)"; rc=1; }
+          [ "$GEMINI_PIN" = "$TAG" ] || { echo "::error::gemini-extension.json dnx pin ($GEMINI_PIN) != tag ($TAG) — empty means the launcher is unpinned"; rc=1; }
           exit $rc
 
       - name: Build (test project builds src/ transitively)

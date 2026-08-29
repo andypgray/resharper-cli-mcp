@@ -94,10 +94,18 @@ internal static class JbCacheGenerations
 
     /// <summary>
     ///     Where the generation directory called <paramref name="generationName" /> sits under
-    ///     <paramref name="cacheHome" />, anchored absolute. Lives beside the parser because the name can
-    ///     come from a warm marker's content — untrusted input to a copy — and anchoring the composition
-    ///     here is what keeps every reader and writer of that name addressing inside the cache home.
+    ///     <paramref name="cacheHome" />, with the home resolved absolute so callers all spell one path the
+    ///     same way. Lives beside the parser because the name can come from a warm marker's content —
+    ///     untrusted input to a copy.
     /// </summary>
+    /// <remarks>
+    ///     This composition constrains nothing on its own, and a caller must not read it as though it did:
+    ///     <see cref="Path.Combine(string, string)" /> lets <c>..</c> climb out of the home and discards the
+    ///     home outright for a rooted second argument. What keeps the untrusted case inside the cache home is
+    ///     <c>JbWarmMarker.IsBareDirectoryName</c>, which rejects any marker content that is not a lone
+    ///     directory name before this is ever called. Every other caller passes a name it enumerated from the
+    ///     cache home or composed itself. A new caller taking a name from anywhere else owes the same check.
+    /// </remarks>
     internal static string PathUnder(string cacheHome, string generationName)
     {
         return Path.Combine(Path.GetFullPath(cacheHome), generationName);

@@ -6,7 +6,7 @@ resharper-cli-mcp publishes from a git tag. Pushing a `v*` tag runs [`release.ym
 
 `release.yml` runs on any `v*` tag and:
 
-1. Fails immediately unless the tag (without its `v`) equals the csproj `<Version>`, both version fields in [`.mcp/server.json`](../.mcp/server.json) (`.version` and `.packages[0].version`), and both in [`.claude-plugin/plugin.json`](../.claude-plugin/plugin.json) (`.version`, and the version its `dnx` argument pins).
+1. Fails immediately unless the tag (without its `v`) equals every version site in the table below.
 2. Builds and tests in `Release`.
 3. Packs the `.nupkg` and `.snupkg`.
 4. Verifies the packed `.nupkg` holds the MCP manifest at exactly `.mcp/server.json` — the path nuget.org scans to generate the VS Code MCP configuration — and stops the release before anything is pushed if it is missing or mis-pathed. NuGet versions are immutable, so this is the last chance to catch a packaging fault.
@@ -42,20 +42,34 @@ Confirm [CI](../.github/workflows/ci.yml) is green on `main`. The release reruns
 
 ## Cut a release
 
-The five version fields must agree or the release stops at step 1. Check them before tagging:
+Every version site must agree or the release stops at step 1:
+
+| File | Field | Why it is a site |
+|---|---|---|
+| `src/Zphil.ReSharperCli/Zphil.ReSharperCli.csproj` | `<Version>` | The package version. Every other site follows this one. |
+| [`.mcp/server.json`](../.mcp/server.json) | `.version` | The version `mcp-publisher` registers. |
+| `.mcp/server.json` | `.packages[0].version` | The package version the registry hands a client to install. |
+| [`.claude-plugin/plugin.json`](../.claude-plugin/plugin.json) | `.version` | What makes Claude Code offer an installed plugin the update. |
+| `.claude-plugin/plugin.json` | the `Zphil.ReSharperCli@<version>` `dnx` argument | The server a plugin user actually runs. |
+| [`mcp.json`](../mcp.json) | the `Zphil.ReSharperCli@<version>` `dnx` argument | The same, for Agent Plugins hosts. |
+
+The two `.claude-plugin/plugin.json` fields are one decision, not two: Claude Code ships an installed plugin an update only when its `version` changes, so a pin that moves under a frozen `version` reaches new installs and no existing one.
+
+One manifest deliberately stays off this table: the root [`plugin.json`](../plugin.json) declares no `version` at all. The Agent Plugins schema makes the field optional, and the launcher beside it in `mcp.json` is what a host installs, so a version there would be a sixth number to keep in step for nothing.
+
+`VersionSiteTests` holds this same set on every PR, so a drifted site usually goes red before a tag exists. Check them by hand before tagging:
 
 ```bash
 grep -oP '(?<=<Version>)[^<]+' src/Zphil.ReSharperCli/Zphil.ReSharperCli.csproj
 jq -r '.version, .packages[0].version' .mcp/server.json
 jq -r '.version' .claude-plugin/plugin.json
 jq -r '.mcpServers[].args[] | select(startswith("Zphil.ReSharperCli@")) | ltrimstr("Zphil.ReSharperCli@")' .claude-plugin/plugin.json
+jq -r '.mcpServers[].args[] | select(startswith("Zphil.ReSharperCli@")) | ltrimstr("Zphil.ReSharperCli@")' mcp.json
 ```
-
-The plugin manifest's two fields are one decision, not two: Claude Code ships an installed plugin an update only when its `version` changes, so a pin that moves under a frozen `version` reaches new installs and no existing one.
 
 Then, using `1.0.1` as the example version:
 
-1. If bumping, set the version in all five places (the csproj `<Version>`, both `.version` and `.packages[0].version` in `.mcp/server.json`, and in `.claude-plugin/plugin.json` both `.version` and the `Zphil.ReSharperCli@<version>` argument its launcher passes to `dnx`) and commit.
+1. If bumping, set the version at every site in the table above and commit.
 2. Tag and push:
 
    ```bash

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- An [Agent Plugins](https://agent-plugins.org) manifest pair at the repository root, `plugin.json` and
+  `mcp.json`, so hosts that read that specification — Cursor among them — can install the server without
+  hand-written configuration. The launcher names an exact version the way the Claude Code plugin's does,
+  and the release workflow now checks that pin against the tag alongside the five version fields it
+  already checked. The root `plugin.json` deliberately declares no `version`: the schema makes it
+  optional, nothing installs from it, and a field nothing reads is a field that drifts. Claude Code
+  users are unaffected — its own manifest under `.claude-plugin/` is unchanged, and the two live side
+  by side.
+
 ### Changed
 
 - The Claude Code plugin launches an exact server version rather than whatever NuGet holds at the

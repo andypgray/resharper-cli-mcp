@@ -56,6 +56,7 @@ public sealed partial class VersionSiteTests
 
     [Theory]
     [InlineData(".claude-plugin/plugin.json")]
+    [InlineData("mcp.json")]
     public void DnxLauncher_PinsThePackageToTheCsprojVersion(string manifestPath)
     {
         // Arrange
@@ -76,6 +77,28 @@ public sealed partial class VersionSiteTests
             declaredVersion,
             $"The dnx pin in {manifestPath} is a version site: it rolls with the csproj <Version>, and "
             + "release.yml fails the tag when it has not.");
+    }
+
+    /// <summary>
+    ///     The root Agent Plugins manifest carries no <c>version</c>, and that is the point: the schema
+    ///     makes the field optional, and a manifest that declares one becomes a sixth number to keep in
+    ///     step for nothing. What a host installs is the launcher's pin, which the theory above holds to
+    ///     the csproj. Adding the field here means adding a row there in the same edit.
+    /// </summary>
+    [Fact]
+    public void RootAgentPluginManifest_DeclaresNoVersion()
+    {
+        // Arrange
+        string manifest = File.ReadAllText(Path.Combine(RepoRoot.Location, "plugin.json"));
+
+        // Act
+        using JsonDocument document = JsonDocument.Parse(manifest);
+        bool declaresVersion = document.RootElement.TryGetProperty("version", out _);
+
+        // Assert
+        declaresVersion.ShouldBeFalse(
+            "The root plugin.json is deliberately not a version site: its launcher lives in mcp.json, "
+            + "which is pinned. A version here would drift silently, since nothing installs from it.");
     }
 
     /// <summary>

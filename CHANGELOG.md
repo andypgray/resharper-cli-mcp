@@ -24,6 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   repository directory name, which is why it reads `resharper-cli-mcp` rather than the shorter server
   key the configuration examples use.
 
+- An `llms-install.md` at the repository root: the install path written as a checklist, from the two
+  `dotnet tool install` commands through a configuration block for Claude Code, VS Code, Cursor and
+  Cline, to what to do when a call is slow. Point an agent at it and it can install and register the
+  server without a human reading the README first. It is also the file the Cline marketplace requires
+  by that exact name. The README keeps the short version and now links it.
+
 - The MCP registry manifest declares the nine environment variables the server reads, each with the
   description the README carries, and links the project website. Directories that render a server's
   configuration surface had nothing to render before, so a reader arriving from one had no way to see

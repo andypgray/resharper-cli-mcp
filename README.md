@@ -43,6 +43,8 @@ Register the server with your MCP client under the command `resharper-cli-mcp`. 
 
 The server finds a single `.sln`/`.slnx` in its working directory; when that directory holds zero or several, set `JB_SOLUTION_PATH` in the config's `env` block.
 
+[llms-install.md](https://github.com/andypgray/resharper-cli-mcp/blob/main/llms-install.md) is the same setup written as a checklist, with the configuration block for each of the common clients. Point an agent at it to have the server installed for you.
+
 VS Code and Cursor users can add the server in one click, once both tools are installed:
 
 [![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_Server-0098FF?style=flat-square&logo=visualstudiocode&logoColor=white)](https://insiders.vscode.dev/redirect/mcp/install?name=resharper&config=%7B%22type%22%3A%22stdio%22%2C%22command%22%3A%22resharper-cli-mcp%22%7D) [![Add to Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/en/install-mcp?name=resharper&config=eyJjb21tYW5kIjoicmVzaGFycGVyLWNsaS1tY3AifQ==)

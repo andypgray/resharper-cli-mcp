@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `--stdio` states the intent the terminal check reads wrongly, and the message now names it. Nothing
   changes for a client that starts the server over pipes, which is every client the README documents.
 
+- A `Dockerfile` and a `glama.json` at the repository root. The image builds the server and speaks
+  stdio, so a directory that introspects a server by running it can complete an MCP handshake and read
+  `tools/list`, `resources/list` and `prompts/list`. It installs no JetBrains software: the ReSharper
+  command-line tools are not redistributable, so `jb` is absent from the image and every tool call in it
+  reports that. It is not a way to run the server against a solution — the global tool in the Quickstart
+  is. `glama.json` names the repository's maintainer for the listing at glama.ai.
+
 - An [Agent Plugins](https://agent-plugins.org) manifest pair at the repository root, `plugin.json` and
   `mcp.json`, so hosts that read that specification — Cursor among them — can install the server without
   hand-written configuration. The launcher names an exact version the way the Claude Code plugin's does,

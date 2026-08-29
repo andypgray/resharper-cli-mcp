@@ -115,6 +115,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `claude plugin update resharper-cli-mcp@resharper-cli-mcp` to pick up a newer server. Both fields
   are release-time version sites now, checked against the tag before anything reaches NuGet.
 
+### Fixed
+
+- `resharper_inspect` no longer fails a whole run over a single malformed file path in `jb`'s report.
+  A SARIF result whose `file://` URI the runtime cannot parse — a malformed host, an embedded null —
+  raised an error that reached the caller as a fault in this server, discarding every issue the run had
+  found after the minutes it took to find them. Such a URI is now passed through as written, the same
+  way a plain path already was, and the result is reported alongside the rest.
+
 ## [1.5.0] - 2026-08-26
 
 ### Added

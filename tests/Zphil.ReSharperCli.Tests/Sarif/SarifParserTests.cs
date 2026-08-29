@@ -14,7 +14,7 @@ public sealed class SarifParserTests
         string json = Fixtures.ReadSarif("inspect-sample.json");
 
         // Act
-        var issues = SarifParser.Parse(json);
+        List<InspectIssue> issues = SarifParser.Parse(json);
 
         // Assert
         issues.Select(i => i.RuleId).ShouldBe(
@@ -113,7 +113,7 @@ public sealed class SarifParserTests
         string json = Fixtures.ReadSarif("empty-runs.json");
 
         // Act
-        var issues = SarifParser.Parse(json);
+        List<InspectIssue> issues = SarifParser.Parse(json);
 
         // Assert
         issues.ShouldBeEmpty();
@@ -123,7 +123,7 @@ public sealed class SarifParserTests
     public void Parse_NoRunsProperty_ReturnsNoIssues()
     {
         // Act
-        var issues = SarifParser.Parse("{}");
+        List<InspectIssue> issues = SarifParser.Parse("{}");
 
         // Assert
         issues.ShouldBeEmpty();
@@ -136,11 +136,43 @@ public sealed class SarifParserTests
         string json = Fixtures.ReadSarif("multiple-runs.json");
 
         // Act
-        var issues = SarifParser.Parse(json);
+        List<InspectIssue> issues = SarifParser.Parse(json);
 
         // Assert
         issues.Count.ShouldBe(2);
         issues.Select(i => i.RuleId).ShouldBe(["RedundantUsingDirective", "UnusedType.Global"]);
+    }
+
+    /// <summary>
+    ///     A property found these; each is pinned here so the regression is nailed to a named input rather
+    ///     than left to a generator redrawing it. <c>file://[zz]/</c> is the one it falsified on first — a
+    ///     malformed IPv6 literal, which <see cref="Uri" /> rejects outright. A bare <c>file://</c> is
+    ///     deliberately not among them: it parses, to a local path of <c>/</c>, so it is not this case at all.
+    /// </summary>
+    [Theory]
+    [InlineData("file://[zz]/")]
+    [InlineData("file://h^ost/p")]
+    [InlineData("file://a|b")]
+    public void Parse_MalformedFileUri_PassesItThroughVerbatim(string uri)
+    {
+        // Arrange
+        var json = $$"""
+                     {
+                       "runs": [ { "results": [ {
+                         "ruleId": "BadUri",
+                         "level": "warning",
+                         "locations": [ { "physicalLocation": { "artifactLocation": { "uri": "{{uri}}" } } } ]
+                       } ] } ]
+                     }
+                     """;
+
+        // Act
+        InspectIssue issue = SarifParser.Parse(json).ShouldHaveSingleItem();
+
+        // Assert — the result survives, carrying the URI jb wrote. Anything else discards a whole report
+        // over one unparseable path, after the caller has already paid for the run.
+        issue.File.ShouldBe(uri);
+        issue.RuleId.ShouldBe("BadUri");
     }
 
     [Theory]

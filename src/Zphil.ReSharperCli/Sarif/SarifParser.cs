@@ -70,7 +70,14 @@ internal static class SarifParser
 
         if (!fileByUri.TryGetValue(uri, out string? file))
         {
-            file = uri.StartsWith("file://", StringComparison.Ordinal) ? new Uri(uri).LocalPath : uri;
+            // Tried rather than assumed: a file:// string the runtime rejects (a malformed host, an embedded
+            // null) is bad input from jb, not a fault here, and constructing a Uri from it would throw past
+            // the JsonException the caller catches — surfacing minutes of finished work as a bug in this
+            // server. Left verbatim instead, exactly as the non-file:// branch below leaves its input.
+            file = uri.StartsWith("file://", StringComparison.Ordinal)
+                   && Uri.TryCreate(uri, UriKind.Absolute, out Uri? parsed)
+                ? parsed.LocalPath
+                : uri;
             fileByUri[uri] = file;
         }
 

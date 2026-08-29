@@ -16,16 +16,12 @@ namespace Zphil.ReSharperCli.Tests.Sarif;
 /// </summary>
 public sealed class SarifParserPropertyTests
 {
-    /// <summary>The ways a result can fail to carry a usable first location, each of which must drop it.</summary>
-    private enum ResultShape
-    {
-        Located,
-        NoLocationsProperty,
-        EmptyLocations,
-        NoPhysicalLocation,
-        NoArtifactLocation,
-        NoUri
-    }
+    /// <summary>
+    ///     Characters that make a URI awkward or outright illegal: host delimiters, reserved marks, whitespace,
+    ///     non-ASCII.
+    /// </summary>
+    private static readonly char[] HostileCharacters =
+        ['a', 'Z', '0', '/', '\\', ':', '[', ']', '|', '^', '%', '?', '#', '@', '.', ' ', 'é'];
 
     [Property]
     public Property Parse_AnyStructurallyValidReport_FlattensEveryLocatedResultInOrder()
@@ -50,6 +46,89 @@ public sealed class SarifParserPropertyTests
             });
     }
 
+    [Property]
+    public Property Parse_UriTheRuntimeCannotParse_ReportsTheResultRatherThanThrowing()
+    {
+        return Prop.ForAll(
+            HostileUri().ToArbitrary(),
+            uri =>
+            {
+                // Arrange
+                string json = SingleResultReport(uri);
+
+                // Act
+                List<InspectIssue> issues = Should.NotThrow(() => SarifParser.Parse(json));
+
+                // Assert — what the file path becomes is deliberately unstated: a parseable file:// URI turns
+                // into a platform-dependent local path, and an unparseable one cannot. What must hold either
+                // way is that the result survives, because the alternative is one malformed URI discarding a
+                // whole report the caller waited minutes for.
+                issues.ShouldHaveSingleItem().RuleId.ShouldBe(
+                    "OnlyResult",
+                    $"A result located at \"{uri}\" must still be reported. jb's URI is someone else's output, "
+                    + "so a shape the runtime rejects is bad input to be passed through — not a fault in this "
+                    + "server, which is what an escaping exception would report it as.");
+            });
+    }
+
+    /// <summary>
+    ///     URIs at and past the edge of what <see cref="Uri" /> accepts. The curated shapes are drawn on every
+    ///     seed rather than waited for: an authority-less <c>file://</c>, invalid host characters, a malformed
+    ///     IPv6 literal, and an embedded null are the forms that are cheap to hit deliberately and unlikely to
+    ///     be assembled at random.
+    /// </summary>
+    private static Gen<string> HostileUri()
+    {
+        Gen<string> curated = Gen.Elements(
+            "file://",
+            "file://h^ost/p",
+            "file://[zz]/",
+            "file://a|b",
+            "file://\u0000",
+            "file:",
+            "");
+
+        Gen<string> tail = Gen.Choose(0, 12)
+            .SelectMany(length => Gen.Elements(HostileCharacters).ListOf(length))
+            .Select(characters => new string(characters.ToArray()));
+
+        Gen<string> assembled = Gen.Elements("file://", "file:///", "file:", "", "http://")
+            .SelectMany(_ => tail, (scheme, rest) => scheme + rest);
+
+        return Gen.OneOf(curated, assembled);
+    }
+
+    /// <summary>A single located result at <paramref name="uri" /> — the smallest report that reaches the URI conversion.</summary>
+    private static string SingleResultReport(string uri)
+    {
+        Dictionary<string, object?> result = new()
+        {
+            ["ruleId"] = "OnlyResult",
+            ["level"] = "warning",
+            ["message"] = new Dictionary<string, object?> { ["text"] = "" },
+            ["locations"] = new List<Dictionary<string, object?>>
+            {
+                new()
+                {
+                    ["physicalLocation"] = new Dictionary<string, object?>
+                    {
+                        ["artifactLocation"] = new Dictionary<string, object?> { ["uri"] = uri }
+                    }
+                }
+            }
+        };
+
+        var report = new Dictionary<string, object?>
+        {
+            ["runs"] = new List<Dictionary<string, object?>>
+            {
+                new() { ["results"] = new List<Dictionary<string, object?>> { result } }
+            }
+        };
+
+        return JsonSerializer.Serialize(report);
+    }
+
     /// <summary>
     ///     A report as a list of runs, each a list of result shapes. Both are bounded rather than left to the
     ///     generator's size: nesting two unbounded collections would build reports of thousands of results per
@@ -57,16 +136,16 @@ public sealed class SarifParserPropertyTests
     /// </summary>
     private static Gen<IReadOnlyList<IReadOnlyList<ResultShape>>> ReportShape()
     {
-        return from runCount in Gen.Choose(0, 4)
-            from runs in ResultShapes().ListOf(runCount)
-            select (IReadOnlyList<IReadOnlyList<ResultShape>>)runs.ToList();
+        return Gen.Choose(0, 4)
+            .SelectMany(runCount => ResultShapes().ListOf(runCount))
+            .Select(runs => (IReadOnlyList<IReadOnlyList<ResultShape>>)runs.ToList());
     }
 
     private static Gen<IReadOnlyList<ResultShape>> ResultShapes()
     {
-        return from count in Gen.Choose(0, 6)
-            from shapes in Gen.Elements(Enum.GetValues<ResultShape>()).ListOf(count)
-            select (IReadOnlyList<ResultShape>)shapes.ToList();
+        return Gen.Choose(0, 6)
+            .SelectMany(count => Gen.Elements(Enum.GetValues<ResultShape>()).ListOf(count))
+            .Select(shapes => (IReadOnlyList<ResultShape>)shapes.ToList());
     }
 
     /// <summary>
@@ -146,5 +225,16 @@ public sealed class SarifParserPropertyTests
                 }
             ]
         };
+    }
+
+    /// <summary>The ways a result can fail to carry a usable first location, each of which must drop it.</summary>
+    private enum ResultShape
+    {
+        Located,
+        NoLocationsProperty,
+        EmptyLocations,
+        NoPhysicalLocation,
+        NoArtifactLocation,
+        NoUri
     }
 }

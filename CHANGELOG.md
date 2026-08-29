@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A Cline block in the README's "Other clients" section. Cline stores its servers in
+  `cline_mcp_settings.json`, which its MCP Servers panel opens under Configure MCP Servers, and runs the
+  same command with no arguments as every other client documented there. `llms-install.md` already
+  carried the block; the README did not.
+
 - A `.cursor-plugin/plugin.json`, the manifest Cursor reads. It names the project icon already committed
   in `assets/`, which is what a directory or marketplace listing renders. The icon cannot travel in the
   root `plugin.json`: the Agent Plugins schema that file declares sets `additionalProperties: false` and

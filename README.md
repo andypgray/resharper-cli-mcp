@@ -90,6 +90,20 @@ Running the server alongside a JetBrains IDE means two ReSharper engines over on
 codex mcp add resharper -- resharper-cli-mcp
 ```
 
+### Cline
+
+Cline stores its servers in `cline_mcp_settings.json`, which the MCP Servers panel opens under Configure MCP Servers:
+
+```json
+{
+  "mcpServers": {
+    "resharper": {
+      "command": "resharper-cli-mcp"
+    }
+  }
+}
+```
+
 ## Install as a Claude Code plugin
 
 This repository doubles as a single-plugin marketplace, so the tools, the `derive_style_guide` prompt, and both guide resources arrive in one step:

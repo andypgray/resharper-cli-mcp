@@ -20,7 +20,9 @@
         <Copyright>Copyright (c) 2026 Andrew Gray</Copyright>
         <PackageLicenseExpression>MIT</PackageLicenseExpression>
         <PackageReadmeFile>README.md</PackageReadmeFile>
-        <!-- No PackageIcon in v1: shipping no JetBrains brand asset, and no own icon yet. -->
+        <!-- No PackageIcon yet. The project's own mark is at assets/icon.svg with its renders
+             beside it; the property and its Pack item land in the next release. Still ships no
+             JetBrains brand asset. -->
         <PackageTags>resharper;inspectcode;cleanupcode;code-cleanup;static-analysis;code-quality;mcp;model-context-protocol;csharp;dotnet-tool;claude;cursor;copilot;ai</PackageTags>
         <PackageProjectUrl>https://github.com/andypgray/resharper-cli-mcp</PackageProjectUrl>
         <RepositoryUrl>https://github.com/andypgray/resharper-cli-mcp</RepositoryUrl>

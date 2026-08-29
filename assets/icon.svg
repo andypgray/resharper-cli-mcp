@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Master artwork. The PNGs beside it are renders of this file, at the size each
+  distribution channel asks for:
+
+    resvg -w 512 icon.svg icon-512.png   Open Graph, and headroom
+    resvg -w 400 icon.svg icon-400.png   directory submission forms
+    resvg -w 128 icon.svg icon-128.png   NuGet's recommended package icon
+
+  Flat fills, no gradients, geometry hand-authored here. The tile carries its own
+  ground because nuget.org draws no plate behind an icon in dark mode. An original
+  mark, kept deliberately distant from JetBrains' ReSharper branding: this project
+  is unofficial, and not affiliated with or endorsed by JetBrains.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512"
+     role="img" aria-label="Three bars aligned against a guide">
+  <g id="tile">
+    <rect width="512" height="512" rx="56" fill="#0E635B"/>
+  </g>
+  <g id="glyph">
+    <rect x="86" y="86" width="40" height="340" rx="20" fill="#3FBFAE"/>
+    <rect x="164" y="86" width="262" height="76" rx="38" fill="#F2EFE9"/>
+    <rect x="164" y="218" width="176" height="76" rx="38" fill="#F2EFE9"/>
+    <rect x="164" y="350" width="220" height="76" rx="38" fill="#F2EFE9"/>
+  </g>
+</svg>

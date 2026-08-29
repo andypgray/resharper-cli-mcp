@@ -6,7 +6,7 @@ resharper-cli-mcp publishes from a git tag. Pushing a `v*` tag runs [`release.ym
 
 `release.yml` runs on any `v*` tag and:
 
-1. Fails immediately unless the tag (without its `v`) equals the csproj `<Version>` and both version fields in [`.mcp/server.json`](../.mcp/server.json) (`.version` and `.packages[0].version`).
+1. Fails immediately unless the tag (without its `v`) equals the csproj `<Version>`, both version fields in [`.mcp/server.json`](../.mcp/server.json) (`.version` and `.packages[0].version`), and both in [`.claude-plugin/plugin.json`](../.claude-plugin/plugin.json) (`.version`, and the version its `dnx` argument pins).
 2. Builds and tests in `Release`.
 3. Packs the `.nupkg` and `.snupkg`.
 4. Verifies the packed `.nupkg` holds the MCP manifest at exactly `.mcp/server.json` — the path nuget.org scans to generate the VS Code MCP configuration — and stops the release before anything is pushed if it is missing or mis-pathed. NuGet versions are immutable, so this is the last chance to catch a packaging fault.
@@ -42,16 +42,20 @@ Confirm [CI](../.github/workflows/ci.yml) is green on `main`. The release reruns
 
 ## Cut a release
 
-The three version fields must agree or the release stops at step 1. Check them before tagging:
+The five version fields must agree or the release stops at step 1. Check them before tagging:
 
 ```bash
 grep -oP '(?<=<Version>)[^<]+' src/Zphil.ReSharperCli/Zphil.ReSharperCli.csproj
 jq -r '.version, .packages[0].version' .mcp/server.json
+jq -r '.version' .claude-plugin/plugin.json
+jq -r '.mcpServers[].args[] | select(startswith("Zphil.ReSharperCli@")) | ltrimstr("Zphil.ReSharperCli@")' .claude-plugin/plugin.json
 ```
+
+The plugin manifest's two fields are one decision, not two: Claude Code ships an installed plugin an update only when its `version` changes, so a pin that moves under a frozen `version` reaches new installs and no existing one.
 
 Then, using `1.0.1` as the example version:
 
-1. If bumping, set the version in all three places (the csproj `<Version>`, and both `.version` and `.packages[0].version` in `.mcp/server.json`) and commit.
+1. If bumping, set the version in all five places (the csproj `<Version>`, both `.version` and `.packages[0].version` in `.mcp/server.json`, and in `.claude-plugin/plugin.json` both `.version` and the `Zphil.ReSharperCli@<version>` argument its launcher passes to `dnx`) and commit.
 2. Tag and push:
 
    ```bash

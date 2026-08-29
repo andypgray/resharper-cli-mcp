@@ -56,7 +56,7 @@ This repository doubles as a single-plugin marketplace, so the tools, the `deriv
 /plugin install resharper-cli-mcp@resharper-cli-mcp
 ```
 
-The plugin starts the server with `dotnet dnx`, which fetches `Zphil.ReSharperCli` from NuGet on first use. You still need the .NET 10 SDK and the ReSharper Command Line Tools; ReSharper's caches live in the plugin's own data directory, outside your source tree.
+The plugin starts the server with `dotnet dnx`, which fetches a pinned `Zphil.ReSharperCli` version from NuGet on first use. The marketplace commit you install therefore determines the server you run. Each release moves that pin, so run `claude plugin update resharper-cli-mcp@resharper-cli-mcp` to pick up a newer server. You still need the .NET 10 SDK and the ReSharper Command Line Tools; ReSharper's caches live in the plugin's own data directory, outside your source tree.
 
 ## Tools
 

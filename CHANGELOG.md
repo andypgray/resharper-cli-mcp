@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The Claude Code plugin launches an exact server version rather than whatever NuGet holds at the
+  time. Its `dotnet dnx` argument now names `Zphil.ReSharperCli@<version>`, so the marketplace commit
+  a user installs determines the server code that runs; two installs of one commit, weeks apart, no
+  longer execute different builds. The plugin manifest's own `version` moves with it, because Claude
+  Code ships an installed plugin an update only when that field changes — pinning the launcher alone
+  would have stranded every existing install on its install-time version. Run
+  `claude plugin update resharper-cli-mcp@resharper-cli-mcp` to pick up a newer server. Both fields
+  are release-time version sites now, checked against the tag before anything reaches NuGet.
+
 ## [1.5.0] - 2026-08-26
 
 ### Added

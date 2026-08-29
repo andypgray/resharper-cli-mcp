@@ -47,20 +47,37 @@ jobs:
           dotnet-version: '10.0.x'
 
       # The tag drives publication, so it must agree with every place the version is
-      # declared: the csproj <Version> and BOTH version fields in .mcp/server.json
-      # (the top-level `version` and the package entry's `version`). Any mismatch fails
-      # the release before anything is pushed. jq ships on the ubuntu-latest runner.
-      - name: Verify tag matches csproj and server.json versions
+      # declared: the csproj <Version>, BOTH version fields in .mcp/server.json (the
+      # top-level `version` and the package entry's `version`), and BOTH in
+      # .claude-plugin/plugin.json (its `version`, and the version its dnx argument
+      # pins). Any mismatch fails the release before anything is pushed. jq ships on
+      # the ubuntu-latest runner.
+      #
+      # The two plugin fields move together or the pin never reaches anyone: Claude Code
+      # ships an installed plugin updates only when the manifest `version` changes, so a
+      # frozen `version` would leave every existing install on its install-time pin. The
+      # pin itself is read by enumerating .mcpServers[] rather than naming the `resharper`
+      # key, so renaming that key cannot make the check vacuous, and with ltrimstr rather
+      # than sub, so the `.` in the package id needs no regex escaping. An unpinned
+      # launcher matches nothing and yields an empty string, which fails the same
+      # assertion — this catches removal as well as drift.
+      - name: Verify tag matches csproj, server.json and plugin versions
         run: |
           TAG="${GITHUB_REF_NAME#v}"
           CSPROJ=$(grep -oP '(?<=<Version>)[^<]+' src/Zphil.ReSharperCli/Zphil.ReSharperCli.csproj)
           SERVER_TOP=$(jq -r '.version' .mcp/server.json)
           SERVER_PKG=$(jq -r '.packages[0].version' .mcp/server.json)
-          echo "tag=$TAG csproj=$CSPROJ server.json/.version=$SERVER_TOP server.json/.packages[0].version=$SERVER_PKG"
+          PLUGIN_TOP=$(jq -r '.version' .claude-plugin/plugin.json)
+          PLUGIN_PIN=$(jq -r '.mcpServers[].args[]
+            | select(startswith("Zphil.ReSharperCli@"))
+            | ltrimstr("Zphil.ReSharperCli@")' .claude-plugin/plugin.json)
+          echo "tag=$TAG csproj=$CSPROJ server.json/.version=$SERVER_TOP server.json/.packages[0].version=$SERVER_PKG plugin.json/.version=$PLUGIN_TOP plugin.json/dnx-pin=$PLUGIN_PIN"
           rc=0
           [ "$CSPROJ" = "$TAG" ]     || { echo "::error::csproj <Version> ($CSPROJ) != tag ($TAG)"; rc=1; }
           [ "$SERVER_TOP" = "$TAG" ] || { echo "::error::server.json .version ($SERVER_TOP) != tag ($TAG)"; rc=1; }
           [ "$SERVER_PKG" = "$TAG" ] || { echo "::error::server.json .packages[0].version ($SERVER_PKG) != tag ($TAG)"; rc=1; }
+          [ "$PLUGIN_TOP" = "$TAG" ] || { echo "::error::plugin.json .version ($PLUGIN_TOP) != tag ($TAG) — an unchanged version ships no update"; rc=1; }
+          [ "$PLUGIN_PIN" = "$TAG" ] || { echo "::error::plugin.json dnx pin ($PLUGIN_PIN) != tag ($TAG) — empty means the launcher is unpinned"; rc=1; }
           exit $rc
 
       - name: Build (test project builds src/ transitively)

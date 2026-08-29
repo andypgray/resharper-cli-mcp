@@ -24,6 +24,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   repository directory name, which is why it reads `resharper-cli-mcp` rather than the shorter server
   key the configuration examples use.
 
+- The MCP registry manifest declares the nine environment variables the server reads, each with the
+  description the README carries, and links the project website. Directories that render a server's
+  configuration surface had nothing to render before, so a reader arriving from one had no way to see
+  that the cache directory or the run cap could be moved without opening the README. Nothing about
+  running the server changes: the file is published by `mcp-publisher`, so the additions reach the
+  registry with the next release rather than immediately.
+
 ### Changed
 
 - The Claude Code plugin launches an exact server version rather than whatever NuGet holds at the

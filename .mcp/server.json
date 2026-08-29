@@ -3,6 +3,7 @@
   "name": "io.github.andypgray/resharper-cli-mcp",
   "description": "ReSharper CLI inspection/cleanup via MCP. Unofficial: not affiliated with or endorsed by JetBrains.",
   "version": "1.5.0",
+  "websiteUrl": "https://github.com/andypgray/resharper-cli-mcp",
   "repository": {
     "url": "https://github.com/andypgray/resharper-cli-mcp",
     "source": "github"
@@ -16,7 +17,63 @@
       "runtimeHint": "dnx",
       "transport": {
         "type": "stdio"
-      }
+      },
+      "environmentVariables": [
+        {
+          "name": "JB_SOLUTION_PATH",
+          "description": "Solution to analyse when the working directory holds zero or several. The solutionPath tool argument overrides it for one call.",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "JB_SETTINGS_PATH",
+          "description": "Explicit .DotSettings file for jb, mounted as a Custom layer above the solution's and every project's own settings.",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "JB_CACHE_HOME",
+          "description": "ReSharper cache directory. Defaults to ~/.jb-cache.",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "JB_EXTENSIONS",
+          "description": "Semicolon-separated ReSharper plugin IDs to load.",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "JB_EXTENSION_SOURCE",
+          "description": "Custom NuGet source for those ReSharper plugins.",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "RESHARPER_MCP_TIMEOUT_SECS",
+          "description": "Cap in seconds on one jb run, and on the wait for one already in flight. Defaults to 600, clamped to 60-86,400.",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "RESHARPER_MCP_PREWARM",
+          "description": "Set to off to stop the background cache pre-warm that runs when a client connects.",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "RESHARPER_MCP_LOG_LEVEL",
+          "description": "Minimum level for the rolling file log. Defaults to Warning.",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "MAX_MCP_OUTPUT_TOKENS",
+          "description": "Output budget the response is rendered to fit. Set by the MCP client rather than by hand; 25,000 characters when unset.",
+          "isRequired": false,
+          "isSecret": false
+        }
+      ]
     }
   ]
 }

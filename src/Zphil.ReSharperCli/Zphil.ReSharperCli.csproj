@@ -35,8 +35,12 @@
         <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     </PropertyGroup>
 
+    <!-- RestoreLockedMode is declared here rather than in Directory.Build.props because Scorecard's
+         Pinned-Dependencies check reads csproj files only, and credits it all-or-nothing across them.
+         Directory.Build.props holds the full explanation of the lock-file policy. -->
     <PropertyGroup Condition="'$(CI)' == 'true'">
         <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+        <RestoreLockedMode>true</RestoreLockedMode>
     </PropertyGroup>
 
     <ItemGroup>

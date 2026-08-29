@@ -17,4 +17,21 @@
         <GenerateDocumentationFile>false</GenerateDocumentationFile>
     </PropertyGroup>
 
+    <!-- A dependency-free fixture has no graph to lock, so this property does nothing here except
+         satisfy Scorecard's Pinned-Dependencies check, which reads csproj files only and credits
+         RestoreLockedMode all-or-nothing across every csproj in the tree — this one included.
+         Directory.Build.props holds the full explanation of the lock-file policy.
+
+         It is inert rather than merely unused, which matters because the suite copies this fixture
+         to a temp directory and builds it there with an implicit restore, out of reach of
+         Directory.Build.props: NuGet reads RestoreLockedMode only inside
+         `if (!RestoreForceEvaluate && File.Exists(packagesLockFilePath))`, and lock-file handling
+         needs RestorePackagesWithLockFile or an existing lock file to turn on at all. In the temp
+         copy neither holds, so locked mode is never consulted and no lock file is written. Do not
+         set RestorePackagesWithLockFile=false to reinforce that — NuGet raises NU1005 when it is
+         false and a lock file exists, turning a harmless leftover into a hard failure. -->
+    <PropertyGroup Condition="'$(CI)' == 'true'">
+        <RestoreLockedMode>true</RestoreLockedMode>
+    </PropertyGroup>
+
 </Project>

@@ -7,13 +7,19 @@
          reproducible, tamper-evident restores. Local restores stay unlocked, so adding a package
          updates the lock file naturally; Dependabot updates the lock file alongside each bump.
          ($(CI) is set to 'true' by GitHub Actions, matching the ContinuousIntegrationBuild gate
-         in Zphil.ReSharperCli.csproj.) -->
+         in Zphil.ReSharperCli.csproj.)
+
+         This file is the authoritative explanation of that policy, but it is deliberately NOT
+         where RestoreLockedMode is declared. OpenSSF Scorecard's Pinned-Dependencies check reads
+         csproj files only — it never imports Directory.Build.props — and it credits the property
+         all-or-nothing: it pins every `dotnet restore` finding at once when *every* tracked csproj
+         sets RestoreLockedMode, and credits nothing when some do. So the property is repeated in
+         each csproj under the same '$(CI)' == 'true' condition, which evaluates identically
+         because this file is imported before the project body. A new project must carry it too;
+         RestoreLockSiteTests is what catches one that does not. The value has to be the literal
+         `true` — Scorecard parses the XML directly, so a $(Property) reference forfeits the credit. -->
     <PropertyGroup>
         <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
-    </PropertyGroup>
-
-    <PropertyGroup Condition="'$(CI)' == 'true'">
-        <RestoreLockedMode>true</RestoreLockedMode>
     </PropertyGroup>
 
 </Project>

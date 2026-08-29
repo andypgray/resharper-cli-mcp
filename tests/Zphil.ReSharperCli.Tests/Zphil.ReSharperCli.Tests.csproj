@@ -10,6 +10,13 @@
         <NoWarn>$(NoWarn);xUnit1051</NoWarn>
     </PropertyGroup>
 
+    <!-- RestoreLockedMode is declared here rather than in Directory.Build.props because Scorecard's
+         Pinned-Dependencies check reads csproj files only, and credits it all-or-nothing across them.
+         Directory.Build.props holds the full explanation of the lock-file policy. -->
+    <PropertyGroup Condition="'$(CI)' == 'true'">
+        <RestoreLockedMode>true</RestoreLockedMode>
+    </PropertyGroup>
+
     <!-- Microsoft.Testing.Platform, not VSTest. xunit.v3 4.0.0 ships MTP 2.x, which the .NET 10 SDK
          refuses to run through the VSTest target at all, so the VSTest-era packages that used to sit
          here — Microsoft.NET.Test.Sdk, xunit.runner.visualstudio, coverlet.collector — have no path
@@ -40,10 +47,12 @@
          a csproj nested under another project is swept into that project's **/*.cs compile glob, and these
          files are deliberate compile warnings. Copied as content so the suite can copy it again into a temp
          directory of its own — cleanup rewrites the files it is given, so the tree copy is never the one
-         under test. bin/obj are excluded in case someone builds the fixture in place. -->
+         under test. bin/obj are excluded in case someone builds the fixture in place, and so is any
+         packages.lock.json: the fixture's CI-gated RestoreLockedMode is inert in temp only because no
+         lock file reaches it, so a stray one built in place must not ride along in the copy. -->
     <ItemGroup>
         <Content Include="../Fixtures/ContractSolution/**"
-                 Exclude="../Fixtures/ContractSolution/**/bin/**;../Fixtures/ContractSolution/**/obj/**"
+                 Exclude="../Fixtures/ContractSolution/**/bin/**;../Fixtures/ContractSolution/**/obj/**;../Fixtures/ContractSolution/**/packages.lock.json"
                  LinkBase="Fixtures/ContractSolution"
                  CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>

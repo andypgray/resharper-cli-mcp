@@ -121,7 +121,7 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-      # GitHub Actions sets CI=true, so Directory.Build.props turns on RestoreLockedMode. No
+      # GitHub Actions sets CI=true, so the csprojs turn on RestoreLockedMode. No
       # --force-evaluate escape hatch: Dependabot does not trigger this workflow.
       - name: Restore
         run: dotnet restore tests/Zphil.ReSharperCli.Tests/Zphil.ReSharperCli.Tests.csproj

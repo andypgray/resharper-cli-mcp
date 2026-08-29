@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A `.cursor-plugin/plugin.json`, the manifest Cursor reads. It names the project icon already committed
+  in `assets/`, which is what a directory or marketplace listing renders. The icon cannot travel in the
+  root `plugin.json`: the Agent Plugins schema that file declares sets `additionalProperties: false` and
+  defines no `logo` property, so a logo there would make the manifest invalid against its own `$schema`.
+  Cursor's schema defines one, taking a path relative to the repository root. The new manifest declares a
+  `version` as well, and the release workflow now checks it against the tag, because cursor.directory
+  imports a missing version as `1.0.0` rather than leaving it blank. Cursor reads the launcher from the
+  root `mcp.json`, which is unchanged, and the Claude Code manifest under `.claude-plugin/` is untouched.
+
 - A `--stdio` argument, for launchers that allocate a terminal. The server reads stdin being a terminal
   as "a person ran this at a prompt" and prints a short message instead of starting, which is right for
   a person and wrong for a harness that allocates a pseudo-terminal around the pipe it then speaks MCP

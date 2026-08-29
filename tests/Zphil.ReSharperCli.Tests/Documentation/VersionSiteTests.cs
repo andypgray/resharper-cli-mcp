@@ -38,6 +38,11 @@ public sealed partial class VersionSiteTests
         + "CLI report for an installed extension. One that does not follow the csproj <Version> names a "
         + "release this is not.";
 
+    private const string CursorRationale =
+        "cursor.directory's importer substitutes \"1.0.0\" when a manifest declares no version, so this "
+        + "field is the only thing standing between the listing and a version this project has not shipped "
+        + "since its first release. A stale one is the same defect, quieter.";
+
     [GeneratedRegex(@"<Version>(?<version>[^<]+)</Version>")]
     private static partial Regex CsprojVersion();
 
@@ -45,16 +50,15 @@ public sealed partial class VersionSiteTests
     [InlineData(".mcp/server.json", "/version", RegistryRationale)]
     [InlineData(".mcp/server.json", "/packages/0/version", RegistryRationale)]
     [InlineData(".claude-plugin/plugin.json", "/version", PluginRationale)]
+    [InlineData(".cursor-plugin/plugin.json", "/version", CursorRationale)]
     [InlineData("gemini-extension.json", "/version", GeminiRationale)]
     public void ManifestVersionField_MatchesTheCsprojVersion(string manifestPath, string jsonPointer, string because)
     {
         // Arrange
         string declaredVersion = DeclaredCsprojVersion();
-        string manifest = File.ReadAllText(Path.Combine(RepoRoot.Location, manifestPath));
 
         // Act
-        using JsonDocument document = JsonDocument.Parse(manifest);
-        string? version = Resolve(document.RootElement, jsonPointer).GetString();
+        string? version = RepoManifest.ReadString(manifestPath, jsonPointer);
 
         // Assert
         version.ShouldBe(declaredVersion, because);
@@ -88,9 +92,15 @@ public sealed partial class VersionSiteTests
 
     /// <summary>
     ///     The root Agent Plugins manifest carries no <c>version</c>, and that is the point: the schema
-    ///     makes the field optional, and a manifest that declares one becomes a sixth number to keep in
+    ///     makes the field optional, and a manifest that declares one becomes another number to keep in
     ///     step for nothing. What a host installs is the launcher's pin, which the theory above holds to
     ///     the csproj. Adding the field here means adding a row there in the same edit.
+    ///     <para>
+    ///         Optional does not mean harmless everywhere, which is why <c>.cursor-plugin/plugin.json</c>
+    ///         declares one: an importer that substitutes a default publishes a wrong version rather than
+    ///         none. Nothing reads this file that way — no directory looks for a root <c>plugin.json</c>
+    ///         at all — so the field would only ever drift.
+    ///     </para>
     /// </summary>
     [Fact]
     public void RootAgentPluginManifest_DeclaresNoVersion()
@@ -120,22 +130,6 @@ public sealed partial class VersionSiteTests
             "The csproj must declare a <Version> for the version sites to agree with.");
 
         return declaredVersion.Groups["version"].Value;
-    }
-
-    /// <summary>
-    ///     Walks a JSON pointer — <c>/packages/0/version</c> — from <paramref name="root" />, indexing an
-    ///     array when a segment is a number and reading a property otherwise.
-    /// </summary>
-    private static JsonElement Resolve(JsonElement root, string jsonPointer)
-    {
-        JsonElement current = root;
-
-        foreach (string segment in jsonPointer.Split('/', StringSplitOptions.RemoveEmptyEntries))
-            current = int.TryParse(segment, out int index)
-                ? current[index]
-                : current.GetProperty(segment);
-
-        return current;
     }
 
     /// <summary>

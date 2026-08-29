@@ -15,6 +15,12 @@ namespace Zphil.ReSharperCli.Tests.Documentation;
 ///     need not carry the notice as well (see <c>ServerInstructionsTests</c>). Also guards the MCP registry's
 ///     hard 100-character, ASCII-counted cap on the <c>server.json</c> description, which today sits at 99:
 ///     without this the overflow would surface at registry-publish time rather than at build time.
+///     <para>
+///         The install manifests are held to the same notice, one theory over the lot of them, because a
+///         directory renders whichever one it happens to read as the project's public copy and none of them
+///         is the surface a reviewer would think to check. Each new client format adds another; the notice
+///         travelling with every description is what keeps the disclaimer from depending on which file won.
+///     </para>
 /// </summary>
 public sealed partial class RespectfulWrappingTests
 {
@@ -53,6 +59,35 @@ public sealed partial class RespectfulWrappingTests
 
         // Assert
         openingParagraph.ShouldContain(Disclaimer);
+    }
+
+    /// <summary>
+    ///     Every install manifest's <c>description</c>, which is the string a directory imports and renders
+    ///     as this project's public copy. <c>.mcp/server.json</c> is absent on purpose: the fact below holds
+    ///     it to the same notice <em>and</em> to the registry's cap, and splitting that pair would leave the
+    ///     cap asserted somewhere the notice is not.
+    /// </summary>
+    [Theory]
+    [InlineData("plugin.json", "/description")]
+    [InlineData(".claude-plugin/plugin.json", "/description")]
+    [InlineData(".claude-plugin/marketplace.json", "/description")]
+    [InlineData(".claude-plugin/marketplace.json", "/plugins/0/description")]
+    [InlineData(".cursor-plugin/plugin.json", "/description")]
+    [InlineData("gemini-extension.json", "/description")]
+    [InlineData("lhm.plugin.json", "/description")]
+    public void InstallManifestDescription_CarriesTheUnofficialNotice(string manifestPath, string jsonPointer)
+    {
+        // Act
+        string? description = RepoManifest.ReadString(manifestPath, jsonPointer);
+
+        // Assert
+        string copy = description.ShouldNotBeNull(
+            $"{manifestPath}{jsonPointer} must be a string to carry the notice.");
+        copy.ShouldContain(
+            Disclaimer,
+            Case.Sensitive,
+            $"{manifestPath}{jsonPointer} is public copy: a directory that imports this file renders it "
+            + "verbatim, and the notice is a requirement of using the ReSharper name descriptively.");
     }
 
     [Fact]

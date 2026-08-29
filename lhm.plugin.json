@@ -1,0 +1,152 @@
+{
+  "description": "JetBrains ReSharper command-line inspection and cleanup for C#, over MCP. Unofficial - not affiliated with or endorsed by JetBrains.",
+  "identifier": "resharper-cli-mcp",
+  "name": "resharper-cli-mcp",
+  "prompts": [
+    {
+      "name": "derive_style_guide",
+      "title": "Derive a ReSharper style guide",
+      "description": "Derive an intentional ReSharper/editorconfig style guide from an existing (legacy) C# codebase, reconcile it with tooling already present (StyleCop, analyzers), and validate it with the resharper_inspect loop. The server does not infer settings; this recipe guides you to.",
+      "arguments": []
+    }
+  ],
+  "resources": [
+    {
+      "name": "resharper_setup_guide",
+      "title": "Running the ReSharper CLI server",
+      "uri": "resharper://guides/setup",
+      "description": "How to run this server and diagnose a failing call: installing and locating jb (PATH, then ~/.dotnet/tools), which solution a call runs against (the solutionPath argument, JB_SOLUTION_PATH, then a single .sln/.slnx in the working directory with no parent walk), why the first call is slow, the run cap (this server's own, and raisable) and why calls against one solution queue, how MAX_MCP_OUTPUT_TOKENS caps output, how a reduced result differs from a truncated one and how to get the complete itemised findings written to a file instead, the JB_SETTINGS_PATH, JB_CACHE_HOME, JB_EXTENSIONS, JB_EXTENSION_SOURCE, RESHARPER_MCP_TIMEOUT_SECS, RESHARPER_MCP_PREWARM, and RESHARPER_MCP_LOG_LEVEL variables, and where logs go. Load this when a call cannot find jb or the solution, times out, reports another run already in flight, comes back shortened, or is slower than the queue explains alongside a jb run outside this server — which is also how an unexpected extra cache generation appears.",
+      "mimeType": "text/markdown"
+    },
+    {
+      "name": "resharper_configuration_guide",
+      "title": "Configuring ReSharper",
+      "uri": "resharper://guides/configuration",
+      "description": "How ReSharper configuration works for this server: inspection severities drive resharper_inspect while the cleanup profile drives resharper_cleanup (they never share a switch), how to protect a deliberate style from cleanup, where settings and .editorconfig are read from, and the DotSettings key shapes. Load this before changing what ReSharper enforces. It does not cover running the server: for a call that cannot find the solution, times out, or comes back shortened, read resharper://guides/setup instead.",
+      "mimeType": "text/markdown"
+    }
+  ],
+  "tools": [
+    {
+      "name": "resharper_reset_cache",
+      "title": "ReSharper Reset Cache",
+      "description": "Delete this solution's ReSharper analysis cache so the next inspect or cleanup rebuilds it from cold. The cure for inspect reporting compilation errors the compiler itself does not: a stale index serves those until the cache is dropped. Costs the next call a full cold analysis, so it is not routine maintenance.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "solutionPath": {
+            "description": "Path to the .sln/.slnx to run against. Overrides JB_SOLUTION_PATH and working-directory discovery.",
+            "default": null,
+            "type": "string"
+          }
+        }
+      },
+      "annotations": {
+        "title": "ReSharper Reset Cache",
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "resharper_cleanup",
+      "title": "ReSharper Cleanup Code",
+      "description": "Run ReSharper code cleanup to reformat and normalize files in place.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "files": {
+            "description": "File paths to clean up. Each is relative to the solution root, or absolute. jb matches them against the files that belong to a project in the solution, so one that is on disk but in no project matches nothing. Wildcards are allowed and expanded by jb; a non-wildcard path that does not exist fails the whole call before anything is rewritten. An element joining several paths with ; or , is split into separate paths.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "profile": {
+            "description": "ReSharper cleanup profile name. Defaults to the profile the solution declares, else full cleanup.",
+            "default": null,
+            "type": "string"
+          },
+          "solutionPath": {
+            "description": "Path to the .sln/.slnx to run against. Overrides JB_SOLUTION_PATH and working-directory discovery.",
+            "default": null,
+            "type": "string"
+          }
+        },
+        "required": [
+          "files"
+        ]
+      },
+      "annotations": {
+        "title": "ReSharper Cleanup Code",
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "resharper_inspect",
+      "title": "ReSharper Inspect Code",
+      "description": "Run ReSharper static analysis on the solution and return the code issues it finds.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "files": {
+            "description": "Ant-style globs scoping the analysis to specific files, for example src/**/*.cs. Each is relative to the solution root, or absolute. jb matches them against the files that belong to a project in the solution, so one that is on disk but in no project matches nothing. An element joining several paths with ; or , is split into separate paths.",
+            "default": null,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "severity": {
+            "description": "Minimum severity to report. Error is ReSharper's compilation-error level, not a tier of high-priority warnings; raising to it usually reports nothing.",
+            "default": "Warning",
+            "type": "string",
+            "enum": [
+              "Suggestion",
+              "Warning",
+              "Error"
+            ]
+          },
+          "report": {
+            "description": "Write the complete itemised findings to a file, and name it in the response. Markdown lists every issue with its own message, which is what the response listing collapses once a solution-wide run exceeds the output budget. The file lands in a directory this server owns and is pruned after 7 days; the response carries the summary either way.",
+            "default": "None",
+            "type": "string",
+            "enum": [
+              "None",
+              "Markdown"
+            ]
+          },
+          "detail": {
+            "description": "Cap on the detail the response carries: Full, the default, lists every issue on its own line, and Minimal is one line of totals. Rendering starts at this level and never goes above it, but still steps below it when the result does not fit the output budget. The DETAIL REDUCED note says which of the two happened. Response shaping only: the same analysis runs whatever the level, so a lower level does not make a call finish sooner. Pair detail=Minimal with report=Markdown for a cheap verdict in the response and every finding in the file.",
+            "default": "Full",
+            "type": "string",
+            "enum": [
+              "Full",
+              "High",
+              "Medium",
+              "Low",
+              "Minimal"
+            ]
+          },
+          "solutionPath": {
+            "description": "Path to the .sln/.slnx to run against. Overrides JB_SOLUTION_PATH and working-directory discovery.",
+            "default": null,
+            "type": "string"
+          }
+        }
+      },
+      "annotations": {
+        "title": "ReSharper Inspect Code",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    }
+  ],
+  "version": "1.0.0"
+}

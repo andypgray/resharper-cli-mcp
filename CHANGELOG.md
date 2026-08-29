@@ -24,6 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   repository directory name, which is why it reads `resharper-cli-mcp` rather than the shorter server
   key the configuration examples use.
 
+- An `lhm.plugin.json`, the manifest a [LobeHub](https://lobehub.com) listing is published from. It
+  records the three tools with their titles, hints and argument schemas, both guide resources and the
+  `derive_style_guide` prompt, captured from the running server rather than transcribed. Its `version`
+  is the listing's own and does not track the server's: the format carries no launcher, so there is no
+  package version in it to keep in step with a release.
+
 - An `llms-install.md` at the repository root: the install path written as a checklist, from the two
   `dotnet tool install` commands through a configuration block for Claude Code, VS Code, Cursor and
   Cline, to what to do when a call is slow. Point an agent at it and it can install and register the

@@ -43,6 +43,11 @@ public sealed partial class VersionSiteTests
         + "field is the only thing standing between the listing and a version this project has not shipped "
         + "since its first release. A stale one is the same defect, quieter.";
 
+    private const string McpbRationale =
+        "The bundle's own version is what Claude Desktop reports for an installed extension and what it "
+        + "compares a newer download against, and mcpb/pack.sh names the archive from the csproj. A field "
+        + "that does not follow the csproj <Version> ships a file called one version declaring another.";
+
     [GeneratedRegex(@"<Version>(?<version>[^<]+)</Version>")]
     private static partial Regex CsprojVersion();
 
@@ -52,6 +57,7 @@ public sealed partial class VersionSiteTests
     [InlineData(".claude-plugin/plugin.json", "/version", PluginRationale)]
     [InlineData(".cursor-plugin/plugin.json", "/version", CursorRationale)]
     [InlineData("gemini-extension.json", "/version", GeminiRationale)]
+    [InlineData("mcpb/manifest.json", "/version", McpbRationale)]
     public void ManifestVersionField_MatchesTheCsprojVersion(string manifestPath, string jsonPointer, string because)
     {
         // Arrange

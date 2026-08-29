@@ -10,11 +10,12 @@ resharper-cli-mcp publishes from a git tag. Pushing a `v*` tag runs [`release.ym
 2. Builds and tests in `Release`.
 3. Packs the `.nupkg` and `.snupkg`.
 4. Verifies the packed `.nupkg` holds the MCP manifest at exactly `.mcp/server.json` — the path nuget.org scans to generate the VS Code MCP configuration — and stops the release before anything is pushed if it is missing or mis-pathed. NuGet versions are immutable, so this is the last chance to catch a packaging fault.
-5. Emits signed SLSA build provenance with `actions/attest` and stages it as `attestation.intoto.jsonl`.
-6. Trades the workflow's OIDC token for a short-lived nuget.org key (`NuGet/login`), then runs `dotnet nuget push --skip-duplicate`.
-7. Creates a GitHub release carrying the `.nupkg`, `.snupkg`, and attestation bundle.
+5. Runs [`mcpb/pack.sh`](../mcpb/pack.sh), which publishes the server and zips it with [`mcpb/manifest.json`](../mcpb/manifest.json) and the icon into `resharper-cli-mcp-<version>.mcpb`, the bundle Claude Desktop installs.
+6. Emits signed SLSA build provenance with `actions/attest` and stages it as `attestation.intoto.jsonl`.
+7. Trades the workflow's OIDC token for a short-lived nuget.org key (`NuGet/login`), then runs `dotnet nuget push --skip-duplicate`.
+8. Creates a GitHub release carrying the `.nupkg`, `.snupkg`, `.mcpb`, and attestation bundle.
 
-Steps 5 to 7 need the one-time setup below to already be in place.
+Steps 6 to 8 need the one-time setup below to already be in place.
 
 ## One-time setup
 
@@ -54,6 +55,7 @@ Every version site must agree or the release stops at step 1:
 | [`mcp.json`](../mcp.json) | the `Zphil.ReSharperCli@<version>` `dnx` argument | The same, for Agent Plugins hosts. |
 | [`gemini-extension.json`](../gemini-extension.json) | `.version` | The version the Gemini CLI reports for an installed extension. |
 | `gemini-extension.json` | the `Zphil.ReSharperCli@<version>` `dnx` argument | The server a Gemini CLI user actually runs. |
+| [`mcpb/manifest.json`](../mcpb/manifest.json) | `.version` | What Claude Desktop reports for an installed bundle, and compares a newer download against. `pack.sh` names the archive from the csproj, so a drifted field ships a file called one version declaring another. |
 
 The two `.claude-plugin/plugin.json` fields are one decision, not two: Claude Code ships an installed plugin an update only when its `version` changes, so a pin that moves under a frozen `version` reaches new installs and no existing one.
 
@@ -69,6 +71,7 @@ jq -r '.mcpServers[].args[] | select(startswith("Zphil.ReSharperCli@")) | ltrims
 jq -r '.mcpServers[].args[] | select(startswith("Zphil.ReSharperCli@")) | ltrimstr("Zphil.ReSharperCli@")' mcp.json
 jq -r '.version' gemini-extension.json
 jq -r '.mcpServers[].args[] | select(startswith("Zphil.ReSharperCli@")) | ltrimstr("Zphil.ReSharperCli@")' gemini-extension.json
+jq -r '.version' mcpb/manifest.json
 ```
 
 Then, using `1.0.1` as the example version:
@@ -116,6 +119,7 @@ Confirm the bytes as built, per [SECURITY.md](../SECURITY.md):
 
 ```bash
 gh attestation verify Zphil.ReSharperCli.1.0.1.nupkg --repo andypgray/resharper-cli-mcp
+gh attestation verify resharper-cli-mcp-1.0.1.mcpb --repo andypgray/resharper-cli-mcp
 ```
 
 Verify the GitHub release asset, not the nuget.org download: nuget.org appends a repository signature after upload, which changes the file hash.

@@ -1,0 +1,87 @@
+{
+  "manifest_version": "0.3",
+  "name": "resharper-cli-mcp",
+  "display_name": "resharper-cli-mcp",
+  "version": "1.5.0",
+  "description": "JetBrains ReSharper command-line inspection and cleanup for C#, over MCP. Unofficial — not affiliated with or endorsed by JetBrains.",
+  "long_description": "resharper-cli-mcp is an MCP server that runs JetBrains' ReSharper Command Line Tools (`jb`) over a C# solution and returns the findings as markdown sized to the client's output budget.\n\nIt needs two things it does not bundle: the .NET 10 runtime, and the ReSharper Command Line Tools themselves, which install with `dotnet tool install -g JetBrains.ReSharper.GlobalTools`. The server looks for `jb` on `PATH` and then in `~/.dotnet/tools`.\n\n`resharper_inspect` runs solution-wide static analysis and returns the issues grouped by file. `resharper_cleanup` reformats and normalizes the files you name, in place; it changes style, never behavior. `resharper_reset_cache` drops the solution's analysis cache so the next run rebuilds it from cold.\n\nReSharper builds a solution-wide index before it reports anything, so a first run against a solution takes minutes where later runs take tens of seconds. A run in flight reports its progress every ten seconds, and each run is capped at ten minutes, which Run cap below raises. Narrowing a call to specific files changes what gets reported, not how much is analysed.\n\nSet Solution file below to the `.sln` or `.slnx` you want analysed. Claude Desktop starts the server outside your repository, so there is no working directory for it to discover one in.\n\nJetBrains and ReSharper are trademarks of JetBrains s.r.o. This project is an independent wrapper of their ReSharper Command Line Tools, which ship under JetBrains' own license.",
+  "author": {
+    "name": "Andrew Gray",
+    "url": "https://github.com/andypgray"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/andypgray/resharper-cli-mcp"
+  },
+  "homepage": "https://github.com/andypgray/resharper-cli-mcp",
+  "documentation": "https://github.com/andypgray/resharper-cli-mcp#readme",
+  "support": "https://github.com/andypgray/resharper-cli-mcp/issues",
+  "icon": "icon.png",
+  "license": "MIT",
+  "privacy_policies": [
+    "https://github.com/andypgray/resharper-cli-mcp/blob/main/PRIVACY.md"
+  ],
+  "keywords": [
+    "resharper",
+    "inspectcode",
+    "cleanupcode",
+    "csharp",
+    "dotnet",
+    "code-quality",
+    "static-analysis",
+    "mcp"
+  ],
+  "server": {
+    "type": "binary",
+    "entry_point": "server/Zphil.ReSharperCli.dll",
+    "mcp_config": {
+      "command": "dotnet",
+      "args": [
+        "${__dirname}/server/Zphil.ReSharperCli.dll",
+        "--stdio"
+      ],
+      "env": {
+        "JB_SOLUTION_PATH": "${user_config.solution_path}",
+        "RESHARPER_MCP_TIMEOUT_SECS": "${user_config.timeout_secs}"
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "resharper_inspect",
+      "description": "Run ReSharper static analysis over the solution and return the issues it finds, grouped by file."
+    },
+    {
+      "name": "resharper_cleanup",
+      "description": "Run ReSharper code cleanup to reformat and normalize the given files in place."
+    },
+    {
+      "name": "resharper_reset_cache",
+      "description": "Drop the solution's ReSharper analysis cache so the next run rebuilds it from cold."
+    }
+  ],
+  "tools_generated": false,
+  "compatibility": {
+    "platforms": [
+      "darwin",
+      "win32"
+    ]
+  },
+  "user_config": {
+    "solution_path": {
+      "type": "file",
+      "title": "Solution file",
+      "description": "The .sln or .slnx to analyse. Claude Desktop starts the server outside your repository, so there is no working directory to discover one in.",
+      "required": true
+    },
+    "timeout_secs": {
+      "type": "number",
+      "title": "Run cap (seconds)",
+      "description": "Longest one jb run may take before the server kills it. ReSharper builds a solution-wide index on the first run against a solution, so a large one can need more than the default ten minutes.",
+      "default": 600,
+      "min": 60,
+      "max": 86400,
+      "required": false
+    }
+  }
+}

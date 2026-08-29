@@ -21,10 +21,11 @@ resharper-cli-mcp is a local process, and its threat model follows from that:
 
 ## Verify what you install
 
-Each release ships a signed build provenance attestation. Download the `.nupkg` from the GitHub release and verify it as built:
+Each release ships a signed build provenance attestation covering both downloadable artifacts, the `.nupkg` and the `.mcpb` bundle Claude Desktop installs. Download either from the GitHub release and verify it as built:
 
 ```bash
 gh attestation verify Zphil.ReSharperCli.<version>.nupkg --repo andypgray/resharper-cli-mcp
+gh attestation verify resharper-cli-mcp-<version>.mcpb --repo andypgray/resharper-cli-mcp
 ```
 
 The release also carries the Sigstore bundle (`attestation.intoto.jsonl`) for offline verification with `gh attestation verify --bundle`.

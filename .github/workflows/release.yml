@@ -17,10 +17,11 @@
 # step then rebuilds and packs src/ on its own so ContinuousIntegrationBuild applies.
 #
 # Provenance: after packing, actions/attest emits signed SLSA build provenance for the
-# .nupkg/.snupkg, and the Sigstore bundle ships as a release asset (offline verification,
-# plus Scorecard's Signed-Releases check). Permissions moved from the workflow level down
-# to the release job (top level is now contents: read) so the attestations: write and
-# id-token: write grants stay scoped to the single job that needs them.
+# .nupkg/.snupkg and the .mcpb bundle, and the Sigstore bundle ships as a release asset
+# (offline verification, plus Scorecard's Signed-Releases check). Permissions moved from
+# the workflow level down to the release job (top level is now contents: read) so the
+# attestations: write and id-token: write grants stay scoped to the single job that needs
+# them.
 name: Release
 
 on:
@@ -51,9 +52,10 @@ jobs:
       # top-level `version` and the package entry's `version`), BOTH in
       # .claude-plugin/plugin.json (its `version`, and the version its dnx argument
       # pins), the dnx pin in the root mcp.json the Agent Plugins hosts read, the
-      # `version` in .cursor-plugin/plugin.json, and BOTH in gemini-extension.json (its
-      # `version`, and its own dnx pin). Any mismatch fails the release before anything
-      # is pushed. jq ships on the ubuntu-latest runner.
+      # `version` in .cursor-plugin/plugin.json, BOTH in gemini-extension.json (its
+      # `version`, and its own dnx pin), and the `version` in mcpb/manifest.json, which
+      # travels inside the Claude Desktop bundle packed further down. Any mismatch fails
+      # the release before anything is pushed. jq ships on the ubuntu-latest runner.
       # VersionSiteTests holds the same set on every PR, so a drifted site normally fails
       # there first; this is the gate that cannot be skipped.
       #
@@ -65,6 +67,9 @@ jobs:
       # .cursor-plugin/plugin.json carries no launcher and so has only the one field, but
       # it is checked because cursor.directory's importer substitutes "1.0.0" for a
       # missing version: the choice there is between a right version and a wrong one.
+      # mcpb/manifest.json has no launcher either — the server it starts is packed beside
+      # it — but mcpb/pack.sh names the archive from the csproj, so a drifted field ships
+      # a file called one version declaring another.
       #
       # Every pin is read by enumerating .mcpServers[] rather than naming the `resharper`
       # key, so renaming that key cannot make a check vacuous, and with ltrimstr rather
@@ -88,7 +93,8 @@ jobs:
           CURSOR_TOP=$(jq -r '.version' .cursor-plugin/plugin.json)
           GEMINI_TOP=$(jq -r '.version' gemini-extension.json)
           GEMINI_PIN=$(dnx_pin gemini-extension.json)
-          echo "tag=$TAG csproj=$CSPROJ server.json/.version=$SERVER_TOP server.json/.packages[0].version=$SERVER_PKG plugin.json/.version=$PLUGIN_TOP plugin.json/dnx-pin=$PLUGIN_PIN mcp.json/dnx-pin=$MCP_PIN .cursor-plugin/plugin.json/.version=$CURSOR_TOP gemini-extension.json/.version=$GEMINI_TOP gemini-extension.json/dnx-pin=$GEMINI_PIN"
+          MCPB_TOP=$(jq -r '.version' mcpb/manifest.json)
+          echo "tag=$TAG csproj=$CSPROJ server.json/.version=$SERVER_TOP server.json/.packages[0].version=$SERVER_PKG plugin.json/.version=$PLUGIN_TOP plugin.json/dnx-pin=$PLUGIN_PIN mcp.json/dnx-pin=$MCP_PIN .cursor-plugin/plugin.json/.version=$CURSOR_TOP gemini-extension.json/.version=$GEMINI_TOP gemini-extension.json/dnx-pin=$GEMINI_PIN mcpb/manifest.json/.version=$MCPB_TOP"
           rc=0
           [ "$CSPROJ" = "$TAG" ]     || { echo "::error::csproj <Version> ($CSPROJ) != tag ($TAG)"; rc=1; }
           [ "$SERVER_TOP" = "$TAG" ] || { echo "::error::server.json .version ($SERVER_TOP) != tag ($TAG)"; rc=1; }
@@ -99,6 +105,7 @@ jobs:
           [ "$CURSOR_TOP" = "$TAG" ] || { echo "::error::.cursor-plugin/plugin.json .version ($CURSOR_TOP) != tag ($TAG) — a missing one is imported as 1.0.0"; rc=1; }
           [ "$GEMINI_TOP" = "$TAG" ] || { echo "::error::gemini-extension.json .version ($GEMINI_TOP) != tag ($TAG)"; rc=1; }
           [ "$GEMINI_PIN" = "$TAG" ] || { echo "::error::gemini-extension.json dnx pin ($GEMINI_PIN) != tag ($TAG) — empty means the launcher is unpinned"; rc=1; }
+          [ "$MCPB_TOP" = "$TAG" ]   || { echo "::error::mcpb/manifest.json .version ($MCPB_TOP) != tag ($TAG) — the bundle would be named one version and declare another"; rc=1; }
           exit $rc
 
       - name: Build (test project builds src/ transitively)
@@ -138,9 +145,22 @@ jobs:
             exit 1
           }
 
+      # The MCP Bundle Claude Desktop installs: manifest, icon, and a framework-dependent
+      # publish of the server. mcpb/pack.sh is the same script a maintainer runs locally,
+      # so what ships is what was tested; it pulls the pinned mcpb CLI through npx, and
+      # Node ships on the ubuntu-latest runner, so there is no setup-node step to add.
+      # Packing here is also where the Unix execute bit would be correct by construction:
+      # `mcpb pack` copies permission bits into the zip only when it runs on Unix. Nothing
+      # in this bundle needs one — the entry point is a .dll launched through `dotnet` —
+      # but a bundle that ever gains a real binary entry point inherits that for free.
+      - name: Pack the Claude Desktop bundle (.mcpb)
+        run: bash mcpb/pack.sh
+
       # Signed SLSA build provenance for the exact bytes built here (actions/attest emits
       # provenance by default when no predicate is given). Verify with:
       #   gh attestation verify <file> --repo andypgray/resharper-cli-mcp
+      # The .mcpb is a subject too: it is a release asset a user downloads and double-clicks,
+      # which is the same threat the .nupkg's provenance answers.
       # Permissions: id-token + attestations only. Do NOT add artifact-metadata: write —
       # that is for create-storage-record/push-to-registry, which file subjects don't use.
       - name: Attest build provenance
@@ -150,6 +170,7 @@ jobs:
           subject-path: |
             artifacts/*.nupkg
             artifacts/*.snupkg
+            artifacts/*.mcpb
 
       # Ship the Sigstore bundle as a release asset: enables offline verification
       # (gh attestation verify --bundle) and is what Scorecard's Signed-Releases
@@ -170,6 +191,6 @@ jobs:
         run: dotnet nuget push "artifacts/*.nupkg" --api-key "${{ steps.login.outputs.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json --skip-duplicate
 
       - name: Create GitHub release
-        run: gh release create "$GITHUB_REF_NAME" artifacts/*.nupkg artifacts/*.snupkg artifacts/attestation.intoto.jsonl --generate-notes
+        run: gh release create "$GITHUB_REF_NAME" artifacts/*.nupkg artifacts/*.snupkg artifacts/*.mcpb artifacts/attestation.intoto.jsonl --generate-notes
         env:
           GH_TOKEN: ${{ github.token }}

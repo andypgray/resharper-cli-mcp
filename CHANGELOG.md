@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- An MCP Bundle (`.mcpb`) for Claude Desktop, attached to each release alongside the package. Claude
+  Desktop installs local MCP servers from a bundle rather than from a config file: download it, double
+  click it, and set Solution file to the `.sln` or `.slnx` to analyse, which is what tells the server
+  where to look when it is started outside your repository. The bundle holds the server as a
+  framework-dependent publish, 1.6 MB packed at 1.5.0, and still needs the .NET 10 runtime and the
+  ReSharper Command Line Tools installed: a self-contained publish would carry the runtime to remove a
+  prerequisite that installing `jb` already implies, since `jb` is itself a .NET global tool. The bundle
+  ships with the same SLSA build provenance as the package, verifiable with `gh attestation verify`.
+
+- A Privacy Policy section in the README, and a Retention section in `PRIVACY.md`. The README section
+  states what the server collects (nothing), where the results go, and what the local log holds; the
+  retention statement names the 7-file rolling window on its own rather than inside the paragraph about
+  where logs live. `PRIVACY.md` now covers all three distribution channels, the new bundle included.
+
 - The project icon in the three channels that render one. The NuGet package now sets `PackageIcon` and
   packs the 512 px render, which nuget.org draws in listings and serves as the page's `og:image`;
   `.mcp/server.json` declares an `icons` array pointing at the same renders in this repository, for the

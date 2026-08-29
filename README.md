@@ -104,6 +104,12 @@ Cline stores its servers in `cline_mcp_settings.json`, which the MCP Servers pan
 }
 ```
 
+## Install as a Claude Desktop extension
+
+Claude Desktop installs local MCP servers as MCP Bundles. Download `resharper-cli-mcp-<version>.mcpb` from the [latest release](https://github.com/andypgray/resharper-cli-mcp/releases/latest), double-click it, and set **Solution file** to the `.sln` or `.slnx` you want analysed. Claude Desktop starts the server outside your repository, so there is no working directory for it to discover one in. **Run cap** sets how long one `jb` run may take before the server kills it; ten minutes by default, which a first run against a large solution can exceed.
+
+The bundle holds the server and neither of its prerequisites. Install the .NET 10 runtime and the ReSharper Command Line Tools first, as under [Quickstart](#quickstart): the bundle launches the server with `dotnet`, and every tool call shells out to `jb`.
+
 ## Install as a Claude Code plugin
 
 This repository doubles as a single-plugin marketplace, so the tools, the `derive_style_guide` prompt, and both guide resources arrive in one step:
@@ -165,7 +171,7 @@ Set these in the MCP client config's `env` block. All are optional. Each `JB_` v
 
 **Settings discovery** tries, in order: `JB_SETTINGS_PATH`, a `.DotSettings` file beside the solution, then `GlobalSettingsStorage.DotSettings` in the JetBrains shared directory. `jb` mounts the last two on its own, so the server passes `--settings` only for a `JB_SETTINGS_PATH` outside them (naming an already-mounted file would demote every project's own `.DotSettings`). On top of whichever settings apply, `jb` reads `.editorconfig` from the source tree automatically.
 
-Logs roll daily under `%LOCALAPPDATA%\Zphil.ReSharperCli\logs` on Windows, and the platform-equivalent path elsewhere. Nothing leaves the machine; [PRIVACY.md](https://github.com/andypgray/resharper-cli-mcp/blob/main/PRIVACY.md) states that as policy.
+Logs roll daily under `%LOCALAPPDATA%\Zphil.ReSharperCli\logs` on Windows, and the platform-equivalent path elsewhere.
 
 ## What ReSharper enforces
 
@@ -196,6 +202,14 @@ The single end-of-task cleanup is easy for an agent to forget. This Claude Code 
 ```
 
 The command uses `grep` and `printf`, so it needs a POSIX shell (on Windows, Git Bash).
+
+## Privacy Policy
+
+resharper-cli-mcp collects nothing. It has no telemetry, no analytics, no accounts and no remote logging, and it makes no network calls of its own. Every tool call shells out to the `jb` on your machine, and the issues and cleanup summaries it produces go back over stdio to the MCP client that launched the server.
+
+The diagnostic log described under [Configuration](#configuration) is the only thing written to disk. It keeps 7 daily files and can contain absolute paths and the rule IDs and messages read from your solution. It stays on the machine, and deleting it at any point is safe.
+
+[PRIVACY.md](https://github.com/andypgray/resharper-cli-mcp/blob/main/PRIVACY.md) is the full policy: what is collected, how your source code is processed, the local logs and how long they are kept, the two network paths around the server, and where to ask about it.
 
 ## Contributing
 

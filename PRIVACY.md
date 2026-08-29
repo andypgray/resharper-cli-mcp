@@ -1,6 +1,6 @@
 # Privacy
 
-This policy covers resharper-cli-mcp: the MCP server published as `Zphil.ReSharperCli` and the Claude Code plugin distributed from this repository. Effective 2026-07-15; changes are tracked in this file's git history.
+This policy covers resharper-cli-mcp in every form it is distributed: the MCP server published as `Zphil.ReSharperCli`, the Claude Code plugin, and the Claude Desktop bundle (`.mcpb`). Effective 2026-08-29; changes are tracked in this file's git history.
 
 ## What this project collects
 
@@ -16,13 +16,17 @@ Tool output becomes part of your agent conversation. How the MCP client (for exa
 
 ## Local logs
 
-Diagnostic logs roll daily under `%LOCALAPPDATA%\Zphil.ReSharperCli\logs` on Windows, and the platform-equivalent path elsewhere, keeping 7 daily files. They can contain absolute paths and the rule IDs and messages read from your solution. They stay on the machine; delete them whenever you like. `RESHARPER_MCP_LOG_LEVEL` controls how much is written.
+Diagnostic logs roll daily under `%LOCALAPPDATA%\Zphil.ReSharperCli\logs` on Windows, and the platform-equivalent path elsewhere. They can contain absolute paths and the rule IDs and messages read from your solution. `RESHARPER_MCP_LOG_LEVEL` controls how much is written.
+
+## Retention
+
+Those logs are the only data this project writes, and they are written on your machine. The sink keeps 7 daily files and deletes the oldest as it rolls; deleting the directory yourself at any point is safe. Nothing is retained anywhere else, because nothing is sent anywhere else.
 
 ## Network access
 
 The server itself makes no network calls. Two things around it do:
 
-- **Package restore.** Installing the server — or launching it through the Claude Code plugin, which runs `dotnet dnx` — downloads the `Zphil.ReSharperCli` package from nuget.org, a Microsoft service with [its own privacy statement](https://go.microsoft.com/fwlink/?LinkId=521839). If `JB_EXTENSIONS` is set, `jb` likewise restores those ReSharper extensions from NuGet.
+- **Package restore.** Installing the server, or launching it through the Claude Code plugin, which runs `dotnet dnx`, downloads the `Zphil.ReSharperCli` package from nuget.org, a Microsoft service with [its own privacy statement](https://go.microsoft.com/fwlink/?LinkId=521839). The Claude Desktop bundle carries the server inside it and restores nothing. If `JB_EXTENSIONS` is set, `jb` likewise restores those ReSharper extensions from NuGet.
 - **JetBrains tools.** `jb` is JetBrains software you install separately, governed by [JetBrains' terms and privacy policy](https://www.jetbrains.com/legal/).
 
 ## Contact

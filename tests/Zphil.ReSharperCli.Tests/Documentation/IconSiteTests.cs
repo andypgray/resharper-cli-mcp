@@ -8,10 +8,11 @@ namespace Zphil.ReSharperCli.Tests.Documentation;
 
 /// <summary>
 ///     Holds every file that names the project's mark to a render committed under <c>assets/</c>. The
-///     channels are independent — NuGet packs the icon, the MCP registry links it, Cursor's manifest points
-///     a listing at it — so none of them substitutes for another and a rename under <c>assets/</c> breaks
-///     each one silently and separately. Only the handshake is absent here: it embeds the bytes rather than
-///     naming a path, and <c>ServerIdentityTests</c> pins it against the same file.
+///     channels are independent (NuGet packs the icon, the MCP registry links it, Cursor's manifest points
+///     a listing at it, the Claude Desktop bundle stages a copy inside itself), so none of them substitutes
+///     for another and a rename under <c>assets/</c> breaks each one silently and separately. Only the
+///     handshake is absent here: it embeds the bytes rather than naming a path, and
+///     <c>ServerIdentityTests</c> pins it against the same file.
 /// </summary>
 public sealed partial class IconSiteTests
 {
@@ -26,6 +27,9 @@ public sealed partial class IconSiteTests
 
     [GeneratedRegex(@"<None\s+Include=""(?<include>[^""]*assets[^""]+)""\s+Pack=""true""\s+PackagePath=""(?<path>[^""]+)""")]
     private static partial Regex PackedAssetItem();
+
+    [GeneratedRegex(@"assets/(?<render>[^""]+\.png)""\s+""\$STAGE/(?<staged>[^""]+\.png)""")]
+    private static partial Regex StagedBundleIcon();
 
     [Fact]
     public void NuGetPackageIcon_NamesAnAssetThatThePackIncludes()
@@ -67,6 +71,36 @@ public sealed partial class IconSiteTests
         File.Exists(Path.Combine(RepoRoot.Location, path)).ShouldBeTrue(
             $"{path} must be committed: a listing importer fetches this path from the repository and "
             + "renders nothing when it 404s.");
+    }
+
+    /// <summary>
+    ///     The bundle's icon is the one channel whose failure lands after the tag is pushed: an MCPB icon
+    ///     path is relative to the bundle root, so <c>pack.sh</c> stages a copy under the name the manifest
+    ///     declares, and <c>mcpb pack</c> refuses the zip when the two disagree or the render is missing.
+    ///     That is the release job failing at step 5, which is why the same fact is checked here.
+    /// </summary>
+    [Fact]
+    public void BundlePackScript_StagesTheCommittedRenderTheManifestNames()
+    {
+        // Arrange
+        string script = File.ReadAllText(Path.Combine(RepoRoot.Location, "mcpb", "pack.sh"));
+
+        // Act
+        Match staged = StagedBundleIcon().Match(script);
+
+        // Assert
+        staged.Success.ShouldBeTrue(
+            "mcpb/pack.sh must copy a render from assets/ into the staging directory as the bundle's icon.");
+
+        string render = staged.Groups["render"].Value;
+        File.Exists(Path.Combine(RepoRoot.Location, "assets", render)).ShouldBeTrue(
+            $"assets/{render} must exist, or the release fails at the pack step with the tag already pushed.");
+
+        string? declaredIcon = RepoManifest.ReadString("mcpb/manifest.json", "/icon");
+        declaredIcon.ShouldBe(
+            staged.Groups["staged"].Value,
+            "The manifest's icon path is relative to the bundle root, so it must be the name pack.sh "
+            + "stages the render under. The two are written apart and are one fact.");
     }
 
     [Fact]

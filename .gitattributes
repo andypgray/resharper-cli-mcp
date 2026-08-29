@@ -1,0 +1,4 @@
+# Shell scripts reach the Linux release runner with LF endings whatever a contributor's
+# core.autocrlf is set to. bash reads a CRLF shebang line, and the trailing \r on every other line,
+# as part of the command, so a CRLF pack.sh fails the release with an error naming no file.
+*.sh text eol=lf

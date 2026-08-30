@@ -19,12 +19,12 @@ namespace Zphil.ReSharperCli.Tests.Pipeline;
 /// </summary>
 /// <remarks>
 ///     What this exists to catch is everything a unit test cannot see — that the SDK really does bind the
-///     <c>IProgress</c> parameter without advertising it in the schema, that the token round-trips, and that
-///     nothing reports against a request that has already been answered. That last one is read off the server's
-///     own output stream rather than off the client, and could never have been read off the client: a beat sent
-///     after the result is dropped before any handler sees it, so a correct observation and a buggy one look
-///     identical from there — and the order the client's handler runs in is not the order the server wrote in
-///     either. See <see cref="WireLog" />.
+///     <c>RequestContext</c> parameter without advertising it in the schema, that the token round-trips, and
+///     that nothing reports against a request that has already been answered. That last one is read off the
+///     server's own output stream rather than off the client, and could never have been read off the client: a
+///     beat sent after the result is dropped before any handler sees it, so a correct observation and a buggy
+///     one look identical from there — and the order the client's handler runs in is not the order the server
+///     wrote in either. See <see cref="WireLog" />.
 /// </remarks>
 public sealed class ProgressNotificationTests
 {
@@ -77,10 +77,11 @@ public sealed class ProgressNotificationTests
 
         // Monotonic, which is the one thing the protocol asks of `progress` — read off the wire, because what
         // the client's list records is the order thread-pool callbacks ran in, not the order the server wrote
-        // in. Server-side the counter is one Interlocked.Increment per call, so the wire can be held to more
-        // than "sorted": contiguous, and based at one. The lower bound goes first so a tap that captured
-        // nothing fails there rather than satisfying the pin with an empty list, and it is `>=` rather than
-        // `==` because a frame written but never delivered is the bug the window below exists to catch.
+        // in. This is a promise rather than a hope: ProgressSink numbers a notification inside a chain where
+        // each send awaits the one before it, so the wire can be held to more than "sorted" — contiguous, and
+        // based at one. The lower bound goes first so a tap that captured nothing fails there rather than
+        // satisfying the pin with an empty list, and it is `>=` rather than `==` because a frame written but
+        // never delivered is the bug the window below exists to catch.
         IReadOnlyList<double?> written = harness.Wire.ProgressValues;
         written.Count.ShouldBeGreaterThanOrEqualTo(atCompletion.Count);
         written.ShouldBe(Enumerable.Range(1, written.Count).Select(counter => (double?)counter));
@@ -95,8 +96,10 @@ public sealed class ProgressNotificationTests
         // And nothing reported after the result went out — also off the wire, where a frame's position is the
         // order the server wrote it in. A late report goes against a request that has already been answered, so
         // the client has torn down its handler registration by then and no client-side count can ever see one.
-        // The window can be generous precisely because it is the wire: a correct run writes no frame into it
-        // however loaded the machine is. Ten would-be beats fit in it at the harness's interval.
+        // What puts the last frame ahead of the result is the sink's drain, which the tool method awaits before
+        // its answer is serialized. The window can be generous precisely because it is the wire: a correct run
+        // writes no frame into it however loaded the machine is. Ten would-be beats fit in it at the harness's
+        // interval.
         await Task.Delay(TimeSpan.FromMilliseconds(500), Ct);
         harness.Wire.LastProgressIndex.ShouldBeLessThan(harness.Wire.ToolResultIndex);
     }
@@ -165,8 +168,8 @@ public sealed class ProgressNotificationTests
     [Fact]
     public async Task CallTool_AClientThatWantsNoProgress_GetsAnUnchangedResultAndAnUnchangedSchema()
     {
-        // Arrange — the SDK hands NullProgress when no token was sent, and keeps the parameter out of the
-        // advertised schema. A tool that started advertising `progress` would be asking a model to pass one.
+        // Arrange — a call with no progress token still runs, and the parameter that carries the channel stays
+        // out of the advertised schema. A tool that started advertising it would be asking a model to pass one.
         await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
         harness.Environment.PlantSolution("App.slnx");
         RouteStreamingJb(harness.ProcessRunner, Task.CompletedTask);
@@ -175,11 +178,18 @@ public sealed class ProgressNotificationTests
         IList<McpClientTool> tools = await harness.Client.ListToolsAsync(cancellationToken: Ct);
         CallToolResult result = await harness.Client.CallToolAsync(ResharperTools.InspectToolName, cancellationToken: Ct);
 
-        // Assert
+        // Assert — both spellings the parameter has had, so a rename cannot quietly start advertising it and
+        // leave a pin passing on the name it no longer uses.
         result.IsError.ShouldNotBe(true);
         harness.Logs.Warnings.ShouldBeEmpty();
 
-        foreach (McpClientTool tool in tools) PropertyNames(tool).ShouldNotContain("progress");
+        foreach (McpClientTool tool in tools)
+        {
+            IReadOnlyList<string> properties = PropertyNames(tool);
+
+            properties.ShouldNotContain("progress");
+            properties.ShouldNotContain("context");
+        }
     }
 
     [Fact]

@@ -7,13 +7,14 @@ using Zphil.ReSharperCli.Tests.TestSupport;
 namespace Zphil.ReSharperCli.Tests.Execution;
 
 /// <summary>
-///     The heartbeat: that it beats at once, keeps beating, survives a sink that throws, and — the one that
-///     matters most — stops dead at disposal.
+///     The heartbeat: that it beats at once, keeps beating, never beats twice at once, survives a sink that
+///     throws, and — the one that matters most — stops dead at disposal.
 /// </summary>
 /// <remarks>
-///     The last of those is not tidiness. The sink ends at the MCP session's <c>TokenProgress.Report</c>,
-///     which discards the task it sends on, so a beat issued against a request that has already been answered
-///     faults where only <c>TaskScheduler.UnobservedTaskException</c> would ever see it.
+///     The last of those is not tidiness. A beat that lands after the call it reports has been answered
+///     reaches a <c>ProgressSink</c> that has already closed, so what it costs is a message silently dropped;
+///     stopping dead at disposal is what keeps the run's last word ahead of the result rather than lost behind
+///     it.
 /// </remarks>
 public sealed class JbRunProgressTests
 {
@@ -69,6 +70,24 @@ public sealed class JbRunProgressTests
         // Assert — a run in flight and a run that has hung must not look the same, which takes more than one
         // beat to establish.
         await sink.WaitForAsync(3, Ct);
+    }
+
+    [Fact]
+    public async Task Beats_TheFirstOneIsSlow_NeverOverlapTheOnesQueuedBehindIt()
+    {
+        // Arrange — a beat that outlasts its interval, so the timer queues more callbacks while it runs.
+        // System.Threading.Timer does not serialize them, and a starved thread pool is exactly the condition
+        // that made this reachable in the field.
+        Sink sink = new() { Dawdle = TimeSpan.FromMilliseconds(150) };
+
+        // Act — several intervals fit inside the first beat.
+        await using JbRunProgress progress = Build(sink, TimeSpan.FromMilliseconds(10));
+        await sink.WaitForAsync(3, Ct);
+
+        // Assert — the extra callbacks were skipped rather than run beside the beat in flight. Two that did
+        // overlap would snapshot in one order and reach the sink in the other, so a message could name an
+        // earlier elapsed than the one before it.
+        sink.MaxConcurrentBeats.ShouldBe(1);
     }
 
     [Fact]
@@ -250,22 +269,54 @@ public sealed class JbRunProgressTests
             interval ?? Brisk);
     }
 
-    /// <summary>Records every beat, and can be told to be slow or to throw.</summary>
+    /// <summary>Records every beat, counts how many were ever inside at once, and can be told to be slow or to throw.</summary>
     private sealed class Sink() : RecordingSink<JbRunProgressSnapshot>(Generous)
     {
+        private readonly Lock _beats = new();
+        private int _inside;
+        private int _maxInside;
+
         /// <summary>When set, every beat throws — a sink that cannot be allowed to end the run.</summary>
         public bool Throw { get; init; }
 
         /// <summary>When set, every beat blocks for this long, so disposal overlaps one in flight.</summary>
         public TimeSpan Dawdle { get; init; }
 
+        /// <summary>The most beats ever inside this sink at the same moment — one, if they are serialized.</summary>
+        public int MaxConcurrentBeats
+        {
+            get
+            {
+                lock (_beats)
+                {
+                    return _maxInside;
+                }
+            }
+        }
+
         public void Report(JbRunProgressSnapshot snapshot)
         {
-            Record(snapshot);
+            lock (_beats)
+            {
+                _inside++;
+                _maxInside = Math.Max(_maxInside, _inside);
+            }
 
-            if (Dawdle > TimeSpan.Zero) Thread.Sleep(Dawdle);
+            try
+            {
+                Record(snapshot);
 
-            if (Throw) throw new InvalidOperationException("The client went away mid-run.");
+                if (Dawdle > TimeSpan.Zero) Thread.Sleep(Dawdle);
+
+                if (Throw) throw new InvalidOperationException("The client went away mid-run.");
+            }
+            finally
+            {
+                lock (_beats)
+                {
+                    _inside--;
+                }
+            }
         }
 
         /// <summary>The first beat that lands after <paramref name="alreadySeen" /> of them have.</summary>

@@ -27,6 +27,14 @@ namespace Zphil.ReSharperCli.Tests.TestSupport;
 ///         also makes the decode torn-read-free for nothing: a frame still being written has no newline yet, so
 ///         dropping the trailing partial line drops exactly the one that is incomplete.
 ///     </para>
+///     <para>
+///         What the write side does <em>not</em> settle is which send reaches that semaphore first, and for
+///         progress that is the whole contract. Two sends started in order race for it, so ordering has to be
+///         decided before the transport — which is what <c>ProgressSink</c> does by awaiting each send before
+///         numbering and starting the next. Reading order here is therefore reading a promise the server makes,
+///         not a coincidence of scheduling: this class is what makes the promise checkable, and the sink is
+///         what makes it true.
+///     </para>
 /// </remarks>
 internal sealed class WireLog
 {

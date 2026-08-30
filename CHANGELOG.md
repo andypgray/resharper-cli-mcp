@@ -117,6 +117,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Progress notifications now carry counters that increase in the order the notifications were written.
+  The counter was assigned before the send, and the send was started without being awaited, so two
+  notifications milliseconds apart could race for the transport and arrive with their numbers
+  transposed. MCP asks one thing of `progress`: that it increase, so a client enforcing that was
+  within its rights to reject or mis-render the pair. A client that renders the message text and
+  ignores the counter, which is the common case today, saw nothing wrong. Each notification is now
+  numbered inside the send that carries it, and one send finishes before the next starts. The
+  ten-second heartbeat behind them emits one beat at a time as well: .NET's timer does not serialize
+  its own callbacks, so a loaded machine could run two at once and report a run's elapsed time going
+  backwards.
+
 - `resharper_inspect` no longer fails a whole run over a single malformed file path in `jb`'s report.
   A SARIF result whose `file://` URI the runtime cannot parse — a malformed host, an embedded null —
   raised an error that reached the caller as a fault in this server, discarding every issue the run had

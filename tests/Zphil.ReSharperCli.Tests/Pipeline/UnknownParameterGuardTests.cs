@@ -1,6 +1,6 @@
 using System.Reflection;
 using System.Text.Json;
-using ModelContextProtocol;
+using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using Shouldly;
 using Xunit;
@@ -40,11 +40,11 @@ public sealed class UnknownParameterGuardTests
     {
         // Arrange — independently reflect every tool's JSON parameter names. Services arrive via
         // primary constructors, so the context-bound *method* parameters in this server are the
-        // CancellationToken every tool takes and the IProgress<> every tool now takes too; IsJsonBound
+        // CancellationToken every tool takes and the RequestContext<> every tool now takes too; IsJsonBound
         // encodes exactly that, independently of the guard's own predicate. A newly introduced
         // context-bound parameter type will (correctly) trip this test, forcing an update here — and
         // in UnknownParameterGuard only if its exclusion is not already generic there, as
-        // IProgress<>'s was when the progress parameter arrived.
+        // RequestContext<>'s was when the tools swapped IProgress<> for it.
         List<string> failures = [];
 
         foreach ((MethodInfo method, McpServerToolAttribute attribute) in ToolAttributeDiscovery.GetToolMethods())
@@ -136,16 +136,16 @@ public sealed class UnknownParameterGuardTests
     }
 
     // Independent oracle for "is this a JSON-bound parameter": the context-bound method-parameter
-    // types in this server are CancellationToken and the IProgress<ProgressNotificationValue> the
-    // SDK manufactures for a run that reports its advance. Deliberately NOT calling the guard's own
-    // predicate, so a divergence is observable — and spelled by closed type rather than by open
-    // generic, so a second IProgress<T> of some other T would still trip this.
+    // types in this server are CancellationToken and the RequestContext<CallToolRequestParams> a run
+    // that reports its advance takes so it can number its own notifications. Deliberately NOT calling
+    // the guard's own predicate, so a divergence is observable — and spelled by closed type rather than
+    // by open generic, so a RequestContext<> of some other params type would still trip this.
     private static bool IsJsonBound(ParameterInfo p)
     {
         if (p.Name is null) return false;
 
         Type type = p.ParameterType;
 
-        return type != typeof(CancellationToken) && type != typeof(IProgress<ProgressNotificationValue>);
+        return type != typeof(CancellationToken) && type != typeof(RequestContext<CallToolRequestParams>);
     }
 }

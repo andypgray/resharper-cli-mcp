@@ -53,6 +53,7 @@ Every version site must agree or the release stops at step 1:
 | [`.claude-plugin/plugin.json`](../.claude-plugin/plugin.json) | `.version` | What makes Claude Code offer an installed plugin the update. |
 | `.claude-plugin/plugin.json` | the `Zphil.ReSharperCli@<version>` `dnx` argument | The server a plugin user actually runs. |
 | [`mcp.json`](../mcp.json) | the `Zphil.ReSharperCli@<version>` `dnx` argument | The same, for Agent Plugins hosts. |
+| [`.cursor-plugin/plugin.json`](../.cursor-plugin/plugin.json) | `.version` | The version a cursor.directory listing shows. It has no launcher — Cursor reads that from `mcp.json` — but cursor.directory imports a missing version as `1.0.0`, so the choice here is between a right version and a wrong one. |
 | [`gemini-extension.json`](../gemini-extension.json) | `.version` | The version the Gemini CLI reports for an installed extension. |
 | `gemini-extension.json` | the `Zphil.ReSharperCli@<version>` `dnx` argument | The server a Gemini CLI user actually runs. |
 | [`mcpb/manifest.json`](../mcpb/manifest.json) | `.version` | What Claude Desktop reports for an installed bundle, and compares a newer download against. `pack.sh` names the archive from the csproj, so a drifted field ships a file called one version declaring another. |
@@ -64,11 +65,12 @@ Two manifests stay off this table on purpose. The root [`plugin.json`](../plugin
 `VersionSiteTests` holds this same set on every PR, so a drifted site usually goes red before a tag exists. Check them by hand before tagging:
 
 ```bash
-grep -oP '(?<=<Version>)[^<]+' src/Zphil.ReSharperCli/Zphil.ReSharperCli.csproj
+sed -n 's/.*<Version>\(.*\)<\/Version>.*/\1/p' src/Zphil.ReSharperCli/Zphil.ReSharperCli.csproj
 jq -r '.version, .packages[0].version' .mcp/server.json
 jq -r '.version' .claude-plugin/plugin.json
 jq -r '.mcpServers[].args[] | select(startswith("Zphil.ReSharperCli@")) | ltrimstr("Zphil.ReSharperCli@")' .claude-plugin/plugin.json
 jq -r '.mcpServers[].args[] | select(startswith("Zphil.ReSharperCli@")) | ltrimstr("Zphil.ReSharperCli@")' mcp.json
+jq -r '.version' .cursor-plugin/plugin.json
 jq -r '.version' gemini-extension.json
 jq -r '.mcpServers[].args[] | select(startswith("Zphil.ReSharperCli@")) | ltrimstr("Zphil.ReSharperCli@")' gemini-extension.json
 jq -r '.version' mcpb/manifest.json
@@ -84,7 +86,7 @@ Then, using `1.0.1` as the example version:
    git push origin v1.0.1
    ```
 
-3. Watch the run with `gh run watch` or the Actions tab. On success the package is on nuget.org and a GitHub release holds the three assets.
+3. Watch the run with `gh run watch` or the Actions tab. On success the package is on nuget.org and a GitHub release holds the package, the symbols, the bundle and the attestation.
 
 ## After NuGet indexes the package
 

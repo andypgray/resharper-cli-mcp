@@ -4,7 +4,7 @@
     "resharper": {
       "type": "stdio",
       "command": "dotnet",
-      "args": ["dnx", "Zphil.ReSharperCli@1.5.0", "--source", "https://api.nuget.org/v3/index.json"]
+      "args": ["dnx", "Zphil.ReSharperCli@1.6.0", "--source", "https://api.nuget.org/v3/index.json"]
     }
   }
 }

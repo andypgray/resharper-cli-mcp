@@ -192,6 +192,34 @@ public sealed class ProgressiveRendererTests
     }
 
     [Fact]
+    public void Render_EmptyDescription_EmitsNoNoteAtAll()
+    {
+        // Arrange — the domain's way of saying this result lost nothing at this level. Only it can know:
+        // below a cap the level above was never rendered, and rendering it to compare is the work the cap
+        // exists to avoid.
+        string result = ProgressiveRenderer.Render(
+            "input", (_, _) => "No issues found.", 400, _ => "", DetailLevel.Minimal).Text;
+
+        // Assert — not merely a note with an empty tail: the whole marker goes, because an agent matches on
+        // it to know the response is a reduction.
+        result.ShouldBe("No issues found.");
+        result.ShouldNotContain("DETAIL REDUCED");
+    }
+
+    [Fact]
+    public void Render_EmptyDescriptionAndNothingFits_StillEmitsNoNote()
+    {
+        // Arrange — the failsafe path takes the same branch. Nothing was reduced, so nothing is announced,
+        // and ResponseTruncator's own footer reports the cut if there is one.
+        string result = ProgressiveRenderer.Render(
+            "input", (_, _) => new string('x', 200), 100, _ => "").Text;
+
+        // Assert
+        result.ShouldBe(new string('x', 200));
+        result.ShouldNotContain("DETAIL REDUCED");
+    }
+
+    [Fact]
     public void Render_StartLevelBelowFull_NeverRendersTheLevelsAboveIt()
     {
         // Arrange

@@ -42,6 +42,10 @@ internal static class ProgressiveRenderer
     /// <param name="describeReduction">
     ///     Optional per-level description appended to the reduction note; a generic message is used when
     ///     <see langword="null" />. Lets each domain (cleanup now, inspect later) explain its own reduction.
+    ///     Returning <c>""</c> means <em>nothing was reduced</em>, and no note is emitted at all — the answer
+    ///     has to come from the domain, because a capped walk never renders the level above the cap and so
+    ///     has nothing to compare against. A domain whose every level drops something (cleanup) never returns
+    ///     it.
     /// </param>
     /// <param name="startLevel">
     ///     The most detailed level to try — a cap, not a pin. Levels above it are skipped entirely, and the
@@ -87,9 +91,7 @@ internal static class ProgressiveRenderer
             // The reduction note counts toward the budget: a rendering that fits only without its note
             // would be pushed over maxChars by appending it, handing the downstream truncator exactly the
             // mid-chop this renderer exists to prevent.
-            string candidate = level == DetailLevel.Full
-                ? output
-                : AppendReductionNote(output, level, maxChars, describe, startLevel);
+            string candidate = AppendReductionNote(output, level, maxChars, describe, startLevel);
             if (candidate.Length <= maxChars) return new ProgressiveRendering(candidate, level);
 
             previousOutput = output;
@@ -111,14 +113,27 @@ internal static class ProgressiveRenderer
     ///     the cap is the budget forcing the ladder down, and reads exactly as it always has. The
     ///     <c>--- DETAIL REDUCED ---</c> marker stays the one anchor across both, because it is what an agent
     ///     matches on to know the response is a reduction rather than a full listing.
+    ///     <para>
+    ///         Two things suppress the note entirely, and they are different claims. <see cref="DetailLevel.Full" />
+    ///         is the top of the ladder, so there is no reduction to announce whether or not it was asked for.
+    ///         An empty <paramref name="describe" /> is the domain saying this particular result lost nothing
+    ///         at this level — a zero-issue inspect renders identically at all five — and only the domain can
+    ///         know that: below a cap the level above was never rendered, and rendering it to compare is the
+    ///         work the cap exists to avoid.
+    ///     </para>
     /// </summary>
     private static string AppendReductionNote(
         string output, DetailLevel level, int maxChars, Func<DetailLevel, string> describe, DetailLevel startLevel)
     {
+        if (level == DetailLevel.Full) return output;
+
+        string description = describe(level);
+        if (description.Length == 0) return output;
+
         string lead = level == startLevel
             ? $"Rendered at the requested detail level {level}"
             : $"Output exceeded the {maxChars:N0} character limit. Reduced to {level}";
 
-        return $"{output}\n\n--- DETAIL REDUCED ---\n{lead}: {describe(level)}";
+        return $"{output}\n\n--- DETAIL REDUCED ---\n{lead}: {description}";
     }
 }

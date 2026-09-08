@@ -50,6 +50,26 @@ public sealed class InspectReportNoteTests
     }
 
     [Fact]
+    public void For_AWrittenReportWithNoIssues_NamesTheFileWithoutTheBudgetClaim()
+    {
+        // Arrange — the file is still written, because "a report was asked for, so the response names a file
+        // that exists" is a contract a caller can script against. What it must not say is that the listing
+        // below was rendered to fit a budget: there is no listing, and nothing was reduced.
+        InspectReportOutcome outcome = new("/tmp/reports/App-inspect-abcd1234.md", null);
+
+        // Act
+        string note = InspectReportNote.For(outcome, 0);
+
+        // Assert — what the file does hold is the provenance header: solution, severity, scope, timestamp.
+        // A dated clean bill of health, which is worth naming.
+        note.ShouldBe(
+            "FULL REPORT: no issues found; the run and its scope were written to "
+            + "\"/tmp/reports/App-inspect-abcd1234.md\".\n\n");
+        note.ShouldNotContain("all 0 issue(s)");
+        note.ShouldNotContain("rendered to fit the response budget");
+    }
+
+    [Fact]
     public void For_AFailedWrite_NamesTheFileAndTheReason()
     {
         // Arrange — the caller asked for this file by name and is not getting it, but the jb run behind the

@@ -145,7 +145,8 @@ internal sealed class ResharperTools(
             banner,
             issues,
             (data, level) => level == DetailLevel.Full ? RenderFull() : IssueMarkdownFormatter.Format(data, level),
-            level => IssueMarkdownFormatter.DescribeReduction(level, written is { Failure: null }, level == cap),
+            level => IssueMarkdownFormatter.DescribeReduction(
+                level, issues.Count, written is { Failure: null }, level == cap),
             cap);
     }
 

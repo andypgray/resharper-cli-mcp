@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `resharper_inspect` no longer appends a `DETAIL REDUCED` note to a run that found nothing. The listing
+  is `No issues found.` at every detail level, so passing `detail` reduced nothing — but the note fired on
+  the level rather than on the reduction, and told the caller that totals and the top rules were all that
+  survived a listing that never existed, closing with an offer to write the findings to a file when there
+  are none. Asking for a report on the same run still writes and names the file, without the claim that the
+  response below it was shortened to fit a budget.
+
 - `resharper_cleanup` no longer reports `0 of 0 file(s) changed on disk` when every `files` entry is a
   wildcard. A count is a measurement: the server hashes each named file before and after the run, and a
   pattern is expanded by `jb` against the solution model, so there is nothing to hash and nothing to

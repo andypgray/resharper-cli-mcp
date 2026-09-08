@@ -319,7 +319,7 @@ public sealed class IssueMarkdownFormatterTests
         // Act
         string result = ProgressiveRenderer.Render(
             issues, IssueMarkdownFormatter.Format, maxChars,
-            level => IssueMarkdownFormatter.DescribeReduction(level, false, false)).Text;
+            level => IssueMarkdownFormatter.DescribeReduction(level, 12, false, false)).Text;
 
         // Assert — this pins the size arithmetic: if a format change pushes High past the budget, this
         // fails loudly instead of silently degrading every solution-wide run to Medium.
@@ -367,7 +367,7 @@ public sealed class IssueMarkdownFormatterTests
         // second is the better answer for a caller reading this note because it wanted the detail.
         foreach (DetailLevel level in (DetailLevel[])[DetailLevel.Medium, DetailLevel.Low, DetailLevel.Minimal])
         {
-            string description = IssueMarkdownFormatter.DescribeReduction(level, false, false);
+            string description = IssueMarkdownFormatter.DescribeReduction(level, 12, false, false);
             description.ShouldContain(IssueMarkdownFormatter.NarrowingHint);
             description.ShouldEndWith(IssueMarkdownFormatter.FullReportHint);
         }
@@ -377,7 +377,7 @@ public sealed class IssueMarkdownFormatterTests
     public void DescribeReduction_High_OmitsTheNarrowingHintButOffersTheReport()
     {
         // Act
-        string description = IssueMarkdownFormatter.DescribeReduction(DetailLevel.High, false, false);
+        string description = IssueMarkdownFormatter.DescribeReduction(DetailLevel.High, 12, false, false);
 
         // Assert — High is the level essentially every solution-wide run lands on, and re-running scoped is
         // a whole solution's analysis again, so telling the agent to do that here would be noise. A report
@@ -397,7 +397,7 @@ public sealed class IssueMarkdownFormatterTests
 
         // Act / Assert
         foreach (DetailLevel level in reduced)
-            IssueMarkdownFormatter.DescribeReduction(level, true, false)
+            IssueMarkdownFormatter.DescribeReduction(level, 12, true, false)
                 .ShouldNotContain(IssueMarkdownFormatter.FullReportHint);
     }
 
@@ -412,7 +412,7 @@ public sealed class IssueMarkdownFormatterTests
         // Act / Assert
         foreach (DetailLevel level in levelsThatNarrow)
         {
-            string description = IssueMarkdownFormatter.DescribeReduction(level, false, true);
+            string description = IssueMarkdownFormatter.DescribeReduction(level, 12, false, true);
             description.ShouldNotContain(IssueMarkdownFormatter.NarrowingHint);
             description.ShouldEndWith(IssueMarkdownFormatter.FullReportHint);
         }
@@ -423,14 +423,34 @@ public sealed class IssueMarkdownFormatterTests
     {
         // The pin over the restructure that made the hint suppressible: the forced-down wording is what
         // every over-budget solution-wide response has said, and not a byte of it may move.
-        IssueMarkdownFormatter.DescribeReduction(DetailLevel.Low, false, false).ShouldBe(
+        IssueMarkdownFormatter.DescribeReduction(DetailLevel.Low, 12, false, false).ShouldBe(
             "the per-file listing is replaced by a rollup of the top rules and the top files. "
             + "Narrow the scan with the files parameter or raise severity. "
             + "Set report to Markdown to have every finding written to a file with its own message.");
 
-        IssueMarkdownFormatter.DescribeReduction(DetailLevel.Low, false, true).ShouldBe(
+        IssueMarkdownFormatter.DescribeReduction(DetailLevel.Low, 12, false, true).ShouldBe(
             "the per-file listing is replaced by a rollup of the top rules and the top files. "
             + "Set report to Markdown to have every finding written to a file with its own message.");
+    }
+
+    [Fact]
+    public void DescribeReduction_ANoIssueResult_SaysNothingAtAnyLevel()
+    {
+        // Format returns "No issues found." at every level, so a capped render of an empty result gave up
+        // nothing — and the note claimed totals and the top rules were all that survived a listing that never
+        // existed, closing with an offer to write the findings to a file when there are none. An empty
+        // description is this directory's idiom for "nothing to say", and the renderer reads it as "no
+        // reduction happened".
+        foreach (DetailLevel level in Enum.GetValues<DetailLevel>())
+            IssueMarkdownFormatter.DescribeReduction(level, 0, false, false).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void DescribeReduction_OneIssue_StillDescribesTheReduction()
+    {
+        // The gate is "nothing was rendered", not "not much was". A single issue is still a listing that
+        // Minimal replaces with a count, so the note is owed.
+        IssueMarkdownFormatter.DescribeReduction(DetailLevel.Minimal, 1, false, false).ShouldNotBeEmpty();
     }
 
     /// <summary>

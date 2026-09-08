@@ -629,10 +629,14 @@ public sealed class ToolPipelineTests
         // Act
         string result = await tools.InspectAsync(report: InspectReport.Markdown, cancellationToken: Ct);
 
-        // Assert
-        result.ShouldStartWith("FULL REPORT: all 0 issue(s)");
+        // Assert — the file is named without claiming the response was reduced to fit a budget, since there
+        // is no listing for it to hold more of. What it carries is the provenance header: a dated clean bill
+        // of health for this solution at this severity over this scope.
+        result.ShouldStartWith("FULL REPORT: no issues found; the run and its scope were written to");
         result.ShouldEndWith("No issues found.");
-        File.ReadAllText(PathFromNote(result)).ShouldContain("No issues found.");
+        string document = File.ReadAllText(PathFromNote(result));
+        document.ShouldContain("No issues found.");
+        document.ShouldContain("- Scope: whole solution");
     }
 
     [Fact]
@@ -786,6 +790,47 @@ public sealed class ToolPipelineTests
         string document = File.ReadAllText(PathFromNote(result));
         document.ShouldContain("File000.cs");
         document.ShouldContain("File199.cs");
+    }
+
+    [Fact]
+    public async Task InspectAsync_DetailMinimalAndNothingFound_ReturnsOnlyTheOneLine()
+    {
+        // Arrange — the gap that let the defect ship: nothing pinned a zero-issue run at a capped level. The
+        // formatter answers "No issues found." at all five, so passing detail reduced nothing, and the note
+        // went on to describe a collapse of a listing that never existed and offer a report file for findings
+        // there are none of.
+        using FakeEnvironment environment = new();
+        environment.PlantSolution("App.sln");
+        StubJb(Fixtures.ReadSarif("empty-runs.json"));
+        ResharperTools tools = ToolHarness.Build(_processRunner, environment);
+
+        // Act
+        string result = await tools.InspectAsync(detail: InspectDetail.Minimal, cancellationToken: Ct);
+
+        // Assert
+        result.ShouldBe("No issues found.");
+    }
+
+    [Fact]
+    public async Task InspectAsync_DetailMinimalReportAndNothingFound_NamesTheFileAndNothingElse()
+    {
+        // Arrange — the same run with a report asked for. The file is still written and still named; what
+        // goes is the claim that the listing below was rendered to fit a budget.
+        using FakeEnvironment environment = new();
+        string reportRoot = environment.CreateTempDirectory();
+        environment.PlantSolution("App.sln");
+        StubJb(Fixtures.ReadSarif("empty-runs.json"));
+        ResharperTools tools = ToolHarness.Build(_processRunner, environment, reportRoot: reportRoot);
+
+        // Act
+        string result = await tools.InspectAsync(
+            report: InspectReport.Markdown, detail: InspectDetail.Minimal, cancellationToken: Ct);
+
+        // Assert
+        result.ShouldStartWith("FULL REPORT: no issues found; the run and its scope were written to");
+        result.ShouldEndWith("No issues found.");
+        result.ShouldNotContain("--- DETAIL REDUCED ---");
+        File.Exists(PathFromNote(result)).ShouldBeTrue();
     }
 
     [Fact]

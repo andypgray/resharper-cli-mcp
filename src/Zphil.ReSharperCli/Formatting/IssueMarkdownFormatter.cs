@@ -66,6 +66,15 @@ internal static class IssueMarkdownFormatter
     ///     <c>jb</c> work at all.
     /// </summary>
     /// <param name="level">The level the rendering settled at.</param>
+    /// <param name="issueCount">
+    ///     How many issues the rendering covers. At zero this returns <c>""</c>, which is this directory's
+    ///     idiom for "nothing to say" (<see cref="ConfigWarningBanner" />, <see cref="CompilationErrorNote" />
+    ///     and <see cref="InspectReportNote" /> all use it) and which <c>ProgressiveRenderer</c> reads as
+    ///     "no reduction happened, so emit no note". <see cref="Format" /> returns <c>No issues found.</c> at
+    ///     every level, so a caller that passed <c>detail</c> would otherwise be told that totals and the top
+    ///     rules were all that survived a listing that never existed, and offered a report file for findings
+    ///     there are none of. First because it is the gate that short-circuits the other two.
+    /// </param>
     /// <param name="reportWritten">
     ///     Whether this call already wrote a report. When it did, <see cref="FullReportHint" /> is omitted at
     ///     every level: <see cref="InspectReportNote" /> has already named the file, and telling a caller to
@@ -79,8 +88,11 @@ internal static class IssueMarkdownFormatter
     ///     that forgets one loses its suppression silently, which is the class of defect this shape exists
     ///     to make impossible.
     /// </param>
-    public static string DescribeReduction(DetailLevel level, bool reportWritten, bool levelWasRequested)
+    public static string DescribeReduction(
+        DetailLevel level, int issueCount, bool reportWritten, bool levelWasRequested)
     {
+        if (issueCount == 0) return "";
+
         string remedy = reportWritten ? "" : " " + FullReportHint;
         string narrowing = levelWasRequested ? "" : " " + NarrowingHint;
 

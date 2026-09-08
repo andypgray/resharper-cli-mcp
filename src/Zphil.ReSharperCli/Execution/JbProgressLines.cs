@@ -83,11 +83,14 @@ internal static class JbProgressLines
     /// <summary><c>inspectcode</c>'s announcement that the inspection sweep is starting.</summary>
     internal const string InspectingPhaseLine = "Running inspections";
 
-    /// <summary><c>cleanupcode</c>'s announcement that it is about to rewrite files.</summary>
-    private const string CleaningPhasePrefix = "Cleaning up using profile";
+    /// <summary><c>cleanupcode</c>'s announcement that it is about to rewrite files, which the profile name follows.</summary>
+    internal const string CleaningPhasePrefix = "Cleaning up using profile";
 
-    private const string AnalyzingFilePrefix = "Analyzing ";
-    private const string InspectingFilePrefix = "Inspecting ";
+    /// <summary>What precedes the file name on <c>inspectcode</c>'s per-file line during the analysis sweep.</summary>
+    internal const string AnalyzingFilePrefix = "Analyzing ";
+
+    /// <summary>What precedes the file name on <c>inspectcode</c>'s per-file line during the inspection sweep.</summary>
+    internal const string InspectingFilePrefix = "Inspecting ";
 
     /// <summary>
     ///     What <paramref name="line" /> says about the run, or <see langword="null" /> when it says nothing

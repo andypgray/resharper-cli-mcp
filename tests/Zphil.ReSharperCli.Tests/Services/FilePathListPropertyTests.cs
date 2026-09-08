@@ -4,6 +4,7 @@ using FsCheck.Xunit;
 using Shouldly;
 using Zphil.ReSharperCli.Services;
 using Zphil.ReSharperCli.Tests.TestDoubles;
+using Zphil.ReSharperCli.Tests.TestSupport;
 
 namespace Zphil.ReSharperCli.Tests.Services;
 
@@ -60,6 +61,29 @@ public sealed class FilePathListPropertyTests : IDisposable
     }
 
     [Property]
+    public Property Split_AnAlreadySplitList_IsReturnedAsItIs()
+    {
+        return Prop.ForAll(
+            EntryList().ToArbitrary(),
+            files =>
+            {
+                // Arrange
+                IReadOnlyList<string> split = FilePathList.Split(files, _solutionDirectory);
+
+                // Act
+                IReadOnlyList<string> resplit = FilePathList.Split(split, _solutionDirectory);
+
+                // Assert — the same list, not merely an equal one. "Returns files itself when nothing needed
+                // splitting" is the documented signal that a second pass changed nothing, and a caller that
+                // normalizes twice must not pay a copy for the second.
+                resplit.ShouldBeSameAs(
+                    split,
+                    $"[{string.Join(" | ", files)}] split to [{string.Join(" | ", split)}], in which no entry "
+                    + "carries a delimiter left to act on, so splitting that must hand back the very list.");
+            });
+    }
+
+    [Property]
     public Property ToIncludePattern_AnyEntryIncludingOnesThePathApisReject_NeverThrows()
     {
         return Prop.ForAll(
@@ -71,7 +95,7 @@ public sealed class FilePathListPropertyTests : IDisposable
                 // rather than crash a run the caller is already waiting on.
                 Should.NotThrow(
                     () => FilePathList.ToIncludePattern(entry, _solutionDirectory),
-                    $"An entry of {entry.Length} characters, \"{Excerpt(entry)}\", must translate or be kept "
+                    $"An entry of {entry.Length} characters, \"{HostileStrings.Excerpt(entry)}\", must translate or be kept "
                     + "verbatim, never throw.");
             });
     }
@@ -98,12 +122,6 @@ public sealed class FilePathListPropertyTests : IDisposable
             .ToList();
 
         return fragments.Count > 0 ? fragments : [entry];
-    }
-
-    /// <summary>Enough of an entry to recognise it in a failure, without printing a 40,000-character one.</summary>
-    private static string Excerpt(string entry)
-    {
-        return entry.Length <= 60 ? entry : entry[..60] + "...";
     }
 
     /// <summary>
@@ -195,7 +213,6 @@ public sealed class FilePathListPropertyTests : IDisposable
             _solutionDirectory + separator + new string('a', 40_000)
         ];
 
-        Gen<string> arbitrary = ArbMap.Default.GeneratorFor<string>().Where(entry => entry is not null);
-        return Gen.OneOf(arbitrary, Gen.Elements(corpus));
+        return HostileStrings.AnyOr(corpus);
     }
 }

@@ -85,6 +85,28 @@ internal static class JbNameGenerators
     }
 
     /// <summary>
+    ///     <paramref name="name" /> respelt in another case: each <c>A</c>–<c>Z</c> or <c>a</c>–<c>z</c>
+    ///     character independently kept, upper-cased or lower-cased, and every other character left exactly
+    ///     as it is — a non-ASCII letter included, because folding one is the mistake the code this feeds
+    ///     must not make. The whole-string variants are unioned in so the identity spelling and the two
+    ///     extremes are drawn on every seed rather than waited for: where a case-insensitive invariant only
+    ///     holds on one platform, identity is what still exercises the assertion on the others.
+    /// </summary>
+    internal static Gen<string> AsciiCaseVariant(string name)
+    {
+        Gen<string> perCharacter = Gen.CollectToArray(name, AsciiCaseVariantsOf)
+            .Select(characters => new string(characters));
+
+        Gen<string> whole = Gen.Elements(
+            name,
+            MapAsciiLetters(name, char.ToUpperInvariant),
+            MapAsciiLetters(name, char.ToLowerInvariant),
+            FlipFirstAsciiLetter(name));
+
+        return Gen.OneOf(perCharacter, whole);
+    }
+
+    /// <summary>
     ///     A non-empty run of the characters a solution file name segment is made of.
     /// </summary>
     private static Gen<string> Segment()
@@ -92,5 +114,43 @@ internal static class JbNameGenerators
         return Gen.Choose(1, 8)
             .SelectMany(length => Gen.Elements("abcXYZ019-_".ToCharArray()).ListOf(length))
             .Select(characters => new string(characters.ToArray()));
+    }
+
+    /// <summary>The spellings of one character: itself, and its ASCII case pair where it has one.</summary>
+    private static Gen<char> AsciiCaseVariantsOf(char character)
+    {
+        if (!char.IsAsciiLetter(character)) return Gen.Constant(character);
+
+        return Gen.Elements(character, char.ToUpperInvariant(character), char.ToLowerInvariant(character));
+    }
+
+    private static string MapAsciiLetters(string value, Func<char, char> map)
+    {
+        char[] mapped = value
+            .Select(character => char.IsAsciiLetter(character) ? map(character) : character)
+            .ToArray();
+
+        return new string(mapped);
+    }
+
+    /// <summary>
+    ///     <paramref name="value" /> with its first ASCII letter in the other case — the smallest respelling
+    ///     there is, and the one a per-character draw is least likely to produce on its own.
+    /// </summary>
+    private static string FlipFirstAsciiLetter(string value)
+    {
+        char[] characters = value.ToCharArray();
+        for (var index = 0; index < characters.Length; index++)
+        {
+            char character = characters[index];
+            if (!char.IsAsciiLetter(character)) continue;
+
+            characters[index] = char.IsAsciiLetterUpper(character)
+                ? char.ToLowerInvariant(character)
+                : char.ToUpperInvariant(character);
+            break;
+        }
+
+        return new string(characters);
     }
 }

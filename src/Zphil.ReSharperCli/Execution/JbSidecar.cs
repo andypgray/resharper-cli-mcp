@@ -136,6 +136,19 @@ internal static class JbSidecar
         }
     }
 
+    /// <summary>
+    ///     Folds a path to the spelling the key is computed from: separators trimmed, and Windows casing
+    ///     lowered so two spellings of one solution share a lock.
+    /// </summary>
+    /// <remarks>
+    ///     The case half keys off the operating system rather than the filesystem, which is the same
+    ///     judgement <see cref="JbCacheGenerations.NameComparison" /> makes and the one place it is argued —
+    ///     what the proxy gets wrong, which scenario reaches it, and why probing instead is not a smaller
+    ///     change. This is the call site that consequence is worst at: a second spelling derives a second
+    ///     key, so two sessions can hold two locks over one cache generation and fork it. Note that the paths
+    ///     folded here live on the solution's filesystem, not the cache home's, so a probe would have to
+    ///     answer for both.
+    /// </remarks>
     private static string Normalize(string path)
     {
         string full = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);

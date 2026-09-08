@@ -49,6 +49,40 @@ internal static class JbCacheGenerations
     ///     generation tells it apart from the forks it is sweeping up by name, and there is one right answer
     ///     to how these names compare.
     /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         The operating system stands in for the cache home's filesystem, which is what actually decides
+    ///         the answer. The proxy is right on NTFS and on ext4, and wrong in both directions: macOS's
+    ///         default APFS volume is case-insensitive and gets <see cref="StringComparison.Ordinal" />, while
+    ///         a Windows directory marked with <c>setCaseSensitiveInfo</c> and a case-insensitive Linux mount
+    ///         get <see cref="StringComparison.OrdinalIgnoreCase" />.
+    ///     </para>
+    ///     <para>
+    ///         Reaching the gap takes one solution path spelt in two cases across runs on a filesystem that
+    ///         reads both as one directory. This server never produces that on its own: it hands <c>jb</c>
+    ///         the path it resolved, and discovery reads the on-disk spelling back. It takes a hand-typed
+    ///         <c>solutionPath</c> argument or <c>JB_SOLUTION_PATH</c> in another case, or a <c>jb</c> run
+    ///         made outside this server.
+    ///     </para>
+    ///     <para>
+    ///         What that costs is a generation this server stops recognising as its own, and every
+    ///         consequence points away from deleting: a reset declines its own generation, a transplant
+    ///         misses a donor, a clean run stamps <see cref="StampOutcome.NoGenerationMatched" /> and raises
+    ///         the once-per-session naming-drift warning falsely, and the cache-state line opens a warm run
+    ///         as cold. Nothing is ever wrongly deleted. The one consequence that is not a missed
+    ///         optimisation is the lock key: <c>JbSidecar</c> folds case by this same switch, so the second
+    ///         spelling derives a second key, and two sessions each holding a lock over one generation fork
+    ///         it.
+    ///     </para>
+    ///     <para>
+    ///         It stays because the only correct fix is probing the filesystem rather than picking a better
+    ///         switch, and one probe would not be enough: the lock key covers paths on the <em>solution's</em>
+    ///         filesystem, not the cache home's, so the two can disagree. There is no macOS machine here to
+    ///         prove either against, and macOS is already the platform whose weaker guarantees are named
+    ///         rather than assumed — <see cref="ChildProcessLifetime" /> has no orphan primitive there.
+    ///         Revisit on a report from one.
+    ///     </para>
+    /// </remarks>
     internal static StringComparison NameComparison =>
         OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
 

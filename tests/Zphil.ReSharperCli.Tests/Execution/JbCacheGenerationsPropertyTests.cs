@@ -48,6 +48,21 @@ public sealed class JbCacheGenerationsPropertyTests
                 new LongerSolutionCase(generation.DirectoryName, pair.Shorter, pair.Longer));
     }
 
+    /// <summary>
+    ///     A generation directory built from another ASCII-case spelling of the solution name it is then
+    ///     parsed against.
+    /// </summary>
+    private static Gen<CaseVariantCase> CaseVariantGeneration()
+    {
+        Gen<(string Name, string Variant)> spellings = JbNameGenerators.SolutionName()
+            .SelectMany(JbNameGenerators.AsciiCaseVariant, (name, variant) => (Name: name, Variant: variant));
+
+        return spellings.SelectMany(
+            pair => JbNameGenerators.GenerationDirectoryName(pair.Variant),
+            (pair, generation) =>
+                new CaseVariantCase(generation.DirectoryName, pair.Name, pair.Variant, generation.Hash));
+    }
+
     [Property]
     public Property MatchHash_ThisSolutionsOwnGeneration_ReadsBackTheHashVerbatim()
     {
@@ -85,9 +100,55 @@ public sealed class JbCacheGenerationsPropertyTests
             });
     }
 
+    /// <summary>
+    ///     The same ownership predicate across a respelling: a generation built from one spelling of a
+    ///     solution name is still that solution's wherever <see cref="JbCacheGenerations.NameComparison" />
+    ///     reads the two spellings as one name. Stated through that property rather than behind a platform
+    ///     skip, so it means the same thing on every operating system — on Windows every draw exercises it,
+    ///     and elsewhere the identity spellings the generator draws deliberately do.
+    /// </summary>
+    /// <remarks>
+    ///     The converse is left unpinned on purpose. Off Windows the comparison is ordinal, which stands in
+    ///     for the cache home's filesystem and is wrong on a case-insensitive one such as macOS's default
+    ///     APFS volume; that gap is argued where the switch lives, and is not a promise a test should make on
+    ///     its behalf. Asserting only the direction that holds everywhere is what keeps this from freezing
+    ///     the proxy in place.
+    /// </remarks>
+    [Property]
+    public Property MatchHash_ASolutionNameSpeltInAnotherCase_MatchesWhereverNameComparisonCallsItTheSameName()
+    {
+        return Prop.ForAll(
+            CaseVariantGeneration().ToArbitrary(),
+            testCase =>
+            {
+                if (!string.Equals(testCase.Variant, testCase.SolutionName, JbCacheGenerations.NameComparison))
+                    return;
+
+                // Act
+                string? hash = JbCacheGenerations.MatchHash(testCase.DirectoryName, testCase.SolutionName);
+
+                // Assert
+                hash.ShouldBe(
+                    testCase.Hash,
+                    $"\"{testCase.DirectoryName}\" was composed from \"{testCase.Variant}\", which compares "
+                    + $"equal to \"{testCase.SolutionName}\", so that solution owns it — and a parser "
+                    + "declining it leaves the solution owning none of its own cache.");
+            });
+    }
+
     /// <summary>A generation directory, the solution name it was composed from, and the hash it carries.</summary>
     private sealed record OwnGenerationCase(string DirectoryName, string SolutionName, string Hash);
 
     /// <summary>A longer solution's generation directory, and the shorter name it must not answer to.</summary>
     private sealed record LongerSolutionCase(string DirectoryName, string ShorterName, string LongerName);
+
+    /// <summary>
+    ///     A generation directory, the solution name it is parsed against, the spelling of that name it was
+    ///     actually composed from, and the hash it carries.
+    /// </summary>
+    private sealed record CaseVariantCase(
+        string DirectoryName,
+        string SolutionName,
+        string Variant,
+        string Hash);
 }

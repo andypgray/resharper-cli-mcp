@@ -24,7 +24,10 @@ The second candidate matters because an MCP client starts this server as a child
 *not* inherit your shell's `PATH` — a `jb` that works in your terminal can still be invisible here. At
 `Debug` each candidate leaves a line with what it answered and how long it took, so one that fails before
 a later one succeeds is accounted for rather than reading as an unexplained pause before the first call.
-When both candidates fail, the error reports what each one said and how to install the tool. Reference:
+When both candidates fail, the error reports what each one said, and offers install guidance only when
+neither could be started. A probe killed at its 30-second cap, or one that runs and exits non-zero, proves
+`jb` is installed; on a machine busy enough to lose that half-minute at startup the remedy is to retry the
+call, not to install the tool again. Reference:
 <https://www.jetbrains.com/help/resharper/ReSharper_Command_Line_Tools.html>
 
 ## Which solution a call runs against

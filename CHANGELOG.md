@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A `jb` that is installed but too slow to answer is no longer reported as one that is missing. Each
+  candidate is probed with `jb inspectcode --version` under a 30-second cap, and a machine loaded enough —
+  several large solutions analysed at once — can push a probe past it. The cause is contention rather than
+  a broken candidate, so it tends to reach every candidate at once, and the install instructions that
+  followed named a remedy that could not work. Any candidate that starts proves the tool is installed,
+  whether it was killed at the cap or exited non-zero, so those instructions now appear only when no
+  candidate could be started at all. A timed-out probe reports the cap it hit and that retrying is the
+  remedy; one that ran and failed points at the probe command to run by hand. The cap is unchanged at 30
+  seconds, and the setup guide states the same split.
+
 - `resharper_inspect` now names a `files` entry that resolves to no file, instead of answering as though the
   whole scope had been inspected. It reports rather than fails: the tool is read-only, nothing was mutated,
   and a scoped run is measured to take about as long as a solution-wide one, so failing the call would charge

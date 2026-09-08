@@ -95,9 +95,10 @@ public sealed class JbLocatorTests : IDisposable
         // Act
         var exception = await Should.ThrowAsync<UserErrorException>(() => locator.LocateAsync(Ct));
 
-        // Assert
-        exception.Message.ShouldStartWith("JetBrains ReSharper CLI tools not found.");
+        // Assert — it ran, so the remedy is not to install it again.
+        exception.Message.ShouldStartWith("JetBrains ReSharper CLI tools found, but no candidate reported a version.");
         exception.Message.ShouldContain("exited with code 0 but reported no version");
+        exception.Message.ShouldNotContain("dotnet tool install");
     }
 
     [Fact]
@@ -132,7 +133,7 @@ public sealed class JbLocatorTests : IDisposable
     }
 
     [Fact]
-    public async Task LocateAsync_AllCandidatesFail_ThrowsWithInstallGuidanceNamingBothCandidates()
+    public async Task LocateAsync_NoCandidateCanBeStarted_ThrowsWithInstallGuidanceNamingBothCandidates()
     {
         // Arrange
         _processRunner
@@ -148,6 +149,87 @@ public sealed class JbLocatorTests : IDisposable
         exception.Message.ShouldContain("dotnet tool install JetBrains.ReSharper.GlobalTools -g");
         exception.Message.ShouldContain("jb:");
         exception.Message.ShouldContain(DotnetToolsCandidate);
+    }
+
+    [Fact]
+    public async Task LocateAsync_EveryProbeTimesOut_SaysJbIsInstalledRatherThanMissing()
+    {
+        // Arrange — the field shape: two servers starting at once, both probes killed at the cap by a busy
+        // machine. Every candidate failed, but a process has to start before it can be killed, so telling
+        // this session to install jb would send it to fix a tool it already has.
+        _processRunner
+            .AnyRun()
+            .Throws(new ProcessTimeoutException("'jb' timed out after 30 seconds."));
+        JbLocator locator = new(_processRunner, _environment, NullLogger<JbLocator>.Instance);
+
+        // Act
+        var exception = await Should.ThrowAsync<UserErrorException>(() => locator.LocateAsync(Ct));
+
+        // Assert
+        exception.Message.ShouldStartWith("JetBrains ReSharper CLI tools found, but no candidate reported a version.");
+        exception.Message.ShouldContain("jb is installed and installing it again will not help");
+        exception.Message.ShouldContain("killed after 30 seconds");
+        exception.Message.ShouldContain("retry the call");
+        exception.Message.ShouldNotContain("dotnet tool install");
+    }
+
+    [Fact]
+    public async Task LocateAsync_OneCandidateMissingAndAnotherTimesOut_StillReportsJbAsInstalled()
+    {
+        // Arrange — one candidate proving a jb exists is enough, however the others ended.
+        Probe("jb").Throws(new Win32Exception("The system cannot find the file specified."));
+        Probe(DotnetToolsCandidate).Throws(new ProcessTimeoutException("timed out"));
+        JbLocator locator = new(_processRunner, _environment, NullLogger<JbLocator>.Instance);
+
+        // Act
+        var exception = await Should.ThrowAsync<UserErrorException>(() => locator.LocateAsync(Ct));
+
+        // Assert
+        exception.Message.ShouldContain("jb is installed and installing it again will not help");
+        exception.Message.ShouldContain("The system cannot find the file specified.");
+        exception.Message.ShouldNotContain("dotnet tool install");
+    }
+
+    [Theory]
+    [InlineData(1, "some jb error", "  jb: some jb error")]
+    [InlineData(2, "", "  jb: exited with code 2")]
+    public async Task LocateAsync_EveryProbeExitsNonZero_PointsAtTheProbeCommandAndReportsTheDetail(
+        int exitCode, string standardError, string expectedDetail)
+    {
+        // Arrange — a jb that runs and fails is installed too, so it gets the other half of the same split.
+        // What it wrote to standard error is the detail; for a candidate that wrote nothing, the exit code
+        // is the whole of what can be said about it.
+        _processRunner
+            .AnyRun()
+            .Returns(new ProcessResult(exitCode, string.Empty, standardError));
+        JbLocator locator = new(_processRunner, _environment, NullLogger<JbLocator>.Instance);
+
+        // Act
+        var exception = await Should.ThrowAsync<UserErrorException>(() => locator.LocateAsync(Ct));
+
+        // Assert
+        exception.Message.ShouldContain("jb is installed and installing it again will not help");
+        exception.Message.ShouldContain("Run `jb inspectcode --version` yourself");
+        exception.Message.ShouldContain(expectedDetail);
+        exception.Message.ShouldNotContain("dotnet tool install");
+    }
+
+    [Fact]
+    public async Task LocateAsync_ProbeTimesOut_ReportsTheCapWithoutRepeatingTheExecutableName()
+    {
+        // Arrange — the clause follows the candidate's name in both the Tried list and the log line, so the
+        // exception's own "'jb' timed out after ..." wording would name the executable twice over.
+        _processRunner
+            .AnyRun()
+            .Throws(new ProcessTimeoutException("'jb' timed out after 30 seconds."));
+
+        // Act
+        var exception = await Should.ThrowAsync<UserErrorException>(() => LoggingLocator().LocateAsync(Ct));
+
+        // Assert
+        exception.Message.ShouldContain("  jb: timed out after 30 seconds");
+        exception.Message.ShouldNotContain("'jb' timed out");
+        ProbeLineFor("jb").Property("ProbeOutcome").ShouldBe("timed out after 30 seconds");
     }
 
     [Fact]
@@ -170,7 +252,7 @@ public sealed class JbLocatorTests : IDisposable
     {
         // Arrange — the case nothing in the log could account for. A throw from the spawn escapes before
         // ProcessRunner writes either of its own lines, and a candidate that fails before a later one
-        // succeeds never reaches the "No jb found" summary, so the time it spent was attributed to nothing.
+        // succeeds never reaches the "No jb reported a version" summary, so its time was attributed to nothing.
         Probe("jb").Throws(new Win32Exception("The system cannot find the file specified."));
         Probe(DotnetToolsCandidate).Returns(new ProcessResult(0, VersionOutput, string.Empty));
 

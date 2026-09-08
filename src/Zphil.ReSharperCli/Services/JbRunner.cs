@@ -44,15 +44,17 @@ internal sealed class JbExitCodeException(string message, int exitCode, string s
 ///         another run still gets its own full budget.
 ///     </para>
 ///     <para>
-///         Two entry points, one spawn. <see cref="RunAsync" /> serves a call the user made: it queues for
-///         the lock and throws on failure. <see cref="TryRunAsync" /> serves speculative work — today only
-///         <see cref="CacheWarmer" /> — and does the opposite at every turn: it skips rather than queues, and
-///         reports rather than throws. What it reports is a <see cref="SpeculativeRunOutcome" /> naming
+///         Two entry points, one spawn. <see cref="RunAsync" /> serves a call the user made: it takes this
+///         server's <see cref="JbRunSlot" />, queues for the lock, and throws on failure.
+///         <see cref="TryRunAsync" /> serves speculative work — today only <see cref="CacheWarmer" /> — and
+///         does the opposite at every turn: it skips rather than queues, at the slot as much as at the lock,
+///         and reports rather than throws. What it reports is a <see cref="SpeculativeRunOutcome" /> naming
 ///         <em>which</em> of those it did, so a caller summarising a pass cannot contradict the run lines
 ///         underneath it. Both go through <see cref="SpawnAsync" />, which keeps this class the
-///         sole place a <c>jb</c> process starts. Which of the two wins when they collide is
-///         <see cref="JbRunYield" />'s to say, not this class's: the rule belongs to every caller the user is
-///         waiting on, and a cache reset is one that runs no <c>jb</c> at all.
+///         sole place a <c>jb</c> process starts — and so the one place the slot has to be taken. Which of
+///         the two wins when they collide is <see cref="JbRunYield" />'s to say, not this class's: the rule
+///         belongs to every caller the user is waiting on, and a cache reset is one that runs no <c>jb</c>
+///         at all.
 ///     </para>
 ///     <para>
 ///         Both also give <see cref="CacheTransplanter" /> its one chance to seed the cache, in the window
@@ -77,6 +79,7 @@ internal sealed class JbRunner(
     IProcessRunner processRunner,
     JbRunLock runLock,
     JbRunYield runYield,
+    JbRunSlot runSlot,
     CacheTransplanter transplanter,
     TimeSpan runTimeout,
     ILogger<JbRunner> logger,
@@ -139,12 +142,20 @@ internal sealed class JbRunner(
         var timedOut = false;
         try
         {
-            // Armed before the queue rather than at the spawn, and that placement is the point: JbRunLock's
-            // wait is bounded by the run cap, so a caller can sit here for ten minutes with no jb in
-            // existence to stream. Streaming jb's output alone could never have covered this stretch, and it
-            // is exactly the stretch a second raw jb against the same cache creates.
+            // Armed before either queue rather than at the spawn, and that placement is the point: this
+            // call waits for the slot and then for JbRunLock, whose wait is bounded by the run cap, so a
+            // caller can sit here for ten minutes with no jb in existence to stream. Streaming jb's output
+            // alone could never have covered this stretch, and it is exactly the stretch a second raw jb
+            // against the same cache creates. Its opening phase is the slot wait, which is the first thing
+            // this call does.
             await using JbRunProgress? progress = JbRunProgress.Reporting(
-                arguments[0], config.SolutionPath, runTimeout, onProgress, logger, heartbeatInterval);
+                arguments[0],
+                config.SolutionPath,
+                runTimeout,
+                onProgress,
+                logger,
+                JbRunPhase.Turn,
+                heartbeatInterval);
 
             // Entered before queueing, not after: a call arriving ten seconds into a cold pre-warm would
             // otherwise pay the whole queue wait and then its own full run, which is strictly worse than
@@ -153,13 +164,22 @@ internal sealed class JbRunner(
 
             // Timed here rather than read back from the lock, because what the run line reports is what this
             // call waited — the reclaim above it included, since standing a pre-warm down costs the reap of a
-            // killed jb tree and that time is just as much the caller's as the queue is.
+            // killed jb tree and that time is just as much the caller's as the queue is, and the slot wait
+            // below for the same reason.
             var queued = Stopwatch.StartNew();
 
-            // Both scoped inside this try on purpose, so the lease is released and the claim stood down
-            // before the finally below announces a timeout. Announce while still holding either and the
-            // re-armed pass would settle as a skip — the re-arm would buy nothing, silently. Disposal is the
-            // reverse of declaration, so the lease goes first and the count outlives it by a hair.
+            // All three scoped inside this try on purpose, so the lease is released, the slot given up and
+            // the claim stood down before the finally below announces a timeout. Announce while still
+            // holding any of them and the re-armed pass would settle as a skip — the re-arm would buy
+            // nothing, silently. Disposal is the reverse of declaration, so the lease goes first, then the
+            // slot, and the count outlives both by a hair.
+            //
+            // Slot before lock, never the other way round: the lock's lease is cross-process, and holding it
+            // while waiting on a resource local to this process would make another session queue behind our
+            // own fan-out. The transplant then runs inside both, which is where it has to be.
+            using IDisposable slot = await runSlot.TakeAsync(arguments[0], config.SolutionPath, cancellationToken);
+
+            progress?.Queued();
             using IDisposable runLease = await runLock.AcquireAsync(config.SolutionPath, config.CacheHome, cancellationToken);
             TimeSpan queueWait = queued.Elapsed;
 
@@ -218,6 +238,21 @@ internal sealed class JbRunner(
 
         try
         {
+            // Skip rather than queue, at the slot as much as at the lock. Unreachable as the callers stand —
+            // a caller the user is waiting on counts itself in before it takes the slot, and there is at most
+            // one speculative pass — but the rule is the class's rather than its callers', and holding the
+            // slot is what would make a foreground call on another solution wait out the reap of the tree
+            // this pass is about to have killed instead of running beside it.
+            using IDisposable? slot = runSlot.TryTake(arguments[0], config.SolutionPath);
+            if (slot is null)
+            {
+                logger.LogDebug(
+                    "Skipping speculative work on {SolutionPath}: another jb run of this server is already in flight",
+                    config.SolutionPath);
+
+                return SpeculativeRunOutcome.NotStarted;
+            }
+
             using IDisposable? runLease = runLock.TryAcquire(config.SolutionPath, config.CacheHome);
             if (runLease is null)
             {

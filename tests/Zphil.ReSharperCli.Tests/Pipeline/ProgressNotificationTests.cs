@@ -165,6 +165,74 @@ public sealed class ProgressNotificationTests
         harness.Wire.LastProgressIndex.ShouldBeLessThan(harness.Wire.ToolResultIndex);
     }
 
+    /// <summary>
+    ///     The wait no cache can explain. Two solutions are two cache generations, so the run lock lets both
+    ///     calls straight through; what serializes them is the per-server bound on <c>jb</c> processes, and
+    ///     this is the only channel through which the caller sitting behind the other one ever hears about it.
+    /// </summary>
+    [Fact]
+    public async Task CallTool_TwoCallsAgainstTwoSolutions_TheSecondHearsItWaitingForTheFirst()
+    {
+        // Arrange
+        await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
+        string first = harness.Environment.CreateCheckout("First.slnx");
+        string second = harness.Environment.CreateCheckout("Second.slnx");
+
+        TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        RouteStreamingJb(harness.ProcessRunner, release.Task);
+
+        Recorder holding = new();
+        Recorder waiting = new();
+
+        // Act — the first call is watched too, and only for its ordering: two calls issued back to back race
+        // to reach the server, so "this one is the holder" has to be observed rather than assumed. A beat
+        // naming its analysed files is proof its jb is running and the slot is taken.
+        Task<CallToolResult> held = Call(harness, first, holding);
+        await holding.WaitUntilAsync(
+            () => holding.Messages.Any(message => message.Contains("analyzing 2 files")),
+            "the first call's run to be under way and holding the slot",
+            Ct);
+
+        Task<CallToolResult> queued = Call(harness, second, waiting);
+
+        try
+        {
+            // The wait has to outlast JbRunLock.NotableWait before a beat names the run ahead, so this waits
+            // the second out rather than settling for the immediate "starting".
+            await waiting.WaitUntilAsync(
+                () => waiting.Messages.Any(message => message.Contains("waiting for this server's other jb run")),
+                "a beat naming the wait for this server's other run",
+                Ct);
+        }
+        finally
+        {
+            // Released on every path rather than at scope exit: the queued call is behind the held one, so a
+            // failed wait would otherwise leave both parked on a source nothing was going to complete.
+            release.SetResult();
+        }
+
+        CallToolResult heldResult = await held.WaitAsync(Generous, Ct);
+        CallToolResult queuedResult = await queued.WaitAsync(Generous, Ct);
+
+        // Assert — both calls got what they came for, in order, and the second's messages are about its own
+        // solution rather than the one it waited behind.
+        heldResult.IsError.ShouldNotBe(true);
+        queuedResult.IsError.ShouldNotBe(true);
+        waiting.Messages.ShouldAllBe(message => message.Contains("inspectcode on Second.slnx: "));
+        waiting.Messages.ShouldContain(message => message.Contains("waiting for this server's other jb run"));
+
+        // No cap in that clause: nothing is armed while a call waits for the slot, so charging the wait
+        // against the run budget would send a caller to raise the one number that was not the problem.
+        waiting.Messages
+            .Where(message => message.Contains("waiting for this server's other jb run"))
+            .ShouldAllBe(message => !message.Contains("cap"));
+
+        // Two conversations wrote to this wire, so its counter is not read back here — the single-call tests
+        // above own that contract. What is still true is that the server wrote at least what both clients
+        // heard.
+        harness.Wire.ProgressValues.Count.ShouldBeGreaterThanOrEqualTo(holding.Count + waiting.Count);
+    }
+
     [Fact]
     public async Task CallTool_AClientThatWantsNoProgress_GetsAnUnchangedResultAndAnUnchangedSchema()
     {
@@ -215,6 +283,21 @@ public sealed class ProgressNotificationTests
         harness.Warmer.Outcome.ShouldBe(WarmUpOutcome.Warmed);
         observers.ShouldNotBeEmpty();
         observers.ShouldAllBe(observer => observer == null);
+    }
+
+    /// <summary>
+    ///     One watched <c>resharper_inspect</c> against a named solution — the shape both halves of the
+    ///     two-solution test take, so the only difference between them is which solution and which recorder.
+    /// </summary>
+    private static Task<CallToolResult> Call(McpPipelineHarness harness, string solutionPath, Recorder progress)
+    {
+        return harness.Client
+            .CallToolAsync(
+                ResharperTools.InspectToolName,
+                new Dictionary<string, object?> { ["solutionPath"] = solutionPath },
+                progress,
+                cancellationToken: Ct)
+            .AsTask();
     }
 
     /// <summary>

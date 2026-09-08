@@ -72,6 +72,17 @@ internal sealed class FakeEnvironment : IEnvironment, IDisposable
     }
 
     /// <summary>
+    ///     <see cref="CreateSolutionPath" /> with an empty solution file written at it: the shape of a
+    ///     checkout that is still there, where the bare path is the shape of one that has been deleted.
+    /// </summary>
+    public string CreateCheckout(string solutionFileName)
+    {
+        string path = CreateSolutionPath(solutionFileName);
+        File.WriteAllText(path, string.Empty);
+        return path;
+    }
+
+    /// <summary>
     ///     Write an empty solution file called <paramref name="solutionFileName" /> in
     ///     <see cref="CurrentDirectory" /> — where discovery looks first — and return its path. For the
     ///     pipeline tests, whose server resolves its solution the way the production default does.

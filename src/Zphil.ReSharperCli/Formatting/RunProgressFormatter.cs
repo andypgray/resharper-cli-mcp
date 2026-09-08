@@ -4,8 +4,8 @@ namespace Zphil.ReSharperCli.Formatting;
 
 /// <summary>
 ///     Renders one <see cref="JbRunProgressSnapshot" /> as the single line an MCP progress notification
-///     carries. Pure, like every other formatter here: <see cref="JbRunProgress" /> owns the state and the
-///     timer, and this owns nothing.
+///     carries. Pure, like every other formatter here: <see cref="JbRunProgress" /> — the fourth of the five
+///     policies over a run — owns the state and the timer, and this owns nothing.
 /// </summary>
 /// <remarks>
 ///     <para>
@@ -29,9 +29,10 @@ internal static class RunProgressFormatter
     {
         var prefix = $"{state.Subcommand} on {Path.GetFileName(state.SolutionPath)}: ";
 
-        // The first heartbeat is immediate and lands while the run is still nominally queued; at that
-        // instant "waiting for another run" would be a claim about another session that nothing has
-        // established. The snapshot owns the judgement — see JbRunProgressSnapshot.JustArrived.
+        // The first heartbeat is immediate and lands while the run is still nominally waiting — for this
+        // server's slot, or for the cache generation behind it; at that instant "waiting for another run"
+        // would be a claim about another run that nothing has established. The snapshot owns the judgement —
+        // see JbRunProgressSnapshot.JustArrived.
         if (state.JustArrived) return prefix + "starting";
 
         string clause = Clause(state);
@@ -45,6 +46,9 @@ internal static class RunProgressFormatter
     {
         return state.Phase switch
         {
+            // No cap, because nothing is armed yet, and no holder either: the run ahead can change while
+            // this caller waits, and the log line names it where naming it is worth a wrong answer's risk.
+            JbRunPhase.Turn => "waiting for this server's other jb run to finish (it runs one at a time)",
             JbRunPhase.Queued => "waiting for another run on this solution's ReSharper cache",
             JbRunPhase.Seeding => "copying a sibling checkout's warm cache",
 

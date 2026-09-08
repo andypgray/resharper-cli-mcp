@@ -82,20 +82,21 @@ internal sealed class CacheTransplanter(
     internal const string InProgressSuffix = ".transplanting";
 
     /// <summary>
-    ///     Long enough to outlast a donor's marker being rewritten at the end of someone else's run, long
-    ///     enough to outlast the reap of a pre-warm this very caller has just cancelled, and short enough to
-    ///     stay invisible against the cold analysis it exists to avoid.
+    ///     Long enough to outlast a donor's marker being rewritten at the end of someone else's run, and
+    ///     short enough to stay invisible against the cold analysis it exists to avoid.
     /// </summary>
     /// <remarks>
-    ///     The second of those is what fixes the number rather than merely bounding it, and it is the one
-    ///     nothing here can see: a caller the user is waiting on cancels the speculative pass before it
-    ///     queues for its own lease (<see cref="JbRunner" />), and across two solutions that lease is
-    ///     uncontended and granted at once — so it can arrive here while the pass it just killed is still
-    ///     holding the donor's. That lease drops only once <see cref="ProcessRunner" /> has reaped the
-    ///     killed tree, so waiting less than <see cref="ProcessRunner.KilledTreeReapBudget" /> would turn a
-    ///     cancelled pre-warm into a declined donor and a cold run — the exact run this exists to avoid, in
-    ///     the worktree configuration it was built for. Equality is enough without a margin because the kill
-    ///     begins strictly before this wait does.
+    ///     It used to be fixed by a second requirement, in this process: a caller the user is waiting on
+    ///     cancels the speculative pass before it queues for its own lease
+    ///     (<see cref="JbRunner" />), and across two solutions that lease was uncontended and granted at
+    ///     once — so it could arrive here while the pass it had just killed still held the donor's, which
+    ///     drops only once <see cref="ProcessRunner" /> has reaped the killed tree. <see cref="JbRunSlot" />
+    ///     closes that: the killed pass holds this server's slot until it is reaped, so a caller for another
+    ///     solution now arrives strictly after rather than beside it. The value stays where it is, because
+    ///     the same wait is still served for the case the slot cannot reach — a donor held by another
+    ///     server process, or by a <c>jb</c> started by hand — and
+    ///     <see cref="ProcessRunner.KilledTreeReapBudget" /> is a measured bound on how long a departing
+    ///     holder takes to let go.
     /// </remarks>
     internal static readonly TimeSpan DefaultDonorLockPatience = ProcessRunner.KilledTreeReapBudget;
 

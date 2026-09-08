@@ -5,8 +5,9 @@ namespace Zphil.ReSharperCli.Execution;
 /// <summary>
 ///     Who outranks whom for the cache generation: a caller the user is waiting on always wins, and
 ///     speculative work either stands down or is taken off it. The third policy over a <c>jb</c> run,
-///     beside <see cref="JbRunLock" /> — who may run at all — and <see cref="JbRunTimeout" /> — for how
-///     long.
+///     beside <see cref="JbRunLock" /> — who may run at all — <see cref="JbRunTimeout" /> — for how long —
+///     <see cref="JbRunProgress" /> — how it reports itself — and <see cref="JbRunSlot" /> — how many run
+///     at once.
 /// </summary>
 /// <remarks>
 ///     <para>
@@ -25,17 +26,26 @@ namespace Zphil.ReSharperCli.Execution;
 ///         analysis of a whole solution whatever the report is narrowed to. Keying it would set that
 ///         analysis going beside the call already racing the run cap, and would hold the speculative
 ///         solution's lease for minutes — which is exactly the state <c>CacheTransplanter</c> reads as "no
-///         donor" when the next cold checkout comes looking for one. What leaving it costs is one
-///         speculative pass: a server pointed at two solutions — a client that resolves a worktree
-///         separately from its main checkout is today's only such shape — never pre-warms the one nothing
-///         calls, for the life of the process, and nothing re-arms it, since the only re-arm is a
-///         foreground run hitting the cap and it carries that run's own configuration, while the trigger
-///         that starts the first pass fires once per host. One pass nobody is waiting on, against a cold
-///         analysis running beside a call that is already late.
+///         donor" when the next cold checkout comes looking for one. <see cref="JbRunSlot" /> applies the
+///         same partition to the calls themselves, one step further out: two calls against different
+///         solutions contend for nothing this or the lock can see, and share the machine rather than the
+///         work. What leaving this process-wide costs is one speculative pass: a server pointed at two
+///         solutions — a client that resolves a worktree separately from its main checkout is today's only
+///         such shape — never pre-warms the one nothing calls, for the life of the process, and nothing
+///         re-arms it, since the only re-arm is a foreground run hitting the cap and it carries that run's
+///         own configuration, while the trigger that starts the first pass fires once per host. One pass
+///         nobody is waiting on, against a cold analysis running beside a call that is already late.
 ///     </para>
 ///     <para>
 ///         In-process only. A pre-warm running in another server process cannot be yielded to, and a call
-///         there queues behind it exactly as it queues behind another session's real call.
+///         there queues behind it exactly as it queues behind another session's real call. What that costs
+///         was measured on 2026-08-27, two sessions on one repository: a call queued 168 s behind the other
+///         session's pre-warm of the same solution, then ran warm in 54 s. The 168 s is not what a
+///         stand-down would have saved, though, and reading it that way is the trap. The pass was building
+///         the very cache the call then ran warm on, so what the call paid over running cold itself was at
+///         most one warm run, less whatever in-flight work a cancel would have thrown away. Once in 33
+///         foreground acquisitions over seven days, against a sidecar-and-polling protocol between
+///         processes of possibly different versions — which is why there is no cross-process stand-down.
 ///     </para>
 ///     <para>
 ///         <see cref="Interlocked" /> throughout, and no member waits on anything: cancelling a pass can
@@ -112,7 +122,9 @@ internal sealed class JbRunYield(ILogger<JbRunYield> logger)
 
         Reclaim();
 
-        return new ForegroundClaim(this);
+        // Stood down once and only once: a double dispose would drop the count below what is in flight and
+        // let a pre-warm start behind a live call, which is the bug the count replaced a latch to avoid.
+        return new ReleaseOnce(() => Interlocked.Decrement(ref _foregroundCallers));
     }
 
     /// <summary>
@@ -195,24 +207,6 @@ internal sealed class JbRunYield(ILogger<JbRunYield> logger)
         internal void Cancel()
         {
             _source.Cancel();
-        }
-    }
-
-    /// <summary>
-    ///     One caller the user is waiting on, counted in. Releases once and only once — the shape
-    ///     <c>JbRunLock.Holder</c> already uses — because a double dispose would drop the count below what
-    ///     is in flight and let a pre-warm start behind a live call, which is the bug the count replaced a
-    ///     latch to avoid.
-    /// </summary>
-    private sealed class ForegroundClaim(JbRunYield owner) : IDisposable
-    {
-        private int _disposed;
-
-        public void Dispose()
-        {
-            if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
-
-            Interlocked.Decrement(ref owner._foregroundCallers);
         }
     }
 }

@@ -4,7 +4,7 @@ namespace Zphil.ReSharperCli.Execution;
 ///     Where a <c>jb</c> run has got to, in the order a run passes through them.
 /// </summary>
 /// <remarks>
-///     The first three are this server's own doing and are known without reading a line of <c>jb</c>'s
+///     The first four are this server's own doing and are known without reading a line of <c>jb</c>'s
 ///     output; the last two are <c>jb</c>'s, and are reached only when it says so. That split is why
 ///     <see cref="Starting" /> exists as a phase of its own rather than being folded into
 ///     <see cref="Analyzing" />: <c>jb</c> spends its first half-minute loading the solution model and
@@ -13,6 +13,12 @@ namespace Zphil.ReSharperCli.Execution;
 /// </remarks>
 internal enum JbRunPhase
 {
+    /// <summary>
+    ///     Waiting for this server's slot: another run of this server holds it, whichever solution that run
+    ///     is on.
+    /// </summary>
+    Turn,
+
     /// <summary>Queueing for the cache generation's lease. No <c>jb</c> exists yet, and none can.</summary>
     Queued,
 

@@ -16,15 +16,34 @@ public sealed class RunProgressFormatterTests
 
     private static readonly string SolutionPath = Path.Combine("C:", "repos", "loadbearing", "LoadBearing.slnx");
 
-    [Fact]
-    public void Format_TheFirstBeat_SaysStartingRatherThanBlamingAnotherRun()
+    [Theory]
+    [InlineData(nameof(JbRunPhase.Turn))]
+    [InlineData(nameof(JbRunPhase.Queued))]
+    public void Format_TheFirstBeatOfEitherWait_SaysStartingRatherThanBlamingAnotherRun(string phaseName)
     {
-        // The first beat is immediate and lands while the run is nominally queued. At that instant nothing
-        // has established that anyone else holds the cache, so "waiting for another run" would be a claim
-        // about another session that has not been made.
-        string message = Format(JbRunPhase.Queued, TimeSpan.FromMilliseconds(3));
+        // The first beat is immediate and lands in whichever wait the run opens in: the slot's for a jb
+        // run, the lock's for a reset. At that instant nothing has established that this server is running
+        // anything else, or that another session holds the cache, so "waiting for another run" would be a
+        // claim that has not been made. The rows are names because the enum is internal and a public test
+        // method may not take one.
+        var phase = Enum.Parse<JbRunPhase>(phaseName);
+
+        string message = Format(phase, TimeSpan.FromMilliseconds(3));
 
         message.ShouldBe("inspectcode on LoadBearing.slnx: starting");
+    }
+
+    [Fact]
+    public void Format_AWaitForThisServersOtherRun_SaysSoWithoutNamingIt()
+    {
+        // The bound is per server rather than per solution, so this wait is not about the caller's own
+        // cache and says nothing about it. No holder either: the run ahead can change while this caller
+        // waits, and the log line is where naming it is worth that risk. No cap, because nothing is armed.
+        string message = Format(JbRunPhase.Turn, TimeSpan.FromSeconds(123));
+
+        message.ShouldBe(
+            "inspectcode on LoadBearing.slnx: waiting for this server's other jb run to finish "
+            + "(it runs one at a time) — 2 minutes 3 seconds");
     }
 
     [Fact]

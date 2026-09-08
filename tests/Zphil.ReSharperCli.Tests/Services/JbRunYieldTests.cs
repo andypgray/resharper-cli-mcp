@@ -179,6 +179,54 @@ public sealed class JbRunYieldTests : IDisposable
     }
 
     [Fact]
+    public async Task ForegroundRun_OnAnotherSolution_StandsThePreWarmDownAndWaitsForItsReap()
+    {
+        // Arrange — the precedence is process-wide, so a call against one solution reclaims from a pre-warm
+        // of another. The bound on jb processes is too, which is what makes the wait below a wait rather
+        // than a second run beside the dying one.
+        Task<SpeculativeRunOutcome> preWarm = _runner.TryRunAsync(_config, WarmUpArguments, Ct);
+        await _probe.WaitForNextStartAsync(Ct);
+
+        var startedWhenCancelled = 0;
+        _probe.OnCancelled = () => startedWhenCancelled = _probe.Runs;
+
+        // Act
+        ResolvedConfig other = Configs.Bare(_environment.CreateSolutionPath("Other.sln"), _cacheHome);
+        Task<ProcessResult> foreground = _runner.RunAsync(other, ForegroundArguments, Ct);
+        await _probe.WaitForNextStartAsync(Ct);
+        _probe.ReleaseAll();
+
+        // Assert — one run had started when the pass was killed, so the foreground one waited for the reap
+        // instead of running beside it. The lock cannot be the explanation: two solutions are two cache
+        // generations, and it lets both through uncontended.
+        startedWhenCancelled.ShouldBe(1);
+        (await foreground).ExitCode.ShouldBe(0);
+        (await preWarm).ShouldBe(SpeculativeRunOutcome.StoodDown);
+        _probe.Cancelled.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Reset_OnAnotherSolution_DoesNotQueueBehindThisServersRun()
+    {
+        // Arrange — the slot bounds jb processes, and a reset spawns none, so it must not be charged one.
+        // Parked on a solution of its own, this run holds the slot for as long as the fixture lives.
+        Task<ProcessResult> parked = _runner.RunAsync(_config, ForegroundArguments, Ct);
+        await _probe.WaitForNextStartAsync(Ct);
+
+        ResolvedConfig other = Configs.Bare(_environment.CreateSolutionPath("Other.sln"), _cacheHome);
+        string generation = CacheHomes.PlantGenerationFor(_cacheHome, other.SolutionPath);
+
+        // Act — bounded, because the failure this guards is a reset that queues rather than a wrong answer:
+        // charged a slot it would sit behind a run nothing releases and hang rather than fail.
+        CacheResetOutcome outcome = await _reset.RunAsync(other, Ct).WaitAsync(Cap, Ct);
+
+        // Assert
+        outcome.Dropped.ShouldBe([Path.GetFileName(generation)]);
+        _probe.ReleaseAll();
+        (await parked).ExitCode.ShouldBe(0);
+    }
+
+    [Fact]
     public async Task Reset_ArrivingDuringAPreWarm_ReclaimsTheCacheGeneration()
     {
         // Arrange — a pre-warm holding the lease and mid-analysis. The probe is never released, so nothing

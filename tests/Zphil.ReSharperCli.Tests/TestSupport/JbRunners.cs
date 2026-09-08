@@ -8,7 +8,8 @@ namespace Zphil.ReSharperCli.Tests.TestSupport;
 /// <summary>
 ///     Assembles the <see cref="JbRunner" /> graph the way the composition root does: one
 ///     <see cref="JbRunLock" /> shared by the runner and its <see cref="CacheTransplanter" />, one
-///     <see cref="JbRunYield" /> shared by the runner and every other caller the user waits on, and one cap
+///     <see cref="JbRunYield" /> shared by the runner and every other caller the user waits on, one
+///     <see cref="JbRunSlot" /> bounding how many <c>jb</c> runs that graph has in flight, and one cap
 ///     wired to both the lock's queue wait and the run timeout. A transplanter with a lock of its own would
 ///     serialize against nothing and could touch a generation mid-run; a <see cref="CacheResetService" />
 ///     with a yield of its own would compile, pass, and arbitrate against nothing at all. Both are
@@ -37,6 +38,14 @@ internal static class JbRunners
     public static JbRunYield Yield(ILoggerFactory? logs = null)
     {
         return new JbRunYield(Logs.For<JbRunYield>(logs));
+    }
+
+    /// <summary>
+    ///     The slot, built with a logger, for a test driving two runs at this server's one-at-a-time bound.
+    /// </summary>
+    public static JbRunSlot Slot(ILoggerFactory? logs = null)
+    {
+        return new JbRunSlot(Logs.For<JbRunSlot>(logs));
     }
 
     /// <summary>
@@ -71,7 +80,9 @@ internal static class JbRunners
     /// <summary>
     ///     For tests that drive a second caller — a cache reset — against the same precedence, so the yield
     ///     has to be theirs too. <paramref name="heartbeat" /> shortens the progress interval for a test
-    ///     that waits out more than one beat; omitted, beats come at the production ten seconds.
+    ///     that waits out more than one beat; omitted, beats come at the production ten seconds. The
+    ///     server-wide <c>jb</c> bound is the runner's own: nothing but the runner takes it, so no test has a
+    ///     second holder to share it with.
     /// </summary>
     public static JbRunner Create(
         IProcessRunner processRunner,
@@ -85,6 +96,7 @@ internal static class JbRunners
             processRunner,
             runLock,
             runYield,
+            Slot(logs),
             new CacheTransplanter(runLock, Logs.For<CacheTransplanter>(logs)),
             cap ?? JbRunTimeout.Default,
             Logs.For<JbRunner>(logs),

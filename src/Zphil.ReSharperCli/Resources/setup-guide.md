@@ -77,14 +77,26 @@ queue is shared by every client running this server, since it is the cache that 
 server process — but it reaches no further than that, and a `jb` you start yourself is outside it. See
 *Running `jb` yourself, beside this server* below.
 
-So a call is bounded by its wait plus its run. A call waits up to the same cap for a run already in
-flight, and only then starts its own run; if the wait runs out the error says a run against that solution
-is already going, and retrying shortly after is the right response. The wait is invisible when nothing
-else is running, which is the normal case.
+**And this server runs one `jb` at a time, whatever the solutions.** A run is a whole-solution, multi-core
+analysis however narrow the report is, so two of them share the machine rather than the work — the cache
+lock cannot see that, because two solutions are two cache generations and it lets both through. Measured on
+one machine on 2026-09-04: four cleanups issued a second apart against four solutions ran 367, 413, 476 and
+616 seconds, where three of them were one-file cleanups that take 24 to 50 seconds alone and the slowest
+crossed the 600-second default cap. In sequence, every one would have finished sooner. Calls are admitted in
+arrival order, so a fan-out completes in the order it was issued. This wait has no cap of its own: the run
+ahead is one of this server's own and is already ended by the run cap, so the wait is bounded by your own
+fan-out rather than by a number that could fail the tail of it. A call serving it out reports
+`waiting for this server's other jb run to finish (it runs one at a time)`. It reaches no further than the
+process: another session's server, and a `jb` you start yourself, still run beside it.
+
+So a call is bounded by its waits plus its run: this server's run ahead of it, then up to the cap for
+another process's run on the same cache, then its own run. If the cache wait runs out the error says a run
+against that solution is already going, and retrying shortly after is the right response. Both waits are
+invisible when nothing else is running, which is the normal case.
 
 **A run in flight reports itself every ten seconds**, as an MCP `notifications/progress` message against
-the token the client sent with the call. The messages track the stages above, in order: the wait for
-another run on the same cache, then the cache state `jb` opened (`cold (none on disk)`, `warm`, `stale`,
+the token the client sent with the call. The messages track the stages above, in order: the wait for this
+server's own other run, then the wait for another run on the same cache, then the cache state `jb` opened (`cold (none on disk)`, `warm`, `stale`,
 `part-built`, `seeded from a sibling checkout`), then a running count of files as `jb` analyses them.
 Where this solution has already finished a run from the same cache state, that clause names what it cost —
 `cold (none on disk; the last cold run took 8 minutes 17 seconds)` — which is the other half of telling a
@@ -137,6 +149,14 @@ loses to anything you are waiting on, whichever solution each is about. **A pre-
 process cannot be cancelled**, though, so a call there queues behind it exactly as it queues behind
 another session's real call. That is the one case where pre-warming can make a first call slower than it
 would have been.
+
+What that costs was measured once in seven days of two sessions on one repository: a call queued 168
+seconds behind the other session's pre-warm of the same solution, then ran warm in 54 seconds. The 168
+seconds is not the price, though, and reading it that way is the trap. The pass was building the very cache
+the call then ran warm on, so what the call paid over running cold itself was at most one warm run, less
+whatever in-flight work a cancel would have thrown away. A cross-process stand-down would save that much,
+once in 33 calls, and cost a polling protocol between server processes of possibly different versions —
+which is why there is none.
 
 **At most one pass runs at a time**, and a pass is skipped when any `jb` run against that solution's cache
 succeeded within the last hour — a tool call counts, so working in a repo does not earn its next session a
@@ -256,9 +276,11 @@ you do in the editor clears it. Only a real compilation error survives the build
 **The cure.** Call `resharper_reset_cache`. It deletes the solution's cache generation directories under
 the cache home, and the next inspect or cleanup rebuilds the index from cold. It takes the same queue lock
 the analysis tools take, so it waits for a run in flight rather than deleting the cache underneath it, and
-a run that starts meanwhile waits for the reset. A background pre-warm is the one thing it does not wait
-for: the reset cancels it and takes the generation once the killed `jb` has been reaped — a second or two,
-not the minutes the pass had left. That cold rebuild costs minutes and can hit the run cap on a large
+a run that starts meanwhile waits for the reset. Two things it does not wait for. A background pre-warm:
+the reset cancels it and takes the generation once the killed `jb` has been reaped — a second or two, not
+the minutes the pass had left. And this server's own run on *another* solution, since a reset spawns no
+`jb` and its deletes take moments — charging it a place in that queue would put it behind minutes of
+analysis it was never going to contend with. That cold rebuild costs minutes and can hit the run cap on a large
 solution, so the call after a reset is the one most worth expecting to be slow — and the one most worth
 raising `RESHARPER_MCP_TIMEOUT_SECS` for ahead of time.
 
@@ -385,7 +407,7 @@ emits its own startup, shutdown, and per-run lines in their place.
 | Level | Carries |
 |---|---|
 | `Warning` (default) | Unexpected failures, plus the degradations that leave a promise unkept — a settings file named but missing, a run lock that could not be taken, a cache reset that could not be recorded. |
-| `Information` | The startup fingerprint (version, pid, cache home, run cap, pre-warm on/off, orphan guard) · the config each call resolved and how it found its solution · one line as each `jb` run starts, naming its cache state and how long it queued · one as it ends, with its exit code and duration · every transplant decision, seeded or declined, with its reason · a notable lock queue wait · a pre-warm's start and outcome · a speculative pass stood down for a call · what a cache reset dropped. |
+| `Information` | The startup fingerprint (version, pid, cache home, run cap, pre-warm on/off, orphan guard) · the config each call resolved and how it found its solution · one line as each `jb` run starts, naming its cache state and how long it queued · one as it ends, with its exit code and duration · every transplant decision, seeded or declined, with its reason · a notable wait for this server's own jb slot or for the cache lock · a pre-warm's start and outcome · a speculative pass stood down for a call · what a cache reset dropped. |
 | `Debug` | The full `jb` command line · one line per `jb` candidate probed, with what it answered and how long it took, including a candidate that failed before a later one succeeded · the tool-call envelope and argument shape · the detail level a response settled at, and whether it was truncated · cache generation sizes · warm-marker stamps · the declines and skips that cost nothing. |
 
 A typical inspect costs about four `Information` lines, so a day at that level stays readable. Two of them

@@ -55,8 +55,10 @@ builder.Services.AddSingleton(provider => new JbRunLock(
     runTimeout, provider.GetRequiredService<ILogger<JbRunLock>>()));
 
 // Shared on purpose, like the lock and for the same reason: the lock decides who waits, the yield decides
-// who is made to wait, and a second instance of either would arbitrate against nothing.
+// who is made to wait, the slot decides how many run at once, and a second instance of any of them would
+// arbitrate against nothing.
 builder.Services.AddSingleton<JbRunYield>();
+builder.Services.AddSingleton<JbRunSlot>();
 
 builder.Services.AddSingleton<CacheTransplanter>();
 
@@ -66,6 +68,7 @@ builder.Services.AddSingleton(provider => new JbRunner(
     provider.GetRequiredService<IProcessRunner>(),
     provider.GetRequiredService<JbRunLock>(),
     provider.GetRequiredService<JbRunYield>(),
+    provider.GetRequiredService<JbRunSlot>(),
     provider.GetRequiredService<CacheTransplanter>(),
     runTimeout,
     provider.GetRequiredService<ILogger<JbRunner>>()));

@@ -38,19 +38,26 @@ internal sealed record JbRunProgressSnapshot(
     TimeSpan? Cap)
 {
     /// <summary>
-    ///     Whether the run has only just arrived: still queued, for less than
-    ///     <see cref="JbRunLock.NotableWait" />. The threshold is the lock's rather than one of this record's
-    ///     own, and the judgement is made here beside the measurement rather than in the formatter, so
-    ///     "has this caller genuinely queued behind someone" cannot answer differently between the log and
-    ///     the progress message describing the same wait.
+    ///     Whether the run has only just arrived: still waiting on one of the two queues it passes through
+    ///     before <c>jb</c> exists, for less than <see cref="JbRunLock.NotableWait" />. The threshold is the
+    ///     lock's rather than one of this record's own, and the judgement is made here beside the measurement
+    ///     rather than in the formatter, so "has this caller genuinely queued behind someone" cannot answer
+    ///     differently between the log and the progress message describing the same wait.
     /// </summary>
-    internal bool JustArrived => Phase == JbRunPhase.Queued && Elapsed < JbRunLock.NotableWait;
+    /// <remarks>
+    ///     <see cref="JbRunPhase.Turn" /> as well as <see cref="JbRunPhase.Queued" />, because the first beat
+    ///     is immediate and lands before either wait has established anything: a call reaches the slot before
+    ///     it reaches the lock, so whichever of the two it is in at that instant, naming a run ahead of it
+    ///     would be a claim nothing has made.
+    /// </remarks>
+    internal bool JustArrived =>
+        Elapsed < JbRunLock.NotableWait && Phase is JbRunPhase.Turn or JbRunPhase.Queued;
 }
 
 /// <summary>
 ///     The advance of one <c>jb</c> run, reported on a timer. The fourth policy over a run, beside
-///     <see cref="JbRunLock" /> — who may run — <see cref="JbRunYield" /> — who is made to wait — and
-///     <see cref="JbRunTimeout" /> — for how long.
+///     <see cref="JbRunLock" /> — who may run — <see cref="JbRunYield" /> — who is made to wait —
+///     <see cref="JbRunTimeout" /> — for how long — and <see cref="JbRunSlot" /> — how many at once.
 /// </summary>
 /// <remarks>
 ///     <para>
@@ -112,7 +119,7 @@ internal sealed class JbRunProgress : IAsyncDisposable
     private string? _cacheSummary;
     private bool _disposed;
     private int _filesSeen;
-    private JbRunPhase _phase = JbRunPhase.Queued;
+    private JbRunPhase _phase;
 
     /// <summary>
     ///     When <c>jb</c> started, measured on <see cref="_elapsed" />, or <see langword="null" /> while it
@@ -135,6 +142,13 @@ internal sealed class JbRunProgress : IAsyncDisposable
     ///     optional for the reason every other logger in this codebase is: a site that forgets it loses the
     ///     record silently, which is the class of defect the rule exists to prevent.
     /// </param>
+    /// <param name="initialPhase">
+    ///     The wait this run starts in. A <c>jb</c> run reaches <see cref="JbRunSlot" /> before it reaches
+    ///     <see cref="JbRunLock" /> and so opens in <see cref="JbRunPhase.Turn" />; a cache reset takes no
+    ///     slot and opens on the lock, in <see cref="JbRunPhase.Queued" />. Required rather than defaulted, so
+    ///     a reporter over a new lifecycle names its opening wait instead of inheriting one that may not be
+    ///     its own — the first beat is immediate, and it reports whatever this says.
+    /// </param>
     /// <param name="interval">
     ///     How often a heartbeat is sent, defaulting to <see cref="HeartbeatInterval" />. A parameter only so
     ///     a test need not wait ten seconds to see a second beat.
@@ -145,6 +159,7 @@ internal sealed class JbRunProgress : IAsyncDisposable
         TimeSpan cap,
         Action<JbRunProgressSnapshot> report,
         ILogger logger,
+        JbRunPhase initialPhase,
         TimeSpan? interval = null)
     {
         _subcommand = subcommand;
@@ -152,6 +167,7 @@ internal sealed class JbRunProgress : IAsyncDisposable
         _cap = cap;
         _report = report;
         _logger = logger;
+        _phase = initialPhase;
 
         // Last, and that is the whole reason this is a constructor body rather than a field initializer: the
         // first beat is immediate, and a callback reaching Snapshot() before the fields above were assigned
@@ -211,6 +227,7 @@ internal sealed class JbRunProgress : IAsyncDisposable
         TimeSpan cap,
         Action<string>? onProgress,
         ILogger logger,
+        JbRunPhase initialPhase,
         TimeSpan? interval = null)
     {
         if (onProgress is null) return null;
@@ -221,17 +238,36 @@ internal sealed class JbRunProgress : IAsyncDisposable
             cap,
             snapshot => onProgress(RunProgressFormatter.Format(snapshot)),
             logger,
+            initialPhase,
             interval);
+    }
+
+    /// <summary>
+    ///     Enter the phase in which this server's <c>jb</c> slot is held and the cache generation's lease is
+    ///     being queued for. The second of the two waits a run serves before <c>jb</c> exists.
+    /// </summary>
+    internal void Queued()
+    {
+        Enter(JbRunPhase.Queued);
     }
 
     /// <summary>Enter the phase in which a sibling checkout's warm cache is copied into this one's.</summary>
     internal void Seeding()
     {
+        Enter(JbRunPhase.Seeding);
+    }
+
+    /// <summary>
+    ///     Move to <paramref name="phase" /> unless disposed: the one spelling of a phase change that carries
+    ///     nothing else with it.
+    /// </summary>
+    private void Enter(JbRunPhase phase)
+    {
         lock (_gate)
         {
             if (_disposed) return;
 
-            _phase = JbRunPhase.Seeding;
+            _phase = phase;
         }
     }
 

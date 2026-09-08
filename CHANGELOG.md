@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The setup guide records what a pre-warm running in *another* server process costs a call queued behind
+  it, because the number on its own reads worse than it is. Measured once in seven days of two sessions on
+  one repository: a call queued 168 s behind the other session's pre-warm of the same solution, then ran
+  warm in 54 s. The pass was building the very cache the call then used, so what the call paid over running
+  cold itself was at most that warm run, less whatever in-flight work a cancel would have thrown away —
+  which is why there is no cross-process stand-down, only the in-process one that has always been there.
+
 - `resharper_cleanup`'s description now states why one batched call is the rule: every call analyses the
   whole solution before it rewrites anything, whatever the file count. `resharper_inspect`'s `files`
   argument no longer describes itself as scoping the analysis, which it does not — it narrows the findings,
@@ -29,6 +36,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   local so there is no break left to revert. The README carries the rule for readers.
 
 ### Fixed
+
+- Calls against different solutions in one server process no longer run their `jb` processes side by side.
+  A run is a whole-solution, multi-core analysis however narrow the report is, so two of them share the
+  machine rather than the work — and the cross-process cache lock cannot see it, because two solutions are
+  two cache generations and it lets both through. Measured on one machine on 2026-09-04: four cleanups
+  issued a second apart against four solutions ran 367, 413, 476 and 616 seconds, where three were one-file
+  cleanups that take 24 to 50 seconds alone and the slowest crossed the 600-second default cap. Calls are
+  now admitted in arrival order, so a fan-out completes in the order it was issued, and the wait has no cap
+  of its own — the run ahead is one of this server's own and is already ended by the run cap. A call
+  serving that wait out reports it as `waiting for this server's other jb run to finish (it runs one at a
+  time)`. Two limits: it reaches no further than the process, so another session's server and a `jb` you
+  start yourself still run beside it; and `resharper_reset_cache` is deliberately outside it, since it
+  spawns no `jb` at all.
 
 - A `jb` that is installed but too slow to answer is no longer reported as one that is missing. Each
   candidate is probed with `jb inspectcode --version` under a 30-second cap, and a machine loaded enough —

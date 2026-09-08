@@ -33,6 +33,11 @@ namespace Zphil.ReSharperCli.Execution;
 ///         it, so that a released lock and a free generation mean the same thing again.
 ///     </para>
 ///     <para>
+///         What it partitions is a <em>directory</em>, and <see cref="JbRunSlot" /> is the process-wide
+///         sibling that partitions the <em>machine</em>: two runs against different solutions pass this lock
+///         uncontended and still must not have two <c>jb</c> processes in flight between them.
+///     </para>
+///     <para>
 ///         The lock is an optimisation, never a dependency: anything that goes wrong other than genuine
 ///         contention degrades to a weaker lock (or none) and lets the run proceed. The two speculative
 ///         entry points — <see cref="TryAcquire" /> and <see cref="TryAcquireByKeyAsync" /> — invert that
@@ -98,7 +103,7 @@ internal sealed class JbRunLock(TimeSpan maxWait, ILogger<JbRunLock> logger)
         catch (Exception exception) when (CannotDeriveLock(exception))
         {
             logger.LogWarning(exception, "Could not derive a jb run lock for solution {SolutionPath} in cache home {CacheHome}; running unserialized", solutionPath, cacheHome);
-            return new Holder(null, null, logger);
+            return Held(null, null, logger);
         }
 
         SemaphoreSlim gate = _gates.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
@@ -113,7 +118,7 @@ internal sealed class JbRunLock(TimeSpan maxWait, ILogger<JbRunLock> logger)
 
             ReportAcquisition(solutionPath, waited.Elapsed, file is not null);
 
-            return new Holder(gate, file, logger);
+            return Held(gate, file, logger);
         }
         catch
         {
@@ -296,7 +301,7 @@ internal sealed class JbRunLock(TimeSpan maxWait, ILogger<JbRunLock> logger)
             return null;
         }
 
-        return new Holder(gate, file, logger);
+        return Held(gate, file, logger);
     }
 
     /// <summary>
@@ -436,17 +441,13 @@ internal sealed class JbRunLock(TimeSpan maxWait, ILogger<JbRunLock> logger)
     }
 
     /// <summary>
-    ///     Releases whichever layers were actually taken, innermost first, and only once — a double
-    ///     dispose must not over-release the semaphore and let a second caller in.
+    ///     The handle that releases whichever layers were actually taken, innermost first, and only once —
+    ///     a double dispose must not over-release the semaphore and let a second caller in.
     /// </summary>
-    private sealed class Holder(SemaphoreSlim? gate, FileStream? file, ILogger logger) : IDisposable
+    private static IDisposable Held(SemaphoreSlim? gate, FileStream? file, ILogger logger)
     {
-        private int _disposed;
-
-        public void Dispose()
+        return new ReleaseOnce(() =>
         {
-            if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
-
             try
             {
                 file?.Dispose();
@@ -457,6 +458,6 @@ internal sealed class JbRunLock(TimeSpan maxWait, ILogger<JbRunLock> logger)
             }
 
             gate?.Release();
-        }
+        });
     }
 }

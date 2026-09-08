@@ -235,7 +235,7 @@ public sealed class JbRunProgressTests
         // nobody is waiting on — gets nothing to dispose. Answering null here is what leaves every call site
         // with one nullable reporter to await-using rather than a branch around the whole feature.
         JbRunProgress? progress = JbRunProgress.Reporting(
-            "inspectcode", SolutionPath, Cap, null, NullLogger.Instance, Brisk);
+            "inspectcode", SolutionPath, Cap, null, NullLogger.Instance, JbRunPhase.Queued, Brisk);
 
         progress.ShouldBeNull();
     }
@@ -250,7 +250,7 @@ public sealed class JbRunProgressTests
 
         // Act — labelled as the cache reset, the caller that has a queue wait and no jb at all.
         await using JbRunProgress? progress = JbRunProgress.Reporting(
-            "cache reset", SolutionPath, Cap, lines.Record, NullLogger.Instance, Brisk);
+            "cache reset", SolutionPath, Cap, lines.Record, NullLogger.Instance, JbRunPhase.Queued, Brisk);
 
         // Assert
         progress.ShouldNotBeNull();
@@ -266,6 +266,7 @@ public sealed class JbRunProgressTests
             Cap,
             sink.Report,
             NullLogger.Instance,
+            JbRunPhase.Queued,
             interval ?? Brisk);
     }
 

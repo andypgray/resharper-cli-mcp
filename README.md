@@ -12,7 +12,7 @@ resharper-cli-mcp is an MCP server that gives a C# coding agent ReSharper's solu
 
 - The first run happens before you ask for it. A speculative inspection starts as soon as a client connects, skipped when a run against that cache succeeded in the last hour; a tool call arriving mid-pass cancels it and takes the cache within a second or two. `RESHARPER_MCP_PREWARM=off` turns it off.
 
-- Runs are serialized per solution. A cross-process lock keeps every client on one cache generation; a second concurrent `jb` forks a cold copy of its own and leaves it behind on disk. A `jb` you start yourself is outside that queue, so give it its own `--caches-home`.
+- Runs are serialized, twice over. One `jb` per server process, whatever the solutions, because a run is a whole-solution multi-core analysis and two of them share the machine rather than the work; and one per solution cache across processes, because a second concurrent `jb` cannot open the warm generation and forks a cold copy of its own instead, leaving it behind on disk. A `jb` you start yourself is outside both, so give it its own `--caches-home`.
 
 - A fresh checkout is seeded from a warm one. Caches are keyed to the solution's absolute path, so a new worktree or clone starts cold. When a call finds no cache and a same-named sibling checkout has a warm one, the server copies it across, best-effort and never over a cache a successful run produced. The copy still has to be re-keyed, so a seeded run lands between warm and cold.
 

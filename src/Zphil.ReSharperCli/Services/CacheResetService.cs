@@ -43,6 +43,12 @@ internal sealed record CacheResetOutcome(
 ///         tool doing exactly that for up to the full run cap.
 ///     </para>
 ///     <para>
+///         It takes the lock and the claim, and deliberately not <see cref="JbRunSlot" />. The slot bounds
+///         how many <c>jb</c> processes this server has in flight; a reset spawns none, and its deletes take
+///         moments, so charging it a slot would make it queue out minutes of analysis for a machine it was
+///         never going to contend for.
+///     </para>
+///     <para>
 ///         What belongs to this solution is settled by <see cref="JbSolutionCacheHash" /> rather than by the
 ///         generation's file name, which several checkouts of one repository share. A generation is deleted
 ///         only where the hash in its name is the one this solution's path produces; everything else is
@@ -178,9 +184,9 @@ internal sealed class CacheResetService(
         // The lock's own cap rather than a second copy of it: this caller is bounded by that number, so it
         // is the only honest one to name. It never reaches a message as things stand — the cap is armed by
         // Spawning, and nothing here spawns — but a lifecycle that grew a later phase would name the number
-        // that actually bounds it.
+        // that actually bounds it. It opens on the lock's queue: a reset takes no slot.
         await using JbRunProgress? progress = JbRunProgress.Reporting(
-            ProgressLabel, config.SolutionPath, runLock.MaxWait, onProgress, logger, heartbeatInterval);
+            ProgressLabel, config.SolutionPath, runLock.MaxWait, onProgress, logger, JbRunPhase.Queued, heartbeatInterval);
 
         return await runLock.AcquireAsync(config.SolutionPath, config.CacheHome, cancellationToken);
     }

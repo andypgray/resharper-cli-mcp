@@ -34,9 +34,13 @@ public sealed class CacheTransplanterTests : IDisposable
 
     public CacheTransplanterTests()
     {
+        // Checkouts with a solution file on them: nothing here reads the file, but the two tests that drive
+        // a real CacheResetService do — a reset of a path with no file on it is a reclaim of a deleted
+        // checkout, which writes no cold tombstone, and both of those tests are about a live worktree whose
+        // user asked for cold.
         _cacheHome = _environment.CreateTempDirectory();
-        _mainSolution = CreateCheckout("App.sln");
-        _worktreeSolution = CreateCheckout("App.sln");
+        _mainSolution = _environment.CreateCheckout("App.sln");
+        _worktreeSolution = _environment.CreateCheckout("App.sln");
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -44,19 +48,6 @@ public sealed class CacheTransplanterTests : IDisposable
     public void Dispose()
     {
         _environment.Dispose();
-    }
-
-    /// <summary>
-    ///     A checkout of the repository: a path, and a solution file on it. Nothing here reads the file, but
-    ///     the two tests that drive a real <see cref="CacheResetService" /> do — a reset of a path with no
-    ///     file on it is a reclaim of a deleted checkout, which writes no cold tombstone, and both of those
-    ///     tests are about a live worktree whose user asked for cold.
-    /// </summary>
-    private string CreateCheckout(string solutionFileName)
-    {
-        string solutionPath = _environment.CreateSolutionPath(solutionFileName);
-        File.WriteAllText(solutionPath, string.Empty);
-        return solutionPath;
     }
 
     [Fact]

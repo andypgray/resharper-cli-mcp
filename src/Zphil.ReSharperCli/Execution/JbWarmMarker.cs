@@ -36,12 +36,23 @@ internal enum StampOutcome
 }
 
 /// <summary>
+///     Everything one warm marker records: the cache generation directory the run left warm, or
+///     <see langword="null" /> when the marker names none this server should act on; the <c>jb</c> build
+///     that wrote it; and the solution path it was run against. A record rather than a tuple because the
+///     content has grown twice, and a caller destructuring three anonymous strings positionally is one field
+///     away from reading the wrong one.
+/// </summary>
+internal sealed record WarmMarkerContent(string? GenerationName, string? JbVersion, string? SolutionPath);
+
+/// <summary>
 ///     A file inside the cache home whose modification time records when a <c>jb</c> run against that cache
 ///     generation last <em>succeeded</em>, and whose content names the generation directory that run left
-///     behind and the <c>jb</c> build that left it. The speculative pre-warm reads the timestamp to skip a
-///     generation something has already warmed, a transplant reads the name to find a donor worth copying,
+///     behind, the <c>jb</c> build that left it, and the solution it was run against. The speculative
+///     pre-warm reads the timestamp to skip a generation something has already warmed, a transplant reads
+///     the name to find a donor worth copying,
 ///     the cache-state line reads the build to tell a cache this <c>jb</c> can resume from one it will
-///     rebuild, and — because every successful run
+///     rebuild, a cache reset reads the solution path to say which checkout each generation it left alone
+///     belongs to, and — because every successful run
 ///     through <see cref="Services.JbRunner" /> stamps it, a foreground tool call included — a transplant
 ///     reads its mere <see cref="Exists">existence</see> to tell a cache some run produced from the
 ///     part-built remnant of one that never finished.
@@ -67,15 +78,24 @@ internal enum StampOutcome
 ///         a cache worth protecting.
 ///     </para>
 ///     <para>
-///         The content grew a second line — the <c>jb</c> build that wrote the generation — and the growth is
-///         safe in the one direction that cannot be tested from here. A previously released server reads the
-///         whole file as one string and asks <see cref="IsBareDirectoryName" /> of it, which passes: a
-///         newline is no path separator, so both lines survive the guard as one implausible name. What
-///         declines them is the directory lookup behind it — nothing under the cache home is called that —
-///         so that build answers null, forgoes the generation as a donor, and pre-warms as if it had never
-///         been named. Declining is the direction this file is always allowed to fail in, so an old server
-///         meeting a new marker costs work rather than misdirecting a copy. Which of the two checks does it
-///         is worth naming: the guard reads like the one holding the line, and it is not.
+///         The content grew a second line — the <c>jb</c> build that wrote the generation — and then a third,
+///         the solution path, and both growths are safe in the one direction that cannot be tested from
+///         here. A previously released server reads the whole file as one string and asks
+///         <see cref="IsBareDirectoryName" /> of it, which passes for two lines: a newline is no path
+///         separator, so both survive the guard as one implausible name. What declines them is the directory
+///         lookup behind it — nothing under the cache home is called that — so that build answers null,
+///         forgoes the generation as a donor, and pre-warms as if it had never been named. Declining is the
+///         direction this file is always allowed to fail in, so an old server meeting a new marker costs
+///         work rather than misdirecting a copy. Which of the two checks does it is worth naming: the guard
+///         reads like the one holding the line, and it is not. The third line only strengthens that, since a
+///         path carries separators and so is refused by the guard itself. A current reader takes
+///         <c>[name, version, ..]</c>, so any line past the third is ignored the same way.
+///     </para>
+///     <para>
+///         The solution path is display and existence only. It is never combined into a directory to copy
+///         from or delete, which is what keeps <see cref="IsBareDirectoryName" />'s guard the whole of the
+///         addressability question: a reader that started composing paths out of line three would be taking
+///         untrusted content past the one check that constrains it.
 ///     </para>
 ///     <para>
 ///         The silence is total, which leaves one thing worth saying out loud with nowhere here to say it:
@@ -146,7 +166,7 @@ internal static class JbWarmMarker
             // the line above and leaves by the catch, so a broken filesystem is never reported as drift.
             if (generationName is null) return StampOutcome.NoGenerationMatched;
 
-            marker.Write(Encoding.UTF8.GetBytes(Content(generationName, jbVersion)));
+            marker.Write(Encoding.UTF8.GetBytes(Content(generationName, jbVersion, solutionPath)));
 
             // The mechanism donor discovery depends on, and the one step of it nothing else records: a
             // generation no marker names can never be copied, however warm it is.
@@ -166,12 +186,10 @@ internal static class JbWarmMarker
     }
 
     /// <summary>
-    ///     Both facts one marker can hold, off a single read: the generation name, or <see langword="null" />
-    ///     when it names none this server should act on, and the <c>jb</c> build that wrote it, or
-    ///     <see langword="null" /> when the marker names none. Takes the marker's path rather than a solution
-    ///     path because the caller that needs both — donor discovery — is reading <em>another</em> solution's
-    ///     marker, has nothing but the file to go on, and should not pay a second read for its second
-    ///     question.
+    ///     Every fact one marker holds, off a single read. Takes the marker's path rather than a solution
+    ///     path because the callers that need more than one — donor discovery and the cache reset's
+    ///     attribution — are reading <em>another</em> solution's marker, have nothing but the file to go on,
+    ///     and should not pay a read per question.
     /// </summary>
     /// <remarks>
     ///     Every uncertainty about the name answers <see langword="null" />: a marker written before this
@@ -181,7 +199,7 @@ internal static class JbWarmMarker
     ///     from, so anything carrying a separator, a drive, or a parent reference is refused before it can
     ///     address a directory outside the cache home.
     /// </remarks>
-    internal static (string? GenerationName, string? JbVersion) TryReadMarker(
+    internal static WarmMarkerContent TryReadMarker(
         string markerFilePath,
         string cacheHome,
         ILogger logger)
@@ -190,13 +208,49 @@ internal static class JbWarmMarker
         {
             IReadOnlyList<string> lines = ReadLines(markerFilePath);
 
-            return (GenerationNameOf(lines, cacheHome), JbVersionOf(lines));
+            return new WarmMarkerContent(GenerationNameOf(lines, cacheHome), JbVersionOf(lines), SolutionPathOf(lines));
         }
         catch (Exception exception) when (FilesystemFailure.Covers(exception))
         {
             logger.LogDebug(exception, "Could not read the jb warm marker {MarkerFilePath}", markerFilePath);
-            return (null, null);
+            return new WarmMarkerContent(null, null, null);
         }
+    }
+
+    /// <summary>
+    ///     Every generation directory a marker under <paramref name="cacheHome" /> names, mapped to the
+    ///     solution path that marker records — or to <see langword="null" /> where it records none, which is
+    ///     every marker written before this server recorded one. For the cache reset, which can name the
+    ///     generations it left alone and otherwise has no way to say whose they are.
+    /// </summary>
+    /// <remarks>
+    ///     Absent and present-with-null are different answers and the caller is owed both: a generation
+    ///     missing from the map had no successful run through this server stamp it at all, while one mapped
+    ///     to null was stamped by a build that recorded no path and will name itself after the next clean
+    ///     run. Two markers naming one directory is reachable only through the case scenario
+    ///     <see cref="JbCacheGenerations.NameComparison" /> documents, and the first wins — an attribution is
+    ///     a sentence in a report, so a tie is not worth a policy. Every filesystem failure answers an empty
+    ///     map: a report that cannot attribute is still a correct report.
+    /// </remarks>
+    internal static Dictionary<string, string?> FindRecordedSolutionPaths(string cacheHome, ILogger logger)
+    {
+        Dictionary<string, string?> recorded = new(StringComparer.FromComparison(JbCacheGenerations.NameComparison));
+
+        try
+        {
+            foreach ((string _, string markerPath) in FindAll(cacheHome))
+            {
+                WarmMarkerContent content = TryReadMarker(markerPath, cacheHome, logger);
+
+                if (content.GenerationName is { } name) recorded.TryAdd(name, content.SolutionPath);
+            }
+        }
+        catch (Exception exception) when (FilesystemFailure.Covers(exception))
+        {
+            logger.LogDebug(exception, "Could not read the jb warm markers under cache home {CacheHome}", cacheHome);
+        }
+
+        return recorded;
     }
 
     /// <summary>
@@ -336,12 +390,18 @@ internal static class JbWarmMarker
     }
 
     /// <summary>
-    ///     What one marker holds: the generation name alone, or the name and the <c>jb</c> build that wrote
-    ///     it, one per line. Composed here and parsed by <see cref="ReadLines" /> so the two cannot drift.
+    ///     What one marker holds, one fact per line: the generation name, the <c>jb</c> build that wrote it,
+    ///     and the solution it was run against. Composed here and parsed by <see cref="ReadLines" /> so the
+    ///     two cannot drift.
     /// </summary>
-    private static string Content(string generationName, string? jbVersion)
+    /// <remarks>
+    ///     A caller with no build to name writes an <em>empty</em> second line rather than dropping it, so
+    ///     the path stays on line three and one parser reads every marker this build writes. The lines are
+    ///     positional; nothing here is keyed.
+    /// </remarks>
+    private static string Content(string generationName, string? jbVersion, string solutionPath)
     {
-        return string.IsNullOrWhiteSpace(jbVersion) ? generationName : $"{generationName}\n{jbVersion}";
+        return $"{generationName}\n{jbVersion?.Trim()}\n{solutionPath}";
     }
 
     /// <summary>
@@ -375,6 +435,16 @@ internal static class JbWarmMarker
     private static string? JbVersionOf(IReadOnlyList<string> lines)
     {
         return lines is [_, { Length: > 0 } version, ..] ? version : null;
+    }
+
+    /// <summary>
+    ///     The solution <paramref name="lines" /> record the run against, or <see langword="null" /> for a
+    ///     marker written before this line existed. Reported exactly as written and never resolved,
+    ///     combined, or opened — see this class's remarks for why that restraint is the guard.
+    /// </summary>
+    private static string? SolutionPathOf(IReadOnlyList<string> lines)
+    {
+        return lines is [_, _, { Length: > 0 } solutionPath, ..] ? solutionPath : null;
     }
 
     /// <summary>

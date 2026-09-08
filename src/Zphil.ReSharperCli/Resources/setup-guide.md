@@ -221,9 +221,17 @@ generation stays in the cache home, addressed by the hash of a path with nothing
 and nothing reuses it. Call `resharper_reset_cache` with `solutionPath` set to the path that checkout had,
 and it drops those generations exactly as it would for a live solution: the ownership proof is the same hash
 of the same string, and the generations belonging to other checkouts are named in the report and left where
-they are. That report's left-alone list is where you find the paths worth reclaiming next. A reclaim writes
-no reset record, so a worktree created at that path later is seeded from a warm sibling like any other new
-checkout.
+they are. A reclaim writes no reset record, so a worktree created at that path later is seeded from a warm
+sibling like any other new checkout.
+
+That left-alone list is where you find the paths worth reclaiming next, because each entry names the solution
+its own last successful run was recorded against — `last warmed for "/repo/App.sln"`, or `, which no longer
+exists` where that path is gone. The recorded path is the only thing that can turn a generation directory
+back into a checkout: `jb` names it by a hash, and the hash is one-way. Two entries name no path. `last warmed
+by a run that recorded no path` is a marker from a release before this one, which the next successful run
+against that generation rewrites; `no successful run on record` is a generation nothing here ever stamped —
+a run killed at the cap, or a `jb` started outside this server's queue — and stays that way. Both are
+reclaimed the same way as any other, by naming the path if you know it.
 
 Upgrading `jb` is the routine case of that rebuild — JetBrains ships roughly thirty stable releases a year —
 so a generation the current build did not write is passed over as a donor, and one belonging to this

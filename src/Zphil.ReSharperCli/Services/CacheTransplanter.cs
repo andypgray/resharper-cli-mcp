@@ -217,8 +217,8 @@ internal sealed class CacheTransplanter(
         {
             if (string.Equals(key, ourKey, StringComparison.Ordinal)) continue;
 
-            (string? generationName, string? donorJbVersion) = JbWarmMarker.TryReadMarker(markerPath, config.CacheHome, logger);
-            if (generationName is null) continue;
+            WarmMarkerContent donor = JbWarmMarker.TryReadMarker(markerPath, config.CacheHome, logger);
+            if (donor.GenerationName is not { } generationName) continue;
 
             if (!JbCacheGenerations.IsNeighbourOf(generationName, config.SolutionPath)) continue;
 
@@ -228,7 +228,7 @@ internal sealed class CacheTransplanter(
             // JbLocator caches per session, so in the hour after an upgrade a session still on the older
             // build can rewrite a shared generation between this read and the copy. Losing that race costs
             // one seeded run that rebuilds, which is what declining costs anyway.
-            if (JbWarmMarker.WrittenByAnotherBuild(donorJbVersion, config.JbVersion)) continue;
+            if (JbWarmMarker.WrittenByAnotherBuild(donor.JbVersion, config.JbVersion)) continue;
 
             candidates.Add(new Donor(key, generationName, File.GetLastWriteTimeUtc(markerPath)));
         }

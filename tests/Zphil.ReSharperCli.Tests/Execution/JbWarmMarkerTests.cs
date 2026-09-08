@@ -131,19 +131,106 @@ public sealed class JbWarmMarkerTests : IDisposable
     }
 
     [Fact]
-    public void Stamp_WithNoJbBuildKnown_WritesTheOneLineMarkerItAlwaysDid()
+    public void Stamp_RecordsTheSolutionPathOnTheThirdLine()
     {
-        // Arrange — the caller that cannot name its jb writes what every build before this one wrote, byte
-        // for byte, so nothing downstream has to tell a blank second line from an absent one.
+        // Arrange — the marker's file name is a one-way key, so nothing else in the cache home can say which
+        // checkout a generation belongs to. A reset's report is the reader: it names the generations it left
+        // alone and would otherwise be listing directories nobody can act on.
+        string generation = CacheHomes.PlantGenerationFor(_cacheHome, SolutionPath);
+
+        // Act
+        JbWarmMarker.Stamp(SolutionPath, _cacheHome, NullLogger.Instance, "2026.2.1");
+
+        // Assert — positional, one fact per line, in the order the content grew.
+        string markerPath = JbWarmMarker.PathFor(SolutionPath, _cacheHome);
+        File.ReadAllText(markerPath).ShouldBe($"{Path.GetFileName(generation)}\n2026.2.1\n{SolutionPath}");
+        JbWarmMarker.TryReadMarker(markerPath, _cacheHome, NullLogger.Instance).SolutionPath.ShouldBe(SolutionPath);
+    }
+
+    [Fact]
+    public void Stamp_WithNoJbBuildKnown_LeavesTheSecondLineEmptyRatherThanDroppingIt()
+    {
+        // Arrange — this used to write the one-line marker every build before it wrote, byte for byte. It
+        // cannot any more: the lines are positional, so dropping the build would put the solution path on
+        // line two and have every reader of the build read a path. An empty line costs one byte and keeps
+        // one parser for every marker this build writes.
         string generation = CacheHomes.PlantGenerationFor(_cacheHome, SolutionPath);
 
         // Act
         JbWarmMarker.Stamp(SolutionPath, _cacheHome, NullLogger.Instance);
 
-        // Assert
+        // Assert — and the build still reads back as null, which is what the empty line has to preserve.
         string markerPath = JbWarmMarker.PathFor(SolutionPath, _cacheHome);
-        File.ReadAllText(markerPath).ShouldBe(Path.GetFileName(generation));
+        File.ReadAllText(markerPath).ShouldBe($"{Path.GetFileName(generation)}\n\n{SolutionPath}");
         JbWarmMarker.TryReadJbVersion(markerPath, NullLogger.Instance).ShouldBeNull();
+        JbWarmMarker.TryReadMarker(markerPath, _cacheHome, NullLogger.Instance).SolutionPath.ShouldBe(SolutionPath);
+    }
+
+    [Fact]
+    public void TryReadMarker_TwoLineMarkerFromAnEarlierBuild_ReadsNoPath()
+    {
+        // Arrange — every marker on disk the first time a server carrying this reads one. The name and the
+        // build still come back; only the path is missing, and the next clean run rewrites it.
+        string generation = CacheHomes.PlantWarmDonorFromAnEarlierBuild(_cacheHome, SolutionPath, "2026.2.1");
+        string markerPath = JbWarmMarker.PathFor(SolutionPath, _cacheHome);
+
+        // Act
+        WarmMarkerContent content = JbWarmMarker.TryReadMarker(markerPath, _cacheHome, NullLogger.Instance);
+
+        // Assert
+        content.GenerationName.ShouldBe(Path.GetFileName(generation));
+        content.JbVersion.ShouldBe("2026.2.1");
+        content.SolutionPath.ShouldBeNull();
+    }
+
+    [Fact]
+    public void TryReadMarker_ThreeLineMarker_StillReadsNameAndBuild()
+    {
+        // Arrange — the growth has to leave the two readers that predate it reading what they always did,
+        // since a marker written by this build is read by every other feature here.
+        string generation = CacheHomes.PlantGenerationFor(_cacheHome, SolutionPath);
+        JbWarmMarker.Stamp(SolutionPath, _cacheHome, NullLogger.Instance, "2026.2.1");
+
+        // Act
+        string markerPath = JbWarmMarker.PathFor(SolutionPath, _cacheHome);
+        WarmMarkerContent content = JbWarmMarker.TryReadMarker(markerPath, _cacheHome, NullLogger.Instance);
+
+        // Assert
+        content.GenerationName.ShouldBe(Path.GetFileName(generation));
+        content.JbVersion.ShouldBe("2026.2.1");
+        JbWarmMarker.TryReadGenerationName(markerPath, _cacheHome, NullLogger.Instance).ShouldBe(Path.GetFileName(generation));
+        JbWarmMarker.TryReadJbVersion(markerPath, NullLogger.Instance).ShouldBe("2026.2.1");
+    }
+
+    [Fact]
+    public void FindRecordedSolutionPaths_MapsEachNamedGenerationToItsPath()
+    {
+        // Arrange — three checkouts sharing a cache home, which is the shape a reset report has to describe:
+        // two stamped by a build that records the path, one by a build that did not.
+        string first = _environment.CreateSolutionPath("App.sln");
+        string second = _environment.CreateSolutionPath("App.sln");
+        string legacy = _environment.CreateSolutionPath("App.sln");
+        string firstGeneration = CacheHomes.PlantWarmDonor(_cacheHome, first);
+        string secondGeneration = CacheHomes.PlantWarmDonor(_cacheHome, second);
+        string legacyGeneration = CacheHomes.PlantWarmDonorFromAnEarlierBuild(_cacheHome, legacy);
+
+        // Act
+        Dictionary<string, string?> recorded = JbWarmMarker.FindRecordedSolutionPaths(_cacheHome, NullLogger.Instance);
+
+        // Assert — the earlier build's marker is present and maps to null, which is a different answer from
+        // a generation no successful run ever stamped: that one is absent altogether.
+        recorded[Path.GetFileName(firstGeneration)].ShouldBe(first);
+        recorded[Path.GetFileName(secondGeneration)].ShouldBe(second);
+        recorded[Path.GetFileName(legacyGeneration)].ShouldBeNull();
+        recorded.ShouldNotContainKey("_App.999.00");
+    }
+
+    [Fact]
+    public void FindRecordedSolutionPaths_CacheHomeThatCannotBeRead_IsEmptyRatherThanThrowing()
+    {
+        // Assert — a report that cannot attribute is still a correct report, and this runs inside a call that
+        // has already deleted directories.
+        JbWarmMarker.FindRecordedSolutionPaths(_cacheHome + "\0invalid", NullLogger.Instance).ShouldBeEmpty();
     }
 
     [Fact]

@@ -146,6 +146,21 @@ internal static class CacheHomes
     }
 
     /// <summary>
+    ///     <see cref="PlantWarmDonor" /> as a build of this server from before the solution path was recorded
+    ///     left it — and, with no <paramref name="jbVersion" />, from before the build was recorded either.
+    ///     The one- and two-line marker shapes <see cref="JbWarmMarker.Stamp" /> can no longer write, which
+    ///     every reader of a marker still has to read.
+    /// </summary>
+    public static string PlantWarmDonorFromAnEarlierBuild(string cacheHome, string solutionPath, string? jbVersion = null)
+    {
+        string generation = PlantGenerationFor(cacheHome, solutionPath);
+        string name = Path.GetFileName(generation);
+        string content = jbVersion is null ? name : $"{name}\n{jbVersion}";
+        File.WriteAllText(JbWarmMarker.PathFor(solutionPath, cacheHome), content);
+        return generation;
+    }
+
+    /// <summary>
     ///     Strips the write permission a directory's entries can only be unlinked through, and puts back
     ///     exactly the mode that was there rather than a guess at what it should have been.
     /// </summary>

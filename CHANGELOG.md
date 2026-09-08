@@ -21,6 +21,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `resharper_reset_cache` names the checkout each cache generation it left alone belongs to. A generation is
+  named by a one-way hash of a solution path, so a report listing the ones it did not touch was listing
+  directories nobody could act on. The warm marker now records the solution path its run was against, as a
+  third line, and the report reads that back: `last warmed for "<path>"`, with `, which no longer exists`
+  where the checkout is gone, followed by the call that reclaims it. A generation stamped by an earlier
+  release reads as `last warmed by a run that recorded no path` until the next successful run against it
+  rewrites the marker, and one no successful run ever stamped — a run killed at the cap, or a `jb` started
+  outside this server's queue — reads as `no successful run on record`.
+
 - A warm run's opening line, progress message and timeout message no longer quote what the last warm run
   took, and no warm figure is recorded. Measured over 31 warm runs on two solutions between 2026-08-22 and
   2026-08-28: the quoted figure correlated with the next run's actual duration at 0.02, landed within a

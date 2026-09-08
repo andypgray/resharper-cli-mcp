@@ -9,6 +9,54 @@ namespace Zphil.ReSharperCli.Services;
 internal sealed record CacheResetFailure(string Name, string Reason);
 
 /// <summary>
+///     How much a reset can say about whose a generation it left alone is. The four answers read differently
+///     to someone deciding what to do next, so they are kept apart rather than folded into a nullable path
+///     and a flag beside it.
+/// </summary>
+internal enum LeftAloneAttribution
+{
+    /// <summary>
+    ///     No successful run through this server ever stamped a marker naming it — a run killed at the cap,
+    ///     or a <c>jb</c> started outside this server's queue. Nothing here knows whose it is.
+    /// </summary>
+    NoRunOnRecord,
+
+    /// <summary>
+    ///     A marker names the generation but records no solution path: written by a build of this server from
+    ///     before the path was recorded, or under naming drift. The next clean run against it fixes that on
+    ///     its own.
+    /// </summary>
+    PathNotRecorded,
+
+    /// <summary>
+    ///     The marker records the solution path its last successful run was against, and a file is still
+    ///     there: someone's working checkout.
+    /// </summary>
+    CheckoutPresent,
+
+    /// <summary>
+    ///     The marker records the solution path, and nothing is there any more: the reclaimable cache of a
+    ///     checkout deleted with its cache still on disk.
+    /// </summary>
+    CheckoutGone
+}
+
+/// <summary>
+///     A generation the reset left where it was, and whose checkout it belongs to. Left alone means the hash
+///     in its name is another solution path's, and the hash is one-way, so the recorded path is the whole of
+///     what turns a directory the caller can see into one they can act on.
+/// </summary>
+/// <param name="LastWarmedFor">
+///     The solution path its last successful run recorded, or <see langword="null" /> unless
+///     <paramref name="Attribution" /> is <see cref="LeftAloneAttribution.CheckoutPresent" /> or
+///     <see cref="LeftAloneAttribution.CheckoutGone" />.
+/// </param>
+internal sealed record LeftAloneGeneration(
+    string Name,
+    LeftAloneAttribution Attribution,
+    string? LastWarmedFor = null);
+
+/// <summary>
 ///     What a reset did: the generation directory names it dropped, the ones belonging to a different
 ///     solution it deliberately left where they were, and the ones it could not delete, under the cache home
 ///     it looked in. Formatting lives in <c>CacheResetFormatter</c>.
@@ -22,7 +70,7 @@ internal sealed record CacheResetOutcome(
     string SolutionPath,
     string CacheHome,
     IReadOnlyList<string> Dropped,
-    IReadOnlyList<string> LeftAlone,
+    IReadOnlyList<LeftAloneGeneration> LeftAlone,
     IReadOnlyList<CacheResetFailure> Failures,
     bool SolutionFileExists = true);
 
@@ -61,6 +109,14 @@ internal sealed record CacheResetOutcome(
 ///         reported as left alone, and a computed hash matching nothing deletes nothing at all. That is what
 ///         makes a shared cache home ordinary rather than an obstacle — before, two checkouts in one cache
 ///         home made the tool refuse for both.
+///     </para>
+///     <para>
+///         Each generation left alone is attributed to the solution path its own last successful run
+///         recorded, read from the warm markers under the cache home. The hash is one-way, so that recorded
+///         path is the only thing that can turn a directory name back into a checkout, and without it a
+///         caller cannot tell the cache of the worktree they are still using from the cache of one they
+///         deleted last month. A generation no successful run through this server stamped cannot be
+///         attributed at all, which the report says rather than guesses at.
 ///     </para>
 ///     <para>
 ///         The solution file itself need not exist. A cache generation is addressed by the hash of the
@@ -135,7 +191,17 @@ internal sealed class CacheResetService(
         // of the same-named generations are this solution's own is FindFor's proof; this only decides what
         // happens to each half.
         JbSolutionGenerations generations = Find(config.CacheHome, config.SolutionPath);
-        List<string> leftAlone = generations.Neighbours.Select(generation => generation.Name).ToList();
+
+        // Read inside the lock with the enumeration it describes, so no run can stamp a marker between the
+        // two and leave the report attributing a generation to a path it no longer names — and only when
+        // there is a neighbour to attribute, since the sweep reads every marker under a cache home shared by
+        // every solution on the machine.
+        Dictionary<string, string?> recordedPaths = generations.Neighbours.Count > 0
+            ? JbWarmMarker.FindRecordedSolutionPaths(config.CacheHome, logger)
+            : [];
+        List<LeftAloneGeneration> leftAlone = generations.Neighbours
+            .Select(generation => Attribute(generation, recordedPaths))
+            .ToList();
 
         // One stat, taken here rather than carried in on the config: this is the only decision that turns on
         // it, and asking the filesystem directly keeps every caller's config the shape it always was.
@@ -193,6 +259,29 @@ internal sealed class CacheResetService(
                 : "the solution file does not exist, so this reclaimed the cache of a removed checkout");
 
         return new CacheResetOutcome(config.SolutionPath, config.CacheHome, dropped, leftAlone, failures, solutionFileExists);
+    }
+
+    /// <summary>
+    ///     Whose <paramref name="generation" /> is, as far as the markers under the cache home can say.
+    ///     Absent from <paramref name="recordedPaths" /> and present-with-null are different answers: the
+    ///     first is a generation no successful run ever stamped, the second a marker from a build that
+    ///     recorded no path. The existence check is one stat against a path a marker recorded, and is what
+    ///     separates the cache of a checkout still in use from the reclaimable cache of a deleted one.
+    /// </summary>
+    private static LeftAloneGeneration Attribute(
+        JbCacheGeneration generation,
+        Dictionary<string, string?> recordedPaths)
+    {
+        if (!recordedPaths.TryGetValue(generation.Name, out string? solutionPath))
+            return new LeftAloneGeneration(generation.Name, LeftAloneAttribution.NoRunOnRecord);
+
+        if (solutionPath is null) return new LeftAloneGeneration(generation.Name, LeftAloneAttribution.PathNotRecorded);
+
+        LeftAloneAttribution attribution = File.Exists(solutionPath)
+            ? LeftAloneAttribution.CheckoutPresent
+            : LeftAloneAttribution.CheckoutGone;
+
+        return new LeftAloneGeneration(generation.Name, attribution, solutionPath);
     }
 
     /// <summary>

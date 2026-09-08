@@ -17,6 +17,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   solution-wide (n=27), and a one-file cleanup to 102 s (n=14) against 113 s for ten files or more (n=19).
   The setup guide carries the same figures.
 
+- The configuration guide now states the rule behind cleanup's silent reverts — a formatting choice no
+  settings layer records is not protected — and adds line joining beside named arguments as its second
+  worked instance. Measured 2026-09-07 against JetBrains Cleanup Code 2026.2.1 under `Built-in: Full
+  Cleanup`: a hand-wrapped single-argument lambda call came back as one 123-character line, and setting
+  `WRAP_LINES` to `False` did not prevent it, because that setting governs whether the formatter adds
+  breaks at the margin rather than whether it keeps the ones already written. The join proved
+  intermittent — four consecutive runs joined, twenty-one later ones across every settings combination
+  tried did not — so the guide names no knob for it. The two levers that held in every run are documented
+  instead: `// @formatter:off` … `// @formatter:on` around the region, and extracting the argument to a
+  local so there is no break left to revert. The README carries the rule for readers.
+
 ### Fixed
 
 - A `jb` that is installed but too slow to answer is no longer reported as one that is missing. Each

@@ -177,6 +177,8 @@ Logs roll daily under `%LOCALAPPDATA%\Zphil.ReSharperCli\logs` on Windows, and t
 
 `resharper_inspect` obeys **inspection severities** (what gets reported); `resharper_cleanup` enforces **code style** through its cleanup **profile** (what gets rewritten). The two axes do not share a switch: setting a rule to `DO_NOT_SHOW` hides its issue, and cleanup goes on normalizing that style. The full model ships as an on-demand MCP resource, `resharper://guides/configuration`, for an agent to pull just before changing what ReSharper enforces.
 
+A formatting choice no settings layer records is not protected: the next cleanup reverts it and nothing reports that it did. Deliberate named arguments and hand-written line breaks are the two cases that bite. Change the code's shape so there is nothing to revert, record the choice where `jb` reads it, or fence the region with `// @formatter:off` … `// @formatter:on`; re-applying the formatting by hand after each run is the one approach that never converges. The configuration guide carries the measurements behind that.
+
 For an existing codebase the `derive_style_guide` MCP prompt walks an agent through deriving an intentional style guide from the code you already have, `.editorconfig`-first, with ReSharper-only knobs spilling into `.sln.DotSettings`. If you have access to Resharper or Rider, JetBrains' first-party [Detect Code Style Settings](https://blog.jetbrains.com/dotnet/2018/12/05/detection-code-styles-naming-resharper/) is the better baseline; the prompt is the path for headless use.
 
 ## Cleanup reminder hook

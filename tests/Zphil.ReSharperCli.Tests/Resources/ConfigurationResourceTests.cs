@@ -1,3 +1,4 @@
+using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using Shouldly;
 using Xunit;
@@ -26,7 +27,7 @@ public sealed class ConfigurationResourceTests
         await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
 
         // Act — resources/list carries only direct resources; a URI with no {param} must land here.
-        var resources = await harness.Client.ListResourcesAsync(cancellationToken: Ct);
+        IList<McpClientResource> resources = await harness.Client.ListResourcesAsync(cancellationToken: Ct);
 
         // Assert
         resources.Select(resource => resource.Uri).ShouldContain(ResharperResources.ConfigurationGuideUri);
@@ -53,6 +54,8 @@ public sealed class ConfigurationResourceTests
         text.ShouldContain("InspectionSeverities"); // the DotSettings severity key shape
         text.ShouldContain("resharper_cleanup"); // the style axis
         text.ShouldContain(ResharperResources.SetupGuideUri); // the onward cross-link to the setup guide
+        text.ShouldContain("@formatter:off"); // the only lever measured to survive a formatting revert
+        text.ShouldContain("extracting it to a local"); // the other one: change the shape, nothing to revert
     }
 
     [Fact]

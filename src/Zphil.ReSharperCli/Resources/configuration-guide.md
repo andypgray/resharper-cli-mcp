@@ -30,13 +30,45 @@ the inspect axis while cleanup runs on the style axis.
 
 ## Protecting a deliberate style from cleanup
 
-Example: you deliberately write **named arguments** and `Built-in: Full Cleanup` keeps stripping them (it
+**A formatting choice that no settings layer records is not protected: the next cleanup reverts it,
+silently.** Nothing reds, no inspection fires, and the file simply comes back written the other way. The
+cures are to change the code's shape so there is nothing left to revert, to record the choice where `jb`
+reads it, or to fence the region in source — never to re-apply the formatting by hand after each run,
+which is a loop you lose.
+
+Two instances follow. In the first a setting exists but cannot express "leave alone"; in the second no
+setting was found that helps at all.
+
+### Named arguments
+
+You deliberately write **named arguments** and `Built-in: Full Cleanup` keeps stripping them (it
 removes positionally-redundant named arguments, and arguments equal to their default value). No inspection
 severity will stop that, and the style axis puts up a specific wall here:
 
 **Argument style is binary — `positional` or `named`, with no neutral "leave alone" value.** `named` makes
 cleanup *add* names; `positional` makes cleanup *strip* them; neither means "don't touch," so a settings
 tweak alone cannot make cleanup leave argument style as-authored.
+
+### Line joining
+
+A hand-written line break inside a call is recorded nowhere at all, and cleanup may join the call back
+onto one line — *past* your margin rather than up to it. Measured 2026-09-07 against JetBrains Cleanup
+Code 2026.2.1, `Built-in: Full Cleanup`: a single-argument call whose argument is a lambda, hand-wrapped
+across two lines, came back as one 123-character line.
+
+Two things about that measurement are worth carrying, because both invert the obvious guess:
+
+- **Turning wrapping off does not keep your breaks.** `WRAP_LINES` set to `False` was in force for some
+  of the runs that joined. That setting governs whether the formatter *adds* breaks at the margin, not
+  whether it keeps the ones you wrote.
+- **No setting was found that keeps them.** The join appeared in four consecutive runs; across
+  twenty-one further runs it never appeared again — not under a declared `max_line_length`, not under
+  three keep-existing properties, and not on a cold cache or a warm one. It is intermittent, so there is
+  no knob here to recommend, and a settings change that appears to fix it has most likely just failed to
+  reproduce it.
+
+Which leaves the two levers below that were observed to hold in every run: fencing the region, and
+changing the shape so the break is not needed.
 
 To leave a style as-authored, use one of these levers — **not** an inspection severity:
 
@@ -60,7 +92,18 @@ To leave a style as-authored, use one of these levers — **not** an inspection 
    region. Read the exact rule ID off `resharper_inspect` output. This travels with the file and needs no
    settings file.
 
-Choose (1) for a house rule, (3) for a one-off you must keep, (2) for a file you never want normalized.
+   **For pure formatting, the fence is a different comment.** A rewrite the formatter makes has no rule ID
+   to disable, so it takes `// @formatter:off` … `// @formatter:on` around the region — formatting's
+   counterpart to `// ReSharper disable`. Use `// @formatter:<rule_ID> <value>` to change one property for
+   the rest of the file instead of suspending the formatter wholesale. The fence held in every run of the
+   line-joining measurement above, including the ones where the unfenced copy of the same code was joined.
+4. **Change the shape.** The most durable of the four, because it leaves nothing to revert. Where a
+   hand-wrapped argument keeps being joined, extracting it to a local gives the call a short form the
+   formatter has no reason to touch, and the declaration stands on its own line because it is a statement
+   rather than a break. This was a no-op under cleanup in every run of the measurement above.
+
+Choose (1) for a house rule, (4) where the code can absorb it, (3) for a one-off you must keep, (2) for a
+file you never want normalized.
 
 ## Where settings come from
 
@@ -169,5 +212,9 @@ Consult these for exact keys and behavior rather than relying on memory.
   <https://www.jetbrains.com/help/resharper/Reference__Options__Tools__Code_Cleanup.html>
 - **Code Syntax Style: Named/Positional Arguments** (the binary `positional`/`named` setting this guide
   warns about): <https://www.jetbrains.com/help/resharper/Argument_Style.html>
+- **C# Line Breaks and Wrapping** (the editorconfig properties behind the line-joining case above):
+  <https://www.jetbrains.com/help/resharper/EditorConfig_CSHARP_LineBreaksPageSchema.html>
+- **Use comments to configure formatter** (the `// @formatter:off` fence and its per-property form):
+  <https://www.jetbrains.com/help/resharper/Configure_Code_Formatting_Rules.html>
 - ReSharper CLI — **InspectCode**: <https://www.jetbrains.com/help/resharper/InspectCode.html> and
   **CleanupCode**: <https://www.jetbrains.com/help/resharper/CleanupCode.html>

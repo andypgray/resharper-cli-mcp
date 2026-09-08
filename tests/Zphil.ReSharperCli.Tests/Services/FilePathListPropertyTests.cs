@@ -8,17 +8,22 @@ using Zphil.ReSharperCli.Tests.TestDoubles;
 namespace Zphil.ReSharperCli.Tests.Services;
 
 /// <summary>
+///     The two <see cref="FilePathList" /> members whose contract a table of examples cannot state.
 ///     <see cref="FilePathList.Split" /> does not build a new list until it meets the first entry that needs
-///     splitting, and then has to graft the entries it already walked past onto the front. That copy-on-first-
-///     split is an optimisation over an obvious model — expand every entry, concatenate — and this states
-///     that the two agree for any arrangement of entries, which is the class of bug an example test picks up
-///     only if someone guessed the right position for the first split.
+///     splitting, and then has to graft the entries it already walked past onto the front — an optimisation
+///     over an obvious model (expand every entry, concatenate) which has to agree with it for any
+///     arrangement, and that is the class of bug an example test picks up only if someone guessed the right
+///     position for the first split. <see cref="FilePathList.ToIncludePattern" /> has to be total, because it
+///     runs on the way to <c>jb</c>, past the validation that would otherwise have named a bad entry: every
+///     string a path API can refuse must come back as the entry rather than as an exception, and which
+///     strings those are is what a generator finds and a reader does not.
 /// </summary>
 /// <remarks>
-///     Every generated fragment is relative and the solution directory is a freshly created empty one, so
-///     nothing an entry names can exist. That keeps the existing-file guard — which correctly keeps a real
-///     <c>Foo,Bar.cs</c> verbatim — out of the comparison, because it is a fact about the disk rather than
-///     about the splitting rule under test.
+///     Every fragment the splitting generators produce is relative, and the solution directory is a freshly
+///     created empty one, so nothing an entry names can exist. That keeps the existing-file guard — which
+///     correctly keeps a real <c>Foo,Bar.cs</c> verbatim — out of the comparison, because it is a fact about
+///     the disk rather than about the splitting rule under test. The totality generator is free of that
+///     constraint: it names nothing that could exist either, and what it draws is aimed at the path APIs.
 /// </remarks>
 public sealed class FilePathListPropertyTests : IDisposable
 {
@@ -54,6 +59,23 @@ public sealed class FilePathListPropertyTests : IDisposable
             });
     }
 
+    [Property]
+    public Property ToIncludePattern_AnyEntryIncludingOnesThePathApisReject_NeverThrows()
+    {
+        return Prop.ForAll(
+            HostileEntry().ToArbitrary(),
+            entry =>
+            {
+                // Act & Assert — translation runs on the way to jb, after validation has decided the call is
+                // worth making, so an entry the path APIs refuse has to be left for the error that names it
+                // rather than crash a run the caller is already waiting on.
+                Should.NotThrow(
+                    () => FilePathList.ToIncludePattern(entry, _solutionDirectory),
+                    $"An entry of {entry.Length} characters, \"{Excerpt(entry)}\", must translate or be kept "
+                    + "verbatim, never throw.");
+            });
+    }
+
     /// <summary>
     ///     The obvious implementation, written for clarity rather than for the allocation the real one avoids:
     ///     expand each entry independently, concatenate the results.
@@ -76,6 +98,12 @@ public sealed class FilePathListPropertyTests : IDisposable
             .ToList();
 
         return fragments.Count > 0 ? fragments : [entry];
+    }
+
+    /// <summary>Enough of an entry to recognise it in a failure, without printing a 40,000-character one.</summary>
+    private static string Excerpt(string entry)
+    {
+        return entry.Length <= 60 ? entry : entry[..60] + "...";
     }
 
     /// <summary>
@@ -131,5 +159,43 @@ public sealed class FilePathListPropertyTests : IDisposable
         return Gen.Choose(1, 6)
             .SelectMany(length => Gen.Elements("abZ09_-".ToCharArray()).ListOf(length))
             .Select(characters => new string(characters.ToArray()));
+    }
+
+    /// <summary>
+    ///     Anything a <c>files</c> entry can arrive as, aimed at the path APIs rather than at <c>jb</c>:
+    ///     arbitrary strings unioned with the shapes those APIs refuse or treat specially — an embedded null,
+    ///     a lone surrogate, a bare device or UNC prefix, a drive-relative entry, a stream-qualified name, and
+    ///     lengths on both sides of the operating system's path limit. No UNC host name is drawn: resolving
+    ///     one would put a network round trip inside a property that runs a hundred times.
+    /// </summary>
+    private Gen<string> HostileEntry()
+    {
+        var separator = Path.DirectorySeparatorChar.ToString();
+        string[] corpus =
+        [
+            "",
+            " ",
+            "\t\r\n",
+            "src/\0.cs",
+            _solutionDirectory + separator + "\0.cs",
+            "\ud800",
+            "src/\u0001\u001f.cs",
+            "C:",
+            "C:foo",
+            "/src/x",
+            @"\\",
+            @"\\?\",
+            @"\\?\C:\x",
+            @"\\.\C:\x",
+            $"..{separator}..{separator}..{separator}A.cs",
+            @"C:\foo:bar",
+            new string('s', 300) + ".cs",
+            $"~{separator}A.cs",
+            new('a', 40_000),
+            _solutionDirectory + separator + new string('a', 40_000)
+        ];
+
+        Gen<string> arbitrary = ArbMap.Default.GeneratorFor<string>().Where(entry => entry is not null);
+        return Gen.OneOf(arbitrary, Gen.Elements(corpus));
     }
 }

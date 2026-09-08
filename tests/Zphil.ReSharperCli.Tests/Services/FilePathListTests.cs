@@ -298,6 +298,19 @@ public sealed class FilePathListTests : IDisposable
     }
 
     [Fact]
+    public void ToIncludePattern_EntryBeyondTheOsPathLimit_IsKeptRatherThanThrowing()
+    {
+        // Arrange — the second way an entry can be refused, and it arrives as a different exception:
+        // Windows maps the length failure to PathTooLongException, which is an IOException and not an
+        // ArgumentException.
+        string tooLong = EntryBeyondTheOsPathLimit();
+
+        // Act & Assert — the value is left unasserted on purpose: Windows hands it back verbatim, while
+        // Unix's managed GetFullPath has no length to fail on and relativises it like any other path.
+        Should.NotThrow(() => FilePathList.ToIncludePattern(tooLong, _solutionDirectory));
+    }
+
+    [Fact]
     public void ResolvesToExistingFile_AbsolutePath_IgnoresTheSolutionDirectory()
     {
         // Arrange
@@ -317,6 +330,56 @@ public sealed class FilePathListTests : IDisposable
 
         // Act & Assert
         FilePathList.ResolvesToExistingFile("src/\0.cs", _solutionDirectory).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void ResolvesToExistingFile_EntryBeyondTheOsPathLimit_IsFalseRatherThanThrowing()
+    {
+        // Arrange — the same refusal reaching the other catch. This predicate decides whether an entry
+        // splits and whether the call is rejected as missing, so a throw here fails both tools with an
+        // unexpected error instead of naming the entry.
+        string tooLong = EntryBeyondTheOsPathLimit();
+
+        // Act & Assert
+        FilePathList.ResolvesToExistingFile(tooLong, _solutionDirectory).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void FindMissing_ReportsTheEntriesThatNameNoFile_AndLeavesTheOthersOut()
+    {
+        // Arrange
+        PlantFile("src/A.cs");
+
+        // Act
+        List<string> missing = FilePathList.FindMissing(["src/A.cs", "src/Typo.cs"], _solutionDirectory);
+
+        // Assert
+        missing.ShouldBe(["src/Typo.cs"]);
+    }
+
+    [Fact]
+    public void FindMissing_WildcardEntries_AreNeverReported()
+    {
+        // jb expands a pattern against the solution model, so this server cannot say what it matched — and
+        // a pattern that resolves to no file on disk is the normal case, not a defect.
+        FilePathList.FindMissing(["src/**/*.cs", "tests/**/*.cs"], _solutionDirectory).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void FindMissing_ABlankEntry_IsReportedAsMissingRatherThanThrowing()
+    {
+        // Inspect has no blank guard and must not grow one: a read-only tool that throws on a malformed
+        // list is worse than one that names the entry it could not use.
+        FilePathList.FindMissing([""], _solutionDirectory).ShouldBe([""]);
+    }
+
+    /// <summary>
+    ///     An entry long enough to pass the NT path limit rather than the legacy 260-character one, which
+    ///     the runtime no longer enforces.
+    /// </summary>
+    private string EntryBeyondTheOsPathLimit()
+    {
+        return _solutionDirectory + Path.DirectorySeparatorChar + new string('a', 40_000);
     }
 
     private string PlantFile(string relativePath)

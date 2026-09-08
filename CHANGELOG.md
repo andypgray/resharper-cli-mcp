@@ -123,6 +123,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a run mixing the two counts the named files and says the count is over those. A run of named files
   only reads exactly as it always has.
 
+- A `files` entry longer than the operating system's path limit is now reported as naming no file,
+  rather than failing the call with an error that names nothing. Every entry is resolved to decide
+  whether it exists and translated into the relative spelling `jb`'s `--include` matches, and both
+  steps already passed a string the path APIs refuse through to the validation that reports it — but
+  only for an embedded null, which raises a different exception type from an over-long path. A call
+  carrying one failed where the same call one character shorter reported the entry. Windows only: on
+  Unix the same resolution is managed code with no length to fail on.
+
 ## [1.6.0] - 2026-08-30
 
 ### Added

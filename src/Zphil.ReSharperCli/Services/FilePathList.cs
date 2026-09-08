@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using Zphil.ReSharperCli.Execution;
 
 namespace Zphil.ReSharperCli.Services;
 
@@ -106,10 +107,11 @@ internal static class FilePathList
             string relative = Path.GetRelativePath(solutionDirectory, entry);
             return relative.Replace('\\', '/');
         }
-        catch (ArgumentException)
+        catch (Exception exception) when (FilesystemFailure.Covers(exception))
         {
-            // A path the runtime rejects outright (an embedded null, say) is left for the validation that
-            // reports it, exactly as ResolvesToExistingFile leaves it.
+            // A path the runtime rejects outright is left for the validation that reports it, exactly as
+            // ResolvesToExistingFile leaves it. An entry past the operating system's path limit surfaces
+            // from Windows as PathTooLongException, an IOException.
             return entry;
         }
     }
@@ -159,9 +161,10 @@ internal static class FilePathList
         {
             return File.Exists(Resolve(entry, solutionDirectory));
         }
-        catch (ArgumentException)
+        catch (Exception exception) when (FilesystemFailure.Covers(exception))
         {
-            // A path Path.GetFullPath rejects outright (an embedded null, say) names no file.
+            // A path Path.GetFullPath rejects outright names no file — an embedded null as an
+            // ArgumentException, an entry past the operating system's path limit as PathTooLongException.
             return false;
         }
     }

@@ -2,8 +2,9 @@ namespace Zphil.ReSharperCli.Execution;
 
 /// <summary>
 ///     The exception shapes an ordinary filesystem mishap takes — I/O, permissions, an unsupported or
-///     outright invalid path — as one predicate, so every cache-home side effect that swallows them swallows
-///     the same set and a type added or dropped moves them all at once.
+///     outright invalid path — as one predicate, so every cache-home side effect that swallows them, and
+///     the two <c>files</c>-entry resolutions in <see cref="Services.FilePathList" />, swallow the same set
+///     and a type added or dropped moves them all at once.
 /// </summary>
 /// <remarks>
 ///     Deliberately broader than the filters that stay spelled out on site: <see cref="JbRunLock" />'s open

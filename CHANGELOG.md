@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- A warm run's opening line, progress message and timeout message no longer quote what the last warm run
+  took, and no warm figure is recorded. Measured over 31 warm runs on two solutions between 2026-08-22 and
+  2026-08-28: the quoted figure correlated with the next run's actual duration at 0.02, landed within a
+  factor of two 9 times in 31, and was out by a median of 119 s against a median actual of 78 s — the error
+  is the size of the quantity. The cause is structural rather than tuning, since a warm run's cost is set by
+  how much source changed since the last one and nothing here observes that; a running median over the same
+  data was no better. Cold and seeded are unchanged, the gap there being minutes against seconds. A `warm`
+  line an earlier release wrote into the cost record is left where it is and ignored.
+
 - The setup guide records what a pre-warm running in *another* server process costs a call queued behind
   it, because the number on its own reads worse than it is. Measured once in seven days of two sessions on
   one repository: a call queued 168 s behind the other session's pre-warm of the same solution, then ran

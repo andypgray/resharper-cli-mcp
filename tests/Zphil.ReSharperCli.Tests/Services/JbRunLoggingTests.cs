@@ -207,6 +207,27 @@ public sealed class JbRunLoggingTests : IDisposable
     }
 
     [Fact]
+    public async Task RunAsync_SecondWarmRunOfASolution_OpensWithoutAFigure()
+    {
+        // Arrange — the same pair of runs against a warm cache instead of a cold one. Measured over 31 warm
+        // runs on two solutions, the first run's duration predicted the second's within a factor of two 9
+        // times, so the second line says what state the cache is in and stops there.
+        CacheHomes.PlantWarmDonor(_cacheHome, _solutionPath);
+        StubExit(0);
+
+        // Act
+        await Runner().RunAsync(Config, ["inspectcode", _solutionPath], Ct);
+        await Runner().RunAsync(Config, ["inspectcode", _solutionPath], Ct);
+
+        // Assert — both lines read the way the warm arm read before any figure was ever recorded.
+        IReadOnlyList<LogEntry> opened = _logs.WithProperty("CacheState");
+        opened.Count.ShouldBe(2);
+        var second = opened[1].Property("CacheState").ShouldBeOfType<string>();
+        second.ShouldStartWith("warm (");
+        second.ShouldNotContain(" took ");
+    }
+
+    [Fact]
     public async Task RunAsync_KilledAtTheCap_SaysSoRatherThanEndingWithNoLine()
     {
         // Arrange

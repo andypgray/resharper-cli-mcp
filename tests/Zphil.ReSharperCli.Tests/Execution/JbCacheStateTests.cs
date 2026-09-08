@@ -10,8 +10,9 @@ namespace Zphil.ReSharperCli.Tests.Execution;
 ///     <see cref="JbCacheState.CostBand" />, the timeout message — so its arms are pinned here rather than
 ///     inferred from any one of them. Two claims carry the class. Every arm reads exactly as it always has
 ///     when no figure is recorded, which is what lets a feature be added to this sentence without touching a
-///     single consumer's expectations. And a figure appears only where one is comparable: the arms with no
-///     band quote nothing, however they are constructed.
+///     single consumer's expectations. And a figure appears only where one predicts something: the arms with
+///     no band quote nothing however they are constructed, and so does the warm arm, whose band the record
+///     keeps no figure for.
 /// </summary>
 public sealed class JbCacheStateTests
 {
@@ -61,14 +62,17 @@ public sealed class JbCacheStateTests
     }
 
     [Fact]
-    public void Summary_AWarmRunWithARecordedCost_QuotesTheWarmFigureAndNotAnother()
+    public void Summary_AWarmRunHandedAFigure_StillQuotesNothing()
     {
-        // Assert — the band is the whole point of the record: measured on one solution, a warm run took 39
-        // seconds where the seeded run before it took 456, so a single remembered number would have told
-        // this caller to expect seven minutes.
+        // Assert — warm is a state and not a band, so a warm state constructed with a duration on it has
+        // nothing to key the figure by and quotes none: across 31 warm runs on two solutions the last warm
+        // run's length predicted the next within a factor of two only 9 times. The state is still warm and
+        // the arm still says so; only the closing clause is gone.
         JbCacheState state = Warm() with { LastComparableCost = TimeSpan.FromSeconds(39) };
 
-        state.Summary.ShouldBe($"warm (14m old marker, {Generation}; the last warm run took 39 seconds)");
+        state.Summary.ShouldBe($"warm (14m old marker, {Generation})");
+        state.QuotableCost.ShouldBeNull();
+        state.CostBand.ShouldBeNull();
     }
 
     [Fact]
@@ -148,12 +152,13 @@ public sealed class JbCacheStateTests
     [InlineData("part-built", null)]
     [InlineData("stale", "cold")]
     [InlineData("stale, no build recorded", "cold")]
-    [InlineData("warm", "warm")]
+    [InlineData("warm", null)]
     public void CostBand_MirrorsTheSummaryArms(string arm, string? expected)
     {
         // Assert — one arm, one band, in the order the summary decides them. A state the summary describes in
         // its own words is a state whose duration only runs described the same way predict, and a reset makes
-        // no difference to that: a cold cache is a cold cache however it came to be empty.
+        // no difference to that: a cold cache is a cold cache however it came to be empty. Warm is the arm
+        // with no band, because the last warm run predicts nothing about the next.
         JbCacheState state = ArmNamed(arm);
 
         string? band = state.CostBand is { } value ? JbCostRecord.Label(value) : null;

@@ -126,17 +126,17 @@ public sealed class CacheResetServiceTests : IDisposable
     [Fact]
     public async Task RunAsync_DroppingAGeneration_ClearsTheRecordedCostsWithTheMarker()
     {
-        // Arrange — the durations on record describe the lineage this reset is ending. What a warm run of the
-        // dropped cache cost says nothing about the cold one replacing it, so leaving them behind would have
-        // the next call quote forty seconds at a caller about to wait eight minutes.
+        // Arrange — the durations on record describe the lineage this reset is ending. A seeded figure belongs
+        // to a cache copied from a sibling, which the reset has just deleted, so leaving it behind would have
+        // the next call quote the seeding premium at a caller about to build the cache from nothing.
         CacheHomes.PlantWarmDonor(_cacheHome, _config.SolutionPath);
-        JbCostRecord.Stamp(_config.SolutionPath, _cacheHome, JbCostBand.Warm, TimeSpan.FromSeconds(39), NullLogger.Instance);
+        JbCostRecord.Stamp(_config.SolutionPath, _cacheHome, JbCostBand.Seeded, TimeSpan.FromSeconds(456), NullLogger.Instance);
 
         // Act
         await _service.RunAsync(_config, Ct);
 
         // Assert
-        JbCostRecord.TryRead(_config.SolutionPath, _cacheHome, JbCostBand.Warm, NullLogger.Instance).ShouldBeNull();
+        JbCostRecord.TryRead(_config.SolutionPath, _cacheHome, JbCostBand.Seeded, NullLogger.Instance).ShouldBeNull();
     }
 
     [Fact]

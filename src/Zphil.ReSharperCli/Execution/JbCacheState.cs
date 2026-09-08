@@ -113,10 +113,12 @@ internal sealed record JbCacheState(
     ///     only runs described the same way predict.
     /// </summary>
     /// <remarks>
-    ///     Two states have no band. An unreadable cache home knows nothing, and a part-built generation is the
-    ///     remnant of a run that was killed — how much of the work survived depends on when it died, so two
-    ///     resumptions are not comparable and quoting one at the other would be a guess dressed as a
-    ///     measurement.
+    ///     Three states have no band. An unreadable cache home knows nothing, and a part-built generation is
+    ///     the remnant of a run that was killed — how much of the work survived depends on when it died, so
+    ///     two resumptions are not comparable and quoting one at the other would be a guess dressed as a
+    ///     measurement. A warm generation is the third: what its last run cost is set by how much source
+    ///     changed since, which nothing here observes, and <see cref="JbCostBand" />'s remarks carry the
+    ///     measurement. The summary still describes it as warm; it is only the figure that is withheld.
     ///     <para>
     ///         A stale generation bands as <see cref="JbCostBand.Cold" />, and its sitting next to the arm
     ///         that names it is the guard rather than a convenience: measured across one patch bump on a
@@ -134,7 +136,9 @@ internal sealed record JbCacheState(
             if (Seeded) return JbCostBand.Seeded;
             if (WarmMarkerAge is null) return null;
 
-            return WrittenByAnotherJb ? JbCostBand.Cold : JbCostBand.Warm;
+            // A stale generation bands as cold; a warm one bands as nothing, because what the last warm run
+            // cost says nothing about the next — the measurement is on JbCostBand.
+            return WrittenByAnotherJb ? JbCostBand.Cold : null;
         }
     }
 
@@ -147,12 +151,15 @@ internal sealed record JbCacheState(
 
     /// <summary>
     ///     The figure this state may quote and the band that keys it, or <see langword="null" /> when it may
-    ///     quote none. Both halves have to hold — a band to key by and a figure under it — so a state with no
-    ///     band quotes nothing even if handed a duration. The one eligibility rule behind every surface that
-    ///     quotes: the summary's closing clause, and the timeout message's sentence.
+    ///     quote none. Two things have to hold — a band to key by, and a figure under it — so a state handed
+    ///     a duration with no band to key it by still quotes nothing, which is the part-built rule pointed at
+    ///     a state carrying a number it should not. The one eligibility rule behind every surface that quotes:
+    ///     the summary's closing clause, and the timeout message's sentence.
     /// </summary>
     internal (JbCostBand Band, TimeSpan Cost)? QuotableCost =>
-        CostBand is { } band && LastComparableCost is { } cost ? (band, cost) : null;
+        CostBand is { } band && LastComparableCost is { } cost
+            ? (band, cost)
+            : null;
 
     /// <summary>
     ///     The state of <paramref name="solutionPath" />'s cache under <paramref name="cacheHome" /> right

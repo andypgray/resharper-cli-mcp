@@ -5,15 +5,30 @@ using Microsoft.Extensions.Logging;
 namespace Zphil.ReSharperCli.Execution;
 
 /// <summary>
-///     The cache state a <c>jb</c> run started from, reduced to the only distinction its duration turns on.
+///     The cache state a <c>jb</c> run started from, reduced to the distinctions its duration turns on and
+///     the last run like it can predict.
 /// </summary>
 /// <remarks>
-///     Three bands rather than one number, because one number would lie. Measured on a single solution: 497
+///     Two bands rather than one number, because one number would lie. Measured on a single solution: 497
 ///     seconds cold, 456 seeded, 39 warm. A run that quoted a remembered figure without saying which of those
 ///     it came from would tell a warm caller to expect eight minutes, which is worse than saying nothing.
-///     Two states have no band at all — an unreadable cache home, and the part-built remnant of a killed run —
-///     and that is the same judgement pointed the other way: two resumptions of differently killed runs are
-///     not comparable, so neither may quote the other.
+///     <para>
+///         Warm is a state a run starts in and a line describes, and it is not a band. Measured over 31 warm
+///         runs on two solutions between 2026-08-22 and 2026-08-28, the figure the previous warm run left
+///         correlated with the next one's actual duration at 0.02, landed within a factor of two 9 times in
+///         31, and was out by a median of 119 seconds against a median actual duration of 78 seconds — the
+///         error is the size of the quantity. The cause is structural rather than a matter of tuning: a warm
+///         run's cost is set by how much source changed since the last one, which nothing here observes, so
+///         the last figure is a lag-one estimator of a series driven by something unobserved. A running
+///         median over the recorded runs was tried on the same data and was no better. Left out of the enum
+///         rather than gated out at each door, so that a warm figure cannot be recorded or quoted by any
+///         caller rather than merely declined by the ones that remembered to ask.
+///     </para>
+///     <para>
+///         Two more states have no band, and that is the same judgement pointed the other way — an unreadable
+///         cache home, and the part-built remnant of a killed run: two resumptions of differently killed runs
+///         are not comparable, so neither may quote the other.
+///     </para>
 /// </remarks>
 internal enum JbCostBand
 {
@@ -21,10 +36,7 @@ internal enum JbCostBand
     Cold,
 
     /// <summary>A generation <c>CacheTransplanter</c> had just copied from a sibling checkout.</summary>
-    Seeded,
-
-    /// <summary>A generation of this solution's own that some run has already finished against.</summary>
-    Warm
+    Seeded
 }
 
 /// <summary>
@@ -75,7 +87,6 @@ internal static class JbCostRecord
         {
             JbCostBand.Cold => "cold",
             JbCostBand.Seeded => "seeded",
-            JbCostBand.Warm => "warm",
             _ => throw new ArgumentOutOfRangeException(nameof(band), band, "Unmapped jb cost band.")
         };
     }
@@ -87,6 +98,11 @@ internal static class JbCostRecord
     /// <remarks>
     ///     Whole seconds, because that is the resolution every reader renders at and a figure with more of
     ///     them in the file than in the sentence invites a diff that means nothing.
+    ///     <para>
+    ///         A <c>warm</c> line an earlier build wrote, from when that was a band, is left exactly where it
+    ///         is rather than swept up — the rule this file keeps for any line it does not recognise. A reset
+    ///         deletes the file outright, and until then nothing reads the line, because no band names it.
+    ///     </para>
     /// </remarks>
     internal static void Stamp(string solutionPath, string cacheHome, JbCostBand band, TimeSpan cost, ILogger logger)
     {

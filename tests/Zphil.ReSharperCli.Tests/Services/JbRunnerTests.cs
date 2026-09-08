@@ -269,7 +269,6 @@ public sealed class JbRunnerTests : IDisposable
 
         // Assert
         Recorded(JbCostBand.Cold).ShouldNotBeNull();
-        Recorded(JbCostBand.Warm).ShouldBeNull();
     }
 
     [Fact]
@@ -288,6 +287,22 @@ public sealed class JbRunnerTests : IDisposable
         // Assert
         Recorded(JbCostBand.Seeded).ShouldNotBeNull();
         Recorded(JbCostBand.Cold).ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task RunAsync_WarmRun_RecordsNoCost()
+    {
+        // Arrange — the band that is measured and dropped. Across 31 warm runs on two solutions the figure a
+        // warm run left predicted the next one's duration at a correlation of 0.02, so there is nothing here
+        // worth a file: the record is not written, rather than written and then declined on the way out.
+        CacheHomes.PlantWarmDonor(_config.CacheHome, _config.SolutionPath);
+        StubExit(0, string.Empty);
+
+        // Act
+        await _runner.RunAsync(_config, ["inspectcode", _config.SolutionPath], Ct);
+
+        // Assert
+        File.Exists(JbCostRecord.PathFor(_config.SolutionPath, _config.CacheHome)).ShouldBeFalse();
     }
 
     [Fact]

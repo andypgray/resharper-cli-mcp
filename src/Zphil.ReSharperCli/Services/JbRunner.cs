@@ -308,9 +308,10 @@ internal sealed class JbRunner(
     ///     <c>inspectcode</c>, since both analyse the whole solution into the same cache generation — rather
     ///     than relying on one call site remembering to. The same exit discharges any cold tombstone a reset
     ///     left: the cache this run rebuilt is the solution's own, so there is no longer a reset to protect.
-    ///     It also records what the run cost under the band it started in, which is what lets the next run
-    ///     like it say how long a run like it takes. All three are the clean exit's alone — a run killed at
-    ///     the cap or one that exited non-zero reaches none of them.
+    ///     It also records what the run cost under the band it started in, where that band predicts the next
+    ///     run like it, which is what lets the next one say how long a run like it takes; a warm run records
+    ///     nothing, because its last duration does not predict its next. All three are the clean exit's
+    ///     alone — a run killed at the cap or one that exited non-zero reaches none of them.
     /// </summary>
     /// <remarks>
     ///     It is also where the pair of <c>Information</c> lines a <c>jb</c> run costs the log are written,

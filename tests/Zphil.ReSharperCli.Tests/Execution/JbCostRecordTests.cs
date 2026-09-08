@@ -14,7 +14,9 @@ namespace Zphil.ReSharperCli.Tests.Execution;
 ///     on one solution is 497 seconds cold against 39 warm and a figure quoted under the wrong band is worse
 ///     than no figure at all. And every failure has to read as <em>no figure</em>, which is
 ///     <see cref="JbWarmMarker" />'s direction rather than <see cref="JbColdTombstone" />'s: what is lost is a
-///     hint, and it is lost at the tail of a <c>jb</c> run the user already paid minutes for.
+///     hint, and it is lost at the tail of a <c>jb</c> run the user already paid minutes for. A third joins
+///     them at the door: only a band whose last run predicts its next is recorded at all, and the gate is
+///     applied on the way in and on the way out, so a warm figure cannot arrive through either.
 /// </summary>
 public sealed class JbCostRecordTests : IDisposable
 {
@@ -46,30 +48,30 @@ public sealed class JbCostRecordTests : IDisposable
     [Fact]
     public void Stamp_ASecondBand_LeavesTheFirstStanding()
     {
-        // Arrange — the whole reason there is a file rather than a single number. A solution seeded once and
-        // then run warm has two figures worth keeping, and they are minutes apart.
-        JbCostRecord.Stamp(SolutionPath, _cacheHome, JbCostBand.Seeded, TimeSpan.FromSeconds(456), NullLogger.Instance);
+        // Arrange — the whole reason there is a file rather than a single number. A checkout analysed cold
+        // once and seeded once has two figures worth keeping, and a run in either band has to find its own.
+        JbCostRecord.Stamp(SolutionPath, _cacheHome, JbCostBand.Cold, TimeSpan.FromSeconds(497), NullLogger.Instance);
 
         // Act
-        JbCostRecord.Stamp(SolutionPath, _cacheHome, JbCostBand.Warm, TimeSpan.FromSeconds(39), NullLogger.Instance);
+        JbCostRecord.Stamp(SolutionPath, _cacheHome, JbCostBand.Seeded, TimeSpan.FromSeconds(456), NullLogger.Instance);
 
         // Assert
+        Read(JbCostBand.Cold).ShouldBe(TimeSpan.FromSeconds(497));
         Read(JbCostBand.Seeded).ShouldBe(TimeSpan.FromSeconds(456));
-        Read(JbCostBand.Warm).ShouldBe(TimeSpan.FromSeconds(39));
     }
 
     [Fact]
     public void Stamp_TheSameBandTwice_KeepsTheLatestRatherThanAccumulating()
     {
-        // Arrange — a solution grows and its warm run slows. The last comparable run is the one worth
+        // Arrange — a solution grows and its cold run slows. The last comparable run is the one worth
         // quoting, and a file that appended would grow without bound while quoting the oldest figure in it.
-        JbCostRecord.Stamp(SolutionPath, _cacheHome, JbCostBand.Warm, TimeSpan.FromSeconds(39), NullLogger.Instance);
+        JbCostRecord.Stamp(SolutionPath, _cacheHome, JbCostBand.Cold, TimeSpan.FromSeconds(497), NullLogger.Instance);
 
         // Act
-        JbCostRecord.Stamp(SolutionPath, _cacheHome, JbCostBand.Warm, TimeSpan.FromSeconds(81), NullLogger.Instance);
+        JbCostRecord.Stamp(SolutionPath, _cacheHome, JbCostBand.Cold, TimeSpan.FromSeconds(612), NullLogger.Instance);
 
         // Assert
-        Read(JbCostBand.Warm).ShouldBe(TimeSpan.FromSeconds(81));
+        Read(JbCostBand.Cold).ShouldBe(TimeSpan.FromSeconds(612));
         File.ReadAllLines(JbCostRecord.PathFor(SolutionPath, _cacheHome)).ShouldHaveSingleItem();
     }
 
@@ -84,12 +86,12 @@ public sealed class JbCostRecordTests : IDisposable
     [Fact]
     public void TryRead_ABandNothingHasStamped_SaysNothingAboutTheOnesThatHave()
     {
-        // Arrange — a freshly seeded checkout has a seeded figure and no warm one, and must not answer the
-        // warm question with the seeded number: 456 seconds against a run that will take 39.
+        // Arrange — a checkout seeded from a sibling has a seeded figure and has never been analysed cold.
+        // Answering the cold question with the seeded number would promise a run that has to build the cache
+        // from nothing the premium paid by one that started from a copy of a finished one.
         JbCostRecord.Stamp(SolutionPath, _cacheHome, JbCostBand.Seeded, TimeSpan.FromSeconds(456), NullLogger.Instance);
 
         // Assert
-        Read(JbCostBand.Warm).ShouldBeNull();
         Read(JbCostBand.Cold).ShouldBeNull();
     }
 
@@ -101,13 +103,13 @@ public sealed class JbCostRecordTests : IDisposable
         File.WriteAllText(JbCostRecord.PathFor(SolutionPath, _cacheHome), "lukewarm 120\ncold 497\n");
 
         // Act
-        JbCostRecord.Stamp(SolutionPath, _cacheHome, JbCostBand.Warm, TimeSpan.FromSeconds(39), NullLogger.Instance);
+        JbCostRecord.Stamp(SolutionPath, _cacheHome, JbCostBand.Seeded, TimeSpan.FromSeconds(456), NullLogger.Instance);
 
         // Assert — the unknown line survives verbatim, the known ones read back, and neither band this build
         // understands has picked up the stranger's number.
         File.ReadAllLines(JbCostRecord.PathFor(SolutionPath, _cacheHome)).ShouldContain("lukewarm 120");
         Read(JbCostBand.Cold).ShouldBe(TimeSpan.FromSeconds(497));
-        Read(JbCostBand.Warm).ShouldBe(TimeSpan.FromSeconds(39));
+        Read(JbCostBand.Seeded).ShouldBe(TimeSpan.FromSeconds(456));
     }
 
     [Theory]
@@ -170,8 +172,8 @@ public sealed class JbCostRecordTests : IDisposable
         string invalid = _cacheHome + "\0invalid";
 
         // Assert
-        Should.NotThrow(() => JbCostRecord.Stamp(SolutionPath, invalid, JbCostBand.Warm, TimeSpan.FromSeconds(39), NullLogger.Instance));
-        JbCostRecord.TryRead(SolutionPath, invalid, JbCostBand.Warm, NullLogger.Instance).ShouldBeNull();
+        Should.NotThrow(() => JbCostRecord.Stamp(SolutionPath, invalid, JbCostBand.Cold, TimeSpan.FromSeconds(497), NullLogger.Instance));
+        JbCostRecord.TryRead(SolutionPath, invalid, JbCostBand.Cold, NullLogger.Instance).ShouldBeNull();
         Should.NotThrow(() => JbCostRecord.Clear(SolutionPath, invalid, NullLogger.Instance));
     }
 
@@ -181,11 +183,11 @@ public sealed class JbCostRecordTests : IDisposable
         // Arrange — the record is per cache generation, exactly like the lock and the marker beside it. Two
         // checkouts of one repository share a cache home and are hashed apart, and their costs differ by
         // whether either has ever been analysed.
-        JbCostRecord.Stamp(SolutionPath, _cacheHome, JbCostBand.Warm, TimeSpan.FromSeconds(39), NullLogger.Instance);
+        JbCostRecord.Stamp(SolutionPath, _cacheHome, JbCostBand.Cold, TimeSpan.FromSeconds(497), NullLogger.Instance);
 
         // Assert
-        JbCostRecord.TryRead("/repo/Other.sln", _cacheHome, JbCostBand.Warm, NullLogger.Instance).ShouldBeNull();
-        JbCostRecord.TryRead(SolutionPath, _environment.CreateTempDirectory(), JbCostBand.Warm, NullLogger.Instance).ShouldBeNull();
+        JbCostRecord.TryRead("/repo/Other.sln", _cacheHome, JbCostBand.Cold, NullLogger.Instance).ShouldBeNull();
+        JbCostRecord.TryRead(SolutionPath, _environment.CreateTempDirectory(), JbCostBand.Cold, NullLogger.Instance).ShouldBeNull();
     }
 
     [Fact]
@@ -193,7 +195,7 @@ public sealed class JbCostRecordTests : IDisposable
     {
         // Arrange — a reset ends the lineage every figure describes, whichever band recorded it.
         JbCostRecord.Stamp(SolutionPath, _cacheHome, JbCostBand.Cold, TimeSpan.FromSeconds(497), NullLogger.Instance);
-        JbCostRecord.Stamp(SolutionPath, _cacheHome, JbCostBand.Warm, TimeSpan.FromSeconds(39), NullLogger.Instance);
+        JbCostRecord.Stamp(SolutionPath, _cacheHome, JbCostBand.Seeded, TimeSpan.FromSeconds(456), NullLogger.Instance);
 
         // Act — and twice over, because a reset of an already-reset solution is an ordinary thing to do.
         JbCostRecord.Clear(SolutionPath, _cacheHome, NullLogger.Instance);
@@ -201,7 +203,24 @@ public sealed class JbCostRecordTests : IDisposable
 
         // Assert
         Read(JbCostBand.Cold).ShouldBeNull();
-        Read(JbCostBand.Warm).ShouldBeNull();
+        Read(JbCostBand.Seeded).ShouldBeNull();
+    }
+
+    [Fact]
+    public void Stamp_AfterALineAnEarlierBuildLeftForTheWarmBand_LeavesItWhereItIs()
+    {
+        // Arrange — a cache home carried across an upgrade from a build that recorded warm as a band, met by
+        // a run that does record. Sweeping the line up would be the read-modify-write rule broken from the
+        // inside, and there is nothing to gain by it: a reset deletes the file outright, and until then
+        // nothing reads that line, because no band names it.
+        File.WriteAllText(JbCostRecord.PathFor(SolutionPath, _cacheHome), "warm 39\n");
+
+        // Act
+        JbCostRecord.Stamp(SolutionPath, _cacheHome, JbCostBand.Cold, TimeSpan.FromSeconds(497), NullLogger.Instance);
+
+        // Assert
+        File.ReadAllLines(JbCostRecord.PathFor(SolutionPath, _cacheHome)).ShouldContain("warm 39");
+        Read(JbCostBand.Cold).ShouldBe(TimeSpan.FromSeconds(497));
     }
 
     [Fact]
@@ -211,7 +230,6 @@ public sealed class JbCostRecordTests : IDisposable
         // from it, and a second spelling would let the two drift while both kept passing.
         JbCostRecord.Label(JbCostBand.Cold).ShouldBe("cold");
         JbCostRecord.Label(JbCostBand.Seeded).ShouldBe("seeded");
-        JbCostRecord.Label(JbCostBand.Warm).ShouldBe("warm");
     }
 
     [Fact]

@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The note `resharper_inspect` leads with when it reports compilation errors now leads with the build, and
+  makes the cache reset conditional on what the build says. Two things produce those errors and the cheaper
+  one is much the commoner: a checkout that was never built, or whose packages were never restored, where
+  every unresolved reference reports at once. The note used to spend most of itself on the other branch, a
+  stale ReSharper index, and closed with the reset as an unconditional instruction — which on an unbuilt
+  checkout drops the cache, blocks the seeding a sibling checkout would have provided, and buys a cold
+  analysis on top of the build that was needed anyway. The reset's own cost is now stated where it is
+  offered. `resharper_reset_cache`'s description carries the same gate, and the setup guide names the
+  unrestored-package origin beside the stale-index one.
+
 - `resharper_inspect` no longer appends a `DETAIL REDUCED` note to a run that found nothing. The listing
   is `No issues found.` at every detail level, so passing `detail` reduced nothing — but the note fired on
   the level rather than on the reduction, and told the caller that totals and the top rules were all that

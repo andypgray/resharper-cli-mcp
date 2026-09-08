@@ -5,19 +5,34 @@ using Zphil.ReSharperCli.Tools;
 namespace Zphil.ReSharperCli.Formatting;
 
 /// <summary>
-///     The note an inspect result leads with when it reports compilation errors: ReSharper's solution-wide
-///     index can serve errors for symbols the compiler resolves perfectly well, and once it does it stays
-///     wrong across re-runs until the cache generation is dropped. A whole session has been spent deriving
-///     that from first principles; this is that derivation reduced to three lines, delivered at the moment
-///     it is needed rather than in a guide nobody has a reason to open.
+///     The note an inspect result leads with when it reports compilation errors. Two quite different things
+///     produce them, and the cheap one is much the commoner: a checkout that has not been built — or whose
+///     packages have never been restored, where every unresolved reference reports here at once. The other is
+///     a stale ReSharper index, which can serve errors for symbols the compiler resolves perfectly well and
+///     stays wrong across re-runs until the cache generation is dropped. A whole session has been spent
+///     deriving the second from first principles; this is that derivation reduced to a few lines, delivered
+///     at the moment it is needed rather than in a guide nobody has a reason to open.
 /// </summary>
 /// <remarks>
 ///     <para>
-///         It states the discriminator rather than the conclusion. This server cannot tell a phantom from a
-///         genuine compilation error — both arrive as <see cref="RuleId" /> — and an agent halfway through an
-///         edit usually has the genuine kind. So the note leads with the test that separates them (build it;
-///         see whether the compiler agrees) and makes the cure conditional on the answer. Telling an agent
-///         with a real syntax error to drop its cache would be worse than saying nothing.
+///         It states the discriminator rather than the conclusion, and this is the rule the text is held to
+///         rather than a description of it: for a while the two had drifted apart. This server cannot tell a
+///         phantom from a genuine compilation error — both arrive as <see cref="RuleId" /> — and an agent
+///         halfway through an edit usually has the genuine kind. So the note leads with the test that
+///         separates them (build it; see whether the compiler agrees) and makes the cure conditional on the
+///         answer. Telling an agent with a real syntax error to drop its cache would be worse than saying
+///         nothing.
+///     </para>
+///     <para>
+///         Which is why the reset is gated rather than imperative, and why its cost is named. On a checkout
+///         that was never built — a fresh worktree is the measured case, 13,990 compilation errors out of
+///         17,971 findings — a reset is the expensive wrong move: it drops the generation, writes a cold
+///         tombstone that blocks seeding from a sibling checkout, and buys a cold rebuild on top of the
+///         build that was needed anyway. Nothing here detects which branch applies. There is no honest
+///         signal: <c>bin</c> and <c>obj</c> on disk are not "built", and a proportion heuristic misreads a
+///         mid-refactor session whose broken base type cascades exactly the same way. This note is charged
+///         to every affected response and rides outside the ladder, so a wrong branch would be a wrong
+///         instruction at maximum prominence — naming both and choosing neither is the honest shape.
 ///     </para>
 ///     <para>
 ///         Joined onto <see cref="ConfigWarningBanner" />'s output rather than folded into it: that banner's
@@ -57,11 +72,12 @@ internal static class CompilationErrorNote
         int errors = issues.Count(issue => IsCompilationError(issue.RuleId));
         if (errors == 0) return "";
 
-        return $"NOTE: {errors} of these issue(s) are compilation errors (`{RuleId}`). Build the solution before "
-               + "acting on them: if the compiler accepts the code, ReSharper's solution-wide index is stale and "
-               + $"these are phantoms that will repeat on every re-run. Run {ResharperTools.ResetCacheToolName} to drop this "
-               + $"solution's cache generation under \"{cacheHome}\", then inspect again. "
-               + $"See the {ResharperResources.SetupGuideUri} resource.\n\n";
+        return $"NOTE: {errors} of these issue(s) are compilation errors (`{RuleId}`). Build the solution "
+               + "first: on a checkout that was never built or never restored, every unrestored package "
+               + "reference reports here. If the build succeeds and an inspect still reports them, they are "
+               + $"phantoms from a stale ReSharper index; run {ResharperTools.ResetCacheToolName} to drop this "
+               + $"solution's cache generation under \"{cacheHome}\", which costs the next call a cold "
+               + $"analysis. See the {ResharperResources.SetupGuideUri} resource.\n\n";
     }
 
     private static bool IsCompilationError(string ruleId)

@@ -536,6 +536,7 @@ public sealed class ToolPipelineTests
 
         // Assert — the discriminator, the cure, and the resolved cache home the caller could not derive.
         result.ShouldStartWith("NOTE: 2 of these issue(s) are compilation errors (`.CSharpErrors`).");
+        result.ShouldContain("Build the solution first");
         result.ShouldContain(ResharperTools.ResetCacheToolName);
         result.ShouldContain($"under \"{cacheHome}\"");
         result.ShouldContain("Found 3 issue(s) across 2 file(s)");

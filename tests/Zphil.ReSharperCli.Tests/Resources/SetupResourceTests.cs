@@ -80,6 +80,7 @@ public sealed class SetupResourceTests
         text.ShouldContain("`detail=Minimal report=Markdown`");
 
         text.ShouldContain("CSharpErrors"); // the rule that identifies a stale solution-wide index
+        text.ShouldContain("`jb` does not restore them"); // and the cheaper origin, which a reset makes worse
         text.ShouldContain(ResharperTools.ResetCacheToolName); // and the tool that clears it
         text.ShouldContain("worktree"); // the always-cold case, and the only place the seeding is described
         text.ShouldContain("Running `jb` yourself"); // how far the queue reaches: a jb the server never spawned is outside it

@@ -40,9 +40,10 @@ internal sealed class ResharperTools(
 
     private const string ResetCacheDescription =
         "Delete this solution's ReSharper analysis cache so the next inspect or cleanup rebuilds it from "
-        + "cold. The cure for inspect reporting compilation errors the compiler itself does not: a stale "
-        + "index serves those until the cache is dropped. Costs the next call a full cold analysis, so it "
-        + "is not routine maintenance.";
+        + "cold. The cure for inspect reporting compilation errors a successful build does not: a stale "
+        + "index serves those until the cache is dropped. Build first, because on a checkout that was never "
+        + "built or restored the errors are real and a reset only adds a cold analysis to the build it "
+        + "still needs. Costs the next call a full cold analysis, so it is not routine maintenance.";
 
     // Descriptions ride the deferred tool schema, which a client fetches only when it is about to call the
     // tool, so a gotcha costs nothing until it is needed. Prefer this over the always-resident server

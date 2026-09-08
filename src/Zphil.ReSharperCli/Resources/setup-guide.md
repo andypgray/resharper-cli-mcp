@@ -264,9 +264,19 @@ nothing deletes nothing at all.
 
 The stale index originates in the ReSharper CLI's incremental invalidation, not in this wrapper, so
 nothing here can fix it — and `jb` exposes no cache-invalidation option of its own (`--caches-home` only
-chooses *where* caches live), which is why the operation lives here at all. A `--no-build` solution model
-is *not* the cause: `jb` builds its model from source for a solution's own projects, and resolves
-declarations added since the last build without one.
+chooses *where* caches live), which is why the operation lives here at all.
+
+**Before any of that, check the cheaper explanation: the checkout was never built.** A `--no-build`
+solution model is not the cause for a solution's *own* projects — `jb` builds its model from source and
+resolves declarations added since the last build without one. **Package references are the other half, and
+`jb` does not restore them.** On a checkout whose packages have never been restored, every type coming from
+a package is unresolved, so `.CSharpErrors` arrive in essentially every file at once — a fresh worktree
+inspected before a build reported 13,990 of them among 17,971 findings. The index is not stale there; it is
+correct about a reference that is genuinely absent. `dotnet restore` and a build are the whole cure, and a
+reset is the wrong move: it drops the generation, blocks the seeding described under "Worktrees, clones,
+and copies of one repository" — a reset is honoured until a run succeeds — and buys a cold rebuild on top
+of the build that was needed anyway. Reach for `resharper_reset_cache` only once the build is green and an
+inspect still reports the errors.
 
 ## Output size: reduction, and truncation as a last resort
 

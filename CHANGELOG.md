@@ -131,6 +131,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   carrying one failed where the same call one character shorter reported the entry. Windows only: on
   Unix the same resolution is managed code with no length to fail on.
 
+### Security
+
+- The Dockerfile's two base images are pinned by digest, so a build of it resolves to the
+  `mcr.microsoft.com/dotnet/sdk` and `dotnet/runtime` layers the pin names rather than to whatever the
+  `10.0` tag points at that day. A digest goes stale silently, so `.github/dependabot.yml` gained a
+  `docker` ecosystem entry that bumps both weekly — without it the pin would freeze the image on an
+  unpatched base. This is the introspection image MCP directories build to read `tools/list`; the .NET
+  global tool is packed and published without it.
+
 ## [1.6.0] - 2026-08-30
 
 ### Added

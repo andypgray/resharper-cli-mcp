@@ -36,4 +36,4 @@ The nuget.org copy differs. nuget.org appends a repository signature (`.signatur
 
 ## Supply chain
 
-Publishing uses NuGet trusted publishing (OIDC), so there is no long-lived API key to store or leak. The release workflow builds, tests, packs, and attests every package. Builds use SourceLink and a deterministic CI configuration. Every GitHub Actions dependency is pinned to a commit SHA, and every NuGet dependency is locked to a content hash in a committed `packages.lock.json` (restored in locked mode on CI); Dependabot keeps both current.
+Publishing uses NuGet trusted publishing (OIDC), so there is no long-lived API key to store or leak. The release workflow builds, tests, packs, and attests every package. Builds use SourceLink and a deterministic CI configuration. Every GitHub Actions dependency is pinned to a commit SHA, every NuGet dependency is locked to a content hash in a committed `packages.lock.json` (restored in locked mode on CI), and the Dockerfile's base images are pinned by digest; Dependabot keeps all three current.

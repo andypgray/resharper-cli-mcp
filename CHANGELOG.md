@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `resharper_cleanup` no longer reports `0 of 0 file(s) changed on disk` when every `files` entry is a
+  wildcard. A count is a measurement: the server hashes each named file before and after the run, and a
+  pattern is expanded by `jb` against the solution model, so there is nothing to hash and nothing to
+  count. An all-wildcard run now says so and confirms that `jb` cleaned what the patterns matched;
+  a run mixing the two counts the named files and says the count is over those. A run of named files
+  only reads exactly as it always has.
+
 ## [1.6.0] - 2026-08-30
 
 ### Added

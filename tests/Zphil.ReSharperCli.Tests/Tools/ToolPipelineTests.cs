@@ -109,6 +109,27 @@ public sealed class ToolPipelineTests
     }
 
     [Fact]
+    public async Task CleanupAsync_EveryEntryAWildcard_ReportsNoRatioRatherThanZeroOfZero()
+    {
+        // Arrange — the field call end to end. An agent cleaned up with globs, jb rewrote 26 files, and the
+        // response opened "0 of 0 file(s) changed on disk"; the agent read that as "nothing changed" and ran
+        // git to find out otherwise. Nothing here is measurable, so nothing here is claimed.
+        using FakeEnvironment environment = new();
+        environment.PlantSolution("App.sln");
+        PlantFile(environment, "src/A.cs");
+        StubJb();
+        ResharperTools tools = ToolHarness.Build(_processRunner, environment);
+
+        // Act
+        string result = await tools.CleanupAsync(["src/**/*.cs", "tests/**/*.cs"], cancellationToken: Ct);
+
+        // Assert — and the run is affirmed rather than merely not denied.
+        result.ShouldNotContain("0 of 0");
+        result.ShouldContain("Every entry was a wildcard pattern: jb cleaned what they matched");
+        result.ShouldContain("  - src/**/*.cs (pattern, not tracked)");
+    }
+
+    [Fact]
     public async Task CleanupAsync_EntryJoiningSeveralPaths_IsSplitIntoSeparatePaths()
     {
         // Arrange — the measured caller mistake: several paths joined into one array element. It used to fail

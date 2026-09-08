@@ -11,6 +11,12 @@ namespace Zphil.ReSharperCli.Tests.Formatting;
 ///     each <see cref="DetailLevel" /> and pinned with an exact <c>ShouldBe</c>: Full lists every entry, the
 ///     middle levels progressively collapse the lower-signal categories to trailing counts, and Minimal is
 ///     the one-liner. Output uses <c>\n</c> line endings and is ASCII-only.
+///     <para>
+///         That fixture carries a wildcard, so every level pins the <em>partial</em>-measurement header. The
+///         other two states have pins of their own below: a batch of named files only, which is the header
+///         verbatim as it has always read, and a batch of nothing but wildcards, where there is no ratio to
+///         report and the header says so.
+///     </para>
 /// </summary>
 public sealed class CleanupSummaryFormatterTests
 {
@@ -36,7 +42,7 @@ public sealed class CleanupSummaryFormatterTests
 
         // Assert
         summary.ShouldBe(
-            "Cleanup completed with profile \"Built-in: Full Cleanup\". 2 of 4 file(s) changed on disk:\n"
+            "Cleanup completed with profile \"Built-in: Full Cleanup\". 2 of 4 named file(s) changed on disk:\n"
             + "  - src/A.cs (changed)\n"
             + "  - src/B.cs (unchanged)\n"
             + "  - src/C.cs (status unknown)\n"
@@ -52,7 +58,7 @@ public sealed class CleanupSummaryFormatterTests
 
         // Assert
         summary.ShouldBe(
-            "Cleanup completed with profile \"Built-in: Full Cleanup\". 2 of 4 file(s) changed on disk:\n"
+            "Cleanup completed with profile \"Built-in: Full Cleanup\". 2 of 4 named file(s) changed on disk:\n"
             + "  - src/A.cs (changed)\n"
             + "  - src/C.cs (status unknown)\n"
             + "  - src/D.cs (changed)\n"
@@ -68,7 +74,7 @@ public sealed class CleanupSummaryFormatterTests
 
         // Assert
         summary.ShouldBe(
-            "Cleanup completed with profile \"Built-in: Full Cleanup\". 2 of 4 file(s) changed on disk:\n"
+            "Cleanup completed with profile \"Built-in: Full Cleanup\". 2 of 4 named file(s) changed on disk:\n"
             + "  - src/A.cs (changed)\n"
             + "  - src/C.cs (status unknown)\n"
             + "  - src/D.cs (changed)\n"
@@ -84,7 +90,7 @@ public sealed class CleanupSummaryFormatterTests
 
         // Assert
         summary.ShouldBe(
-            "Cleanup completed with profile \"Built-in: Full Cleanup\". 2 of 4 file(s) changed on disk:\n"
+            "Cleanup completed with profile \"Built-in: Full Cleanup\". 2 of 4 named file(s) changed on disk:\n"
             + "  - src/A.cs (changed)\n"
             + "  - src/D.cs (changed)\n"
             + "  (+1 unchanged, not listed)\n"
@@ -100,7 +106,7 @@ public sealed class CleanupSummaryFormatterTests
 
         // Assert
         summary.ShouldBe(
-            "Cleanup completed with profile \"Built-in: Full Cleanup\". 2 of 4 file(s) changed on disk. "
+            "Cleanup completed with profile \"Built-in: Full Cleanup\". 2 of 4 named file(s) changed on disk. "
             + "(1 unchanged, 1 unknown, 1 pattern(s) not listed.)");
     }
 
@@ -119,6 +125,91 @@ public sealed class CleanupSummaryFormatterTests
         summary.ShouldBe(
             "Cleanup completed with profile \"Built-in: Full Cleanup\". 1 of 1 file(s) changed on disk:\n"
             + "  - src/Probe.cs (changed)");
+    }
+
+    [Fact]
+    public void Format_NamedFilesOnly_CountsThemWithoutQualifyingTheDenominator()
+    {
+        // The ordinary batch: every entry was hashed, so the count spans everything the caller asked for and
+        // the header needs no qualifier. Byte-for-byte what it has always said, which is what the factored
+        // header keeps structurally true rather than duplicated across two literals.
+        CleanupOutcome outcome = new(
+            "Built-in: Full Cleanup",
+            [
+                new CleanupEntry("src/A.cs", CleanupFileStatus.Changed),
+                new CleanupEntry("src/B.cs", CleanupFileStatus.Unchanged),
+                new CleanupEntry("src/C.cs", CleanupFileStatus.Changed)
+            ]);
+
+        // Act
+        string summary = CleanupSummaryFormatter.Format(outcome, DetailLevel.Full);
+
+        // Assert
+        summary.ShouldBe(
+            "Cleanup completed with profile \"Built-in: Full Cleanup\". 2 of 3 file(s) changed on disk:\n"
+            + "  - src/A.cs (changed)\n"
+            + "  - src/B.cs (unchanged)\n"
+            + "  - src/C.cs (changed)");
+    }
+
+    /// <summary>
+    ///     The field case: an agent cleaned up with a glob, jb rewrote 26 files, and the header said
+    ///     "0 of 0 file(s) changed on disk" — which the agent read as "nothing changed" and went to git to
+    ///     disprove. Nothing was measured, so the header states that instead of a ratio over an empty set.
+    /// </summary>
+    private static CleanupOutcome AllWildcards()
+    {
+        return new CleanupOutcome(
+            "Built-in: Full Cleanup",
+            [
+                new CleanupEntry("src/**/*.cs", CleanupFileStatus.Pattern),
+                new CleanupEntry("tests/**/*.cs", CleanupFileStatus.Pattern)
+            ]);
+    }
+
+    [Fact]
+    public void Format_EveryEntryAWildcardAtFull_ReportsNoCountAndSaysWhy()
+    {
+        // Act
+        string summary = CleanupSummaryFormatter.Format(AllWildcards(), DetailLevel.Full);
+
+        // Assert — and it affirms the work happened, which is the job CleanupRanInFull cannot do from inside
+        // a reduction note that an all-wildcard run is far too small to trigger.
+        summary.ShouldBe(
+            "Cleanup completed with profile \"Built-in: Full Cleanup\". Every entry was a wildcard pattern: "
+            + "jb cleaned what they matched, and this server hashes named files only, so it cannot report a "
+            + "count:\n"
+            + "  - src/**/*.cs (pattern, not tracked)\n"
+            + "  - tests/**/*.cs (pattern, not tracked)");
+    }
+
+    [Fact]
+    public void Format_EveryEntryAWildcardAtMinimal_StillReportsNoCount()
+    {
+        // Minimal is where a squeezed budget lands, and it is the one line an agent reads whole. The header
+        // must not reacquire the ratio on the way down the ladder.
+
+        // Act
+        string summary = CleanupSummaryFormatter.Format(AllWildcards(), DetailLevel.Minimal);
+
+        // Assert
+        summary.ShouldBe(
+            "Cleanup completed with profile \"Built-in: Full Cleanup\". Every entry was a wildcard pattern: "
+            + "jb cleaned what they matched, and this server hashes named files only, so it cannot report a "
+            + "count. (0 unchanged, 0 unknown, 2 pattern(s) not listed.)");
+    }
+
+    [Fact]
+    public void Format_EveryLevel_NeverClaimsAZeroOfZeroRatio()
+    {
+        // The defect in one assertion, across the whole ladder: an all-wildcard run has no denominator, so
+        // no level may print one. A later header change that reintroduces the ratio fails here whichever
+        // level it reintroduces it at.
+        CleanupOutcome outcome = AllWildcards();
+
+        // Act / Assert
+        foreach (DetailLevel level in Enum.GetValues<DetailLevel>())
+            CleanupSummaryFormatter.Format(outcome, level).ShouldNotContain("0 of 0");
     }
 
     [Fact]

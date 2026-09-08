@@ -4,10 +4,10 @@ namespace Zphil.ReSharperCli.Formatting;
 
 /// <summary>
 ///     Renders a <see cref="CleanupOutcome" /> as a plain-text summary at a given <see cref="DetailLevel" />.
-///     The header is always present and states <c>{changed} of {concrete}</c> files changed on disk, where
-///     <c>{concrete}</c> counts non-pattern entries (a <see cref="CleanupFileStatus.StatusUnknown" /> file is
-///     in the denominator but never the numerator). Lower levels progressively collapse the lowest-signal
-///     categories to trailing counts, so a solution-wide run degrades gracefully instead of being hard-chopped.
+///     The header is always present and states what this run measured — see <see cref="Header" /> for the
+///     three forms it takes, one per epistemic state the entry list left it in. Lower levels progressively
+///     collapse the lowest-signal categories to trailing counts, so a solution-wide run degrades gracefully
+///     instead of being hard-chopped.
 ///     A small batch fits at <see cref="DetailLevel.Full" />, whose output is a plain per-file list. Output uses
 ///     <c>\n</c> line endings and is ASCII-only, matching the other formatters.
 /// </summary>
@@ -31,21 +31,19 @@ internal static class CleanupSummaryFormatter
 
     public static string Format(CleanupOutcome outcome, DetailLevel level)
     {
-        var counts = outcome.Entries.CountBy(entry => entry.Status).ToDictionary();
+        Dictionary<CleanupFileStatus, int> counts = outcome.Entries.CountBy(entry => entry.Status).ToDictionary();
         int changed = counts.GetValueOrDefault(CleanupFileStatus.Changed);
         int unchanged = counts.GetValueOrDefault(CleanupFileStatus.Unchanged);
         int unknown = counts.GetValueOrDefault(CleanupFileStatus.StatusUnknown);
         int pattern = counts.GetValueOrDefault(CleanupFileStatus.Pattern);
         int concrete = changed + unchanged + unknown;
 
-        if (level == DetailLevel.Minimal)
-            return $"Cleanup completed with profile \"{outcome.Profile}\". {changed} of {concrete} file(s) changed on disk. "
-                   + $"({unchanged} unchanged, {unknown} unknown, {pattern} pattern(s) not listed.)";
+        string header = Header(outcome.Profile, changed, concrete, pattern);
 
-        List<string> lines =
-        [
-            $"Cleanup completed with profile \"{outcome.Profile}\". {changed} of {concrete} file(s) changed on disk:"
-        ];
+        if (level == DetailLevel.Minimal)
+            return $"{header}. ({unchanged} unchanged, {unknown} unknown, {pattern} pattern(s) not listed.)";
+
+        List<string> lines = [$"{header}:"];
 
         foreach (CleanupEntry entry in outcome.Entries)
             if (IsListed(entry.Status, level))
@@ -58,6 +56,38 @@ internal static class CleanupSummaryFormatter
         }
 
         return string.Join("\n", lines);
+    }
+
+    /// <summary>
+    ///     The header body, without its trailing punctuation — the listing levels append <c>:</c>, Minimal a
+    ///     <c>.</c> — in one of three forms, one per epistemic state the entry list leaves this formatter in.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         The count is a measurement, over exactly the entries whose bytes were hashed before and after the
+    ///         run. A wildcard is outside it and always was: <c>jb</c> expands a pattern against the solution
+    ///         model, so this server never learns which files it matched. What changes here is that the header
+    ///         stops asserting a ratio over an empty knowledge set. <c>0 of 0 file(s) changed on disk</c> reads
+    ///         as "nothing needed changing" for a run that may have rewritten dozens of files, which is the
+    ///         reading <see cref="CleanupRanInFull" /> exists to prevent — and it cannot, because it rides only
+    ///         in <see cref="DescribeReduction" />, and an all-wildcard run is a few lines that never reduce.
+    ///     </para>
+    ///     <para>
+    ///         The partial form adds one word rather than a clause. Every level already carries the pattern
+    ///         count — listed at Full and High, <c>(+N pattern(s), not listed)</c> below them, and in Minimal's
+    ///         tail — so a header clause would state it twice in two vocabularies.
+    ///     </para>
+    /// </remarks>
+    private static string Header(string profile, int changed, int concrete, int pattern)
+    {
+        var opening = $"Cleanup completed with profile \"{profile}\".";
+
+        if (pattern == 0) return $"{opening} {changed} of {concrete} file(s) changed on disk";
+
+        if (concrete > 0) return $"{opening} {changed} of {concrete} named file(s) changed on disk";
+
+        return $"{opening} Every entry was a wildcard pattern: jb cleaned what they matched, and this server "
+               + "hashes named files only, so it cannot report a count";
     }
 
     /// <summary>

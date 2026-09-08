@@ -57,7 +57,7 @@
         "type": "object",
         "properties": {
           "files": {
-            "description": "File paths to clean up. Each is relative to the solution root, or absolute. jb matches them against the files that belong to a project in the solution, so one that is on disk but in no project matches nothing. Wildcards are allowed and expanded by jb; a non-wildcard path that does not exist fails the whole call before anything is rewritten. An element joining several paths with ; or , is split into separate paths.",
+            "description": "File paths to clean up. Each is relative to the solution root, or absolute. jb matches them against the files that belong to a project in the solution, so one that is on disk but in no project matches nothing, which nothing here can detect. Wildcards are allowed and expanded by jb; a non-wildcard path that does not exist fails the whole call before anything is rewritten. An element joining several paths with ; or , is split into separate paths.",
             "type": "array",
             "items": {
               "type": "string"
@@ -94,7 +94,7 @@
         "type": "object",
         "properties": {
           "files": {
-            "description": "Ant-style globs scoping the analysis to specific files, for example src/**/*.cs. Each is relative to the solution root, or absolute. jb matches them against the files that belong to a project in the solution, so one that is on disk but in no project matches nothing. An element joining several paths with ; or , is split into separate paths.",
+            "description": "Ant-style globs scoping the analysis to specific files, for example src/**/*.cs. Each is relative to the solution root, or absolute. jb matches them against the files that belong to a project in the solution, so one that is on disk but in no project matches nothing, which nothing here can detect. An element joining several paths with ; or , is split into separate paths.",
             "default": null,
             "type": "array",
             "items": {

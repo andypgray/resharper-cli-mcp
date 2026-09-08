@@ -35,8 +35,9 @@ namespace Zphil.ReSharperCli.Formatting;
 ///         instruction at maximum prominence — naming both and choosing neither is the honest shape.
 ///     </para>
 ///     <para>
-///         Joined onto <see cref="ConfigWarningBanner" />'s output rather than folded into it: that banner's
-///         subject is configuration silently dropped before the run, and this is a reading of the run's
+///         Joined onto the preambles above it rather than folded into <see cref="ConfigWarningBanner" />:
+///         that banner's subject is configuration silently dropped before the run, and
+///         <see cref="InspectScopeNote" />'s is scope the run never saw, while this is a reading of the run's
 ///         results. They share only the position, and the property that
 ///         <c>ResponseTruncator.BudgetForBody</c> charges them to the budget before rendering, which puts
 ///         both outside the reduction ladder — a note that vanished at <c>Minimal</c> would disappear

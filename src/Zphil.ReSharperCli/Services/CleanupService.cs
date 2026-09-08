@@ -45,7 +45,7 @@ internal sealed class CleanupService(JbRunner jbRunner, ILogger<CleanupService> 
         // This tool mutates files in place, so verify concrete paths exist before invoking jb — a typo
         // should fail fast and name the offending path, not silently clean up nothing.
         string solutionDirectory = config.SolutionDirectory;
-        List<string> missing = FindMissingFiles(files, solutionDirectory);
+        List<string> missing = FilePathList.FindMissing(files, solutionDirectory);
         if (missing.Count > 0)
             throw new UserErrorException(
                 $"The following files were not found (relative to the solution root \"{solutionDirectory}\", or absolute):\n"
@@ -56,7 +56,8 @@ internal sealed class CleanupService(JbRunner jbRunner, ILogger<CleanupService> 
         // stay aligned). Wildcards get no snapshot — jb expands them, so they are never a single file.
         var beforeHashes = new List<byte[]?>(files.Count);
         foreach (string entry in files)
-            beforeHashes.Add(IsPattern(entry) ? null : HashFile(FilePathList.Resolve(entry, solutionDirectory)));
+            beforeHashes.Add(
+                FilePathList.IsPattern(entry) ? null : HashFile(FilePathList.Resolve(entry, solutionDirectory)));
 
         List<string> arguments = BuildArguments(config, files, resolvedProfile);
 
@@ -141,45 +142,16 @@ internal sealed class CleanupService(JbRunner jbRunner, ILogger<CleanupService> 
     }
 
     /// <summary>
-    ///     Return the entries in <paramref name="files" /> that do not resolve to an existing file. Wildcard
-    ///     patterns (see <see cref="IsPattern" />) are left for jb to expand and are never reported; other
-    ///     entries are resolved against <paramref name="solutionDirectory" /> (absolute entries ignore it).
-    ///     Entries are non-blank by contract — the tool method rejects a blank one before dispatching, so
-    ///     path resolution here cannot be handed the empty string.
-    /// </summary>
-    internal static List<string> FindMissingFiles(IReadOnlyList<string> files, string solutionDirectory)
-    {
-        List<string> missing = [];
-        foreach (string entry in files)
-        {
-            if (IsPattern(entry)) continue;
-
-            if (!FilePathList.ResolvesToExistingFile(entry, solutionDirectory)) missing.Add(entry);
-        }
-
-        return missing;
-    }
-
-    /// <summary>
-    ///     A <c>files</c> entry is a wildcard pattern (handed to jb unexpanded, never a single file) when it
-    ///     contains <c>*</c>, <c>?</c>, or <c>[</c>. Shared by missing-file validation and hash classification
-    ///     so the rule cannot drift between them.
-    /// </summary>
-    private static bool IsPattern(string entry)
-    {
-        return entry.AsSpan().IndexOfAny('*', '?', '[') >= 0;
-    }
-
-    /// <summary>
-    ///     Classify one requested entry against its pre-run hash. A wildcard is
-    ///     <see cref="CleanupFileStatus.Pattern" />; an unreadable before- or after-state is
+    ///     Classify one requested entry against its pre-run hash. A wildcard (see
+    ///     <see cref="FilePathList.IsPattern" />) is <see cref="CleanupFileStatus.Pattern" />; an unreadable before- or
+    ///     after-state is
     ///     <see cref="CleanupFileStatus.StatusUnknown" />; otherwise the entry is
     ///     <see cref="CleanupFileStatus.Changed" /> or <see cref="CleanupFileStatus.Unchanged" /> by hash
     ///     equality.
     /// </summary>
     private static CleanupFileStatus Classify(string entry, byte[]? beforeHash, string solutionDirectory)
     {
-        if (IsPattern(entry)) return CleanupFileStatus.Pattern;
+        if (FilePathList.IsPattern(entry)) return CleanupFileStatus.Pattern;
 
         byte[]? afterHash = HashFile(FilePathList.Resolve(entry, solutionDirectory));
         if (beforeHash is null || afterHash is null) return CleanupFileStatus.StatusUnknown;

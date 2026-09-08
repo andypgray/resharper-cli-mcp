@@ -8,7 +8,11 @@ namespace Zphil.ReSharperCli.Services;
 ///     mistake that the array parameter itself invites, and it fails in two different ways: cleanup rejects
 ///     the joined string as a missing file, while inspect hands it to <c>jb</c>, matches nothing, and reports
 ///     "No issues found." — a false negative, which is worse. Splitting the element at the tool edge makes
-///     both work.
+///     both work. It is also where the rules that <em>classify</em> an entry live: whether it is a wildcard
+///     for <c>jb</c> to expand (<see cref="IsPattern" />) and whether it names a file that is there
+///     (<see cref="ResolvesToExistingFile" />, and <see cref="FindMissing" /> over a whole list). Both tools
+///     ask those questions, so a second spelling of either is a way for the two to disagree about the same
+///     argument.
 /// </summary>
 /// <remarks>
 ///     Two normalizations, applied at different depths on purpose. Splitting happens at the tool edge, before
@@ -111,9 +115,43 @@ internal static class FilePathList
     }
 
     /// <summary>
+    ///     A <c>files</c> entry is a wildcard pattern — handed to <c>jb</c> unexpanded, never a single file —
+    ///     when it contains <c>*</c>, <c>?</c>, or <c>[</c>.
+    /// </summary>
+    public static bool IsPattern(string entry)
+    {
+        return entry.AsSpan().IndexOfAny('*', '?', '[') >= 0;
+    }
+
+    /// <summary>
+    ///     Return the entries in <paramref name="files" /> that do not resolve to an existing file. Wildcard
+    ///     patterns (see <see cref="IsPattern" />) are left for jb to expand and are never reported; other
+    ///     entries are resolved against <paramref name="solutionDirectory" /> (absolute entries ignore it).
+    /// </summary>
+    /// <remarks>
+    ///     A blank entry is reported as missing rather than throwing:
+    ///     <see cref="ResolvesToExistingFile" /> catches what <see cref="Path.GetFullPath(string,string)" />
+    ///     raises on the empty string and answers false. Cleanup rejects a blank entry before it ever gets
+    ///     here, but inspect does not and must not — a read-only tool that throws on a malformed list is
+    ///     worse than one that names the entry it could not use.
+    /// </remarks>
+    public static List<string> FindMissing(IReadOnlyList<string> files, string solutionDirectory)
+    {
+        List<string> missing = [];
+        foreach (string entry in files)
+        {
+            if (IsPattern(entry)) continue;
+
+            if (!ResolvesToExistingFile(entry, solutionDirectory)) missing.Add(entry);
+        }
+
+        return missing;
+    }
+
+    /// <summary>
     ///     Whether <paramref name="entry" /> names a file that exists, per <see cref="Resolve" />. Shared with
-    ///     <see cref="CleanupService.FindMissingFiles" /> so the "is this a real file" rule that decides
-    ///     whether to split cannot drift from the one that decides whether to fail the call.
+    ///     <see cref="FindMissing" /> so the "is this a real file" rule that decides whether to split cannot
+    ///     drift from the one that decides whether to fail the call.
     /// </summary>
     public static bool ResolvesToExistingFile(string entry, string solutionDirectory)
     {

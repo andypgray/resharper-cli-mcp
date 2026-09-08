@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `resharper_inspect` now names a `files` entry that resolves to no file, instead of answering as though the
+  whole scope had been inspected. It reports rather than fails: the tool is read-only, nothing was mutated,
+  and a scoped run is measured to take about as long as a solution-wide one, so failing the call would charge
+  a second full run for what a note gives away free. `jb`'s own behaviour when *every* entry misses has
+  changed between releases; what no release reports is the partial case, where some entries match, `jb` exits
+  0 with their findings, and says nothing about the rest. The note vouches for nothing beyond that: a path
+  that does exist can still match nothing, because `jb` matches the files that belong to a project in the
+  solution, and it says so.
+
 - The note `resharper_inspect` leads with when it reports compilation errors now leads with the build, and
   makes the cache reset conditional on what the build says. Two things produce those errors and the cheaper
   one is much the commoner: a checkout that was never built, or whose packages were never restored, where

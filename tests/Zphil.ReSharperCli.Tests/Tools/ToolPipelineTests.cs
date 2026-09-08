@@ -520,6 +520,95 @@ public sealed class ToolPipelineTests
     }
 
     [Fact]
+    public async Task InspectAsync_AFilesEntryThatNamesNoFile_NamesItAndStillReturns()
+    {
+        // Arrange — inspect is read-only, and a files scope is measured to buy no time (269 s scoped against
+        // 272 s solution-wide), so failing the call would charge a full second run for what a note gives
+        // away free. It came back as a bare result before, and the scan silently covered less than asked.
+        using FakeEnvironment environment = new();
+        environment.PlantSolution("App.sln");
+        StubJb(Fixtures.ReadSarif("empty-runs.json"));
+        ResharperTools tools = ToolHarness.Build(_processRunner, environment);
+
+        // Act
+        string result = await tools.InspectAsync(["src/Typo.cs"], cancellationToken: Ct);
+
+        // Assert
+        result.ShouldStartWith("NOTE: 1 of the 1 files entry(s) named no file under the solution root");
+        result.ShouldContain("\"src/Typo.cs\"");
+        result.ShouldEndWith("No issues found.");
+    }
+
+    [Fact]
+    public async Task InspectAsync_APartialScope_ReportsTheFindingsAndTheEntryThatMatchedNothing()
+    {
+        // Arrange — the case jb reports on in no release: one entry matches, jb exits 0 with its findings,
+        // and nothing anywhere mentions the other. The all-miss case fails loudly on a current jb; this one
+        // never has.
+        using FakeEnvironment environment = new();
+        environment.PlantSolution("App.sln");
+        PlantFile(environment, "src/A.cs");
+        List<string>? inspectArguments = null;
+        StubJb(
+            Fixtures.ReadSarif("inspect-sample.json"),
+            args => inspectArguments = [.. args]);
+        ResharperTools tools = ToolHarness.Build(_processRunner, environment);
+
+        // Act
+        string result = await tools.InspectAsync(["src/A.cs", "src/Typo.cs"], cancellationToken: Ct);
+
+        // Assert — both entries still reach jb, which is the one that can judge them, and the findings come
+        // back under a note naming only the entry this server could rule out.
+        inspectArguments.ShouldNotBeNull();
+        inspectArguments.ShouldContain("--include=src/A.cs;src/Typo.cs");
+        result.ShouldStartWith("NOTE: 1 of the 2 files entry(s) named no file");
+        result.ShouldContain("\"src/Typo.cs\"");
+        result.ShouldContain("Found 3 issue(s)");
+    }
+
+    [Fact]
+    public async Task InspectAsync_AScopeThatAllResolves_IsByteIdenticalToTheRunWithoutTheNote()
+    {
+        // Arrange — the default-path pin. A fourth preamble may not move a byte of what a well-formed
+        // scoped call already gets, which is what makes it free to add.
+        using FakeEnvironment environment = new();
+        environment.PlantSolution("App.sln");
+        PlantFile(environment, "src/A.cs");
+        StubJb(Fixtures.ReadSarif("inspect-sample.json"));
+        ResharperTools tools = ToolHarness.Build(_processRunner, environment);
+
+        // Act
+        string scoped = await tools.InspectAsync(["src/A.cs"], cancellationToken: Ct);
+        string wildcard = await tools.InspectAsync(["src/**/*.cs"], cancellationToken: Ct);
+        string unscoped = await tools.InspectAsync(cancellationToken: Ct);
+
+        // Assert
+        scoped.ShouldBe(unscoped);
+        wildcard.ShouldBe(unscoped);
+    }
+
+    [Fact]
+    public async Task InspectAsync_AMissingScopeEntryAndCompilationErrors_ReadsScopeBeforeResults()
+    {
+        // Arrange — the preamble block reads before-the-run, then the run's scope, then how to read the
+        // results. A scope entry that was never inspected is a fact about the run, so it comes above a note
+        // about what came back.
+        using FakeEnvironment environment = new();
+        string cacheHome = environment.CreateTempDirectory();
+        environment.SetVariable("JB_CACHE_HOME", cacheHome);
+        environment.PlantSolution("App.sln");
+        StubJb(Fixtures.ReadSarif("inspect-phantom-errors.json"));
+        ResharperTools tools = ToolHarness.Build(_processRunner, environment);
+
+        // Act
+        string result = await tools.InspectAsync(["src/Typo.cs"], cancellationToken: Ct);
+
+        // Assert
+        result.IndexOf("files entry(s) named no file", StringComparison.Ordinal)
+            .ShouldBeLessThan(result.IndexOf("are compilation errors", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task InspectAsync_ResultCarriesCompilationErrors_LeadsWithTheStaleCacheNote()
     {
         // Arrange — the incident's shape reaching a real tool result: the note has to be joined onto the

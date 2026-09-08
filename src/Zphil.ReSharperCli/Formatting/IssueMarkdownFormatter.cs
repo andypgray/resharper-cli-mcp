@@ -133,9 +133,20 @@ internal static class IssueMarkdownFormatter
             start = end + 1;
         }
 
-        if (ranges.Count <= MaxLineRanges) return string.Join(", ", ranges);
+        return Collapse(ranges, MaxLineRanges);
+    }
 
-        return $"{string.Join(", ", ranges.Take(MaxLineRanges))} (+{ranges.Count - MaxLineRanges} more)";
+    /// <summary>
+    ///     <paramref name="items" /> joined by <c>", "</c>, listing at most <paramref name="maxListed" />
+    ///     before the tail collapses to <c>(+N more)</c>. The one spelling of that collapse, shared with
+    ///     <see cref="InspectScopeNote" />, so the shape an agent pattern-matches on cannot drift between the
+    ///     two surfaces that render it.
+    /// </summary>
+    internal static string Collapse(IReadOnlyList<string> items, int maxListed)
+    {
+        if (items.Count <= maxListed) return string.Join(", ", items);
+
+        return $"{string.Join(", ", items.Take(maxListed))} (+{items.Count - maxListed} more)";
     }
 
     /// <summary>Full: every issue on its own line, grouped by file in first-seen order.</summary>

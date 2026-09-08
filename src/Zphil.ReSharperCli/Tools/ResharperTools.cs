@@ -59,7 +59,8 @@ internal sealed class ResharperTools(
     // is translated before it is passed; what it cannot do anything about is a file in no project.
     private const string PathAnchorNote =
         " Each is relative to the solution root, or absolute. jb matches them against the files that belong "
-        + "to a project in the solution, so one that is on disk but in no project matches nothing.";
+        + "to a project in the solution, so one that is on disk but in no project matches nothing, which "
+        + "nothing here can detect.";
 
     /// <remarks>
     ///     Still annotated read-only with <paramref name="report" /> on the surface, and deliberately. A run
@@ -119,6 +120,10 @@ internal sealed class ResharperTools(
         // this tool would report "No issues found." for a scan that never looked at the files asked for.
         IReadOnlyList<string>? scope = FilePathList.Split(files, config.SolutionDirectory);
 
+        // Classified here, before the run and by the rule cleanup applies before its own, rather than by
+        // the note that reports them: a formatter reads nothing from disk.
+        List<string> missingScope = scope is null ? [] : FilePathList.FindMissing(scope, config.SolutionDirectory);
+
         IReadOnlyList<InspectIssue> issues = await inspectService.RunAsync(
             config, scope, severity, cancellationToken, onProgress);
 
@@ -133,10 +138,11 @@ internal sealed class ResharperTools(
 
         InspectReportOutcome? written = WriteReport(report, RenderFull, config, severity, scope);
 
-        // Three independent preambles, concatenated: configuration that was dropped before the run, how to
-        // read compilation errors in what came back, and where the full listing went. Each can be empty, and
-        // all ride outside the reduction ladder.
+        // Four independent preambles, concatenated in reading order: configuration that was dropped before
+        // the run, scope entries the run never saw, how to read compilation errors in what came back, and
+        // where the full listing went. Each can be empty, and all ride outside the reduction ladder.
         string banner = ConfigWarningBanner.ForInspect(config.Warnings)
+                        + InspectScopeNote.For(missingScope, scope?.Count ?? 0, config.SolutionDirectory)
                         + CompilationErrorNote.For(issues, config.CacheHome)
                         + InspectReportNote.For(written, issues.Count);
 

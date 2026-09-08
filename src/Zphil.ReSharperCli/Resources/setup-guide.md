@@ -216,6 +216,15 @@ rebuild and is honoured until a run against that solution succeeds. `jb` remains
 handed: it validates a cache it opens against its own format and rebuilds in place when it does not like
 it, so a copy it rejects costs the copy and nothing more.
 
+**The cache outlives the worktree.** Delete a `git worktree`, a clone or a copied directory and its
+generation stays in the cache home, addressed by the hash of a path with nothing on it — nothing rebuilds it
+and nothing reuses it. Call `resharper_reset_cache` with `solutionPath` set to the path that checkout had,
+and it drops those generations exactly as it would for a live solution: the ownership proof is the same hash
+of the same string, and the generations belonging to other checkouts are named in the report and left where
+they are. That report's left-alone list is where you find the paths worth reclaiming next. A reclaim writes
+no reset record, so a worktree created at that path later is seeded from a warm sibling like any other new
+checkout.
+
 Upgrading `jb` is the routine case of that rebuild — JetBrains ships roughly thirty stable releases a year —
 so a generation the current build did not write is passed over as a donor, and one belonging to this
 solution reads as `stale (cache written by jb 2026.2.0.2, this is 2026.2.1, and jb rebuilds it)` rather
@@ -291,7 +300,8 @@ It deletes only what provably belongs to this solution. `jb` names a generation 
 solution's **full path**, which this server reproduces, so a cache home shared by two checkouts of one
 repository — or by two unrelated solutions with the same file name — is ordinary rather than an obstacle: the
 generations carrying another path's hash are named in the report and left where they are, and a hash matching
-nothing deletes nothing at all.
+nothing deletes nothing at all. The solution file itself need not still be there, which is what lets the same
+call reclaim the cache a deleted checkout left behind.
 
 The stale index originates in the ReSharper CLI's incremental invalidation, not in this wrapper, so
 nothing here can fix it — and `jb` exposes no cache-invalidation option of its own (`--caches-home` only

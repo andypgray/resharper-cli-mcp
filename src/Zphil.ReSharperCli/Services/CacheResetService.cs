@@ -13,12 +13,18 @@ internal sealed record CacheResetFailure(string Name, string Reason);
 ///     solution it deliberately left where they were, and the ones it could not delete, under the cache home
 ///     it looked in. Formatting lives in <c>CacheResetFormatter</c>.
 /// </summary>
+/// <param name="SolutionFileExists">
+///     Whether <paramref name="SolutionPath" /> still names a file. False is a reclaim — the cache of a
+///     worktree, clone or copy that has been deleted — and it changes what the report can promise, since
+///     there is no next run against that path to be cold.
+/// </param>
 internal sealed record CacheResetOutcome(
     string SolutionPath,
     string CacheHome,
     IReadOnlyList<string> Dropped,
     IReadOnlyList<string> LeftAlone,
-    IReadOnlyList<CacheResetFailure> Failures);
+    IReadOnlyList<CacheResetFailure> Failures,
+    bool SolutionFileExists = true);
 
 /// <summary>
 ///     Deletes the solution's ReSharper cache generations so the next <c>jb</c> run rebuilds its analysis
@@ -55,6 +61,15 @@ internal sealed record CacheResetOutcome(
 ///         reported as left alone, and a computed hash matching nothing deletes nothing at all. That is what
 ///         makes a shared cache home ordinary rather than an obstacle — before, two checkouts in one cache
 ///         home made the tool refuse for both.
+///     </para>
+///     <para>
+///         The solution file itself need not exist. A cache generation is addressed by the hash of the
+///         solution <em>path</em>, so a checkout that has been deleted still has a cache and still has a name
+///         for it, and this is the only tool placed to drop one — the ownership proof is unchanged, because
+///         it never read the file either. What changes is the tail: with no checkout there, there is no next
+///         run to keep cold, so a reclaim writes no tombstone and clears one an earlier reset left. A
+///         tombstone would outlive the checkout and hold back the seeding of whatever is created at that path
+///         next.
 ///     </para>
 ///     <para>
 ///         A failed delete is retried briefly and then reported rather than thrown, and may leave a
@@ -122,6 +137,10 @@ internal sealed class CacheResetService(
         JbSolutionGenerations generations = Find(config.CacheHome, config.SolutionPath);
         List<string> leftAlone = generations.Neighbours.Select(generation => generation.Name).ToList();
 
+        // One stat, taken here rather than carried in on the config: this is the only decision that turns on
+        // it, and asking the filesystem directly keeps every caller's config the shape it always was.
+        bool solutionFileExists = File.Exists(config.SolutionPath);
+
         List<string> dropped = [];
         List<CacheResetFailure> failures = [];
         foreach (JbCacheGeneration generation in generations.Owned)
@@ -145,23 +164,35 @@ internal sealed class CacheResetService(
         // caller would understate the wait by minutes.
         JbCostRecord.Clear(config.SolutionPath, config.CacheHome, logger);
 
-        // Unconditional, including the reset that dropped nothing: what the caller asked for is a cold next
-        // run, and the one mechanism that could quietly supply a warm cache instead has to be told.
-        JbColdTombstone.Write(config.SolutionPath, config.CacheHome, logger);
+        // Unconditional for a checkout that is still there, including the reset that dropped nothing: what
+        // the caller asked for is a cold next run, and the one mechanism that could quietly supply a warm
+        // cache instead has to be told. A reclaim is the other case — there is no next run against a path
+        // with no checkout on it, and a tombstone left there would outlive the deletion and deny a worktree
+        // re-created at that path the seeding any other new checkout gets. So it clears one instead, which
+        // is also how a real reset followed by a reclaim ends up in the state a reclaim describes.
+        if (solutionFileExists)
+            JbColdTombstone.Write(config.SolutionPath, config.CacheHome, logger);
+        else
+            JbColdTombstone.Clear(config.SolutionPath, config.CacheHome, logger);
 
         // The one tool that spawns no jb, and until now the one that left no trace: a reset is the reason the
         // next call is slow, and read from the log afterwards that call looked cold for no reason.
         logger.LogInformation(
-            "Reset the ReSharper cache for solution {SolutionPath}: dropped {DroppedCount} generation(s) {Dropped}, "
+            "Reset the ReSharper cache for solution {SolutionPath} (solution file present: {SolutionFileExists}): "
+            + "dropped {DroppedCount} generation(s) {Dropped}, "
             + "left {LeftAloneCount} belonging to another copy of this solution alone, {FailureCount} could not be deleted; "
-            + "the next run against it is cold on purpose",
+            + "{Consequence}",
             config.SolutionPath,
+            solutionFileExists,
             dropped.Count,
             dropped,
             leftAlone.Count,
-            failures.Count);
+            failures.Count,
+            solutionFileExists
+                ? "the next run against it is cold on purpose"
+                : "the solution file does not exist, so this reclaimed the cache of a removed checkout");
 
-        return new CacheResetOutcome(config.SolutionPath, config.CacheHome, dropped, leftAlone, failures);
+        return new CacheResetOutcome(config.SolutionPath, config.CacheHome, dropped, leftAlone, failures, solutionFileExists);
     }
 
     /// <summary>

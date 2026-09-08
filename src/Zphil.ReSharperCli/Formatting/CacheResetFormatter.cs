@@ -25,6 +25,15 @@ internal static class CacheResetFormatter
     private const string ColdNextCall =
         "The next inspect or cleanup against this solution rebuilds the cache from cold, which can take minutes.";
 
+    /// <summary>
+    ///     What a reclaim closes with instead. There is no next call against a path with no checkout on it,
+    ///     so the cold-cost warning would be describing a run that cannot happen; what the caller is owed
+    ///     instead is that the space is not coming back and that re-creating the checkout costs nothing extra.
+    /// </summary>
+    private const string NothingRebuildsThis =
+        "The solution file does not exist, so nothing rebuilds this cache. A checkout created at that path "
+        + "later starts like any other new one, seeded from a sibling checkout where one is warm.";
+
     public static string Format(CacheResetOutcome outcome)
     {
         List<string> lines = [];
@@ -64,14 +73,19 @@ internal static class CacheResetFormatter
         // Only true if something actually went: a reset that dropped nothing left the cache exactly as warm
         // (or as stale) as it found it, and saying otherwise would send the caller to wait out a cold run
         // that is not going to happen.
-        if (outcome.Dropped.Count > 0) lines.Add(ColdNextCall);
+        if (outcome.Dropped.Count > 0) lines.Add(outcome.SolutionFileExists ? ColdNextCall : NothingRebuildsThis);
 
         return string.Join("\n", lines);
     }
 
     private static string NothingFound(CacheResetOutcome outcome)
     {
-        return $"No ReSharper cache generation for \"{outcome.SolutionPath}\" was found under \"{outcome.CacheHome}\". "
-               + "Nothing to drop, so the next inspect or cleanup builds the cache from cold anyway.";
+        var opening = $"No ReSharper cache generation for \"{outcome.SolutionPath}\" was found under \"{outcome.CacheHome}\". ";
+
+        // A reclaim that found nothing has nothing to say about a next call either: there is no checkout at
+        // that path to make one. Promising a cold rebuild would be describing a run that cannot happen.
+        return outcome.SolutionFileExists
+            ? opening + "Nothing to drop, so the next inspect or cleanup builds the cache from cold anyway."
+            : opening + "Nothing to drop.";
     }
 }

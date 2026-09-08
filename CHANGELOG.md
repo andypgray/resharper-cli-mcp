@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `resharper_reset_cache` reclaims the cache of a checkout that has been deleted. A cache generation is
+  addressed by the hash of the solution's absolute path, so a removed worktree, clone or copied directory
+  leaves one behind that nothing rebuilds and nothing reuses; passing that old path as `solutionPath` now
+  drops it, where before the call failed because no file was there. The ownership proof is unchanged — the
+  same hash of the same string — and generations belonging to other checkouts are still named and left where
+  they are. A reclaim writes no cold-rebuild record, since there is no next run against that path to keep
+  cold and the record would deny the seeding to a checkout created there later. `JB_SOLUTION_PATH` and
+  working-directory discovery still require a file that exists, and so do `resharper_inspect` and
+  `resharper_cleanup`.
+
 ### Changed
 
 - A warm run's opening line, progress message and timeout message no longer quote what the last warm run

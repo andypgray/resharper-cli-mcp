@@ -78,9 +78,12 @@ internal static class JbColdTombstone
     }
 
     /// <summary>
-    ///     Discharge the promise: a <c>jb</c> run has succeeded since the reset, so the cache it rebuilt is
-    ///     this solution's own and there is nothing left to protect. Failing to clear it costs a later
-    ///     optimisation and nothing else, which is the safe direction, so it goes no louder than debug.
+    ///     Discharge the promise, for either of the two things that end it. A <c>jb</c> run has succeeded
+    ///     since the reset, so the cache it rebuilt is this solution's own and there is nothing left to
+    ///     protect; or a reset was asked to reclaim the cache of a checkout that no longer exists, where
+    ///     there is no next run to keep cold and a tombstone would only deny the seeding to whatever is
+    ///     created at that path later. Failing to clear it costs a later optimisation and nothing else, which
+    ///     is the safe direction, so it goes no louder than debug.
     /// </summary>
     internal static void Clear(string solutionPath, string cacheHome, ILogger logger)
     {

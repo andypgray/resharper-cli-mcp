@@ -15,7 +15,9 @@ namespace Zphil.ReSharperCli.Tests.Services;
 ///     derivation from <c>jb</c>'s undocumented naming, so these pin the properties that make that safe: it
 ///     drops exactly the generations whose names carry this solution path's own hash, it reports rather than
 ///     touches the ones that do not, it will not delete a cache generation while a <c>jb</c> run holds it,
-///     and it leaves behind the record that keeps the next run cold.
+///     and it leaves behind the record that keeps the next run cold. The one case that turns those last two
+///     around is a reclaim, where the solution file is gone: the proof is unchanged, since it never read the
+///     file, but there is no next run to keep cold, so no record is left behind.
 /// </summary>
 public sealed class CacheResetServiceTests : IDisposable
 {
@@ -152,6 +154,77 @@ public sealed class CacheResetServiceTests : IDisposable
         // Assert
         outcome.Dropped.ShouldBeEmpty();
         JbColdTombstone.Exists(_config.SolutionPath, _cacheHome, NullLogger.Instance).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task RunAsync_SolutionFileGone_DropsItsGenerationsAndRecordsNoReset()
+    {
+        // Arrange — a worktree that has been removed, whose cache generation outlived it. Nothing else can
+        // name that generation: it is addressed by the hash of a path with no file on it, and the ownership
+        // proof never read the file in the first place.
+        ResolvedConfig removed = Configs.Bare(_environment.CreateSolutionPath("App.sln"), _cacheHome);
+        string theirs = CacheHomes.PlantGenerationFor(_cacheHome, removed.SolutionPath);
+
+        // Act
+        CacheResetOutcome outcome = await _service.RunAsync(removed, Ct);
+
+        // Assert — dropped, and no tombstone: there is no next run against that path to keep cold, and one
+        // left there would outlive the checkout and deny the seeding to whatever is created there later.
+        outcome.Dropped.ShouldBe([Path.GetFileName(theirs)]);
+        outcome.SolutionFileExists.ShouldBeFalse();
+        Directory.Exists(theirs).ShouldBeFalse();
+        JbColdTombstone.Exists(removed.SolutionPath, _cacheHome, NullLogger.Instance).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task RunAsync_SolutionFileGone_ClearsATombstoneAnEarlierResetLeft()
+    {
+        // Arrange — the ordinary sequence: a real reset of a live checkout, then the checkout deleted, then
+        // the reclaim. The tombstone the first call wrote is a promise about a run that is never going to
+        // happen, and leaving it would hold back the seeding of a worktree re-created at that path.
+        ResolvedConfig removed = Configs.Bare(_environment.CreateSolutionPath("App.sln"), _cacheHome);
+        JbColdTombstone.Write(removed.SolutionPath, _cacheHome, NullLogger.Instance);
+
+        // Act
+        await _service.RunAsync(removed, Ct);
+
+        // Assert
+        JbColdTombstone.Exists(removed.SolutionPath, _cacheHome, NullLogger.Instance).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task RunAsync_SolutionFileGone_LeavesTheLiveCheckoutsGenerationAlone()
+    {
+        // Arrange — the reason a reclaim is worth having and the reason it has to stay narrow: the deleted
+        // worktree's cache sits in the same cache home as the checkout still being worked in, under a
+        // directory name that differs only in the hash.
+        ResolvedConfig removed = Configs.Bare(_environment.CreateSolutionPath("App.sln"), _cacheHome);
+        string theirs = CacheHomes.PlantGenerationFor(_cacheHome, removed.SolutionPath);
+        string live = CacheHomes.PlantGenerationFor(_cacheHome, _config.SolutionPath);
+
+        // Act
+        CacheResetOutcome outcome = await _service.RunAsync(removed, Ct);
+
+        // Assert
+        outcome.Dropped.ShouldBe([Path.GetFileName(theirs)]);
+        outcome.LeftAlone.ShouldBe([Path.GetFileName(live)]);
+        Directory.Exists(live).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task RunAsync_SolutionFileGoneAndNothingCached_ReportsNothingToDrop()
+    {
+        // Arrange — a path guessed at, or one whose cache a previous reclaim already took. The tool is
+        // idempotent either way, and a hash matching nothing drops nothing.
+        ResolvedConfig removed = Configs.Bare(_environment.CreateSolutionPath("App.sln"), _cacheHome);
+
+        // Act
+        CacheResetOutcome outcome = await _service.RunAsync(removed, Ct);
+
+        // Assert
+        outcome.Dropped.ShouldBeEmpty();
+        outcome.SolutionFileExists.ShouldBeFalse();
+        JbColdTombstone.Exists(removed.SolutionPath, _cacheHome, NullLogger.Instance).ShouldBeFalse();
     }
 
     [Fact]
@@ -332,6 +405,29 @@ public sealed class CacheResetServiceTests : IDisposable
         reported.Property("Dropped").ShouldBe(new List<string> { Path.GetFileName(ours) });
         reported.Property("LeftAloneCount").ShouldBe(1);
         reported.Property("FailureCount").ShouldBe(0);
+        reported.Property("SolutionFileExists").ShouldBe(true);
+    }
+
+    [Fact]
+    public async Task RunAsync_ReclaimingARemovedCheckout_SaysSoOnTheSameLine()
+    {
+        // Arrange — read back later, a reclaim and an ordinary reset are the same delete against different
+        // futures: one explains why the next call is slow, the other says there is no next call.
+        CapturingLoggerProvider logs = new();
+        ResolvedConfig removed = Configs.Bare(_environment.CreateSolutionPath("App.sln"), _cacheHome);
+        CacheHomes.PlantGenerationFor(_cacheHome, removed.SolutionPath);
+
+        CacheResetService service = JbRunners.Reset(
+            JbRunners.Lock(TimeSpan.FromSeconds(1)), JbRunners.Yield(), Logs.Capturing(logs));
+
+        // Act
+        await service.RunAsync(removed, Ct);
+
+        // Assert
+        LogEntry reported = logs.WithProperty("Dropped").ShouldHaveSingleItem();
+        reported.Property("SolutionFileExists").ShouldBe(false);
+        reported.Property("Consequence")
+            .ShouldBe("the solution file does not exist, so this reclaimed the cache of a removed checkout");
     }
 
     private ResolvedConfig ConfigFor(string solutionFileName, string cacheHome)

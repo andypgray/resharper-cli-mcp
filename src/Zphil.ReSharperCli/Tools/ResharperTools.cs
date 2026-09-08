@@ -44,7 +44,8 @@ internal sealed class ResharperTools(
         + "cold. The cure for inspect reporting compilation errors a successful build does not: a stale "
         + "index serves those until the cache is dropped. Build first, because on a checkout that was never "
         + "built or restored the errors are real and a reset only adds a cold analysis to the build it "
-        + "still needs. Costs the next call a full cold analysis, so it is not routine maintenance.";
+        + "still needs. Costs the next call a full cold analysis, so it is not routine maintenance. A deleted "
+        + "checkout's cache outlives it: pass its old solution path as solutionPath to reclaim it.";
 
     // Descriptions ride the deferred tool schema, which a client fetches only when it is about to call the
     // tool, so a gotcha costs nothing until it is needed. Prefer this over the always-resident server
@@ -281,7 +282,10 @@ internal sealed class ResharperTools(
         await using ProgressSink? progress = ProgressSink.For(context, logger);
         Action<string>? onProgress = progress is null ? null : progress.Send;
 
-        ResolvedConfig config = await configResolver.ResolveAsync(solutionPath, cancellationToken);
+        // The one resolution that accepts a solution path naming no file, because a cache generation is
+        // addressed by the hash of the path rather than by the file: that is what lets a deleted checkout's
+        // cache be reclaimed.
+        ResolvedConfig config = await configResolver.ResolveForCacheResetAsync(solutionPath, cancellationToken);
 
         // The one thing this tool can be slow at is queueing behind another session's jb, and it spawns no
         // process of its own to stream — so that wait is the whole of what there is to report.

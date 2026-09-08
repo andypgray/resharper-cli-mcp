@@ -45,8 +45,16 @@ internal sealed record ResolvedConfig(
 {
     /// <summary>
     ///     The directory holding the solution — the root a relative <c>files</c> entry resolves against.
-    ///     <see cref="SolutionPath" /> is always a resolved path to an existing file, so it always has one.
+    ///     <see cref="SolutionPath" /> is always a resolved absolute path, so it always has one.
     /// </summary>
+    /// <remarks>
+    ///     For every config the analysis tools see, that path also names a file that exists, which is what
+    ///     makes the directory a real one. The exception is
+    ///     <see cref="ConfigResolver.ResolveForCacheResetAsync" />: a cache reset can be asked to reclaim the
+    ///     cache of a checkout that has been deleted, so its config's solution path is a resolved string and
+    ///     nothing more. Nothing on that path reads this member — the reset addresses cache directories by the
+    ///     hash of the string.
+    /// </remarks>
     public string SolutionDirectory => Path.GetDirectoryName(SolutionPath)!;
 }
 
@@ -65,11 +73,36 @@ internal sealed record ResolvedConfig(
 /// </remarks>
 internal sealed class ConfigResolver(JbLocator jbLocator, IEnvironment environment, ILogger<ConfigResolver> logger)
 {
-    public async Task<ResolvedConfig> ResolveAsync(string? solutionPathOverride, CancellationToken cancellationToken)
+    public Task<ResolvedConfig> ResolveAsync(string? solutionPathOverride, CancellationToken cancellationToken)
+    {
+        return ResolveAsync(solutionPathOverride, false, cancellationToken);
+    }
+
+    /// <summary>
+    ///     The same resolution for a cache reset, which addresses cache directories by the hash of the
+    ///     solution path and so needs the path rather than the file. An explicit
+    ///     <paramref name="solutionPathOverride" /> naming no existing file resolves anyway, which is what
+    ///     lets the cache a deleted worktree or clone left behind be named and reclaimed.
+    /// </summary>
+    /// <remarks>
+    ///     Only that branch is relaxed. <c>JB_SOLUTION_PATH</c> pointing at a file that is not there is a
+    ///     misconfigured server, and working-directory discovery cannot conjure a path out of nothing, so both
+    ///     still fail. <c>jb</c> is still located first: the reset already pays that probe today, and what
+    ///     this tool requires of an installation is not the place to start diverging.
+    /// </remarks>
+    public Task<ResolvedConfig> ResolveForCacheResetAsync(string? solutionPathOverride, CancellationToken cancellationToken)
+    {
+        return ResolveAsync(solutionPathOverride, true, cancellationToken);
+    }
+
+    private async Task<ResolvedConfig> ResolveAsync(
+        string? solutionPathOverride,
+        bool overrideMayBeMissing,
+        CancellationToken cancellationToken)
     {
         // jb first, then the solution: a missing toolchain surfaces before any solution-discovery error.
         JbInstallation installation = await jbLocator.LocateAsync(cancellationToken);
-        SolutionResolution solution = ResolveSolutionPath(solutionPathOverride);
+        SolutionResolution solution = ResolveSolutionPath(solutionPathOverride, overrideMayBeMissing);
         SettingsResolution settings = ResolveSettingsPath(solution.Path);
         DeclaredCleanupProfile declaredProfile = CleanupProfileReader.Read(settings.Path, logger);
 
@@ -129,14 +162,18 @@ internal sealed class ConfigResolver(JbLocator jbLocator, IEnvironment environme
             config.Extensions ?? "none");
     }
 
-    private SolutionResolution ResolveSolutionPath(string? solutionPathOverride)
+    private SolutionResolution ResolveSolutionPath(string? solutionPathOverride, bool overrideMayBeMissing)
     {
         if (solutionPathOverride is not null)
         {
+            // Resolved against the working directory exactly as it always was, so the string a reclaim
+            // hashes is the string a run of that checkout would have hashed.
             string resolved = Path.GetFullPath(solutionPathOverride, environment.CurrentDirectory);
-            if (!File.Exists(resolved)) throw new UserErrorException($"Specified solution path \"{solutionPathOverride}\" does not exist.");
+            if (File.Exists(resolved)) return new SolutionResolution(resolved, "from the solutionPath argument");
 
-            return new SolutionResolution(resolved, "from the solutionPath argument");
+            if (!overrideMayBeMissing) throw new UserErrorException($"Specified solution path \"{solutionPathOverride}\" does not exist.");
+
+            return new SolutionResolution(resolved, "from the solutionPath argument, which names no existing file");
         }
 
         string? envPath = environment.GetVariable("JB_SOLUTION_PATH");

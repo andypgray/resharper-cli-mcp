@@ -14,7 +14,7 @@ resharper-cli-mcp is an MCP server that gives a C# coding agent ReSharper's solu
 
 - Runs are serialized, twice over. One `jb` per server process, whatever the solutions, because a run is a whole-solution multi-core analysis and two of them share the machine rather than the work; and one per solution cache across processes, because a second concurrent `jb` cannot open the warm generation and forks a cold copy of its own instead, leaving it behind on disk. A `jb` you start yourself is outside both, so give it its own `--caches-home`.
 
-- A fresh checkout is seeded from a warm one. Caches are keyed to the solution's absolute path, so a new worktree or clone starts cold. When a call finds no cache and a same-named sibling checkout has a warm one, the server copies it across, best-effort and never over a cache a successful run produced. The copy still has to be re-keyed, so a seeded run lands between warm and cold.
+- A fresh checkout is seeded from a warm one. Caches are keyed to the solution's absolute path, so a new worktree or clone starts cold. When a call finds no cache and a same-named sibling checkout has a warm one, the server copies it across, best-effort and never over a cache a successful run produced. The copy still has to be re-keyed, so a seeded run lands between warm and cold. That key outlives the checkout, so `resharper_reset_cache` takes the path a deleted one had and reclaims what it left.
 
 - SARIF becomes markdown that fits the client. Issues come back grouped by file, re-rendered at progressively lower detail until they fit the client's output budget, with every issue still counted and every file still named at each step. `detail` caps that ladder when you want a rollup without overflowing the budget to get one. When the summary is not enough, `report=Markdown` writes the complete listing to a file and the response names it.
 
@@ -127,7 +127,7 @@ The plugin starts the server with `dotnet dnx`, which fetches a pinned `Zphil.Re
 |---|---|---|
 | `resharper_inspect` | no | Runs ReSharper InspectCode and returns the issues, grouped by file. |
 | `resharper_cleanup` | yes | Runs ReSharper CleanupCode to reformat and normalize the given files in place. |
-| `resharper_reset_cache` | no (deletes caches) | Drops the solution's ReSharper cache so the next run rebuilds its analysis from cold. |
+| `resharper_reset_cache` | no (deletes caches) | Drops the solution's ReSharper cache so the next run rebuilds its analysis from cold, or reclaims the cache a deleted checkout left behind. |
 
 Scope `resharper_inspect` with the `files` glob (entries may be solution-relative or absolute) and raise `severity` (`Suggestion`, `Warning`, `Error`; default `Warning`) to control how much comes back. Each issue carries a file, line, severity, rule ID, and message:
 

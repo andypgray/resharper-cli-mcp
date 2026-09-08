@@ -61,6 +61,61 @@ public sealed class ConfigResolverTests : IDisposable
         exception.Message.ShouldBe($"Specified solution path \"{missing}\" does not exist.");
     }
 
+    [Fact]
+    public async Task ResolveForCacheResetAsync_SolutionOverrideMissing_ResolvesTheFullPathAnyway()
+    {
+        // Arrange — the path a worktree had before it was removed. Its cache generation is still on disk and
+        // is still addressed by the hash of this string, so a reset has to be able to reach it. The relative
+        // form is resolved against the working directory exactly as it always was, so what gets hashed is
+        // what a run of that checkout would have hashed.
+        string missing = Path.Combine(_environment.CurrentDirectory, "Removed.sln");
+
+        // Act
+        ResolvedConfig config = await _resolver.ResolveForCacheResetAsync("Removed.sln", Ct);
+
+        // Assert
+        config.SolutionPath.ShouldBe(Path.GetFullPath(missing));
+        File.Exists(config.SolutionPath).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task ResolveForCacheResetAsync_SolutionOverrideExists_IsUnchanged()
+    {
+        // Arrange — the ordinary reset, which is most of them. Relaxing the branch must not change what it
+        // does when the file is there.
+        string overridePath = CreateSolutionInCurrentDirectory("Explicit.sln");
+
+        // Act
+        ResolvedConfig config = await _resolver.ResolveForCacheResetAsync(overridePath, Ct);
+
+        // Assert
+        config.SolutionPath.ShouldBe(Path.GetFullPath(overridePath));
+    }
+
+    [Fact]
+    public async Task ResolveForCacheResetAsync_JbSolutionPathEnvMissing_StillThrows()
+    {
+        // Arrange — only the explicit argument is relaxed. An environment variable pointing at a file that is
+        // not there is a misconfigured server rather than a reclaim someone asked for, and reading it as one
+        // would have a reset silently address a cache nobody named.
+        string missing = Path.Combine(_environment.CurrentDirectory, "Ghost.sln");
+        _environment.SetVariable("JB_SOLUTION_PATH", missing);
+
+        // Act
+        var exception = await Should.ThrowAsync<UserErrorException>(() => _resolver.ResolveForCacheResetAsync(null, Ct));
+
+        // Assert
+        exception.Message.ShouldBe($"JB_SOLUTION_PATH is set to \"{missing}\" but the file does not exist.");
+    }
+
+    [Fact]
+    public async Task ResolveForCacheResetAsync_NoSolutionAnywhere_StillThrows()
+    {
+        // Arrange — discovery cannot conjure a path out of an empty directory, so there is nothing for the
+        // relaxed branch to relax.
+        await Should.ThrowAsync<UserErrorException>(() => _resolver.ResolveForCacheResetAsync(null, Ct));
+    }
+
     // ── Solution: JB_SOLUTION_PATH ────────────────────────────────────────────
 
     [Fact]

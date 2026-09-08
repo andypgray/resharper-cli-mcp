@@ -966,6 +966,51 @@ public sealed class ToolPipelineTests
     }
 
     [Fact]
+    public async Task ResetCacheAsync_SolutionPathThatNoLongerExists_ReclaimsItsGenerations()
+    {
+        // Arrange — a worktree deleted with its cache still on disk, which nothing else can name: the
+        // generation is addressed by the hash of the path, and every other tool refuses a path with no file
+        // on it. The live checkout's own generation sits in the same cache home under a name differing only
+        // in the hash, so this also pins that the reclaim stays inside the path it was given.
+        using FakeEnvironment environment = new();
+        string cacheHome = environment.CreateTempDirectory();
+        environment.SetVariable("JB_CACHE_HOME", cacheHome);
+        environment.PlantSolution("App.sln");
+        string removed = environment.CreateSolutionPath("App.sln");
+        string theirs = CacheHomes.PlantGenerationFor(cacheHome, removed);
+        string live = CacheHomes.PlantGenerationFor(cacheHome, Path.Combine(environment.CurrentDirectory, "App.sln"));
+        StubJb();
+        ResharperTools tools = ToolHarness.Build(_processRunner, environment);
+
+        // Act
+        string result = await tools.ResetCacheAsync(removed, cancellationToken: Ct);
+
+        // Assert — dropped, the live checkout's left alone and named, and no promise about a next call that
+        // nobody can make.
+        result.ShouldContain($"  - {Path.GetFileName(theirs)}");
+        result.ShouldEndWith("seeded from a sibling checkout where one is warm.");
+        Directory.Exists(theirs).ShouldBeFalse();
+        Directory.Exists(live).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task InspectAsync_SolutionPathThatDoesNotExist_StillFails()
+    {
+        // Arrange — the relaxation is the reset's alone. An analysis tool handed a path with no file on it
+        // has nothing to analyse, and letting it through would trade a clear error for a jb failure.
+        using FakeEnvironment environment = new();
+        StubJb();
+        ResharperTools tools = ToolHarness.Build(_processRunner, environment);
+        string missing = environment.CreateSolutionPath("Gone.sln");
+
+        // Act
+        var exception = await Should.ThrowAsync<UserErrorException>(() => tools.InspectAsync(solutionPath: missing, cancellationToken: Ct));
+
+        // Assert
+        exception.Message.ShouldBe($"Specified solution path \"{missing}\" does not exist.");
+    }
+
+    [Fact]
     public async Task ResetCacheAsync_RunsNoJbBeyondTheVersionProbe()
     {
         // Arrange — a reset is a directory delete, not an analysis. Spending a cold jb run here would double

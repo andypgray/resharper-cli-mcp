@@ -9,6 +9,8 @@ namespace Zphil.ReSharperCli.Tests.Formatting;
 ///     Pins <see cref="CacheResetFormatter" />'s shapes. Two lines are load-bearing: the closing one promises
 ///     the next call is cold and must appear only when something was actually deleted, and the left-alone one
 ///     has to say why a directory the caller can see is still there, or the report reads as a partial failure.
+///     The closing line has a second form, for a reclaim: with no checkout at that path there is no next call
+///     to be cold, so promising one would describe a run that cannot happen.
 /// </summary>
 public sealed class CacheResetFormatterTests
 {
@@ -18,6 +20,13 @@ public sealed class CacheResetFormatterTests
     private const string NothingFound =
         $"No ReSharper cache generation for \"{SolutionPath}\" was found under \"{CacheHome}\". "
         + "Nothing to drop, so the next inspect or cleanup builds the cache from cold anyway.";
+
+    private const string NothingFoundForARemovedCheckout =
+        $"No ReSharper cache generation for \"{SolutionPath}\" was found under \"{CacheHome}\". Nothing to drop.";
+
+    private const string NothingRebuildsThis =
+        "The solution file does not exist, so nothing rebuilds this cache. A checkout created at that path "
+        + "later starts like any other new one, seeded from a sibling checkout where one is warm.";
 
     private const string LeftOneAlone =
         "Left 1 generation(s) alone, whose names hash to a different solution path — another checkout or copy "
@@ -38,6 +47,38 @@ public sealed class CacheResetFormatterTests
             + "  - _App.123.00\n"
             + "  - _App.123.01\n"
             + "The next inspect or cleanup against this solution rebuilds the cache from cold, which can take minutes.");
+    }
+
+    [Fact]
+    public void Format_GenerationsDroppedForARemovedCheckout_SaysNothingRebuildsThem()
+    {
+        // Arrange — the reclaim. The cold-cost warning is the one line that would be false here: there is no
+        // checkout at that path to make the next call, and a caller told to expect a slow rebuild would be
+        // waiting for a run that cannot happen.
+        CacheResetOutcome outcome = new(SolutionPath, CacheHome, ["_App.123.00"], [], [], false);
+
+        // Act
+        string result = CacheResetFormatter.Format(outcome);
+
+        // Assert
+        result.ShouldBe(
+            $"Dropped 1 ReSharper cache generation(s) for \"{SolutionPath}\" under \"{CacheHome}\":\n"
+            + "  - _App.123.00\n"
+            + NothingRebuildsThis);
+    }
+
+    [Fact]
+    public void Format_NothingCachedForARemovedCheckout_StopsAtNothingToDrop()
+    {
+        // Arrange — a path guessed at, or one already reclaimed. The ordinary wording closes by saying the
+        // next call builds the cache from cold anyway, which is a claim about a call nobody can make.
+        CacheResetOutcome outcome = new(SolutionPath, CacheHome, [], [], [], false);
+
+        // Act
+        string result = CacheResetFormatter.Format(outcome);
+
+        // Assert
+        result.ShouldBe(NothingFoundForARemovedCheckout);
     }
 
     [Fact]

@@ -37,9 +37,10 @@ public sealed class ServerInstructionsTests
     {
         // The design budget, well below the client truncation cap above: this text is resident in every
         // session that connects the server, including the majority that never call a tool. New prose
-        // belongs in a guide resource (resharper://guides/configuration or /setup) or in a parameter
-        // [Description], both of which load only on demand. Only cross-tool routing that no single schema
-        // can state earns a place here.
+        // belongs in one of the two on-demand channels instead. Pushed — a tool or parameter
+        // [Description], and the notes a result carries back — is where anything the caller must act on
+        // at a moment goes. Pulled — a guide resource, resharper://guides/configuration or /setup — is
+        // where depth goes. Only cross-tool routing that no single schema can state earns a place here.
         Encoding.UTF8.GetByteCount(ServerInstructions.Text).ShouldBeLessThanOrEqualTo(1200);
     }
 

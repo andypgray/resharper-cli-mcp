@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `resharper_cleanup`'s description now states why one batched call is the rule: every call analyses the
+  whole solution before it rewrites anything, whatever the file count. `resharper_inspect`'s `files`
+  argument no longer describes itself as scoping the analysis, which it does not — it narrows the findings,
+  and the analysis behind them stays solution-wide. Measured over eight days of ordinary use on two
+  solutions on one machine at 1.6.0, a scoped inspect ran to a median of 269 s (n=10) against 272 s
+  solution-wide (n=27), and a one-file cleanup to 102 s (n=14) against 113 s for ten files or more (n=19).
+  The setup guide carries the same figures.
+
 ### Fixed
 
 - A `jb` that is installed but too slow to answer is no longer reported as one that is missing. Each

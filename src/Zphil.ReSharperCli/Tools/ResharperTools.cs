@@ -36,7 +36,8 @@ internal sealed class ResharperTools(
         "Run ReSharper static analysis on the solution and return the code issues it finds.";
 
     private const string CleanupDescription =
-        "Run ReSharper code cleanup to reformat and normalize files in place.";
+        "Run ReSharper code cleanup to reformat and normalize files in place. Each call analyses the whole "
+        + "solution whatever the file count, so make one call per task with every modified file in it.";
 
     private const string ResetCacheDescription =
         "Delete this solution's ReSharper analysis cache so the next inspect or cleanup rebuilds it from "
@@ -48,6 +49,11 @@ internal sealed class ResharperTools(
     // Descriptions ride the deferred tool schema, which a client fetches only when it is about to call the
     // tool, so a gotcha costs nothing until it is needed. Prefer this over the always-resident server
     // instructions for anything that is per-argument rather than cross-call routing.
+    //
+    // Fetched as the call is made is also the last moment the caller can still act, which is what this
+    // channel is for: a cost that decides whether to call at all, a gate on a destructive follow-up, or a
+    // revert the caller would otherwise fight by hand belongs here, with its cure stated inline. A guide
+    // resource may be cited alongside one but is never the cure — the field reads them about never.
     private const string SolutionPathDescription =
         "Path to the .sln/.slnx to run against. Overrides JB_SOLUTION_PATH and working-directory discovery.";
 
@@ -79,7 +85,8 @@ internal sealed class ResharperTools(
     [Description(InspectDescription)]
     public async Task<string> InspectAsync(
         [Description(
-            "Ant-style globs scoping the analysis to specific files, for example src/**/*.cs."
+            "Ant-style globs narrowing the findings to matching files, for example src/**/*.cs. The "
+            + "analysis stays solution-wide, so a scoped run is no faster."
             + PathAnchorNote
             + JoinedPathsNote)]
         string[]? files = null,

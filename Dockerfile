@@ -13,7 +13,7 @@ WORKDIR /src
 COPY . .
 RUN dotnet publish src/Zphil.ReSharperCli/Zphil.ReSharperCli.csproj -c Release -o /app
 
-FROM mcr.microsoft.com/dotnet/runtime:10.0@sha256:cd45a6df90f98d55605fe958a6f6a89cfb746a4dc143ca451757e3e24e4f4b50
+FROM mcr.microsoft.com/dotnet/runtime:10.0@sha256:399e54a8a7e35c3aba78398b2840455d45185cba20b831b8a2b46f849f4f5001
 WORKDIR /app
 COPY --from=build /app .
 # No solution is mounted here, so a pre-warm would only probe for the absent `jb`.

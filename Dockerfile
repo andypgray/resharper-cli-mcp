@@ -8,7 +8,7 @@
 # Both bases are pinned by digest, so a build resolves to these layers rather than to whatever the
 # `10.0` tag points at that day. A digest goes stale silently, so .github/dependabot.yml carries a
 # docker entry to bump them weekly — without it the pin would freeze the image on an unpatched base.
-FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:4beef5b8919dcaa2dc924233bd069257e883cc7a061e09088a97d152d6a48510 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:4ea6fe75dd36706bb6d8c3c293d4c4315840f5d76ea28ac97def77e3ec487fa5 AS build
 WORKDIR /src
 COPY . .
 RUN dotnet publish src/Zphil.ReSharperCli/Zphil.ReSharperCli.csproj -c Release -o /app

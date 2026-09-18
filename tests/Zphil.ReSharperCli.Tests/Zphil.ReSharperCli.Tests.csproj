@@ -35,7 +35,7 @@
         <PackageReference Include="Microsoft.Testing.Extensions.CodeCoverage" Version="18.11.0" />
         <PackageReference Include="NSubstitute" Version="6.2.0" />
         <PackageReference Include="Shouldly" Version="4.3.0" />
-        <PackageReference Include="xunit.v3" Version="4.0.0" />
+        <PackageReference Include="xunit.v3" Version="4.0.1" />
     </ItemGroup>
 
     <ItemGroup>

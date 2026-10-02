@@ -148,7 +148,7 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
         // a non-zero exit, which CleanupService restates as a failed pass, so this failing red is the whole
         // default path being gone.
         run.Outcome.Profile.ShouldBe(CleanupService.DefaultProfile);
-        run.FileWasRewritten.ShouldBeTrue();
+        run.ShouldHaveRewrittenTheFile();
         run.Outcome.Entries.ShouldAllBe(entry => entry.Status == CleanupFileStatus.Changed);
     }
 
@@ -161,7 +161,7 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
         // narrowing apply to a call that named no profile.
         fixture.Config.CleanupProfile.ShouldBe("Built-in: Reformat Code");
         fixture.DeclaredProfileCleanup.Outcome.Profile.ShouldBe("Built-in: Reformat Code");
-        fixture.DeclaredProfileCleanup.FileWasRewritten.ShouldBeTrue();
+        fixture.DeclaredProfileCleanup.ShouldHaveRewrittenTheFile();
     }
 
     [Fact(Skip = NoJb, SkipUnless = nameof(JbIsInstalled))]
@@ -178,7 +178,7 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
         // untranslated, which is the half a unit test cannot check.
         pattern.ShouldBe("Misformatted.cs");
         fixture.DeclaredProfileCleanup.Outcome.Entries.Single().Display.ShouldBe(absolute);
-        fixture.DeclaredProfileCleanup.FileWasRewritten.ShouldBeTrue();
+        fixture.DeclaredProfileCleanup.ShouldHaveRewrittenTheFile();
     }
 
     [Fact(Skip = NoJb, SkipUnless = nameof(JbIsInstalled))]
@@ -340,6 +340,15 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
         builder.Append($"| Absolute --include, cleanupcode exit | {raw.CleanupExitCode} |\n");
         builder.Append(
             $"| Absolute --include, inspectcode exit / issues | {raw.Inspect.ExitCode} / {raw.Inspect.IssueCount} |\n");
+
+        // The normal shape of a pass, recorded on green runs too, so a pass that one day rewrites nothing can be
+        // read against what a good one looked like on the same jb.
+        foreach ((string profile, CleanupRun run) in new[]
+                 {
+                     ("built-in profile", fixture.BuiltInProfileCleanup),
+                     ("declared profile", fixture.DeclaredProfileCleanup)
+                 })
+            builder.Append($"| Cleanup, {profile} ({CleanupRun.SignatureColumns}) | {run.Signature} |\n");
 
         foreach ((string subcommand, ProgressVocabulary vocabulary) in fixture.ProgressVocabularies.OrderBy(entry => entry.Key, StringComparer.Ordinal))
             builder.Append(

@@ -1,3 +1,5 @@
+using System.Text;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 using Zphil.ReSharperCli.Discovery;
@@ -61,6 +63,11 @@ public sealed class JbContractFixture : IAsyncLifetime
 
                                              """;
 
+    /// <summary>How much of jb's output a cleanup pass keeps as evidence, from the end.</summary>
+    private const int StandardOutputTailLines = 60;
+
+    private const int StandardErrorTailLines = 20;
+
     private static readonly TimeSpan BuildTimeout = TimeSpan.FromMinutes(5);
 
     /// <summary>
@@ -79,10 +86,18 @@ public sealed class JbContractFixture : IAsyncLifetime
     private readonly Dictionary<string, ProgressVocabulary> _progressVocabularies = new(StringComparer.Ordinal);
 
     /// <summary>
+    ///     What the server logged while the runs below were made, kept so a cleanup pass can quote its own share.
+    /// </summary>
+    private readonly CapturingLoggerProvider _serverLog = new();
+
+    /// <summary>
     ///     Created only once <see cref="InitializeAsync" /> has decided there is a <c>jb</c> to run, so the
     ///     fixture still costs nothing on a machine without one.
     /// </summary>
     private ChildProcessLifetime? _childLifetime;
+
+    /// <summary>The process seam every run goes through, kept so a cleanup pass can read back what jb printed.</summary>
+    private LineRecordingRunner? _runs;
 
     /// <summary>Whether a <c>jb</c> was found, and so whether any of the members below were ever filled in.</summary>
     public static bool IsInstalled => Presence.Value.ExecutablePath is not null;
@@ -147,13 +162,16 @@ public sealed class JbContractFixture : IAsyncLifetime
         CacheHome = _environment.CreateTempDirectory();
         _environment.SetVariable("JB_CACHE_HOME", CacheHome);
 
+        ILoggerFactory serverLog = Logs.Capturing(_serverLog);
+
         _childLifetime = new ChildProcessLifetime(new SystemEnvironment(), NullLogger<ChildProcessLifetime>.Instance);
-        ProcessRunner realProcessRunner = new(_childLifetime, NullLogger<ProcessRunner>.Instance);
+        ProcessRunner realProcessRunner = new(_childLifetime, serverLog.CreateLogger<ProcessRunner>());
 
         // Every run below goes through the recorder, so the runs that answer the other contracts answer the
         // progress-vocabulary one for free — and answer it from the same bytes jb actually wrote, split by
         // the product's own reader rather than by a re-spelling of it.
-        IProcessRunner processRunner = new LineRecordingRunner(realProcessRunner, RecordProgressLine);
+        _runs = new LineRecordingRunner(realProcessRunner, RecordProgressLine);
+        IProcessRunner processRunner = _runs;
 
         SolutionPath = PlantSolution("solution");
         await BuildAsync(processRunner, SolutionPath, cancellationToken);
@@ -170,9 +188,9 @@ public sealed class JbContractFixture : IAsyncLifetime
 
         JbLocator locator = new(processRunner, _environment, NullLogger<JbLocator>.Instance);
         ConfigResolver configResolver = new(locator, _environment, NullLogger<ConfigResolver>.Instance);
-        JbRunner jbRunner = JbRunners.Create(processRunner);
+        JbRunner jbRunner = JbRunners.Create(processRunner, logs: serverLog);
         InspectService inspectService = new(jbRunner);
-        CleanupService cleanupService = new(jbRunner, NullLogger<CleanupService>.Instance);
+        CleanupService cleanupService = new(jbRunner, serverLog.CreateLogger<CleanupService>());
 
         Installation = await locator.LocateAsync(cancellationToken);
         Config = await configResolver.ResolveAsync(null, cancellationToken);
@@ -252,10 +270,13 @@ public sealed class JbContractFixture : IAsyncLifetime
     }
 
     /// <summary>
-    ///     Restore the misformatted file, then run a real cleanup over it. The restore is what makes a pass
-    ///     detectable more than once: cleanup is idempotent, so a second pass over an already-formatted file
-    ///     rewrites nothing and the check would pass vacuously.
+    ///     Restores the misformatted file, then runs a real cleanup over it, reading the file, the cache
+    ///     generations and the server's log on either side.
     /// </summary>
+    /// <remarks>
+    ///     The restore is what makes a pass detectable more than once: cleanup is idempotent, so a second pass
+    ///     over an already-formatted file rewrites nothing and the check would pass vacuously.
+    /// </remarks>
     private async Task<CleanupRun> CleanUpAsync(
         CleanupService cleanupService,
         IReadOnlyList<string> files,
@@ -264,12 +285,126 @@ public sealed class JbContractFixture : IAsyncLifetime
     {
         string path = Path.Combine(Config.SolutionDirectory, MisformattedFileName);
         File.Copy(Path.Combine(FixtureDirectory, MisformattedFileName), path, true);
-        string before = await File.ReadAllTextAsync(path, cancellationToken);
+
+        FileFacts restored = FileFacts.Read(path);
+        string generationsBefore = Safely(GenerationNames);
+        int firstLogEntry = _serverLog.Entries.Count;
 
         CleanupOutcome outcome = await cleanupService.RunAsync(Config, files, profile, cancellationToken);
-        string after = await File.ReadAllTextAsync(path, cancellationToken);
 
-        return new CleanupRun(outcome, before, after);
+        FileFacts afterPass = FileFacts.Read(path);
+        ProcessResult? jb = _runs?.LastResult;
+
+        StringBuilder details = new();
+        details.Append($"generations before: {generationsBefore}\n");
+        details.Append($"generations after:  {Safely(GenerationNames)}\n");
+        details.Append($"solution directory: {Safely(SolutionDirectoryListing)}\n");
+        details.Append($"classified:         {Classification(outcome)}\n");
+        details.Append($"jb stdout, last {StandardOutputTailLines} lines:\n{Tail(jb?.StandardOutput, StandardOutputTailLines)}");
+        details.Append($"jb stderr, last {StandardErrorTailLines} lines:\n{Tail(jb?.StandardError, StandardErrorTailLines)}");
+        details.Append($"server log during the pass:\n{ServerLogSince(firstLogEntry)}");
+
+        CleanupEvidence evidence = new(restored, afterPass, NamesTheFile(jb), details.ToString());
+
+        return new CleanupRun(outcome, evidence);
+    }
+
+    /// <summary>This solution's cache generations under the run's cache home, by directory name.</summary>
+    private string GenerationNames()
+    {
+        JbSolutionGenerations generations = JbCacheGenerations.FindFor(Config.CacheHome, Config.SolutionPath);
+        IEnumerable<string> owned = generations.Owned.Select(generation => generation.Name);
+        IEnumerable<string> neighbours = generations.Neighbours.Select(generation => $"{generation.Name} (neighbour)");
+        List<string> names = [.. owned, .. neighbours];
+
+        return names.Count == 0 ? "none" : string.Join(", ", names);
+    }
+
+    /// <summary>Everything beside the cleanup target, so a save that left a temporary file behind shows.</summary>
+    private string SolutionDirectoryListing()
+    {
+        IEnumerable<string> entries = new DirectoryInfo(Config.SolutionDirectory)
+            .EnumerateFileSystemInfos()
+            .OrderBy(entry => entry.Name, StringComparer.Ordinal)
+            .Select(entry => entry is FileInfo file ? $"{file.Name} ({file.Length})" : $"{entry.Name}/");
+
+        return string.Join(", ", entries);
+    }
+
+    private static string Classification(CleanupOutcome outcome)
+    {
+        return string.Join(", ", outcome.Entries.Select(entry => $"{entry.Display} {entry.Status}"));
+    }
+
+    /// <summary>What the server logged from entry <paramref name="first" /> on, one indented line each.</summary>
+    private string ServerLogSince(int first)
+    {
+        IEnumerable<string> lines = _serverLog.Entries
+            .Skip(first)
+            .Select(entry => $"  [{entry.Level}] {entry.Category[(entry.Category.LastIndexOf('.') + 1)..]}: {entry.Message}\n");
+
+        return string.Concat(lines);
+    }
+
+    /// <summary>
+    ///     Whether <c>jb</c> printed the cleanup target's path, or <see langword="null" /> when no run was
+    ///     captured.
+    /// </summary>
+    private static bool? NamesTheFile(ProcessResult? jb)
+    {
+        return jb?.StandardOutput
+            .Split('\n')
+            .Any(line => NamesFile(line, MisformattedFileName));
+    }
+
+    /// <summary>
+    ///     Whether <paramref name="path" /> ends in the file <paramref name="fileName" />: a path, a line of
+    ///     <c>jb</c>'s output naming one, or a SARIF <c>file://</c> URI, whose last segment is the file name all
+    ///     the same.
+    /// </summary>
+    private static bool NamesFile(string path, string fileName)
+    {
+        // Case-blind: these observations ask whether jb names the file, not how it cases it, and a soft-tier
+        // check that read a casing change as drift would report a finding that is not one.
+        return string.Equals(Path.GetFileName(path.Trim()), fileName, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>The last <paramref name="count" /> non-blank lines of <paramref name="text" />, indented.</summary>
+    private static string Tail(string? text, int count)
+    {
+        if (text is null) return "  (no run captured)\n";
+
+        List<string> lines = text
+            .Split('\n')
+            .Select(line => line.TrimEnd('\r'))
+            .Where(line => line.Trim().Length > 0)
+            .ToList();
+
+        return lines.Count == 0 ? "  (none)\n" : string.Concat(lines.TakeLast(count).Select(line => $"  {line}\n"));
+    }
+
+    /// <summary>What <paramref name="read" /> produces, or why it could not, as <see cref="DescribeFailure" /> puts it.</summary>
+    private static string Safely(Func<string> read)
+    {
+        try
+        {
+            return read();
+        }
+        catch (Exception exception)
+        {
+            return $"unavailable: {DescribeFailure(exception)}";
+        }
+    }
+
+    /// <summary>A reading that failed, as one line of evidence.</summary>
+    /// <remarks>
+    ///     Evidence is gathered inside <see cref="InitializeAsync" />, where one exception would fail every test in
+    ///     the class, so every reading that can fail is caught and described with this instead. Line breaks are
+    ///     flattened so a message cannot break the one-fact-per-line layout of the report and the failure message.
+    /// </remarks>
+    internal static string DescribeFailure(Exception exception)
+    {
+        return $"{exception.GetType().Name}: {exception.Message.ReplaceLineEndings(" ")}";
     }
 
     /// <summary>
@@ -405,7 +540,14 @@ public sealed class JbContractFixture : IAsyncLifetime
     /// </remarks>
     private sealed class LineRecordingRunner(IProcessRunner inner, Action<string, string> record) : IProcessRunner
     {
-        public Task<ProcessResult> RunAsync(
+        /// <summary>What the most recent run returned, or <see langword="null" /> when it threw.</summary>
+        /// <remarks>
+        ///     The fixture runs one thing at a time, so a caller that reads this as soon as its run returns reads
+        ///     its own result.
+        /// </remarks>
+        public ProcessResult? LastResult { get; private set; }
+
+        public async Task<ProcessResult> RunAsync(
             string fileName,
             IReadOnlyList<string> arguments,
             TimeSpan timeout,
@@ -413,12 +555,17 @@ public sealed class JbContractFixture : IAsyncLifetime
             Action<string>? onOutputLine = null)
         {
             string subcommand = arguments.Count > 0 ? arguments[0] : "";
+            LastResult = null;
 
-            return inner.RunAsync(fileName, arguments, timeout, cancellationToken, line =>
+            ProcessResult result = await inner.RunAsync(fileName, arguments, timeout, cancellationToken, line =>
             {
                 record(subcommand, line);
                 onOutputLine?.Invoke(line);
             });
+
+            LastResult = result;
+
+            return result;
         }
     }
 }
@@ -459,13 +606,47 @@ internal sealed class ProgressVocabulary
 }
 
 /// <summary>
-///     One real cleanup pass: what the product reported, and what the file on disk said either side of it.
-///     Both, because the product's own <c>Changed</c> classification is itself a hash comparison, and a
-///     check that read only that would be proving the classifier against itself.
+///     One real cleanup pass: what the product reported, and the fixture's account of the pass, which reads the
+///     file's text on either side of it. The text as well as the product's report, because the product's own
+///     <c>Changed</c> classification is itself a hash comparison, and a check that read only that would be
+///     proving the classifier against itself.
 /// </summary>
-internal sealed record CleanupRun(CleanupOutcome Outcome, string TextBefore, string TextAfter)
+internal sealed record CleanupRun(CleanupOutcome Outcome, CleanupEvidence Evidence)
 {
-    public bool FileWasRewritten => !string.Equals(TextBefore, TextAfter, StringComparison.Ordinal);
+    /// <summary>What each part of <see cref="Signature" /> says, in its order, for whatever labels the row.</summary>
+    internal const string SignatureColumns = "rewritten / named by jb / write time moved";
+
+    /// <summary>
+    ///     Whether the file's text changed across the pass, or <see langword="null" /> when either reading of it
+    ///     failed.
+    /// </summary>
+    public bool? FileWasRewritten =>
+        Evidence.Restored.Text is { } restored && Evidence.AfterPass.Text is { } afterPass
+            ? !string.Equals(restored, afterPass, StringComparison.Ordinal)
+            : null;
+
+    /// <summary>The pass as one row of the soft report, in <see cref="SignatureColumns" /> order.</summary>
+    public string Signature =>
+        $"{YesNo(FileWasRewritten)} / {YesNo(Evidence.JbNamedTheFile)} / {YesNo(Evidence.WriteTimeMoved)}";
+
+    /// <summary>Everything the fixture knows about the pass, as a failure message carries it.</summary>
+    public string Describe()
+    {
+        return $"The \"{Outcome.Profile}\" pass ({SignatureColumns}: {Signature})\n"
+               + $"restored:           {Evidence.Restored.Description}\n"
+               + $"after the pass:     {Evidence.AfterPass.Description}\n"
+               + Evidence.Details;
+    }
+
+    private static string YesNo(bool? value)
+    {
+        return value switch
+        {
+            true => "yes",
+            false => "no",
+            null => "unknown"
+        };
+    }
 }
 
 /// <summary>How each subcommand answered an <c>--include</c> that was left absolute.</summary>

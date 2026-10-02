@@ -104,7 +104,7 @@ public sealed class CleanupServiceTests : IDisposable
         CleanupOutcome outcome = await _service.RunAsync(
             _config, ["src/A.cs", "src/**/*.cs"], CleanupService.DefaultProfile, Ct);
 
-        // Assert — request order preserved; the wildcard is Pattern (excluded from the concrete denominator).
+        // Assert — request order preserved; the wildcard is Pattern (outside the hashed count).
         outcome.Entries.Count.ShouldBe(2);
         outcome.Entries[0].Status.ShouldBe(CleanupFileStatus.Changed);
         outcome.Entries[1].Display.ShouldBe("src/**/*.cs");

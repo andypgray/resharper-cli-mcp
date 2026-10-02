@@ -25,6 +25,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cleanup changed every named file, the line now ends at the count. The forms that list files already left a
   zero count out.
 
+- `resharper_cleanup` no longer counts a file it could not read as one it compared. A named file that another
+  process held locked, or that was otherwise unreadable before or after the run, was counted in the total.
+  Three such files reported `0 of 3 file(s) changed on disk` about files the server never compared. The count
+  now covers only the files hashed both times. When wildcards or unreadable files leave it short of the entries
+  given, the header says `hashed file(s)` where 1.7.0 said `named file(s)`. When no named file could be read,
+  the header gives no count and says the server cannot tell whether `jb` changed them.
+
 ## [1.7.0] - 2026-09-08
 
 ### Added

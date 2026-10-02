@@ -6,21 +6,17 @@ using Zphil.ReSharperCli.Services;
 namespace Zphil.ReSharperCli.Tests.Formatting;
 
 /// <summary>
-///     The authoritative string spec for the cleanup summary. A fixed <see cref="CleanupOutcome" /> mixing
-///     all four <see cref="CleanupFileStatus" /> values (in a deliberately interleaved order) is rendered at
-///     each <see cref="DetailLevel" /> and pinned with an exact <c>ShouldBe</c>: Full lists every entry, the
-///     middle levels progressively collapse the lower-signal categories to trailing counts, and Minimal is
-///     the one-liner. Output uses <c>\n</c> line endings and is ASCII-only.
-///     <para>
-///         That fixture carries a wildcard, so every level pins the <em>partial</em>-measurement header. The
-///         other two states have pins of their own below: a batch of named files only, which is the header
-///         verbatim as it has always read, and a batch of nothing but wildcards, where there is no ratio to
-///         report and the header says so.
-///     </para>
+///     The authoritative string spec for the cleanup summary: a fixed <see cref="CleanupOutcome" /> mixing all
+///     four <see cref="CleanupFileStatus" /> values, in a deliberately interleaved order, rendered at each
+///     <see cref="DetailLevel" /> and pinned with an exact <c>ShouldBe</c>.
 /// </summary>
+/// <remarks>
+///     That fixture carries a wildcard and an unreadable file, so every level pins the
+///     <em>partial</em>-measurement header; the other header forms have pins of their own.
+/// </remarks>
 public sealed class CleanupSummaryFormatterTests
 {
-    // changed = 2 (A, D), unchanged = 1 (B), status unknown = 1 (C), pattern = 1 (lib/*.cs); concrete = 4.
+    // changed = 2 (A, D), unchanged = 1 (B), status unknown = 1 (C), pattern = 1 (lib/*.cs); hashed = 3 (A, B, D).
     private static CleanupOutcome Mixed()
     {
         return new CleanupOutcome(
@@ -42,7 +38,7 @@ public sealed class CleanupSummaryFormatterTests
 
         // Assert
         summary.ShouldBe(
-            "Cleanup completed with profile \"Built-in: Full Cleanup\". 2 of 4 named file(s) changed on disk:\n"
+            "Cleanup completed with profile \"Built-in: Full Cleanup\". 2 of 3 hashed file(s) changed on disk:\n"
             + "  - src/A.cs (changed)\n"
             + "  - src/B.cs (unchanged)\n"
             + "  - src/C.cs (status unknown)\n"
@@ -58,7 +54,7 @@ public sealed class CleanupSummaryFormatterTests
 
         // Assert
         summary.ShouldBe(
-            "Cleanup completed with profile \"Built-in: Full Cleanup\". 2 of 4 named file(s) changed on disk:\n"
+            "Cleanup completed with profile \"Built-in: Full Cleanup\". 2 of 3 hashed file(s) changed on disk:\n"
             + "  - src/A.cs (changed)\n"
             + "  - src/C.cs (status unknown)\n"
             + "  - src/D.cs (changed)\n"
@@ -74,7 +70,7 @@ public sealed class CleanupSummaryFormatterTests
 
         // Assert
         summary.ShouldBe(
-            "Cleanup completed with profile \"Built-in: Full Cleanup\". 2 of 4 named file(s) changed on disk:\n"
+            "Cleanup completed with profile \"Built-in: Full Cleanup\". 2 of 3 hashed file(s) changed on disk:\n"
             + "  - src/A.cs (changed)\n"
             + "  - src/C.cs (status unknown)\n"
             + "  - src/D.cs (changed)\n"
@@ -90,7 +86,7 @@ public sealed class CleanupSummaryFormatterTests
 
         // Assert
         summary.ShouldBe(
-            "Cleanup completed with profile \"Built-in: Full Cleanup\". 2 of 4 named file(s) changed on disk:\n"
+            "Cleanup completed with profile \"Built-in: Full Cleanup\". 2 of 3 hashed file(s) changed on disk:\n"
             + "  - src/A.cs (changed)\n"
             + "  - src/D.cs (changed)\n"
             + "  (+1 unchanged, not listed)\n"
@@ -106,7 +102,7 @@ public sealed class CleanupSummaryFormatterTests
 
         // Assert
         summary.ShouldBe(
-            "Cleanup completed with profile \"Built-in: Full Cleanup\". 2 of 4 named file(s) changed on disk. "
+            "Cleanup completed with profile \"Built-in: Full Cleanup\". 2 of 3 hashed file(s) changed on disk. "
             + "(1 unchanged, 1 unknown, 1 pattern(s) not listed.)");
     }
 
@@ -150,6 +146,59 @@ public sealed class CleanupSummaryFormatterTests
             + "  - src/A.cs (changed)\n"
             + "  - src/B.cs (unchanged)\n"
             + "  - src/C.cs (changed)");
+    }
+
+    [Fact]
+    public void Format_NamedFilesAndAWildcard_QualifiesTheCountAsOverTheHashedFiles()
+    {
+        // Named files beside a glob. The count covers the two files hashed before and after the run, and the
+        // header says so in one word; the glob is listed or counted at every level, as everywhere else.
+        CleanupOutcome outcome = new(
+            "Built-in: Full Cleanup",
+            [
+                new CleanupEntry("src/A.cs", CleanupFileStatus.Changed),
+                new CleanupEntry("src/B.cs", CleanupFileStatus.Unchanged),
+                new CleanupEntry("lib/*.cs", CleanupFileStatus.Pattern)
+            ]);
+
+        // Act
+        string full = CleanupSummaryFormatter.Format(outcome, DetailLevel.Full);
+        string minimal = CleanupSummaryFormatter.Format(outcome, DetailLevel.Minimal);
+
+        // Assert — Minimal's tail also drops the zero category between two non-zero ones.
+        full.ShouldBe(
+            "Cleanup completed with profile \"Built-in: Full Cleanup\". 1 of 2 hashed file(s) changed on disk:\n"
+            + "  - src/A.cs (changed)\n"
+            + "  - src/B.cs (unchanged)\n"
+            + "  - lib/*.cs (pattern, not tracked)");
+        minimal.ShouldBe(
+            "Cleanup completed with profile \"Built-in: Full Cleanup\". 1 of 2 hashed file(s) changed on disk. "
+            + "(1 unchanged, 1 pattern(s) not listed.)");
+    }
+
+    [Fact]
+    public void Format_AnUnreadableFileAmongNamedOnes_LeavesItOutOfTheCount()
+    {
+        // No wildcard, so a header that chose its form by the pattern count alone would print the plain form
+        // over all three files and count C as compared. C was never compared: it is listed with its status,
+        // and the count stops at the two files hashed both times.
+        CleanupOutcome outcome = new(
+            "Built-in: Full Cleanup",
+            [
+                new CleanupEntry("src/A.cs", CleanupFileStatus.Changed),
+                new CleanupEntry("src/B.cs", CleanupFileStatus.Unchanged),
+                new CleanupEntry("src/C.cs", CleanupFileStatus.StatusUnknown)
+            ]);
+
+        // Act
+        string summary = CleanupSummaryFormatter.Format(outcome, DetailLevel.Full);
+
+        // Assert
+        summary.ShouldBe(
+            "Cleanup completed with profile \"Built-in: Full Cleanup\". 1 of 2 hashed file(s) changed on disk:\n"
+            + "  - src/A.cs (changed)\n"
+            + "  - src/B.cs (unchanged)\n"
+            + "  - src/C.cs (status unknown)");
     }
 
     /// <summary>
@@ -229,6 +278,64 @@ public sealed class CleanupSummaryFormatterTests
         // Act / Assert
         foreach (DetailLevel level in Enum.GetValues<DetailLevel>())
             CleanupSummaryFormatter.Format(outcome, level).ShouldNotContain("0 of 0");
+    }
+
+    /// <summary>
+    ///     Three named files, none of which could be read before or after the run, for instance because another
+    ///     process held them locked.
+    /// </summary>
+    /// <remarks>
+    ///     Counting them would report "0 of 3 file(s) changed on disk" about files this server never compared,
+    ///     so the header gives no count and says why.
+    /// </remarks>
+    private static CleanupOutcome NoneReadable()
+    {
+        return new CleanupOutcome(
+            "Built-in: Full Cleanup",
+            [
+                new CleanupEntry("src/A.cs", CleanupFileStatus.StatusUnknown),
+                new CleanupEntry("src/B.cs", CleanupFileStatus.StatusUnknown),
+                new CleanupEntry("src/C.cs", CleanupFileStatus.StatusUnknown)
+            ]);
+    }
+
+    [Fact]
+    public void Format_EveryNamedFileUnreadableAtFull_ReportsNoCountAndSaysWhy()
+    {
+        // Act
+        string summary = CleanupSummaryFormatter.Format(NoneReadable(), DetailLevel.Full);
+
+        // Assert
+        summary.ShouldBe(
+            "Cleanup completed with profile \"Built-in: Full Cleanup\". Every named file was unreadable before "
+            + "or after the run, so this server cannot say whether jb changed them:\n"
+            + "  - src/A.cs (status unknown)\n"
+            + "  - src/B.cs (status unknown)\n"
+            + "  - src/C.cs (status unknown)");
+    }
+
+    [Fact]
+    public void Format_EveryNamedFileUnreadableAtMinimal_StillReportsNoCount()
+    {
+        // Act
+        string summary = CleanupSummaryFormatter.Format(NoneReadable(), DetailLevel.Minimal);
+
+        // Assert
+        summary.ShouldBe(
+            "Cleanup completed with profile \"Built-in: Full Cleanup\". Every named file was unreadable before "
+            + "or after the run, so this server cannot say whether jb changed them. (3 unknown not listed.)");
+    }
+
+    [Fact]
+    public void Format_EveryLevel_NeverCountsAFileItCouldNotRead()
+    {
+        // Neither "0 of 3", a count over files never compared, nor "0 of 0", a count over nothing, at any
+        // level of the ladder.
+        CleanupOutcome outcome = NoneReadable();
+
+        // Act / Assert
+        foreach (DetailLevel level in Enum.GetValues<DetailLevel>())
+            CleanupSummaryFormatter.Format(outcome, level).ShouldNotContain("0 of");
     }
 
     [Fact]

@@ -26,6 +26,28 @@ public sealed class ProcessRunnerTests : IDisposable
 {
     private static readonly TimeSpan GenerousTimeout = TimeSpan.FromSeconds(30);
 
+    /// <summary>
+    ///     The orphan-drain case's cap: the parent's whole budget to start, launch its orphan and exit. The drain
+    ///     after the exit is bounded by the same cap, so the call returns at it however quickly the parent went,
+    ///     which also makes this how long the case takes.
+    /// </summary>
+    /// <remarks>
+    ///     Ten seconds is over five times the worst start-to-exit time measured on Windows beside three concurrent
+    ///     cold <c>jb</c> runs, a load under which three seconds was once exceeded; it has not been measured on
+    ///     Linux.
+    /// </remarks>
+    private static readonly TimeSpan ParentStartBudget = TimeSpan.FromSeconds(10);
+
+    /// <summary>
+    ///     How long the orphan holds standard output: four budgets, so a call that waited for it cannot pass for
+    ///     one that returned at the cap, yet short enough that an orphan which escaped the job (it can, being
+    ///     bound only after it starts) frees the reader threads it blocks within a minute.
+    /// </summary>
+    private static readonly TimeSpan OrphanHoldsPipeFor = ParentStartBudget * 4;
+
+    /// <summary>How early a timer can fire against the stopwatch: the system clock's tick, with room to spare.</summary>
+    private static readonly TimeSpan TimerSlack = TimeSpan.FromMilliseconds(500);
+
     private readonly ChildProcessLifetime _lifetime = new(new SystemEnvironment(), NullLogger<ChildProcessLifetime>.Instance);
 
     /// <summary>Holds the files children print back, deleted whole with the fixture.</summary>
@@ -95,21 +117,32 @@ public sealed class ProcessRunnerTests : IDisposable
     }
 
     [Fact]
-    public async Task RunAsync_OrphanChildHoldsStdout_ReturnsPromptlyInsteadOfHangingOnDrain()
+    public async Task RunAsync_OrphanChildHoldsStdout_ReturnsAtTheCapRatherThanWaitingForTheOrphan()
     {
-        // Arrange — the parent exits at once but leaves a background child holding the stdout pipe open
-        // for 30 s. The bounded drain must cap on the timeout rather than block waiting for EOF.
+        // Arrange — the parent exits at once but leaves a background child holding the stdout pipe open past
+        // the cap. The drain after the exit is bounded by the same cap, so the call returns at the cap rather
+        // than blocking until EOF.
         ProcessRunner runner = Runner();
-        (string fileName, string[] arguments) = OrphanHoldingStdoutCommand();
+        (string fileName, string[] arguments) = OrphanHoldingStdoutCommand(OrphanHoldsPipeFor);
         var stopwatch = Stopwatch.StartNew();
 
         // Act
-        ProcessResult result = await runner.RunAsync(fileName, arguments, TimeSpan.FromSeconds(3), TestContext.Current.CancellationToken);
+        ProcessResult? result = null;
+        await Should.NotThrowAsync(
+            async () => result = await runner.RunAsync(
+                fileName, arguments, ParentStartBudget, TestContext.Current.CancellationToken),
+            "the parent did not start and exit inside its budget: a slow start, not a drain hang");
         stopwatch.Stop();
 
-        // Assert — the parent's real exit code is returned, and the call unblocked long before the 30 s orphan.
-        result.ExitCode.ShouldBe(0);
-        stopwatch.Elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(25));
+        // Assert — the parent's real exit code, a return no earlier than the cap, which is what proves the orphan
+        // held the pipe at all, and a return well before the orphan let go.
+        result.ShouldNotBeNull().ExitCode.ShouldBe(0);
+        stopwatch.Elapsed.ShouldBeGreaterThanOrEqualTo(
+            ParentStartBudget - TimerSlack,
+            "returned before the cap, so nothing held the pipe and the bounded drain was never exercised");
+        stopwatch.Elapsed.ShouldBeLessThan(
+            OrphanHoldsPipeFor - TimeSpan.FromSeconds(5),
+            "waited for the orphan to let go of the pipe rather than returning at the cap");
     }
 
     [Fact]
@@ -240,11 +273,18 @@ public sealed class ProcessRunnerTests : IDisposable
             : ("sleep", ["30"]);
     }
 
-    private static (string FileName, string[] Arguments) OrphanHoldingStdoutCommand()
+    /// <summary>
+    ///     A parent that exits at once, leaving a child that holds standard output open for
+    ///     <paramref name="holdFor" />. <c>ping</c> waits a second between echoes, so <c>n</c> echoes take
+    ///     <c>n − 1</c> seconds; <c>/d</c> keeps a machine's AutoRun commands out of the parent's start budget.
+    /// </summary>
+    private static (string FileName, string[] Arguments) OrphanHoldingStdoutCommand(TimeSpan holdFor)
     {
+        var seconds = (int)holdFor.TotalSeconds;
+
         return OperatingSystem.IsWindows()
-            ? ("cmd", ["/c", "start /b ping -n 30 127.0.0.1"])
-            : ("sh", ["-c", "sleep 30 & exit 0"]);
+            ? ("cmd", ["/d", "/c", $"start /b ping -n {seconds + 1} 127.0.0.1"])
+            : ("sh", ["-c", $"sleep {seconds} & exit 0"]);
     }
 
     /// <summary>

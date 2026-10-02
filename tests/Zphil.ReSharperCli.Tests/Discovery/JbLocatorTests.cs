@@ -133,6 +133,25 @@ public sealed class JbLocatorTests : IDisposable
     }
 
     [Fact]
+    public async Task LocateAsync_FirstCandidateTimesOut_StillProbesTheNextAndReturnsIt()
+    {
+        // Arrange — the field shape: two servers starting at once on a busy machine, the PATH probe killed at
+        // the cap, and the next candidate answering inside it. A timeout settles the remedy only once every
+        // candidate has failed, so stopping at the first would turn this recovered call into an error.
+        Probe("jb").Throws(new ProcessTimeoutException("'jb' timed out after 30 seconds."));
+        Probe(DotnetToolsCandidate).Returns(new ProcessResult(0, VersionOutput, string.Empty));
+        JbLocator locator = new(_processRunner, _environment, NullLogger<JbLocator>.Instance);
+
+        // Act
+        JbInstallation installation = await locator.LocateAsync(Ct);
+
+        // Assert
+        installation.ExecutablePath.ShouldBe(DotnetToolsCandidate);
+        installation.Version.ShouldBe("2026.1.2");
+        await _processRunner.Received(1).AnyRunOf(DotnetToolsCandidate);
+    }
+
+    [Fact]
     public async Task LocateAsync_NoCandidateCanBeStarted_ThrowsWithInstallGuidanceNamingBothCandidates()
     {
         // Arrange

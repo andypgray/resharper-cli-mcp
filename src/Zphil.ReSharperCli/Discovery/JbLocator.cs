@@ -59,7 +59,10 @@ internal sealed class JbLocator(IProcessRunner processRunner, IEnvironment envir
                 failures.Add($"  {candidate}: {outcome.Detail}");
 
                 // The most that any one candidate proved, across all of them: one that started is enough to
-                // know a jb is there, however the others ended.
+                // know a jb is there, however the others ended. A timeout does not end the search either: a
+                // later candidate can still answer, and is often the same file by another route (the SDK puts
+                // the global tools directory on PATH), so probing it is the retry the timeout's error would
+                // otherwise send the caller to make.
                 if (outcome.Evidence > evidence) evidence = outcome.Evidence;
                 continue;
             }

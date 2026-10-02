@@ -20,13 +20,14 @@ internal static class CleanupSummaryFormatter
     /// </summary>
     internal const string CleanupRanInFull = "The cleanup itself ran in full; only the report shrank.";
 
-    // The order trailing collapsed counts are emitted in (lowest signal last). A category appears here only
-    // when this level does not list it individually and its count is non-zero.
-    private static readonly CleanupFileStatus[] CollapseOrder =
+    // The categories a level can count rather than list, in the order their counts are emitted, lowest signal last:
+    // as trailing lines at the listing levels and as the one parenthetical Minimal ends with. Collapsed decides
+    // which appear.
+    private static readonly CollapsibleCategory[] Collapsible =
     [
-        CleanupFileStatus.Unchanged,
-        CleanupFileStatus.StatusUnknown,
-        CleanupFileStatus.Pattern
+        new(CleanupFileStatus.Unchanged, "unchanged", "unchanged"),
+        new(CleanupFileStatus.StatusUnknown, "status unknown", "unknown"),
+        new(CleanupFileStatus.Pattern, "pattern(s)", "pattern(s)")
     ];
 
     public static string Format(CleanupOutcome outcome, DetailLevel level)
@@ -41,7 +42,15 @@ internal static class CleanupSummaryFormatter
         string header = Header(outcome.Profile, changed, concrete, pattern);
 
         if (level == DetailLevel.Minimal)
-            return $"{header}. ({unchanged} unchanged, {unknown} unknown, {pattern} pattern(s) not listed.)";
+        {
+            List<string> phrases = Collapsed(counts, level)
+                .Select(category => $"{counts[category.Status]} {category.MinimalNoun}")
+                .ToList();
+            if (phrases.Count == 0) return $"{header}.";
+
+            string tail = string.Join(", ", phrases);
+            return $"{header}. ({tail} not listed.)";
+        }
 
         List<string> lines = [$"{header}:"];
 
@@ -49,13 +58,24 @@ internal static class CleanupSummaryFormatter
             if (IsListed(entry.Status, level))
                 lines.Add($"  - {entry.Display} ({StatusLabel(entry.Status)})");
 
-        foreach (CleanupFileStatus status in CollapseOrder)
-        {
-            int count = counts.GetValueOrDefault(status);
-            if (!IsListed(status, level) && count > 0) lines.Add($"  ({CollapsePhrase(status, count)})");
-        }
+        foreach (CollapsibleCategory category in Collapsed(counts, level))
+            lines.Add($"  (+{counts[category.Status]} {category.Noun}, not listed)");
 
         return string.Join("\n", lines);
+    }
+
+    /// <summary>
+    ///     The categories <paramref name="level" /> counts rather than lists, in <see cref="Collapsible" /> order.
+    /// </summary>
+    /// <remarks>
+    ///     Minimal lists none, so at that level this is every non-zero category, and its one line follows the
+    ///     same rule as the listing levels.
+    /// </remarks>
+    private static IEnumerable<CollapsibleCategory> Collapsed(
+        IReadOnlyDictionary<CleanupFileStatus, int> counts, DetailLevel level)
+    {
+        return Collapsible.Where(category =>
+            !IsListed(category.Status, level) && counts.GetValueOrDefault(category.Status) > 0);
     }
 
     /// <summary>
@@ -133,13 +153,9 @@ internal static class CleanupSummaryFormatter
         };
     }
 
-    private static string CollapsePhrase(CleanupFileStatus status, int count)
-    {
-        return status switch
-        {
-            CleanupFileStatus.Unchanged => $"+{count} unchanged, not listed",
-            CleanupFileStatus.StatusUnknown => $"+{count} status unknown, not listed",
-            _ => $"+{count} pattern(s), not listed"
-        };
-    }
+    /// <summary>
+    ///     A status a level can count rather than list, with the noun its count takes on a listing level's trailing
+    ///     line and the shorter one Minimal uses.
+    /// </summary>
+    private sealed record CollapsibleCategory(CleanupFileStatus Status, string Noun, string MinimalNoun);
 }

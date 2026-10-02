@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   error, which reaches the client as a JSON-RPC error rather than a tool result, and the server no longer logs
   it as a tool failure.
 
+- `resharper_cleanup`'s one-line summary no longer prints a zero count. The summary takes that form when a
+  per-file list does not fit the output budget. A run given only wildcards read
+  `(0 unchanged, 0 unknown, 2 pattern(s) not listed.)` there, and now reads `(2 pattern(s) not listed.)`. When
+  cleanup changed every named file, the line now ends at the count. The forms that list files already left a
+  zero count out.
+
 ## [1.7.0] - 2026-09-08
 
 ### Added

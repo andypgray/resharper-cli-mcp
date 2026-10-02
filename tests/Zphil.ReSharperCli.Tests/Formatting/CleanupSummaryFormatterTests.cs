@@ -196,7 +196,26 @@ public sealed class CleanupSummaryFormatterTests
         summary.ShouldBe(
             "Cleanup completed with profile \"Built-in: Full Cleanup\". Every entry was a wildcard pattern: "
             + "jb cleaned what they matched, and this server hashes named files only, so it cannot report a "
-            + "count. (0 unchanged, 0 unknown, 2 pattern(s) not listed.)");
+            + "count. (2 pattern(s) not listed.)");
+    }
+
+    [Fact]
+    public void Format_MinimalWhenEveryNamedFileChanged_EndsAtTheHeader()
+    {
+        // Minimal names only the categories it has something to count, as the listing levels' collapsed lines
+        // do. With every file changed there is nothing left to count, so no parenthetical follows the header.
+        CleanupOutcome outcome = new(
+            "Built-in: Full Cleanup",
+            [
+                new CleanupEntry("src/A.cs", CleanupFileStatus.Changed),
+                new CleanupEntry("src/B.cs", CleanupFileStatus.Changed)
+            ]);
+
+        // Act
+        string summary = CleanupSummaryFormatter.Format(outcome, DetailLevel.Minimal);
+
+        // Assert
+        summary.ShouldBe("Cleanup completed with profile \"Built-in: Full Cleanup\". 2 of 2 file(s) changed on disk.");
     }
 
     [Fact]

@@ -45,7 +45,7 @@ internal static class CoercingToolRegistration
     /// </summary>
     public static IMcpServerBuilder WithCoercingTools(this IMcpServerBuilder builder)
     {
-        foreach ((MethodInfo toolMethod, _) in ToolAttributeDiscovery.GetToolMethods())
+        foreach (MethodInfo toolMethod in ToolAttributeDiscovery.GetToolMethods())
         {
             Type toolType = toolMethod.DeclaringType
                             ?? throw new InvalidOperationException(

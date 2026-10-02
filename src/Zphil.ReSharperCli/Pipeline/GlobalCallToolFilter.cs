@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using Zphil.ReSharperCli.Infrastructure;
@@ -20,12 +21,7 @@ internal static class GlobalCallToolFilter
     private const int MaxExceptionChainDepth = 8;
 
     /// <summary>
-    ///     Wraps every <c>tools/call</c> so that a <see cref="UserErrorException" /> is returned to the
-    ///     client as an <see cref="CallToolResult.IsError" /> result <em>without</em> logging (it is
-    ///     expected, not a bug), any other exception is logged as a warning before being surfaced, and
-    ///     successful text is passed through <see cref="ResponseTruncator" />. Before dispatch it also
-    ///     runs <see cref="UnknownParameterGuard" /> so a hallucinated argument key becomes an actionable
-    ///     error rather than a silently-dropped argument.
+    ///     Registers the filter around every <c>tools/call</c>.
     /// </summary>
     /// <remarks>
     ///     It is also where a call's <see cref="RunIdScope" /> opens, because this is the outermost frame that
@@ -54,9 +50,11 @@ internal static class GlobalCallToolFilter
                 CallToolResult result;
                 try
                 {
-                    // Reject unknown argument keys before binding; its message is a UserErrorException,
-                    // so it flows through the silent-user-error path below.
-                    if (UnknownParameterGuard.Validate(context.Params.Name, context.Params.Arguments) is { } unknownParameterError)
+                    // Reject unknown argument keys before binding, against the tool the SDK matched; a call
+                    // that matched none gets the SDK's protocol error, which passes through below. The guard's
+                    // message is a UserErrorException, so it flows through the silent-user-error path.
+                    if (context.MatchedPrimitive is McpServerTool tool
+                        && UnknownParameterGuard.Validate(tool.ProtocolTool, context.Params.Arguments) is { } unknownParameterError)
                         throw new UserErrorException(unknownParameterError);
 
                     result = await next(context, cancellationToken);
@@ -67,6 +65,16 @@ internal static class GlobalCallToolFilter
                     // the message, don't log it — the file log is reserved for unexpected crashes.
                     ReportCompletion(logger, context.Params.Name, elapsed, "a reported error");
                     return ErrorResult(ex.Message);
+                }
+                catch (McpProtocolException)
+                {
+                    // The SDK's own answer to a request it cannot serve, an unknown tool name among them. Its
+                    // composed handler rethrows this type as a JSON-RPC error, so it passes through unshaped and
+                    // unlogged here, as cancellation does; the SDK's session handler writes its own line for it.
+                    // No UserErrorException hides inside one: the SDK builds every protocol error it throws
+                    // without an inner exception.
+                    ReportCompletion(logger, context.Params.Name, elapsed, "a protocol error");
+                    throw;
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {

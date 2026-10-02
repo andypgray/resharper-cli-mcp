@@ -1,4 +1,5 @@
 using System.Text.Json;
+using ModelContextProtocol;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using NSubstitute;
@@ -12,11 +13,7 @@ namespace Zphil.ReSharperCli.Tests.Pipeline;
 
 /// <summary>
 ///     Drives a real MCP client against the server over in-memory pipes to prove the input-coercion
-///     pipeline end to end: the schema the custom converters would erase is re-injected
-///     (<see cref="Zphil.ReSharperCli.Pipeline.CoercingToolRegistration" />), malformed-but-obvious
-///     argument shapes are silently repaired, an invalid enum surfaces the friendly valid-values error
-///     without a logged warning (the <c>FindUserError</c> unwrap), and a hallucinated argument key is
-///     rejected by <see cref="Zphil.ReSharperCli.Pipeline.UnknownParameterGuard" />.
+///     pipeline end to end.
 /// </summary>
 public sealed class CoercionIntegrationTests
 {
@@ -262,23 +259,77 @@ public sealed class CoercionIntegrationTests
         harness.Logs.Warnings.ShouldBeEmpty();
     }
 
-    [Fact]
-    public async Task CallTool_UnknownParameterKey_ReturnsGuardErrorAndLogsNothing()
+    [Theory]
+    [InlineData("file")]
+    [InlineData("Files")]
+    public async Task CallTool_KeyThatBindsNothing_ReturnsGuardErrorAndLogsNothing(string key)
     {
-        // Arrange
+        // Arrange — "file" is the classic typo of "files", and "Files" its wrong-case twin. The SDK binds each
+        // argument by its parameter's exact name, so either would reach cleanup as no files at all and fail
+        // inside the binder, where the filter can only log it as unexpected.
         await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
 
-        // Act — "file" is a typo of "files"; the guard rejects it before binding.
+        // Act
         CallToolResult result = await harness.Client.CallToolAsync(
             "resharper_cleanup",
-            new Dictionary<string, object?> { ["file"] = "src/A.cs" },
+            new Dictionary<string, object?> { [key] = "src/A.cs" },
             cancellationToken: Ct);
 
-        // Assert — actionable error naming the bad key and the tool, and nothing logged (expected).
+        // Assert — the guard names the key and the spelling that binds, ahead of the binder, and logs nothing.
         result.IsError.ShouldBe(true);
-        string text = TextOf(result);
-        text.ShouldContain("\"file\"");
-        text.ShouldContain("resharper_cleanup");
+        TextOf(result).ShouldBe($"Unknown parameter \"{key}\" on \"resharper_cleanup\". Valid: files, profile, solutionPath.");
+        harness.Logs.Warnings.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task CallTool_WrongCaseToolName_IsAnsweredWithTheProtocolError()
+    {
+        // Arrange — the SDK dispatches by exact name too, so this call reaches no tool, and the guard has no
+        // schema to check its keys against. A parameter error would send the caller to fix a key on a tool the
+        // call can never reach.
+        await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
+
+        // Act
+        Task<CallToolResult> call = harness.Client.CallToolAsync(
+            "Resharper_Cleanup",
+            new Dictionary<string, object?> { ["file"] = "src/A.cs" },
+            cancellationToken: Ct).AsTask();
+
+        // Assert — the SDK's JSON-RPC error, not a tool result.
+        var error = await Should.ThrowAsync<McpProtocolException>(call);
+        error.ErrorCode.ShouldBe(McpErrorCode.InvalidParams);
+        error.Message.ShouldContain("Unknown tool");
+        error.Message.ShouldNotContain("Unknown parameter");
+
+        // And the server logs nothing: an unknown name is caller input. The one warning is the SDK's own, written
+        // by the session handler around every request that ends in a JSON-RPC error, outside this server's filter.
+        harness.Logs.Warnings.ShouldHaveSingleItem().ShouldBeTheSdksFailedToolCall<McpProtocolException>();
+    }
+
+    [Fact]
+    public async Task CallTool_WrongCaseOptionalKey_IsRefusedRatherThanIgnored()
+    {
+        // Arrange — the silent case: an optional parameter the binder cannot find takes its default, so a
+        // "Severity" key would run at Warning and nothing would say the argument went unread.
+        await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
+        harness.Environment.PlantSolution("App.sln");
+        List<string>? inspectArguments = null;
+        RouteJb(
+            harness.ProcessRunner,
+            arguments => inspectArguments = [.. arguments],
+            Fixtures.ReadSarif("inspect-sample.json"));
+
+        // Act
+        CallToolResult result = await harness.Client.CallToolAsync(
+            "resharper_inspect",
+            new Dictionary<string, object?> { ["Severity"] = "Error" },
+            cancellationToken: Ct);
+
+        // Assert — refused before jb ran. The harness leaves the pre-warm off, so the capture can only see
+        // this call.
+        result.IsError.ShouldBe(true);
+        TextOf(result).ShouldStartWith("Unknown parameter \"Severity\" on \"resharper_inspect\". Valid: ");
+        inspectArguments.ShouldBeNull();
         harness.Logs.Warnings.ShouldBeEmpty();
     }
 

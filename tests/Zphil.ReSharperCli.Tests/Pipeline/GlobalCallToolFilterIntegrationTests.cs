@@ -256,9 +256,7 @@ public sealed class GlobalCallToolFilterIntegrationTests
         // cancelled request with a CallToolResult would silence it and is not worth the lie.
         LogEntry warning = await harness.Logs.FirstWarning.WaitAsync(Generous, Ct);
         harness.Logs.Warnings.ShouldHaveSingleItem();
-        warning.Category.ShouldStartWith("ModelContextProtocol.");
-        warning.Message.ShouldContain("request handler failed");
-        warning.Exception.ShouldBeAssignableTo<OperationCanceledException>();
+        warning.ShouldBeTheSdksFailedToolCall<OperationCanceledException>();
     }
 
     /// <summary>

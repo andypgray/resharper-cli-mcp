@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- An argument key that differs from a parameter name only in case is refused instead of dropped. The server
+  refuses a `tools/call` argument whose key matches no parameter, and names the valid ones. It compared keys
+  without regard to case, but the MCP SDK binds each argument by its exact name. So a key such as `Files`
+  passed the check and was never bound. `resharper_cleanup` then failed with the SDK's missing-parameter
+  error, which the server logged as an unexpected failure. `Severity` on `resharper_inspect` was ignored, and
+  the run used the default. Keys must now match a parameter name exactly, and `Files` is refused with
+  `Valid: files, profile, solutionPath.` A tool name in the wrong case now always gets the SDK's unknown-tool
+  error, which reaches the client as a JSON-RPC error rather than a tool result, and the server no longer logs
+  it as a tool failure.
+
 ## [1.7.0] - 2026-09-08
 
 ### Added

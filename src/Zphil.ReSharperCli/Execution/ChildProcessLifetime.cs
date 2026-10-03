@@ -64,12 +64,6 @@ internal sealed class ChildProcessLifetime : IDisposable
     /// <summary>No primitive, and so no guarantee — the value macOS always reports.</summary>
     internal const string NoGuarantee = "none";
 
-    /// <summary>
-    ///     Where the Linux half looks for <c>setpriv</c> and for the command it is about to wrap. Read through
-    ///     <see cref="IEnvironment" /> like every other variable, so no test has to touch the real one.
-    /// </summary>
-    private const string PathVariable = "PATH";
-
     private readonly IEnvironment _environment;
     private readonly WindowsJobObject? _job;
     private readonly ILogger<ChildProcessLifetime> _logger;
@@ -99,7 +93,7 @@ internal sealed class ChildProcessLifetime : IDisposable
 
         if (OperatingSystem.IsLinux())
         {
-            _setprivPath = ParentDeathSignal.TryLocate(environment.GetVariable(PathVariable));
+            _setprivPath = ParentDeathSignal.TryLocate(environment.GetVariable(PathSearch.PathVariable));
             Guarantee = _setprivPath is null ? NoGuarantee : ParentDeathSignalled;
 
             return;
@@ -134,7 +128,7 @@ internal sealed class ChildProcessLifetime : IDisposable
 
         // Resolved here rather than left to setpriv, so a command that does not exist fails exactly as it
         // does today — a Win32Exception from this process, not a setpriv exec error.
-        string? target = ParentDeathSignal.Resolve(fileName, _environment.GetVariable(PathVariable));
+        string? target = PathSearch.Resolve(fileName, _environment.GetVariable(PathSearch.PathVariable));
 
         return ParentDeathSignal.Wrap(_setprivPath, target, fileName, arguments);
     }

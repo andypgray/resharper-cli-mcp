@@ -12,10 +12,46 @@ internal sealed record JbInstallation(string ExecutablePath, string Version);
 /// <summary>
 ///     Finds the <c>jb</c> (ReSharper CLI) executable by probing <c>jb inspectcode --version</c> against
 ///     each candidate location — PATH first, then the dotnet global-tools directory, which an MCP client
-///     process may not inherit on PATH. The first success is cached; if every candidate fails, throws a
-///     <see cref="UserErrorException" /> whose remedy is chosen from what the probes proved — install
-///     guidance only when no candidate could be started at all.
+///     process may not inherit on PATH.
 /// </summary>
+/// <remarks>
+///     <para>
+///         The first success is cached for as long as the files the candidates name are unchanged. If every
+///         candidate fails, it throws a <see cref="UserErrorException" /> whose remedy is chosen from what the
+///         probes proved — install guidance only when no candidate could be started at all.
+///     </para>
+///     <para>
+///         The answer is re-checked by a stat on every call because the version outlives the build that
+///         reported it. On a standard install both candidates reach the <c>dotnet tool</c> shim, which starts
+///         whichever build is installed; the first candidate is whatever <c>jb</c> comes first on PATH,
+///         usually but not always that shim. So after an in-place update every spawn runs the new build,
+///         while a cached version would go on labelling its runs with the old one, and everything that records
+///         which build warmed a cache reads that label. An in-place update rewrites the shim on Windows, so a
+///         change in the write time or size of either candidate's file is what sends the next call to probe
+///         again.
+///     </para>
+///     <para>
+///         Not a probe per call: a probe costs seconds, and several times that with several servers starting
+///         together, against a PATH lookup and a stat of one or two files.
+///     </para>
+///     <para>
+///         Two gaps are accepted. The check runs when a call resolves its configuration, so a call that
+///         resolved before <c>jb</c> was replaced and spawns it after, while queued behind another run say,
+///         labels the new build's run with the old version. So does the pre-warm a timed-out call re-arms
+///         with its own configuration. The next call sees the change, but reads the marker that run stamped
+///         as another build's, so it reports the cache as stale and records its warm run under the cold band,
+///         once. A second check once the run lock is held would close it.
+///     </para>
+///     <para>
+///         The second gap is that the file stated is not always the file run. The stat covers what
+///         <see cref="PathSearch" /> resolves, while the probe, and every spawn of
+///         <see cref="JbInstallation.ExecutablePath" />, hand the bare name to the runtime's own lookup, and on
+///         Windows that searches the application, working and system directories before PATH. A <c>jb</c>
+///         found only there has nothing to compare and keeps its first answer. Probing and spawning the
+///         resolved path instead would close the gap, but would stop finding a <c>jb</c> reachable only from
+///         the working directory.
+///     </para>
+/// </remarks>
 internal sealed class JbLocator(IProcessRunner processRunner, IEnvironment environment, ILogger<JbLocator> logger)
 {
     /// <summary>
@@ -28,11 +64,27 @@ internal sealed class JbLocator(IProcessRunner processRunner, IEnvironment envir
 
     internal static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(30);
 
-    private JbInstallation? _cached;
+    /// <summary>
+    ///     The last successful probe and the candidate files it was taken against, swapped as one reference so
+    ///     a reader never pairs one probe's answer with another moment's files.
+    /// </summary>
+    private Located? _located;
 
     public async Task<JbInstallation> LocateAsync(CancellationToken cancellationToken)
     {
-        if (_cached is not null) return _cached;
+        // Read before any probe, never after it: a jb replaced while a probe runs then no longer matches what
+        // is recorded, and the next call probes again rather than trusting an answer older than the files.
+        IReadOnlyList<JbFileState> files = ReadCandidateFiles();
+
+        Located? located = _located;
+        if (located is not null)
+        {
+            if (located.Files.SequenceEqual(files)) return located.Installation;
+
+            logger.LogDebug(
+                "jb's files have changed since it reported version {JbVersion}; probing again",
+                located.Installation.Version);
+        }
 
         List<string> failures = [];
         var evidence = ProbeEvidence.NotStarted;
@@ -68,7 +120,7 @@ internal sealed class JbLocator(IProcessRunner processRunner, IEnvironment envir
             }
 
             JbInstallation installation = new(candidate, outcome.Version);
-            _cached = installation;
+            _located = new Located(installation, files);
             return installation;
         }
 
@@ -139,6 +191,44 @@ internal sealed class JbLocator(IProcessRunner processRunner, IEnvironment envir
 
         string extension = OperatingSystem.IsWindows() ? ".exe" : string.Empty;
         yield return Path.Combine(homeDirectory, ".dotnet", "tools", $"jb{extension}");
+    }
+
+    /// <summary>
+    ///     The write time and size of the file each candidate names right now, in candidate order.
+    /// </summary>
+    /// <remarks>
+    ///     A candidate that names no file, or one that vanishes between the lookup and the stat, is left out,
+    ///     so a <c>jb</c> uninstalled or installed since the last probe changes the list as surely as one
+    ///     rewritten in place.
+    /// </remarks>
+    private List<JbFileState> ReadCandidateFiles()
+    {
+        string? pathVariable = environment.GetVariable(PathSearch.PathVariable);
+
+        List<JbFileState> files = [];
+        foreach (string candidate in Candidates(environment.HomeDirectory))
+        {
+            string? filePath = PathSearch.Resolve(candidate, pathVariable);
+            if (filePath is null) continue;
+
+            if (TryStat(filePath) is { } state) files.Add(state);
+        }
+
+        return files;
+    }
+
+    private static JbFileState? TryStat(string filePath)
+    {
+        try
+        {
+            FileInfo file = new(filePath);
+
+            return file.Exists ? new JbFileState(filePath, file.LastWriteTimeUtc, file.Length) : null;
+        }
+        catch (Exception exception) when (FilesystemFailure.Covers(exception))
+        {
+            return null;
+        }
     }
 
     /// <summary>
@@ -219,6 +309,15 @@ internal sealed class JbLocator(IProcessRunner processRunner, IEnvironment envir
     ///     added here claims nothing it has not shown.
     /// </param>
     private sealed record ProbeOutcome(string? Version, string Detail, ProbeEvidence Evidence = ProbeEvidence.NotStarted);
+
+    /// <summary>A successful probe and the candidate files as they stood when it began.</summary>
+    private sealed record Located(JbInstallation Installation, IReadOnlyList<JbFileState> Files);
+
+    /// <summary>
+    ///     One candidate's file as a stat sees it. The size alone would not do, because an in-place update
+    ///     can leave it as it was: the shim is an apphost whose size does not depend on the build it starts.
+    /// </summary>
+    private readonly record struct JbFileState(string FilePath, DateTime LastWriteTimeUtc, long Length);
 
     /// <summary>
     ///     What a probe proved about a candidate, ordered by how much of it: nothing, that it runs, that it

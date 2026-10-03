@@ -21,7 +21,13 @@ internal static class JbStubs
     public const string Version = "2026.1.2";
 
     /// <summary>The banner a healthy <c>jb</c> answers the probe with.</summary>
-    public static ProcessResult VersionProbeAnswer { get; } = new(0, $"Version: {Version}", string.Empty);
+    public static ProcessResult VersionProbeAnswer { get; } = VersionProbeAnswerFor(Version);
+
+    /// <summary>The banner a <c>jb</c> of build <paramref name="version" /> answers the probe with.</summary>
+    public static ProcessResult VersionProbeAnswerFor(string version)
+    {
+        return new ProcessResult(0, $"Version: {version}", string.Empty);
+    }
 
     /// <summary>Whether this spawn is the <c>--version</c> probe discovery makes, rather than a run.</summary>
     public static bool IsVersionProbe(IReadOnlyList<string> arguments)

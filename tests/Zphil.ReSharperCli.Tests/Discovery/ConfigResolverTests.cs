@@ -711,8 +711,8 @@ public sealed class ConfigResolverTests : IDisposable
     public async Task ResolveAsync_CalledRepeatedly_ProbesJbOnlyOnce()
     {
         // Arrange — resolving fresh every call must not mean re-probing jb. That probe is the one
-        // genuinely expensive step, and JbLocator caches it for the process; the rest is a directory
-        // enumeration and a small XML read.
+        // genuinely expensive step, and JbLocator caches it until jb's files change; the rest is a
+        // directory enumeration and a small XML read.
         CreateSolutionInCurrentDirectory("App.sln");
 
         // Act

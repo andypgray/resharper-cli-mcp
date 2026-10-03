@@ -37,6 +37,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   call then paid for the rebuild. It now applies the build check that the cache-state line and the choice of
   seeding donor already use.
 
+- A running server now notices a `jb` updated in place and reports the new build. The server ran
+  `jb inspectcode --version` once per process. On a standard install, both places it looks for `jb` lead to
+  the `dotnet tool` shim, which starts whichever build is installed. After
+  `dotnet tool update -g JetBrains.ReSharper.GlobalTools`, a running server ran the new `jb` under the old
+  version. Its cache-state line read `warm` while `jb` rebuilt the cache, and it recorded the old version
+  against the cache the new build wrote. A server started later then read that cache as `stale` and recorded
+  a warm run as the solution's cold duration. Each call now compares the write time and size of
+  `~/.dotnet/tools/jb` and of the first `jb` on `PATH` with their values at the last probe, and probes again
+  when either has changed. A call already queued when `jb` is replaced still records the build its own probe
+  reported, so the call after it can report the cache as `stale` once.
+
 ## [1.7.0] - 2026-09-08
 
 ### Added

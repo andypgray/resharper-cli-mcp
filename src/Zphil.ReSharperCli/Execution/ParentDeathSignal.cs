@@ -21,8 +21,8 @@ namespace Zphil.ReSharperCli.Execution;
 ///         server.
 ///     </para>
 ///     <para>
-///         <see cref="Wrap" /> is pure, and separate from the two probes around it, so the argument vector
-///         this produces is pinned by tests on every platform rather than only on the one that runs it.
+///         <see cref="Wrap" /> is pure, and separate from the probe beside it, so the argument vector this
+///         produces is pinned by tests on every platform rather than only on the one that runs it.
 ///     </para>
 /// </remarks>
 internal static class ParentDeathSignal
@@ -78,32 +78,9 @@ internal static class ParentDeathSignal
     [SupportedOSPlatform("linux")]
     internal static string? TryLocate(string? pathVariable)
     {
-        string? setpriv = Resolve(Executable, pathVariable);
+        string? setpriv = PathSearch.Resolve(Executable, pathVariable);
 
         return setpriv is not null && Accepts(setpriv) ? setpriv : null;
-    }
-
-    /// <summary>
-    ///     What <c>execvp</c> would find for <paramref name="fileName" />: the file itself when the name
-    ///     carries a separator, otherwise the first executable of that name on <paramref name="pathVariable" />.
-    ///     <see langword="null" /> means "nothing to run", which is the answer <see cref="Wrap" /> declines on.
-    /// </summary>
-    [SupportedOSPlatform("linux")]
-    internal static string? Resolve(string fileName, string? pathVariable)
-    {
-        if (fileName.Contains('/')) return IsExecutableFile(fileName) ? fileName : null;
-
-        if (string.IsNullOrEmpty(pathVariable)) return null;
-
-        foreach (string directory in pathVariable.Split(Path.PathSeparator))
-        {
-            if (directory.Length == 0) continue;
-
-            string candidate = Path.Combine(directory, fileName);
-            if (IsExecutableFile(candidate)) return candidate;
-        }
-
-        return null;
     }
 
     /// <summary>
@@ -142,23 +119,6 @@ internal static class ParentDeathSignal
             return false;
         }
         catch (Exception exception) when (exception is Win32Exception or InvalidOperationException or IOException)
-        {
-            return false;
-        }
-    }
-
-    [SupportedOSPlatform("linux")]
-    private static bool IsExecutableFile(string candidate)
-    {
-        try
-        {
-            if (!File.Exists(candidate)) return false;
-
-            UnixFileMode mode = File.GetUnixFileMode(candidate);
-
-            return (mode & (UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute)) != 0;
-        }
-        catch (Exception exception) when (FilesystemFailure.Covers(exception))
         {
             return false;
         }

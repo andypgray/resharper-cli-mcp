@@ -14,8 +14,8 @@ This server bundles no JetBrains software. It shells out to a `jb` you install y
 dotnet tool install -g JetBrains.ReSharper.GlobalTools
 ```
 
-`jb` is located once per server process by running `jb inspectcode --version` against two candidates, in
-order:
+`jb` is located the first time the server needs it, by running `jb inspectcode --version` against two
+candidates, in order:
 
 1. `jb` on `PATH`,
 2. `~/.dotnet/tools/jb` (`jb.exe` on Windows).
@@ -30,6 +30,13 @@ neither could be started. A probe killed at its 30-second cap, or one that runs 
 call, not to install the tool again. Reference:
 <https://www.jetbrains.com/help/resharper/ReSharper_Command_Line_Tools.html>
 
+Later calls reuse that answer while the `jb` files are unchanged. Each call compares the write time and size
+of `~/.dotnet/tools/jb` and of the first `jb` on `PATH` with their values at the last probe, and probes again
+when either has changed. `dotnet tool update -g JetBrains.ReSharper.GlobalTools` rewrites the first, so a
+running server picks up an update on its next call without a restart. A call already queued or running when
+`jb` was replaced keeps the version its probe reported, and so does the pre-warm such a call re-arms when it
+times out.
+
 ## Which solution a call runs against
 
 Resolved in this order:
@@ -43,9 +50,9 @@ the next level. Level 3 fails when the directory holds zero or several solution 
 `JB_SOLUTION_PATH`. So a solution one directory below the server's working directory, or a directory
 holding two `.sln` files, needs one of the first two levers — discovery will not find it on its own.
 
-`jb` is located once per server process. Everything else — the solution, its settings file, and the cleanup
-profile that file declares — is resolved fresh on every call, so adding or editing a `.sln.DotSettings`
-takes effect on the next call rather than after a client restart.
+`jb` is probed again only when its files change, as described above. Everything else — the solution, its
+settings file, and the cleanup profile that file declares — is resolved fresh on every call, so adding or
+editing a `.sln.DotSettings` takes effect on the next call rather than after a client restart.
 
 ## Why the first call is slow, the timeout, and the queue
 

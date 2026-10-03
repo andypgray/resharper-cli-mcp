@@ -24,9 +24,9 @@ internal sealed record ConfigWarnings(string? MissingSettingsPath, SettingsReadF
 ///     flag is reserved for the one case it exists for — a file <c>jb</c> cannot find on its own.
 /// </param>
 /// <param name="JbVersion">
-///     What the located <c>jb</c> reported itself as. It reaches no command line: it is stamped into the warm
-///     marker so a later run can tell a cache <em>this</em> build wrote from one an earlier build left, which
-///     <c>jb</c> rebuilds in place. Nullable and defaulted although
+///     What the <c>jb</c> located for this call reported itself as. It reaches no command line: it is
+///     stamped into the warm marker so a later run can tell a cache <em>this</em> build wrote from one an
+///     earlier build left, which <c>jb</c> rebuilds in place. Nullable and defaulted although
 ///     <see cref="JbInstallation.Version" /> is not, because "no build known" has to be representable — it is
 ///     what switches the staleness judgement off rather than letting a server that cannot name its own
 ///     <c>jb</c> call every cache stale for ever.
@@ -68,8 +68,9 @@ internal sealed record ResolvedConfig(
 ///     settings file added or edited mid-session — notably one newly declaring a cleanup profile, which is
 ///     exactly what the configuration guide tells an agent to do — takes effect on the next call instead of
 ///     after a client restart. The one genuinely expensive step, the <c>jb inspectcode --version</c> probe,
-///     is cached for the process inside <see cref="JbLocator" />; what remains here is one directory
-///     enumeration, a few existence checks, and a small XML read — noise beside the jb run that follows.
+///     is cached inside <see cref="JbLocator" /> and repeated only when <c>jb</c>'s files have changed; what
+///     remains here is one directory enumeration, a few existence checks, and a small XML read — noise
+///     beside the jb run that follows.
 /// </remarks>
 internal sealed class ConfigResolver(JbLocator jbLocator, IEnvironment environment, ILogger<ConfigResolver> logger)
 {

@@ -272,6 +272,32 @@ public sealed class CacheWarmerTests : IDisposable
     }
 
     [Fact]
+    public async Task Start_JbUpdatedInPlaceUnderALiveServer_WarmsWithTheNewBuild()
+    {
+        // Arrange — one server across an in-place update, which rewrites the shim and leaves the new build
+        // behind it. A first pass warms and stamps the old build.
+        string shim = JbInstalls.PlantGlobalToolShim(_environment.HomeDirectory);
+        using CacheWarmer warmer = BuildWarmer();
+        warmer.Start();
+        await warmer.Finished.WaitAsync(Generous, Ct);
+        warmer.Outcome.ShouldBe(WarmUpOutcome.Warmed);
+
+        JbInstalls.UpdateInPlace(shim);
+        _probe.Version = "2026.2.0";
+
+        // Act
+        warmer.Start();
+        await warmer.Finished.WaitAsync(Generous, Ct);
+
+        // Assert — both halves are needed. A server that kept its first probe would read its own fresh marker
+        // as this build's, and a debounce asking only the age would skip it either way; the pass runs, and
+        // stamps the build that actually ran.
+        warmer.Outcome.ShouldBe(WarmUpOutcome.Warmed);
+        _probe.Runs.Count.ShouldBe(2);
+        JbWarmMarker.TryReadJbVersion(JbWarmMarker.PathFor(_solutionPath, _cacheHome), NullLogger.Instance).ShouldBe("2026.2.0");
+    }
+
+    [Fact]
     public async Task Start_MarkerOlderThanTheWindow_WarmsAnyway()
     {
         // Arrange — a marker this build stamped, so its age alone decides. It is aged against the shipped window
@@ -674,6 +700,9 @@ public sealed class CacheWarmerTests : IDisposable
         /// <summary>Exit code every non-probe run reports.</summary>
         public int ExitCode { get; set; }
 
+        /// <summary>The build the version probe reports; change it to stand in for an update.</summary>
+        public string Version { get; set; } = JbStubs.Version;
+
         /// <summary>When set, both jb candidates fail their version probe and the toolchain reads as absent.</summary>
         public bool JbMissing { get; set; }
 
@@ -716,7 +745,7 @@ public sealed class CacheWarmerTests : IDisposable
             if (JbStubs.IsVersionProbe(arguments))
                 return JbMissing
                     ? new ProcessResult(1, string.Empty, "jb: command not found")
-                    : JbStubs.VersionProbeAnswer;
+                    : JbStubs.VersionProbeAnswerFor(Version);
 
             int runNumber;
             lock (_runs)

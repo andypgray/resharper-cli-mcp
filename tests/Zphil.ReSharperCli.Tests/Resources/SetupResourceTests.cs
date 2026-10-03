@@ -54,6 +54,7 @@ public sealed class SetupResourceTests
         contents.MimeType.ShouldBe("text/markdown");
         string text = contents.Text;
         text.ShouldContain("JetBrains.ReSharper.GlobalTools"); // the install command for the missing jb
+        text.ShouldContain("without a restart"); // a jb updated in place is picked up by the next call
         text.ShouldContain("no parent walk"); // solution discovery is top-level only
 
         // The run-cap numbers, derived from their owner rather than restated: the guide is the caps' only

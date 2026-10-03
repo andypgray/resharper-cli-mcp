@@ -267,6 +267,70 @@ public sealed class JbLocatorTests : IDisposable
     }
 
     [Fact]
+    public async Task LocateAsync_ShimRewrittenSinceTheProbe_ProbesAgainAndReportsTheNewBuild()
+    {
+        // Arrange — an in-place `dotnet tool update -g`: it rewrites the shim, and the shim then starts the
+        // new build. A server that kept its first answer would label every later run with a build that is
+        // no longer installed.
+        string shim = JbInstalls.PlantGlobalToolShim(_environment.HomeDirectory);
+        Probe("jb").Throws(new Win32Exception("The system cannot find the file specified."));
+        Probe(DotnetToolsCandidate).Returns(
+            JbStubs.VersionProbeAnswerFor("2026.2.1"),
+            JbStubs.VersionProbeAnswerFor("2026.2.3.1"));
+        JbLocator locator = LoggingLocator();
+        await locator.LocateAsync(Ct);
+
+        // Act
+        JbInstalls.UpdateInPlace(shim);
+        JbInstallation installation = await locator.LocateAsync(Ct);
+
+        // Assert — and the line saying why names the build the change replaced.
+        installation.Version.ShouldBe("2026.2.3.1");
+        await _processRunner.Received(2).AnyRunOf(DotnetToolsCandidate);
+        LogEntry reprobe = _logs.WithProperty("JbVersion").ShouldHaveSingleItem();
+        reprobe.Level.ShouldBe(LogLevel.Debug);
+        reprobe.Property("JbVersion").ShouldBe("2026.2.1");
+    }
+
+    [Fact]
+    public async Task LocateAsync_ShimUntouched_ReusesTheProbe()
+    {
+        // Arrange — the stat is what keeps the probe off every call: seconds of process start against the
+        // read of one or two files.
+        JbInstalls.PlantGlobalToolShim(_environment.HomeDirectory);
+        Probe("jb").Throws(new Win32Exception("The system cannot find the file specified."));
+        Probe(DotnetToolsCandidate).Returns(new ProcessResult(0, VersionOutput, string.Empty));
+        JbLocator locator = new(_processRunner, _environment, NullLogger<JbLocator>.Instance);
+
+        // Act
+        await locator.LocateAsync(Ct);
+        await locator.LocateAsync(Ct);
+
+        // Assert
+        await _processRunner.Received(1).AnyRunOf(DotnetToolsCandidate);
+    }
+
+    [Fact]
+    public async Task LocateAsync_JbOnPathRewrittenSinceTheProbe_ProbesAgain()
+    {
+        // Arrange — the first candidate is whatever jb comes first on PATH, which need not be the shim, and
+        // a jb installed some other way can be updated in place too.
+        string directory = _environment.CreateTempDirectory();
+        string jb = JbInstalls.PlantJbIn(directory);
+        _environment.SetVariable(PathSearch.PathVariable, directory);
+        Probe("jb").Returns(new ProcessResult(0, VersionOutput, string.Empty));
+        JbLocator locator = new(_processRunner, _environment, NullLogger<JbLocator>.Instance);
+        await locator.LocateAsync(Ct);
+
+        // Act
+        JbInstalls.UpdateInPlace(jb);
+        await locator.LocateAsync(Ct);
+
+        // Assert
+        await _processRunner.Received(2).AnyRunOf("jb");
+    }
+
+    [Fact]
     public async Task LocateAsync_FirstCandidateFailsBeforeALaterOneSucceeds_LogsTheFailedCandidateAndItsCost()
     {
         // Arrange — the case nothing in the log could account for. A throw from the spawn escapes before

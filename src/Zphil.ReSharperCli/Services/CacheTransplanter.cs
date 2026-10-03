@@ -224,10 +224,10 @@ internal sealed class CacheTransplanter(
 
             // A donor another jb build wrote is worse than none: jb rebuilds a generation it did not write
             // in place, so the copy would buy a cold-shaped run and charge the seeding premium on top of it.
-            // A check rather than a guarantee — the marker records only its cache's LAST writer, and
-            // JbLocator caches per session, so in the hour after an upgrade a session still on the older
-            // build can rewrite a shared generation between this read and the copy. Losing that race costs
-            // one seeded run that rebuilds, which is what declining costs anyway.
+            // A check rather than a guarantee, because the build a marker names is the label its run was
+            // given, and JbLocator's remarks name the window in which that label is still the old build's.
+            // Here the mislabel declines a donor this could have used: a seeding forgone, which is the
+            // direction this check may fail in.
             if (JbWarmMarker.WrittenByAnotherBuild(donor.JbVersion, config.JbVersion)) continue;
 
             candidates.Add(new Donor(key, generationName, File.GetLastWriteTimeUtc(markerPath)));

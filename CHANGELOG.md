@@ -48,6 +48,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   when either has changed. A call already queued when `jb` is replaced still records the build its own probe
   reported, so the call after it can report the cache as `stale` once.
 
+- The server now keeps the output it read from `jb` when a process that `jb` started still holds that output
+  open after `jb` exits. The server waits for that output until the call's time limit, and at the limit it
+  dropped what it had already read. A failed run's error then quoted nothing that `jb` wrote to standard
+  error. The `jb inspectcode --version` probe rejected a working `jb` as reporting no version. The call still
+  waits until that limit, which is the run cap for a run and 30 seconds for the probe.
+
 ## [1.7.0] - 2026-09-08
 
 ### Added

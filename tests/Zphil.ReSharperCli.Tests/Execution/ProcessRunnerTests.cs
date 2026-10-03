@@ -27,9 +27,9 @@ public sealed class ProcessRunnerTests : IDisposable
     private static readonly TimeSpan GenerousTimeout = TimeSpan.FromSeconds(30);
 
     /// <summary>
-    ///     The orphan-drain case's cap: the parent's whole budget to start, launch its orphan and exit. The drain
-    ///     after the exit is bounded by the same cap, so the call returns at it however quickly the parent went,
-    ///     which also makes this how long the case takes.
+    ///     The orphan-drain case's cap: the parent's whole budget to start, write a line to each pipe, launch its
+    ///     orphan and exit. The drain after the exit is bounded by the same cap, so the call returns at it however
+    ///     quickly the parent went, which also makes this how long the case takes.
     /// </summary>
     /// <remarks>
     ///     Ten seconds is over five times the worst start-to-exit time measured on Windows beside three concurrent
@@ -39,9 +39,8 @@ public sealed class ProcessRunnerTests : IDisposable
     private static readonly TimeSpan ParentStartBudget = TimeSpan.FromSeconds(10);
 
     /// <summary>
-    ///     How long the orphan holds standard output: four budgets, so a call that waited for it cannot pass for
-    ///     one that returned at the cap, yet short enough that an orphan which escaped the job (it can, being
-    ///     bound only after it starts) frees the reader threads it blocks within a minute.
+    ///     How long the orphan holds both pipes: four budgets, so a call that waited for it cannot pass for one
+    ///     that returned at the cap.
     /// </summary>
     private static readonly TimeSpan OrphanHoldsPipeFor = ParentStartBudget * 4;
 
@@ -117,29 +116,42 @@ public sealed class ProcessRunnerTests : IDisposable
     }
 
     [Fact]
-    public async Task RunAsync_OrphanChildHoldsStdout_ReturnsAtTheCapRatherThanWaitingForTheOrphan()
+    public async Task RunAsync_OrphanHoldsBothPipes_ReturnsAtTheCapWithWhatWasWrittenBeforeIt()
     {
-        // Arrange — the parent exits at once but leaves a background child holding the stdout pipe open past
-        // the cap. The drain after the exit is bounded by the same cap, so the call returns at the cap rather
-        // than blocking until EOF.
+        // Arrange — the parent writes a line to each pipe and exits at once, leaving a background child holding
+        // both pipes open past the cap. The drain after the exit is bounded by the same cap, so the call returns
+        // at the cap rather than blocking until EOF, and still carries what the parent wrote before it.
         ProcessRunner runner = Runner();
-        (string fileName, string[] arguments) = OrphanHoldingStdoutCommand(OrphanHoldsPipeFor);
+        const string writtenToStandardOutput = "written-to-stdout-before-the-cap";
+        const string writtenToStandardError = "written-to-stderr-before-the-cap";
+        (string fileName, string[] arguments) = OrphanHoldingBothPipesCommand(
+            OrphanHoldsPipeFor, writtenToStandardOutput, writtenToStandardError);
         var stopwatch = Stopwatch.StartNew();
 
         // Act
-        ProcessResult? result = null;
+        Task<ProcessResult> running = runner.RunAsync(
+            fileName, arguments, ParentStartBudget, TestContext.Current.CancellationToken);
         await Should.NotThrowAsync(
-            async () => result = await runner.RunAsync(
-                fileName, arguments, ParentStartBudget, TestContext.Current.CancellationToken),
-            "the parent did not start and exit inside its budget: a slow start, not a drain hang");
+            running, "the parent did not start and exit inside its budget: a slow start, not a drain hang");
         stopwatch.Stop();
 
-        // Assert — the parent's real exit code, a return no earlier than the cap, which is what proves the orphan
-        // held the pipe at all, and a return well before the orphan let go.
-        result.ShouldNotBeNull().ExitCode.ShouldBe(0);
+        // Assert — the parent's real exit code and the line it wrote to each pipe, which a drain cut at the cap
+        // must not throw away. Then a return no earlier than the cap, which is what proves the orphan held a
+        // pipe at all, and a return well before the orphan let go. Both pipes are awaited together, so the timing
+        // cannot say which of them was held.
+        ProcessResult result = await running;
+        result.ExitCode.ShouldBe(0);
+        result.StandardOutput.ShouldContain(
+            writtenToStandardOutput,
+            Case.Sensitive,
+            "the drain cut at the cap threw away what its reader had already read from standard output");
+        result.StandardError.ShouldContain(
+            writtenToStandardError,
+            Case.Sensitive,
+            "the drain cut at the cap threw away what its reader had already read from standard error");
         stopwatch.Elapsed.ShouldBeGreaterThanOrEqualTo(
             ParentStartBudget - TimerSlack,
-            "returned before the cap, so nothing held the pipe and the bounded drain was never exercised");
+            "returned before the cap, so nothing held either pipe and the bounded drain was never exercised");
         stopwatch.Elapsed.ShouldBeLessThan(
             OrphanHoldsPipeFor - TimeSpan.FromSeconds(5),
             "waited for the orphan to let go of the pipe rather than returning at the cap");
@@ -274,17 +286,28 @@ public sealed class ProcessRunnerTests : IDisposable
     }
 
     /// <summary>
-    ///     A parent that exits at once, leaving a child that holds standard output open for
-    ///     <paramref name="holdFor" />. <c>ping</c> waits a second between echoes, so <c>n</c> echoes take
-    ///     <c>n − 1</c> seconds; <c>/d</c> keeps a machine's AutoRun commands out of the parent's start budget.
+    ///     A parent that writes <paramref name="standardOutputLine" /> to standard output and
+    ///     <paramref name="standardErrorLine" /> to standard error, then exits at once, leaving a child that holds
+    ///     both pipes open for <paramref name="holdFor" />.
     /// </summary>
-    private static (string FileName, string[] Arguments) OrphanHoldingStdoutCommand(TimeSpan holdFor)
+    /// <remarks>
+    ///     <c>ping</c> waits a second between echoes, so <c>n</c> echoes take <c>n − 1</c> seconds; <c>/d</c>
+    ///     keeps a machine's AutoRun commands out of the parent's start budget. The lines go through <c>echo</c>, so
+    ///     each has to be plain ASCII ending in a letter: <c>cmd</c> reads a digit before <c>&gt;&amp;2</c> as the
+    ///     handle being redirected, and gives <c>% ^ ! "</c> meanings of their own. The <c>cmd</c> line arrives as
+    ///     one quoted argument, and <c>/c</c> strips those outer quotes because <c>&amp;</c> and <c>&gt;</c> sit
+    ///     inside them, so all three commands run.
+    /// </remarks>
+    private static (string FileName, string[] Arguments) OrphanHoldingBothPipesCommand(
+        TimeSpan holdFor,
+        string standardOutputLine,
+        string standardErrorLine)
     {
         var seconds = (int)holdFor.TotalSeconds;
 
         return OperatingSystem.IsWindows()
-            ? ("cmd", ["/d", "/c", $"start /b ping -n {seconds + 1} 127.0.0.1"])
-            : ("sh", ["-c", $"sleep {seconds} & exit 0"]);
+            ? ("cmd", ["/d", "/c", $"echo {standardOutputLine}& echo {standardErrorLine}>&2& start /b ping -n {seconds + 1} 127.0.0.1"])
+            : ("sh", ["-c", $"echo {standardOutputLine}; echo {standardErrorLine} >&2; sleep {seconds} & exit 0"]);
     }
 
     /// <summary>

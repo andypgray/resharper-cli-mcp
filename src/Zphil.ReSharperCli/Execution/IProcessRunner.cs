@@ -1,9 +1,13 @@
 namespace Zphil.ReSharperCli.Execution;
 
 /// <summary>
-///     The outcome of running an external process to completion: its exit code and the full
-///     (10&#160;MB-capped) text captured from standard output and standard error.
+///     The outcome of running an external process to completion: its exit code and the (10&#160;MB-capped)
+///     text captured from standard output and standard error.
 /// </summary>
+/// <remarks>
+///     That text is complete unless a process the child started still held a pipe open at the timeout, in
+///     which case it is what had been read by then.
+/// </remarks>
 internal readonly record struct ProcessResult(int ExitCode, string StandardOutput, string StandardError);
 
 /// <summary>

@@ -12,12 +12,10 @@ namespace Zphil.ReSharperCli.Execution;
 /// <remarks>
 ///     <para>
 ///         It logs the mechanics of a spawn — the command line, the wall clock, the exit code, a tree killed
-///         at the cap — and does so at <c>Debug</c>, because this layer cannot tell one spawn from another. A
-///         <c>jb inspectcode</c> the user is waiting on and the <c>jb inspectcode --version</c> probe
-///         <c>JbLocator</c> makes arrive here identically, and an <c>Information</c> line here would report
-///         the probe as a run. The single <c>Information</c> line per <c>jb</c> run belongs one level up, in
-///         <see cref="Services.JbRunner" />, which knows which is which and knows what the cache looked like
-///         going in.
+///         at the cap or an output drain cut at it — and does so at <c>Debug</c>, because this layer cannot
+///         tell one spawn from another: a <c>jb inspectcode</c> the user is waiting on and a
+///         <c>jb inspectcode --version</c> probe arrive here identically, and an <c>Information</c> line here would
+///         report the probe as a run.
 ///     </para>
 ///     <para>
 ///         <see cref="ChildProcessLifetime" /> owns the spawn itself, so that a child cannot outlive this
@@ -89,97 +87,118 @@ internal sealed class ProcessRunner(ChildProcessLifetime childLifetime, ILogger<
         // reader on — the MCP server's own JSON-RPC stdin handle.
         process.StandardInput.Close();
 
-        // Drain both pipes concurrently and immediately so a chatty child never blocks on a full buffer.
-        Task<string> standardOutputTask = ReadCappedAsync(process.StandardOutput, onOutputLine);
-        Task<string> standardErrorTask = ReadCappedAsync(process.StandardError);
+        // Cancelled wherever this call gives up on its readers: at the cap, which is how they hand back what they
+        // read, and by the finally below on every way out, so a process the child started that still holds a pipe
+        // cannot keep a reader, and all it captured, alive past the call. Deliberately left undisposed: it owns no
+        // timer and no links, and a reader can still be holding its token after this method has thrown.
+        CancellationTokenSource readerCut = new();
 
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeoutCts.CancelAfter(timeout);
+        // Drain both pipes concurrently and immediately so a chatty child never blocks on a full buffer.
+        Task<string> standardOutputTask = ReadCappedAsync(process.StandardOutput, readerCut.Token, onOutputLine);
+        Task<string> standardErrorTask = ReadCappedAsync(process.StandardError, readerCut.Token);
 
         try
         {
-            await process.WaitForExitAsync(timeoutCts.Token).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            KillTree(process);
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(timeout);
 
-            // Brief reap so the killed tree is cleaned up and the pipe readers reach EOF.
             try
             {
-                await process.WaitForExitAsync(CancellationToken.None).WaitAsync(KilledTreeReapBudget).ConfigureAwait(false);
+                await process.WaitForExitAsync(timeoutCts.Token).ConfigureAwait(false);
             }
-            catch
+            catch (OperationCanceledException)
             {
-                // The reap itself timed out or faulted; nothing more we can usefully do.
+                KillTree(process);
+
+                // Brief reap so the killed tree is cleaned up and the pipe readers reach EOF.
+                try
+                {
+                    await process.WaitForExitAsync(CancellationToken.None).WaitAsync(KilledTreeReapBudget).ConfigureAwait(false);
+                }
+                catch
+                {
+                    // The reap itself timed out or faulted; nothing more we can usefully do.
+                }
+
+                // Both endings say the tree was killed, and which of the two it was matters: a caller standing a
+                // speculative pass down looks nothing like a run that ran out of budget, and only this frame can
+                // still tell them apart.
+                logger.LogDebug(
+                    "Killed the {FileName} process tree after {ElapsedMs} ms — {Reason}",
+                    fileName,
+                    elapsed.ElapsedMilliseconds,
+                    cancellationToken.IsCancellationRequested ? "cancelled by its caller" : $"the {DurationFormatter.Format(timeout)} cap");
+
+                // External cancellation (the caller's token) propagates as a normal OperationCanceledException.
+                if (cancellationToken.IsCancellationRequested) throw;
+
+                throw new ProcessTimeoutException($"'{fileName}' timed out after {DurationFormatter.Format(timeout)}.");
             }
 
-            // Both endings say the tree was killed, and which of the two it was matters: a caller standing a
-            // speculative pass down looks nothing like a run that ran out of budget, and only this frame can
-            // still tell them apart.
+            // The process has exited and its exit code is final. Bound the pipe drain by the still-armed
+            // timeout so a leaked grandchild holding a pipe open can't hang the call past `timeout`. At the cap the
+            // readers are cut, and each hands back what it read before then; a caller cancelling still cancels the
+            // call.
+            try
+            {
+                await Task.WhenAll(standardOutputTask, standardErrorTask).WaitAsync(timeoutCts.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                await readerCut.CancelAsync().ConfigureAwait(false);
+                if (cancellationToken.IsCancellationRequested) throw;
+
+                logger.LogDebug(
+                    "{FileName} exited, but a process it started still held its output open at the {Cap} cap; keeping what was read before it",
+                    fileName,
+                    DurationFormatter.Format(timeout));
+            }
+
+            string standardOutput = await standardOutputTask.ConfigureAwait(false);
+            string standardError = await standardErrorTask.ConfigureAwait(false);
+
             logger.LogDebug(
-                "Killed the {FileName} process tree after {ElapsedMs} ms — {Reason}",
+                "{FileName} exited with code {ExitCode} after {ElapsedMs} ms",
                 fileName,
-                elapsed.ElapsedMilliseconds,
-                cancellationToken.IsCancellationRequested ? "cancelled by its caller" : $"the {DurationFormatter.Format(timeout)} cap");
+                process.ExitCode,
+                elapsed.ElapsedMilliseconds);
 
-            // External cancellation (the caller's token) propagates as a normal OperationCanceledException.
-            if (cancellationToken.IsCancellationRequested) throw;
-
-            throw new ProcessTimeoutException($"'{fileName}' timed out after {DurationFormatter.Format(timeout)}.");
+            return new ProcessResult(process.ExitCode, standardOutput, standardError);
         }
-
-        // The process has exited and its exit code is final. Bound the pipe drain by the still-armed
-        // timeout so a leaked grandchild holding a pipe open can't hang the call past `timeout`.
-        string standardOutput = await DrainWithinBudgetAsync(standardOutputTask, timeoutCts.Token, cancellationToken).ConfigureAwait(false);
-        string standardError = await DrainWithinBudgetAsync(standardErrorTask, timeoutCts.Token, cancellationToken).ConfigureAwait(false);
-
-        logger.LogDebug(
-            "{FileName} exited with code {ExitCode} after {ElapsedMs} ms",
-            fileName,
-            process.ExitCode,
-            elapsed.ElapsedMilliseconds);
-
-        return new ProcessResult(process.ExitCode, standardOutput, standardError);
-    }
-
-    /// <summary>
-    ///     Await a pipe reader within the remaining timeout budget. The process has already exited; if a
-    ///     leaked grandchild is still holding the write end open the reader never reaches EOF, so cap the
-    ///     wait on <paramref name="timeoutToken" /> and fall back to empty — stdout/stderr are advisory
-    ///     (inspect results come from the SARIF file) and the real exit code is already in hand. External
-    ///     cancellation is re-thrown so the caller's token still cancels the call.
-    /// </summary>
-    private static async Task<string> DrainWithinBudgetAsync(
-        Task<string> readerTask,
-        CancellationToken timeoutToken,
-        CancellationToken cancellationToken)
-    {
-        try
+        finally
         {
-            return await readerTask.WaitAsync(timeoutToken).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            if (cancellationToken.IsCancellationRequested) throw;
-
-            return string.Empty;
+            // On the kill path this runs after the reap, so the lines that arrive during it still count towards a
+            // timeout's message.
+            await readerCut.CancelAsync().ConfigureAwait(false);
         }
     }
 
     /// <summary>
-    ///     Read a redirected stream to EOF, keeping at most <see cref="MaxCapturedChars" /> characters but
-    ///     always draining the rest so the child process never blocks on a full pipe. When
-    ///     <paramref name="onLine" /> is given, each complete line is handed to it as it arrives — the same
-    ///     stream, observed in flight as well as captured.
+    ///     Reads a redirected stream until EOF or until <paramref name="cut" /> is cancelled, keeping at most
+    ///     <see cref="MaxCapturedChars" /> characters but draining the rest so the child process never blocks on
+    ///     a full pipe, and returns what was kept either way.
     /// </summary>
     /// <remarks>
-    ///     Chunks fall wherever the pipe happens to break, so a line routinely straddles two of them and the
-    ///     tail of a chunk has to be carried into the next. That carry is bounded by
-    ///     <see cref="MaxCarriedLineChars" />: a stream with no newline in it at all would otherwise grow one
-    ///     line to the size of the whole output.
+    ///     <para>
+    ///         When <paramref name="onLine" /> is given, each complete line is handed to it as it arrives — the
+    ///         same stream, observed in flight as well as captured.
+    ///     </para>
+    ///     <para>
+    ///         Chunks fall wherever the pipe happens to break, so a line routinely straddles two of them and the
+    ///         tail of a chunk has to be carried into the next. That carry is bounded by
+    ///         <see cref="MaxCarriedLineChars" />: a stream with no newline in it at all would otherwise grow one
+    ///         line to the size of the whole output.
+    ///     </para>
+    ///     <para>
+    ///         A cut is the call giving up on a pipe that a process the child started still holds, at the cap or
+    ///         as the call throws, and it leaves two edges. Up to one <see cref="StreamReader" /> buffer (about
+    ///         4&#160;KB) can still be lost: a read that fills that buffer reads again within the same call, and the
+    ///         characters it has decoded but not yet returned are dropped at the cut. And after a cut nothing
+    ///         drains the pipe, so a descendant that keeps writing blocks once the pipe fills, until the read end
+    ///         is finalized.
+    ///     </para>
     /// </remarks>
-    private async Task<string> ReadCappedAsync(StreamReader reader, Action<string>? onLine = null)
+    private async Task<string> ReadCappedAsync(StreamReader reader, CancellationToken cut, Action<string>? onLine = null)
     {
         StringBuilder builder = new();
         var buffer = new char[ReadChunkChars];
@@ -190,7 +209,11 @@ internal sealed class ProcessRunner(ChildProcessLifetime childLifetime, ILogger<
         try
         {
             int read;
-            while ((read = await reader.ReadAsync(buffer.AsMemory()).ConfigureAwait(false)) > 0)
+
+            // The token normally cancels the blocked pipe read itself: Windows aborts it with CancelSynchronousIo,
+            // and on Unix the read is a socket receive that takes the token. WaitAsync is the backstop, so the
+            // loop still leaves at the cut if that cancellation lands late.
+            while ((read = await reader.ReadAsync(buffer.AsMemory(), cut).AsTask().WaitAsync(cut).ConfigureAwait(false)) > 0)
             {
                 int remaining = MaxCapturedChars - builder.Length;
                 if (remaining > 0) builder.Append(buffer, 0, Math.Min(read, remaining));
@@ -202,8 +225,13 @@ internal sealed class ProcessRunner(ChildProcessLifetime childLifetime, ILogger<
         {
             // The pipe was torn down (e.g. the process was killed on timeout); return what we captured.
         }
+        catch (OperationCanceledException) when (cut.IsCancellationRequested)
+        {
+            // The call gave up on the pipe; return what we captured.
+        }
 
-        // A last line with no newline after it — the shape a killed process tends to leave — is still a line.
+        // A last line with no newline after it is still a line: the shape a killed process tends to leave, and
+        // at a cut possibly only the part of one that arrived before it.
         if (carry is { Length: > 0 }) EmitLine(carry, onLine!);
 
         return builder.ToString();

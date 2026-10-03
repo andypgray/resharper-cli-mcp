@@ -17,7 +17,11 @@ internal enum WarmUpOutcome
     /// <summary>Nothing to warm: no <c>jb</c>, or no solution a call with no <c>solutionPath</c> would find.</summary>
     NoTarget,
 
-    /// <summary>A run against this cache generation succeeded recently enough that warming it again would buy nothing.</summary>
+    /// <summary>
+    ///     A run against this cache generation succeeded recently enough that warming it again would buy
+    ///     nothing. A recent run by another <c>jb</c> build is not enough, because <c>jb</c> rebuilds a cache
+    ///     another build wrote.
+    /// </summary>
     AlreadyWarm,
 
     /// <summary>

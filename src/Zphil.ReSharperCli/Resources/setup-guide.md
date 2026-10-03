@@ -161,9 +161,10 @@ whatever in-flight work a cancel would have thrown away. A cross-process stand-d
 once in 33 calls, and cost a polling protocol between server processes of possibly different versions —
 which is why there is none.
 
-**At most one pass runs at a time**, and a pass is skipped when any `jb` run against that solution's cache
-succeeded within the last hour — a tool call counts, so working in a repo does not earn its next session a
-redundant analysis. It is a full solution analysis when it does run (`--include` does not make `jb` do less
+**At most one pass runs at a time**, and a pass is skipped when a run by the same `jb` build against that
+solution's cache succeeded within the last hour — a tool call counts, so working in a repo does not earn its
+next session a redundant analysis. A run by another build does not count, because `jb` rebuilds a cache
+another build wrote. It is a full solution analysis when it does run (`--include` does not make `jb` do less
 work), so set `RESHARPER_MCP_PREWARM=off` if you would rather not spend the CPU.
 
 A pass is also **subject to the run cap** like any other `jb` run, and on a large cold solution running the

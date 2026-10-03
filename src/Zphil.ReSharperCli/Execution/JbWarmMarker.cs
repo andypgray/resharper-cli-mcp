@@ -20,10 +20,10 @@ internal enum StampOutcome
     NamedGeneration,
 
     /// <summary>
-    ///     The marker was written and names nothing, because no directory under the cache home carries this
-    ///     solution's computed hash: <c>jb</c>'s naming has moved away from what
-    ///     <see cref="JbSolutionCacheHash" /> reproduces. Nothing breaks — every feature that needs a name
-    ///     switches itself off — and nothing else in the server would ever report it.
+    ///     The marker was written and names no generation, only the build and the solution, because no
+    ///     directory under the cache home carries this solution's computed hash: <c>jb</c>'s naming has moved
+    ///     away from what <see cref="JbSolutionCacheHash" /> reproduces. Nothing breaks — every feature that
+    ///     needs a name switches itself off — and nothing else in the server would ever report it.
     /// </summary>
     NoGenerationMatched,
 
@@ -47,17 +47,14 @@ internal sealed record WarmMarkerContent(string? GenerationName, string? JbVersi
 /// <summary>
 ///     A file inside the cache home whose modification time records when a <c>jb</c> run against that cache
 ///     generation last <em>succeeded</em>, and whose content names the generation directory that run left
-///     behind, the <c>jb</c> build that left it, and the solution it was run against. The speculative
-///     pre-warm reads the timestamp to skip a generation something has already warmed, a transplant reads
-///     the name to find a donor worth copying,
-///     the cache-state line reads the build to tell a cache this <c>jb</c> can resume from one it will
-///     rebuild, a cache reset reads the solution path to say which checkout each generation it left alone
-///     belongs to, and — because every successful run
-///     through <see cref="Services.JbRunner" /> stamps it, a foreground tool call included — a transplant
-///     reads its mere <see cref="Exists">existence</see> to tell a cache some run produced from the
-///     part-built remnant of one that never finished.
+///     behind, the <c>jb</c> build that left it, and the solution it was run against.
 /// </summary>
 /// <remarks>
+///     <para>
+///         Every successful run through <see cref="Services.JbRunner" /> stamps it, a foreground tool call
+///         included, so its mere <see cref="Exists">existence</see> tells a cache some run produced from the
+///         part-built remnant of one that never finished.
+///     </para>
 ///     <para>
 ///         Deliberately not the <see cref="JbRunLock" /> lock file's own timestamp, even though the two sit
 ///         side by side under the same key. The lock file's mtime moves when a run <em>starts</em> and again
@@ -133,25 +130,24 @@ internal static class JbWarmMarker
     }
 
     /// <summary>
-    ///     Record that a <c>jb</c> run against this cache generation has just succeeded, which generation
-    ///     directory it left warm, and which <c>jb</c> build left it that way. The modification time is the
-    ///     debounce's whole payload; the content is what lets a <em>different</em> solution find this one,
-    ///     since the marker's own file name is a key nothing can invert back into a solution path.
+    ///     Records that a <c>jb</c> run against this cache generation has just succeeded, which generation
+    ///     directory it left warm, and which <c>jb</c> build left it that way.
     /// </summary>
     /// <remarks>
-    ///     Named from the outside, by matching this solution's computed hash against the directories actually
-    ///     on disk, rather than composed from the hash alone: what is wanted is the generation <c>jb</c> just
-    ///     used, forks included, and only the filesystem knows which of those exists. Finding none leaves the
-    ///     file empty — exactly the marker this used to write — so every reader that wants a name is told
-    ///     there is none, and the features built on it switch themselves off rather than acting on a guess.
-    ///     The <see cref="StampOutcome" /> is the only account of that; the empty marker a naming drift leaves
-    ///     is indistinguishable from the one a failure never wrote.
+    ///     The name is what lets a <em>different</em> solution find this one, since the marker's own file name
+    ///     is a key nothing can invert back into a solution path. Named from the outside, by matching this
+    ///     solution's computed hash against the directories actually on disk, rather than composed from the
+    ///     hash alone: what is wanted is the generation <c>jb</c> just used, forks included, and only the filesystem
+    ///     knows which of those exists. Finding none leaves the first line empty, so every reader that wants a name is
+    ///     told there is none, and the features built on it switch themselves off rather than acting on a guess. The
+    ///     <see cref="StampOutcome" /> is the only account of why. The build and the solution are still written below
+    ///     that empty line, because the pre-warm's debounce asks the build of every fresh marker: a drifted marker that
+    ///     recorded none would read as another build's, and the pass would analyse the solution at every session start.
     ///     <para>
     ///         <paramref name="jbVersion" /> rides beside the name rather than in a sidecar of its own, and is
-    ///         optional for the reason the empty marker is: a caller with no build to name writes the one-line
-    ///         marker this always wrote, and every reader of the second line then reports the same "written by
-    ///         something else" it reports for a marker from an older build — the reading that can only cost
-    ///         work.
+    ///         optional: a caller with no build to name leaves the second line empty, and every reader of it
+    ///         then reports the same "written by something else" it reports for a marker from an older build
+    ///         — the reading that can only cost work.
     ///     </para>
     /// </remarks>
     internal static StampOutcome Stamp(string solutionPath, string cacheHome, ILogger logger, string? jbVersion = null)
@@ -162,11 +158,11 @@ internal static class JbWarmMarker
 
             using FileStream marker = JbSidecar.OpenToWrite(solutionPath, cacheHome, Extension);
 
-            // Decided after the open and never before it: a cache home that cannot hold the marker throws on
-            // the line above and leaves by the catch, so a broken filesystem is never reported as drift.
-            if (generationName is null) return StampOutcome.NoGenerationMatched;
-
             marker.Write(Encoding.UTF8.GetBytes(Content(generationName, jbVersion, solutionPath)));
+
+            // Decided after the write and never before it: a cache home that cannot hold the marker throws
+            // above and leaves by the catch, so a broken filesystem is never reported as drift.
+            if (generationName is null) return StampOutcome.NoGenerationMatched;
 
             // The mechanism donor discovery depends on, and the one step of it nothing else records: a
             // generation no marker names can never be copied, however warm it is.
@@ -186,18 +182,16 @@ internal static class JbWarmMarker
     }
 
     /// <summary>
-    ///     Every fact one marker holds, off a single read. Takes the marker's path rather than a solution
-    ///     path because the callers that need more than one — donor discovery and the cache reset's
-    ///     attribution — are reading <em>another</em> solution's marker, have nothing but the file to go on,
-    ///     and should not pay a read per question.
+    ///     Every fact one marker holds, off a single read.
     /// </summary>
     /// <remarks>
-    ///     Every uncertainty about the name answers <see langword="null" />: a marker written before this
-    ///     content existed, an empty one written under naming drift, one whose generation has since been
-    ///     deleted, and one whose first line is not a bare directory name at all. The last is a guard rather
-    ///     than a formality — the name is combined with a cache home to make a path a caller then copies
-    ///     from, so anything carrying a separator, a drive, or a parent reference is refused before it can
-    ///     address a directory outside the cache home.
+    ///     Takes the marker's path rather than a solution path because a caller reading <em>another</em>
+    ///     solution's marker has nothing but the file to go on, and should not pay a read per question. Every
+    ///     uncertainty about the name answers <see langword="null" />: a marker written before this content existed,
+    ///     one whose first line naming drift left empty, one whose generation has since been deleted, and one whose
+    ///     first line is not a bare directory name at all. The last is a guard rather than a formality — the name is
+    ///     combined with a cache home to make a path a caller then copies from, so anything carrying a separator, a
+    ///     drive, or a parent reference is refused before it can address a directory outside the cache home.
     /// </remarks>
     internal static WarmMarkerContent TryReadMarker(
         string markerFilePath,
@@ -265,8 +259,8 @@ internal static class JbWarmMarker
 
     /// <summary>
     ///     The <c>jb</c> build that left this generation warm, or <see langword="null" /> when the marker
-    ///     names none — a marker from a build of this server that recorded only the generation, one written
-    ///     under naming drift, or one that cannot be read at all.
+    ///     names none — a marker from a build of this server that recorded only the generation, one stamped
+    ///     by a caller with no build to name, or one that cannot be read at all.
     /// </summary>
     /// <remarks>
     ///     Takes no cache home because there is nothing to resolve against: unlike the generation name, this
@@ -292,15 +286,15 @@ internal static class JbWarmMarker
     /// <summary>
     ///     Whether a cache is vouched for by a <c>jb</c> build other than <paramref name="currentJbVersion" />
     ///     — a marker naming another build, and a marker naming none at all, which is every marker written
-    ///     before this server recorded one. The one spelling of the staleness judgement, shared by the
-    ///     cache-state line and by donor selection so the log cannot promise a rebuild the transplanter
-    ///     ignores, or the other way round.
+    ///     before this server recorded one.
     /// </summary>
     /// <remarks>
-    ///     A <see langword="null" /> current build is the judgement's off switch: with nothing to compare
-    ///     against, nothing reads as stale, rather than a server that cannot name its own <c>jb</c> calling
-    ///     every cache stale for ever. Ordinal equality, because a <c>jb</c> version is an identifier rather
-    ///     than an ordering: <c>2026.2.1</c> and <c>2026.2.0.2</c> only ever have to be told apart.
+    ///     The one spelling of the staleness judgement, so no reader can call a cache stale while another
+    ///     treats it as warm. A <see langword="null" /> current build is the judgement's off switch: with
+    ///     nothing to compare against, nothing reads as stale, rather than a server that cannot name its own
+    ///     <c>jb</c> calling every cache stale for ever. Ordinal equality, because a <c>jb</c> version is an
+    ///     identifier rather than an ordering: <c>2026.2.1</c> and <c>2026.2.0.2</c> only ever have to be told
+    ///     apart.
     /// </remarks>
     internal static bool WrittenByAnotherBuild(string? markerJbVersion, string? currentJbVersion)
     {
@@ -356,15 +350,17 @@ internal static class JbWarmMarker
     }
 
     /// <summary>
-    ///     Whether a <c>jb</c> run against this cache generation has ever succeeded, whenever that was. Asked
-    ///     by a transplant looking at directories that are already there: a marker means some run produced
-    ///     them and they are the solution's own, while no marker at all means no run ever finished and what is
-    ///     on disk is the part-built remnant of one that was killed.
+    ///     Whether a <c>jb</c> run against this cache generation has ever succeeded, whenever that was.
     /// </summary>
     /// <remarks>
-    ///     Content is not read, so every marker protects — including the empty one an older build of this
-    ///     server wrote and the empty one naming drift still writes today. Existence is the whole statement,
-    ///     which is what keeps the question answerable by markers written before it was ever asked.
+    ///     <para>
+    ///         A marker means some run produced the directories already there and they are the solution's own,
+    ///         while no marker at all means no run ever finished and what is on disk is the part-built remnant
+    ///         of one that was killed. Content is not read, so every marker protects — including the empty one
+    ///         an older build of this server wrote and the nameless one naming drift writes. Existence is the
+    ///         whole statement, which is what keeps the question answerable by markers written before it was
+    ///         ever asked.
+    ///     </para>
     ///     <para>
     ///         Anything that goes wrong answers <see langword="true" />, the mirror of
     ///         <see cref="JbColdTombstone.Exists" /> failing towards "reset": the caller's only use for a
@@ -395,11 +391,11 @@ internal static class JbWarmMarker
     ///     two cannot drift.
     /// </summary>
     /// <remarks>
-    ///     A caller with no build to name writes an <em>empty</em> second line rather than dropping it, so
-    ///     the path stays on line three and one parser reads every marker this build writes. The lines are
+    ///     A name or build there is none of is written as an <em>empty</em> line rather than dropped, so the
+    ///     path stays on line three and one parser reads every marker this build writes. The lines are
     ///     positional; nothing here is keyed.
     /// </remarks>
-    private static string Content(string generationName, string? jbVersion, string solutionPath)
+    private static string Content(string? generationName, string? jbVersion, string solutionPath)
     {
         return $"{generationName}\n{jbVersion?.Trim()}\n{solutionPath}";
     }

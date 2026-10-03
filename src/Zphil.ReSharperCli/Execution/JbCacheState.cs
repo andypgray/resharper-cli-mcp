@@ -143,10 +143,12 @@ internal sealed record JbCacheState(
     }
 
     /// <summary>
-    ///     Whether the build that left this generation warm is not the one about to open it. The judgement is
-    ///     <see cref="JbWarmMarker.WrittenByAnotherBuild" />'s, shared with donor selection, so the line that
-    ///     promises a rebuild and the transplant that declines a donor cannot come to disagree.
+    ///     Whether the build that left this generation warm is not the one about to open it.
     /// </summary>
+    /// <remarks>
+    ///     The judgement is <see cref="JbWarmMarker.WrittenByAnotherBuild" />'s, so the line that promises a
+    ///     rebuild cannot disagree with anything else that makes the same judgement.
+    /// </remarks>
     private bool WrittenByAnotherJb => JbWarmMarker.WrittenByAnotherBuild(MarkerJbVersion, CurrentJbVersion);
 
     /// <summary>

@@ -52,7 +52,7 @@ public sealed class JbWarmMarkerTests : IDisposable
         // Act
         JbWarmMarker.Stamp(SolutionPath, _cacheHome, NullLogger.Instance);
 
-        // Assert — the debounce reads the mtime alone, so a marker with nothing in it is still a fresh one.
+        // Assert — IsFreshWithin reads the mtime alone, so a marker that names no generation is still a fresh one.
         JbWarmMarker.IsFreshWithin(SolutionPath, _cacheHome, OneHour, NullLogger.Instance).ShouldBeTrue();
     }
 
@@ -92,25 +92,28 @@ public sealed class JbWarmMarkerTests : IDisposable
     }
 
     [Fact]
-    public void Stamp_NoDirectoryMatchingTheComputedHash_ReportsNoGenerationMatchedAndLeavesTheMarkerEmpty()
+    public void Stamp_NoDirectoryMatchingTheComputedHash_ReportsNoGenerationMatchedAndRecordsTheBuildButNoName()
     {
         // Arrange — what jb changing its directory naming looks like from here: the run succeeded, and
         // nothing on disk answers to the hash this server computes.
         CacheHomes.PlantGeneration(_cacheHome, "_App.999.00");
+        string markerPath = JbWarmMarker.PathFor(SolutionPath, _cacheHome);
 
         // Act
-        StampOutcome outcome = JbWarmMarker.Stamp(SolutionPath, _cacheHome, NullLogger.Instance);
+        StampOutcome outcome = JbWarmMarker.Stamp(SolutionPath, _cacheHome, NullLogger.Instance, "2026.2.1");
 
-        // Assert — the empty marker is left behind exactly as before, and the outcome is the only account of
-        // why it is empty. Nothing is logged here: the caller owns the warning, and the once it is said once
-        // per belongs to a session rather than to this process.
+        // Assert — the outcome is the only account of why no name was written.
         outcome.ShouldBe(StampOutcome.NoGenerationMatched);
 
-        // The debounce still works, and every feature that needs a name is told there is none rather than
-        // being handed the nearest-looking directory. That is the self-disable, not a degradation.
+        // Every feature that needs a name is told there is none rather than being handed the nearest-looking
+        // directory. That is the self-disable, not a degradation.
+        JbWarmMarker.TryReadGenerationName(markerPath, _cacheHome, NullLogger.Instance).ShouldBeNull();
+
+        // The build is still recorded, because the debounce asks it of every fresh marker: one that named none
+        // would read as another build's, and drift would cost a pre-warm at every session start.
         JbWarmMarker.IsFreshWithin(SolutionPath, _cacheHome, OneHour, NullLogger.Instance).ShouldBeTrue();
-        new FileInfo(JbWarmMarker.PathFor(SolutionPath, _cacheHome)).Length.ShouldBe(0);
-        JbWarmMarker.TryReadGenerationName(JbWarmMarker.PathFor(SolutionPath, _cacheHome), _cacheHome, NullLogger.Instance).ShouldBeNull();
+        JbWarmMarker.TryReadJbVersion(markerPath, NullLogger.Instance).ShouldBe("2026.2.1");
+        JbWarmMarker.TryReadMarker(markerPath, _cacheHome, NullLogger.Instance).SolutionPath.ShouldBe(SolutionPath);
     }
 
     [Fact]
@@ -293,8 +296,7 @@ public sealed class JbWarmMarkerTests : IDisposable
     [Fact]
     public void Exists_EmptyMarker_IsTrue()
     {
-        // Arrange — the marker an older build of this server wrote, and the one naming drift still writes.
-        // It names nothing, and it is still the record of a run that succeeded.
+        // Arrange
         File.WriteAllText(JbWarmMarker.PathFor(SolutionPath, _cacheHome), string.Empty);
 
         // Assert — existence is the whole statement, so a marker this server cannot read a name out of

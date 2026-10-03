@@ -32,6 +32,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   given, the header says `hashed file(s)` where 1.7.0 said `named file(s)`. When no named file could be read,
   the header gives no count and says the server cannot tell whether `jb` changed them.
 
+- The pre-warm now runs when the warm marker is under an hour old but names a different `jb` build. It
+  checked only the marker's age, so after a `jb` update it skipped a cache that `jb` had to rebuild. The first
+  call then paid for the rebuild. It now applies the build check that the cache-state line and the choice of
+  seeding donor already use.
+
 ## [1.7.0] - 2026-09-08
 
 ### Added

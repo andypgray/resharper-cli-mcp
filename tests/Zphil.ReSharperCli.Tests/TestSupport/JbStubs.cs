@@ -1,19 +1,27 @@
+using Zphil.ReSharperCli.Discovery;
 using Zphil.ReSharperCli.Execution;
+using Zphil.ReSharperCli.Sarif;
 using Zphil.ReSharperCli.Services;
 
 namespace Zphil.ReSharperCli.Tests.TestSupport;
 
 /// <summary>
-///     What a stubbed <c>jb</c> answers, for every process-runner double that routes on the argument list it
-///     was given. One spelling each, because these are contracts with the product rather than with any one
-///     test: the version banner has to parse as <see cref="Discovery.JbLocator" /> expects, and the SARIF
-///     has to parse as <see cref="Sarif.SarifParser" /> expects — re-spelled per test class, a change to
-///     either contract fans out over every routing stub instead of costing this file alone.
+///     What a stubbed <c>jb</c> answers, for a process-runner double that routes on the argument list it was
+///     given.
 /// </summary>
+/// <remarks>
+///     One spelling each, because these are contracts with the product rather than with any one test: the
+///     version banner has to parse as <see cref="JbLocator" /> expects, and the SARIF has to parse as
+///     <see cref="SarifParser" /> expects — re-spelled per test class, a change to either contract fans out
+///     over every routing stub instead of costing this file alone.
+/// </remarks>
 internal static class JbStubs
 {
+    /// <summary>The build a healthy stubbed <c>jb</c> reports, and so the one a resolved config carries.</summary>
+    public const string Version = "2026.1.2";
+
     /// <summary>The banner a healthy <c>jb</c> answers the probe with.</summary>
-    public static ProcessResult VersionProbeAnswer { get; } = new(0, "Version: 2026.1.2", string.Empty);
+    public static ProcessResult VersionProbeAnswer { get; } = new(0, $"Version: {Version}", string.Empty);
 
     /// <summary>Whether this spawn is the <c>--version</c> probe discovery makes, rather than a run.</summary>
     public static bool IsVersionProbe(IReadOnlyList<string> arguments)

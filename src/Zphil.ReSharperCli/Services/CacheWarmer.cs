@@ -61,10 +61,13 @@ internal sealed class CacheWarmer(
 
     /// <summary>
     ///     How recently a <c>jb</c> run must have succeeded against a cache generation for a pre-warm to skip
-    ///     it. Errs long on purpose: a skipped pre-warm costs nothing beyond what today already costs, while a
+    ///     it, provided that run was by the build this pass would start (<see cref="WarmedRecentlyByThisBuild" />).
+    /// </summary>
+    /// <remarks>
+    ///     Errs long on purpose: a skipped pre-warm costs nothing a session without one would not pay, while a
     ///     needless one costs a couple of minutes of multi-core CPU. Without it, a user-scope server would
     ///     analyse a solution at every session start in every C# repo.
-    /// </summary>
+    /// </remarks>
     internal static readonly TimeSpan RecentlyWarmWindow = TimeSpan.FromHours(1);
 
     /// <summary>
@@ -307,8 +310,7 @@ internal sealed class CacheWarmer(
     {
         // The debounce governs every pass, re-arms included. It cannot be hoisted above the resolution in the
         // caller, because it is keyed on what that resolution produces.
-        if (JbWarmMarker.IsFreshWithin(config.SolutionPath, config.CacheHome, RecentlyWarmWindow, logger))
-            return WarmUpOutcome.AlreadyWarm;
+        if (WarmedRecentlyByThisBuild(config)) return WarmUpOutcome.AlreadyWarm;
 
         logger.LogInformation("Pre-warming the ReSharper cache for {SolutionPath}", config.SolutionPath);
 
@@ -328,6 +330,28 @@ internal sealed class CacheWarmer(
             SpeculativeRunOutcome.StoodDown => WarmUpOutcome.Cancelled,
             _ => throw new ArgumentOutOfRangeException(nameof(run), run, "Unmapped speculative run outcome.")
         };
+    }
+
+    /// <summary>
+    ///     Whether a run against this cache generation succeeded within <see cref="RecentlyWarmWindow" />, by
+    ///     the <c>jb</c> build this pass would start.
+    /// </summary>
+    /// <remarks>
+    ///     The build half is <see cref="JbWarmMarker.WrittenByAnotherBuild" />'s judgement, off the same read the
+    ///     cache-state line makes. A fresh marker that another build stamped vouches for a cache this <c>jb</c>
+    ///     rebuilds in place, so skipping would hand that rebuild to the first call. A marker naming no build —
+    ///     one written before builds were recorded, or one whose content cannot be read — reads as another
+    ///     build's, which costs work rather than saving it, and a <see cref="ResolvedConfig.JbVersion" /> of
+    ///     <see langword="null" /> switches the judgement off.
+    /// </remarks>
+    private bool WarmedRecentlyByThisBuild(ResolvedConfig config)
+    {
+        if (!JbWarmMarker.IsFreshWithin(config.SolutionPath, config.CacheHome, RecentlyWarmWindow, logger)) return false;
+
+        string markerPath = JbWarmMarker.PathFor(config.SolutionPath, config.CacheHome);
+        string? markerJbVersion = JbWarmMarker.TryReadJbVersion(markerPath, logger);
+
+        return !JbWarmMarker.WrittenByAnotherBuild(markerJbVersion, config.JbVersion);
     }
 
     /// <summary>

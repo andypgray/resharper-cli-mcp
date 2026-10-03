@@ -10,7 +10,7 @@ resharper-cli-mcp is an MCP server that gives a C# coding agent ReSharper's solu
 
 `jb` is built for a batch job: one run against one checkout, a report written to a file. An agent hits the same solution several times an hour, and what each call costs comes down to whether ReSharper's solution-wide index is already built. So the server owns the cache directory and runs a lifecycle over it:
 
-- The first run happens before you ask for it. A speculative inspection starts as soon as a client connects, skipped when a run against that cache succeeded in the last hour; a tool call arriving mid-pass cancels it and takes the cache within a second or two. `RESHARPER_MCP_PREWARM=off` turns it off.
+- The first run happens before you ask for it. A speculative inspection starts as soon as a client connects, skipped when a run by the same `jb` build against that cache succeeded in the last hour; a tool call arriving mid-pass cancels it and takes the cache within a second or two. `RESHARPER_MCP_PREWARM=off` turns it off.
 
 - Runs are serialized, twice over. One `jb` per server process, whatever the solutions, because a run is a whole-solution multi-core analysis and two of them share the machine rather than the work; and one per solution cache across processes, because a second concurrent `jb` cannot open the warm generation and forks a cold copy of its own instead, leaving it behind on disk. A `jb` you start yourself is outside both, so give it its own `--caches-home`.
 

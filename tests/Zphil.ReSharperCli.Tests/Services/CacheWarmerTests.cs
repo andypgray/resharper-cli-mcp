@@ -133,11 +133,13 @@ public sealed class CacheWarmerTests : IDisposable
     }
 
     [Fact]
-    public async Task Start_MarkerStampedRecently_SkipsWithoutRunningJb()
+    public async Task Start_MarkerStampedRecentlyByThisBuildUnderNamingDrift_SkipsWithoutRunningJb()
     {
-        // Arrange — something warmed this generation moments ago: a call in this session, or another
-        // session entirely.
-        JbWarmMarker.Stamp(_solutionPath, _cacheHome, NullLogger.Instance);
+        // Arrange — a marker stamped moments ago that names no generation, which is every marker a run
+        // writes once jb's directory naming has drifted from what this server computes. It still records the
+        // build, so the window holds: without it, every drifted marker would read as another build's, and the
+        // pass would analyse the solution at every session start.
+        JbWarmMarker.Stamp(_solutionPath, _cacheHome, NullLogger.Instance, JbStubs.Version);
         using CacheWarmer warmer = BuildWarmer();
 
         // Act
@@ -150,11 +152,131 @@ public sealed class CacheWarmerTests : IDisposable
     }
 
     [Fact]
+    public async Task Start_MarkerStampedRecentlyByAnotherBuildUnderNamingDrift_WarmsAnyway()
+    {
+        // Arrange — drift does not exempt a marker from the build check: the pre-update build stamped it, and
+        // jb rebuilds what that build wrote whether or not this server can name the directory.
+        JbWarmMarker.Stamp(_solutionPath, _cacheHome, NullLogger.Instance, "2026.0.9");
+        using CacheWarmer warmer = BuildWarmer();
+
+        // Act
+        warmer.Start();
+        await warmer.Finished.WaitAsync(Generous, Ct);
+
+        // Assert
+        warmer.Outcome.ShouldBe(WarmUpOutcome.Warmed);
+        _probe.Runs.Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Start_EmptyMarkerFromAnEarlierServerStampedRecently_WarmsOnce()
+    {
+        // Arrange — what a server from before builds were recorded left behind, drifted or not. It names no
+        // build, so it reads as another build's: one pass that may be redundant, after which the marker this
+        // pass stamps names the build and the window holds again.
+        File.WriteAllText(JbWarmMarker.PathFor(_solutionPath, _cacheHome), string.Empty);
+        using CacheWarmer warmer = BuildWarmer();
+
+        // Act
+        warmer.Start();
+        await warmer.Finished.WaitAsync(Generous, Ct);
+        warmer.Start();
+        await warmer.Finished.WaitAsync(Generous, Ct);
+
+        // Assert
+        warmer.Outcome.ShouldBe(WarmUpOutcome.AlreadyWarm);
+        _probe.Runs.Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Start_FreshMarkerWhoseContentCannotBeRead_WarmsAnyway()
+    {
+        // Arrange — the marker's time reads fresh while its content cannot be read, here because another
+        // handle holds it exclusively. An unreadable marker may permit a redundant pass but must never
+        // suppress one, so the build it cannot name reads as another build's.
+        CacheHomes.PlantWarmDonor(_cacheHome, _solutionPath, JbStubs.Version);
+        using CacheWarmer warmer = BuildWarmer();
+
+        // Act
+        using (new FileStream(JbWarmMarker.PathFor(_solutionPath, _cacheHome), FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            warmer.Start();
+            await warmer.Finished.WaitAsync(Generous, Ct);
+        }
+
+        // Assert
+        warmer.Outcome.ShouldBe(WarmUpOutcome.Warmed);
+        _probe.Runs.Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Start_MarkerNamingACollectedGenerationBesideAnotherOwnedOne_JudgesTheBuildAsTheStateLineDoes()
+    {
+        // Arrange — jb collected the generation the marker names and another of this solution's remains. The
+        // state line judges the remaining one by the marker's build, so the debounce has to as well: a stale
+        // line over a skipped pass hands the rebuild to the first call.
+        string collected = CacheHomes.PlantWarmDonor(_cacheHome, _solutionPath, "2026.0.9");
+        CacheHomes.PlantFork(_cacheHome, collected);
+        Directory.Delete(collected, true);
+        using CacheWarmer warmer = BuildWarmer();
+
+        // Read before the pass, which restamps the marker.
+        JbCacheState state = JbCacheState.Read(_solutionPath, _cacheHome, false, JbStubs.Version, NullLogger.Instance);
+        state.Summary.ShouldStartWith("stale");
+
+        // Act
+        warmer.Start();
+        await warmer.Finished.WaitAsync(Generous, Ct);
+
+        // Assert
+        warmer.Outcome.ShouldBe(WarmUpOutcome.Warmed);
+        _probe.Runs.Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Start_MarkerStampedRecentlyByThisBuild_SkipsWithoutRunningJb()
+    {
+        // Arrange — the jb this pass would run warmed this generation moments ago: a call in this session,
+        // or another session entirely.
+        CacheHomes.PlantWarmDonor(_cacheHome, _solutionPath, JbStubs.Version);
+        using CacheWarmer warmer = BuildWarmer();
+
+        // Act
+        warmer.Start();
+        await warmer.Finished.WaitAsync(Generous, Ct);
+
+        // Assert
+        warmer.Outcome.ShouldBe(WarmUpOutcome.AlreadyWarm);
+        _probe.Runs.ShouldBeEmpty();
+    }
+
+    [Theory]
+    [InlineData("2026.0.9")]
+    [InlineData(null)]
+    public async Task Start_MarkerStampedRecentlyByAnotherBuild_WarmsAnyway(string? markerJbVersion)
+    {
+        // Arrange — what a jb update leaves behind: a marker minutes old over a cache another build wrote,
+        // which jb rebuilds in place, so a skip would hand the rebuild to the first call. The null row is a
+        // marker from before the build was recorded, which reads as another build's for the same reason.
+        CacheHomes.PlantWarmDonor(_cacheHome, _solutionPath, markerJbVersion);
+        using CacheWarmer warmer = BuildWarmer();
+
+        // Act
+        warmer.Start();
+        await warmer.Finished.WaitAsync(Generous, Ct);
+
+        // Assert
+        warmer.Outcome.ShouldBe(WarmUpOutcome.Warmed);
+        _probe.Runs.Count.ShouldBe(1);
+        _logs.Warnings.ShouldBeEmpty();
+    }
+
+    [Fact]
     public async Task Start_MarkerOlderThanTheWindow_WarmsAnyway()
     {
-        // Arrange — aged against the shipped window itself, so the real threshold is pinned rather than an
-        // injectable stand-in for it.
-        JbWarmMarker.Stamp(_solutionPath, _cacheHome, NullLogger.Instance);
+        // Arrange — a marker this build stamped, so its age alone decides. It is aged against the shipped window
+        // itself, which pins the real threshold rather than an injectable stand-in for it.
+        JbWarmMarker.Stamp(_solutionPath, _cacheHome, NullLogger.Instance, JbStubs.Version);
         File.SetLastWriteTimeUtc(
             JbWarmMarker.PathFor(_solutionPath, _cacheHome),
             DateTime.UtcNow - CacheWarmer.RecentlyWarmWindow - TimeSpan.FromMinutes(1));

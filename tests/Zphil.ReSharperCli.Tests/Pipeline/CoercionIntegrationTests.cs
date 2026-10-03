@@ -388,18 +388,11 @@ public sealed class CoercionIntegrationTests
 
                 onCommand?.Invoke(arguments);
 
-                if (arguments.Count > 0 && arguments[0] == "inspectcode" && inspectSarif is not null)
-                    File.WriteAllText(OutputPathFrom(arguments), inspectSarif);
+                if (inspectSarif is not null) JbStubs.WriteSarifIfRequested(arguments, inspectSarif);
 
                 CacheHomes.PlantGenerationFromJbRun(arguments);
 
                 return new ProcessResult(0, string.Empty, string.Empty);
             });
-    }
-
-    private static string OutputPathFrom(IReadOnlyList<string> arguments)
-    {
-        string arg = arguments.First(a => a.StartsWith("-o=", StringComparison.Ordinal));
-        return arg["-o=".Length..];
     }
 }

@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -45,6 +46,13 @@ public sealed class JbContractFixture : IAsyncLifetime
     ///     run — the report reaches the test output and nothing else.
     /// </summary>
     internal const string ReportVariable = "JB_CONTRACT_REPORT";
+
+    /// <summary>The one fixture file inspection finds nothing in.</summary>
+    /// <remarks>
+    ///     Every other file is bait, so without it no run could show what a report says about a file that was
+    ///     inspected and came out clean.
+    /// </remarks>
+    internal const string CleanFileName = "Clean.cs";
 
     private const string FixtureDirectoryName = "ContractSolution";
     private const string SolutionFileName = "ContractFixture.slnx";
@@ -135,6 +143,9 @@ public sealed class JbContractFixture : IAsyncLifetime
     /// <summary>How each subcommand answered an <c>--include</c> that was left absolute.</summary>
     internal RawIncludeProbe RawAbsoluteInclude { get; private set; } = null!;
 
+    /// <summary>What the solution-wide inspect's report lists under <c>run.artifacts</c>.</summary>
+    internal SarifArtifactsProbe SarifArtifacts { get; private set; } = null!;
+
     /// <summary>
     ///     What <see cref="JbProgressLines" /> made of the standard output of the real runs above, per
     ///     subcommand. The progress heartbeat is driven entirely off that classification, and it is reading
@@ -198,6 +209,7 @@ public sealed class JbContractFixture : IAsyncLifetime
         // Suggestion rather than the default Warning: the report has to carry both tiers for the severity
         // token to be worth checking at all.
         Issues = await inspectService.RunAsync(Config, null, InspectSeverity.Suggestion, cancellationToken);
+        SarifArtifacts = ObserveSarifArtifacts(_runs.LastReport, _runs.LastResult);
 
         BuiltInProfileCleanup = await CleanUpAsync(
             cleanupService, [MisformattedFileName], CleanupService.DefaultProfile, cancellationToken);
@@ -304,7 +316,7 @@ public sealed class JbContractFixture : IAsyncLifetime
         details.Append($"jb stderr, last {StandardErrorTailLines} lines:\n{Tail(jb?.StandardError, StandardErrorTailLines)}");
         details.Append($"server log during the pass:\n{ServerLogSince(firstLogEntry)}");
 
-        CleanupEvidence evidence = new(restored, afterPass, NamesTheFile(jb), details.ToString());
+        CleanupEvidence evidence = new(restored, afterPass, Printed(jb, MisformattedFileName), details.ToString());
 
         return new CleanupRun(outcome, evidence);
     }
@@ -347,14 +359,15 @@ public sealed class JbContractFixture : IAsyncLifetime
     }
 
     /// <summary>
-    ///     Whether <c>jb</c> printed the cleanup target's path, or <see langword="null" /> when no run was
-    ///     captured.
+    ///     Whether a line <c>jb</c> printed names <paramref name="fileName" /> after <paramref name="prefix" />, or
+    ///     <see langword="null" /> when no run was captured.
     /// </summary>
-    private static bool? NamesTheFile(ProcessResult? jb)
+    private static bool? Printed(ProcessResult? jb, string fileName, string prefix = "")
     {
         return jb?.StandardOutput
             .Split('\n')
-            .Any(line => NamesFile(line, MisformattedFileName));
+            .Select(line => line.Trim())
+            .Any(line => line.StartsWith(prefix, StringComparison.Ordinal) && NamesFile(line[prefix.Length..], fileName));
     }
 
     /// <summary>
@@ -470,6 +483,66 @@ public sealed class JbContractFixture : IAsyncLifetime
     }
 
     /// <summary>
+    ///     Sets what the solution-wide inspect's report lists under <c>run.artifacts</c> beside what jb printed
+    ///     about <see cref="CleanFileName" /> and what <see cref="SarifParser" /> made of the same report.
+    /// </summary>
+    /// <remarks>
+    ///     The array is read as raw JSON because no product code reads it: reading it is the observation.
+    /// </remarks>
+    private SarifArtifactsProbe ObserveSarifArtifacts(string? report, ProcessResult? jb)
+    {
+        int filesWithFindings = Issues.Select(issue => issue.File).Distinct(StringComparer.Ordinal).Count();
+        int cleanFileFindings = Issues.Count(issue => NamesFile(issue.File, CleanFileName));
+        bool cleanFileInspected = Printed(jb, CleanFileName, JbProgressLines.InspectingFilePrefix) == true;
+
+        // What is known without the report. Each ending below adds what the report said, or why it said nothing.
+        SarifArtifactsProbe probe = new(null, null, filesWithFindings, cleanFileInspected, cleanFileFindings, null);
+
+        if (report is null) return probe with { Unreadable = "no report was captured from the run" };
+
+        // A report shaped other than expected is recorded as the reason it could not be read.
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(report);
+            List<string?>? uris = ArtifactUris(document.RootElement);
+
+            return probe with
+            {
+                ArtifactCount = uris?.Count,
+                CleanFileListed = uris is not null && uris.Any(uri => uri is not null && NamesFile(uri, CleanFileName))
+            };
+        }
+        catch (Exception exception)
+        {
+            return probe with { Unreadable = DescribeFailure(exception) };
+        }
+    }
+
+    /// <summary>
+    ///     The location URI of every entry in every run's <c>artifacts</c> array, null for an entry that names
+    ///     none, or <see langword="null" /> when no run carries the array at all.
+    /// </summary>
+    private static List<string?>? ArtifactUris(JsonElement report)
+    {
+        List<string?>? uris = null;
+
+        foreach (JsonElement run in report.GetProperty("runs").EnumerateArray())
+        {
+            if (!run.TryGetProperty("artifacts", out JsonElement artifacts)) continue;
+
+            uris ??= [];
+            foreach (JsonElement artifact in artifacts.EnumerateArray())
+                uris.Add(
+                    artifact.TryGetProperty("location", out JsonElement location)
+                    && location.TryGetProperty("uri", out JsonElement uri)
+                        ? uri.GetString()
+                        : null);
+        }
+
+        return uris;
+    }
+
+    /// <summary>
     ///     File one line of a real run's standard output under the subcommand that produced it, and record
     ///     what <see cref="JbProgressLines" /> made of it.
     /// </summary>
@@ -530,13 +603,16 @@ public sealed class JbContractFixture : IAsyncLifetime
 
     /// <summary>
     ///     Tees every line of a run's standard output to <paramref name="record" /> on its way to whatever
-    ///     the product asked for, keyed by the subcommand that produced it.
+    ///     the product asked for, keyed by the subcommand that produced it, and keeps the report an inspect run
+    ///     wrote.
     /// </summary>
     /// <remarks>
     ///     A decorator rather than a progress sink threaded through the services, because the two see
-    ///     different things: a progress sink receives this server's own rendering, on a ten-second heartbeat,
-    ///     which says nothing about the words <c>jb</c> used. The observation this suite exists to make is
-    ///     about <c>jb</c>'s vocabulary, so it has to be made where the vocabulary is.
+    ///     different things: a progress sink receives this server's own rendering, on a heartbeat, which says
+    ///     nothing about the words <c>jb</c> used. The observation this suite exists to make is about <c>jb</c>'s
+    ///     vocabulary, so it has to be made where the vocabulary is. The report is kept here for the same reason:
+    ///     <see cref="InspectService" /> deletes it as soon as it has parsed it, so the only window in which its raw
+    ///     text exists is between <c>jb</c>'s exit and this method's return.
     /// </remarks>
     private sealed class LineRecordingRunner(IProcessRunner inner, Action<string, string> record) : IProcessRunner
     {
@@ -547,6 +623,12 @@ public sealed class JbContractFixture : IAsyncLifetime
         /// </remarks>
         public ProcessResult? LastResult { get; private set; }
 
+        /// <summary>
+        ///     The report the most recent run wrote, or <see langword="null" /> when it named no output file,
+        ///     wrote none, or the file could not be read.
+        /// </summary>
+        public string? LastReport { get; private set; }
+
         public async Task<ProcessResult> RunAsync(
             string fileName,
             IReadOnlyList<string> arguments,
@@ -556,6 +638,7 @@ public sealed class JbContractFixture : IAsyncLifetime
         {
             string subcommand = arguments.Count > 0 ? arguments[0] : "";
             LastResult = null;
+            LastReport = null;
 
             ProcessResult result = await inner.RunAsync(fileName, arguments, timeout, cancellationToken, line =>
             {
@@ -564,8 +647,25 @@ public sealed class JbContractFixture : IAsyncLifetime
             });
 
             LastResult = result;
+            LastReport = await ReadReportAsync(arguments, cancellationToken);
 
             return result;
+        }
+
+        private static async Task<string?> ReadReportAsync(
+            IReadOnlyList<string> arguments, CancellationToken cancellationToken)
+        {
+            if (JbStubs.OutputPathOf(arguments) is not { } path) return null;
+
+            try
+            {
+                return File.Exists(path) ? await File.ReadAllTextAsync(path, cancellationToken) : null;
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                // Inside the run the product is waiting on: a throw here would fail the inspect it observes.
+                return null;
+            }
         }
     }
 }
@@ -627,7 +727,8 @@ internal sealed record CleanupRun(CleanupOutcome Outcome, CleanupEvidence Eviden
 
     /// <summary>The pass as one row of the soft report, in <see cref="SignatureColumns" /> order.</summary>
     public string Signature =>
-        $"{YesNo(FileWasRewritten)} / {YesNo(Evidence.JbNamedTheFile)} / {YesNo(Evidence.WriteTimeMoved)}";
+        $"{SoftReport.YesNo(FileWasRewritten)} / {SoftReport.YesNo(Evidence.JbNamedTheFile)} / "
+        + SoftReport.YesNo(Evidence.WriteTimeMoved);
 
     /// <summary>Everything the fixture knows about the pass, as a failure message carries it.</summary>
     public string Describe()
@@ -637,8 +738,13 @@ internal sealed record CleanupRun(CleanupOutcome Outcome, CleanupEvidence Eviden
                + $"after the pass:     {Evidence.AfterPass.Description}\n"
                + Evidence.Details;
     }
+}
 
-    private static string YesNo(bool? value)
+/// <summary>The words the soft report's observation rows share.</summary>
+internal static class SoftReport
+{
+    /// <summary>An observation that was made either way, or <c>unknown</c> when it could not be made.</summary>
+    public static string YesNo(bool? value)
     {
         return value switch
         {
@@ -659,3 +765,57 @@ internal sealed record RawIncludeProbe(int CleanupExitCode, RawIncludeInspect In
 ///     shape.
 /// </summary>
 internal sealed record RawIncludeInspect(int ExitCode, int IssueCount);
+
+/// <summary>
+///     What a solution-wide inspect's report lists under SARIF's <c>run.artifacts</c>, against
+///     <see cref="JbContractFixture.CleanFileName" />, a file the same run inspected and found nothing in. The
+///     array is the one part of a report that could vouch for such a file, and so the only signal that could
+///     tell a <c>files</c> entry that matched nothing from a file that came out clean.
+/// </summary>
+/// <remarks>
+///     Measured on <c>jb</c> 2026.2.3.1: the array holds one entry per file with a finding and leaves the clean
+///     file out, so it lists only files the results already name and carries nothing they do not. That is why
+///     <see cref="SarifParser" /> leaves it unread. A report that lists the clean file is the change that would
+///     make the array worth parsing, and the soft tier reports it as drift.
+/// </remarks>
+/// <param name="Unreadable">Why the report could not be read, or <see langword="null" /> when it was.</param>
+/// <param name="ArtifactCount">
+///     How many entries the <c>artifacts</c> arrays hold, or <see langword="null" /> when the report carries
+///     none.
+/// </param>
+/// <param name="FilesWithFindings">How many distinct files the report's results name.</param>
+/// <param name="CleanFileInspected">Whether jb's own output named the clean file as one it inspected.</param>
+/// <param name="CleanFileFindings">How many findings the clean file drew.</param>
+/// <param name="CleanFileListed">
+///     Whether <c>artifacts</c> lists the clean file, or <see langword="null" /> when the report could not be
+///     read.
+/// </param>
+internal sealed record SarifArtifactsProbe(
+    string? Unreadable,
+    int? ArtifactCount,
+    int FilesWithFindings,
+    bool CleanFileInspected,
+    int CleanFileFindings,
+    bool? CleanFileListed)
+{
+    /// <summary>What each part of <see cref="Signature" /> says, in its order, for whatever labels the row.</summary>
+    internal const string SignatureColumns =
+        "listed / files with findings; " + JbContractFixture.CleanFileName + " inspected / findings / listed";
+
+    /// <summary>
+    ///     The probe as one row of the soft report, in <see cref="SignatureColumns" /> order. Whether the clean
+    ///     file is listed answers something only when it was inspected and drew nothing.
+    /// </summary>
+    public string Signature
+    {
+        get
+        {
+            string listed = Unreadable is not null ? "unreadable"
+                : ArtifactCount is { } count ? $"{count}"
+                : "no array";
+
+            return $"{listed} / {FilesWithFindings}; {SoftReport.YesNo(CleanFileInspected)} / {CleanFileFindings} / "
+                   + SoftReport.YesNo(CleanFileListed);
+        }
+    }
+}

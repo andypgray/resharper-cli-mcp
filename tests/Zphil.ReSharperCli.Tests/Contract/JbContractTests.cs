@@ -263,6 +263,31 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
                 $"jb inspectcode now matches an absolute --include ({raw.Inspect.IssueCount} issue(s) at exit 0). "
                 + "The translation in FilePathList.ToIncludePattern may no longer be needed.");
 
+        // SarifParser leaves run.artifacts unread because it has listed only the files the results already
+        // name, so a files entry that matched nothing reads exactly like a clean file. A probe that can no
+        // longer see a clean file is reported too: a watch that silently stops watching is worse than a
+        // warning.
+        SarifArtifactsProbe artifacts = fixture.SarifArtifacts;
+        if (artifacts.Unreadable is not null)
+            findings.Add(
+                $"The solution-wide inspect's report could not be read ({artifacts.Unreadable}), so what "
+                + "run.artifacts lists went unobserved.");
+        else if (!artifacts.CleanFileInspected)
+            findings.Add(
+                $"jb inspectcode never named {JbContractFixture.CleanFileName} as a file it inspected, so what "
+                + "run.artifacts lists went unobserved. Give the fixture a file this jb inspects and finds "
+                + "nothing in.");
+        else if (artifacts.CleanFileFindings > 0)
+            findings.Add(
+                $"{JbContractFixture.CleanFileName} drew {artifacts.CleanFileFindings} finding(s), so what "
+                + "run.artifacts lists went unobserved. Give the fixture a file this jb inspects and finds "
+                + "nothing in.");
+        else if (artifacts.CleanFileListed == true)
+            findings.Add(
+                "jb's SARIF now lists a file it inspected and found nothing in. SarifParser could read "
+                + "run.artifacts, which would let InspectScopeNote tell a files entry that matched nothing "
+                + "from a clean file.");
+
         // The heartbeat reads jb's per-file output to say "analyzing 402 files", and the timeout message
         // spends that count on a claim about a retry resuming. Losing the vocabulary costs a quieter
         // notification and a hedged timeout message, never a broken run — so it is watched, not pinned. Only
@@ -340,6 +365,8 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
         builder.Append($"| Absolute --include, cleanupcode exit | {raw.CleanupExitCode} |\n");
         builder.Append(
             $"| Absolute --include, inspectcode exit / issues | {raw.Inspect.ExitCode} / {raw.Inspect.IssueCount} |\n");
+        builder.Append(
+            $"| SARIF run.artifacts: {SarifArtifactsProbe.SignatureColumns} | {fixture.SarifArtifacts.Signature} |\n");
 
         // The normal shape of a pass, recorded on green runs too, so a pass that one day rewrites nothing can be
         // read against what a good one looked like on the same jb.

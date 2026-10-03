@@ -1,4 +1,5 @@
 using Zphil.ReSharperCli.Execution;
+using Zphil.ReSharperCli.Services;
 
 namespace Zphil.ReSharperCli.Tests.TestSupport;
 
@@ -21,15 +22,34 @@ internal static class JbStubs
     }
 
     /// <summary>
+    ///     The path an <c>inspectcode</c> run was told to write its SARIF report to.
+    /// </summary>
+    /// <remarks><see langword="null" /> when the arguments name none.</remarks>
+    public static string? OutputPathOf(IReadOnlyList<string> arguments)
+    {
+        string? output = arguments.FirstOrDefault(argument => argument.StartsWith(InspectService.OutputArgumentPrefix, StringComparison.Ordinal));
+
+        return output?[InspectService.OutputArgumentPrefix.Length..];
+    }
+
+    /// <summary>
     ///     Leave behind the empty SARIF report a successful <c>inspectcode</c> writes at its <c>-o=</c> path
     ///     — when the run was asked for one. The service treats a missing report file as an error, so a stub
     ///     answering exit 0 without this claims a success no real run produces.
     /// </summary>
     public static void WriteEmptySarifIfRequested(IReadOnlyList<string> arguments)
     {
-        string? output = arguments.FirstOrDefault(argument => argument.StartsWith("-o=", StringComparison.Ordinal));
-        if (output is null) return;
+        WriteSarifIfRequested(arguments, """{"runs":[{"results":[]}]}""");
+    }
 
-        File.WriteAllText(output["-o=".Length..], """{"runs":[{"results":[]}]}""");
+    /// <summary>
+    ///     Leaves <paramref name="sarif" /> behind as the report an <c>inspectcode</c> run writes at its <c>-o=</c>
+    ///     path, when the run was asked for one.
+    /// </summary>
+    public static void WriteSarifIfRequested(IReadOnlyList<string> arguments, string sarif)
+    {
+        if (OutputPathOf(arguments) is not { } output) return;
+
+        File.WriteAllText(output, sarif);
     }
 }

@@ -22,7 +22,10 @@ namespace Zphil.ReSharperCli.Formatting;
 ///     <para>
 ///         It vouches for nothing. There is no "the other paths ran as asked" here, because this server
 ///         cannot establish it: <c>jb</c> matches <c>--include</c> against the solution model, and a file
-///         that is on disk but in no project matches nothing while resolving perfectly well here. That limit
+///         that is on disk but in no project matches nothing while resolving perfectly well here. The report
+///         cannot establish it either: SARIF's <c>run.artifacts</c> lists only the files that drew a finding
+///         (measured on <c>jb</c> 2026.2.3.1, and watched by the <c>JbContract</c> suite's soft tier), so an
+///         entry that matched nothing reads exactly like a clean file. That limit
 ///         is stated in the note's own tail, where it is grounded on entries the caller already has cause to
 ///         act on, rather than as a caveat on every clean scoped run — which would fire at a near-total
 ///         false-positive rate on the commonest scoped call there is.

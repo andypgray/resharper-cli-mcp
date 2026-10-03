@@ -179,7 +179,7 @@ public sealed class InspectServiceArgumentTests
         // Assert — element for element, modulo the throwaway output path, so the warm-up cannot drift into
         // opening a different cache generation from the one a real call opens.
         captured.ShouldNotBeNull();
-        string outputFile = captured.Single(argument => argument.StartsWith("-o=", StringComparison.Ordinal))["-o=".Length..];
+        string outputFile = JbStubs.OutputPathOf(captured).ShouldNotBeNull();
         captured.ShouldBe(InspectService.BuildArguments(config, outputFile, null, InspectService.WarmUpSeverity));
         captured.Any(argument => argument.StartsWith("--include", StringComparison.Ordinal)).ShouldBeFalse();
     }

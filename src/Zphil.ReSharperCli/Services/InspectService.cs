@@ -20,6 +20,9 @@ internal sealed class InspectService(JbRunner jbRunner)
     /// </summary>
     internal const InspectSeverity WarmUpSeverity = InspectSeverity.Warning;
 
+    /// <summary>What precedes the SARIF report's path on <c>jb</c>'s command line.</summary>
+    internal const string OutputArgumentPrefix = "-o=";
+
     /// <summary>
     ///     Inspect <paramref name="config" />'s solution, optionally scoped to <paramref name="files" />, and
     ///     parse what <c>jb</c> reported at <paramref name="severity" /> or above.
@@ -96,7 +99,7 @@ internal sealed class InspectService(JbRunner jbRunner)
         [
             "inspectcode",
             config.SolutionPath,
-            $"-o={outputFile}",
+            $"{OutputArgumentPrefix}{outputFile}",
             $"--severity={severity.ToJbToken()}",
             "--swea",
             "--no-build",

@@ -80,7 +80,7 @@ public sealed class GlobalCallToolFilterIntegrationTests
         string sarif = Fixtures.ReadSarif("inspect-sample.json");
         RouteJb(harness.ProcessRunner, arguments =>
         {
-            File.WriteAllText(OutputPathFrom(arguments), sarif);
+            JbStubs.WriteSarifIfRequested(arguments, sarif);
             return new ProcessResult(0, string.Empty, string.Empty);
         });
 
@@ -109,7 +109,7 @@ public sealed class GlobalCallToolFilterIntegrationTests
         string sarif = Fixtures.ReadSarif("inspect-repetitive.json");
         RouteJb(harness.ProcessRunner, arguments =>
         {
-            File.WriteAllText(OutputPathFrom(arguments), sarif);
+            JbStubs.WriteSarifIfRequested(arguments, sarif);
             return new ProcessResult(0, string.Empty, string.Empty);
         });
 
@@ -138,7 +138,7 @@ public sealed class GlobalCallToolFilterIntegrationTests
         string sarif = Fixtures.ReadSarif("inspect-sample.json");
         RouteJb(harness.ProcessRunner, arguments =>
         {
-            File.WriteAllText(OutputPathFrom(arguments), sarif);
+            JbStubs.WriteSarifIfRequested(arguments, sarif);
             return new ProcessResult(0, string.Empty, string.Empty);
         });
 
@@ -337,11 +337,5 @@ public sealed class GlobalCallToolFilterIntegrationTests
 
                 return result;
             });
-    }
-
-    private static string OutputPathFrom(IReadOnlyList<string> arguments)
-    {
-        string arg = arguments.First(a => a.StartsWith("-o=", StringComparison.Ordinal));
-        return arg["-o=".Length..];
     }
 }

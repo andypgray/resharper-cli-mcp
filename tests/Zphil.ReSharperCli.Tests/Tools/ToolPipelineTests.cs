@@ -1087,7 +1087,7 @@ public sealed class ToolPipelineTests
             if (arguments.Count > 0 && arguments[0] == "inspectcode")
             {
                 onInspect?.Invoke(arguments);
-                File.WriteAllText(OutputPathFrom(arguments), inspectSarif);
+                JbStubs.WriteSarifIfRequested(arguments, inspectSarif);
             }
 
             if (arguments.Count > 0 && arguments[0] == "cleanupcode") onCleanup?.Invoke(arguments);
@@ -1169,11 +1169,5 @@ public sealed class ToolPipelineTests
         int end = result.IndexOf('"', start);
 
         return result[start..end];
-    }
-
-    private static string OutputPathFrom(IReadOnlyList<string> arguments)
-    {
-        string arg = arguments.First(a => a.StartsWith("-o=", StringComparison.Ordinal));
-        return arg["-o=".Length..];
     }
 }

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `resharper_cleanup` labels a wildcard entry `(pattern, not hashed)` where 1.7.0 said
+  `(pattern, not tracked)`. Next to a file path, `not tracked` read as git's untracked state. The summary's
+  header counts `hashed file(s)`, the files the server compared before and after the run, and a wildcard is
+  never one of them.
+
 ### Fixed
 
 - An argument key that differs from a parameter name only in case is refused instead of dropped. The server

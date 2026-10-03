@@ -43,7 +43,7 @@ public sealed class CleanupSummaryFormatterTests
             + "  - src/B.cs (unchanged)\n"
             + "  - src/C.cs (status unknown)\n"
             + "  - src/D.cs (changed)\n"
-            + "  - lib/*.cs (pattern, not tracked)");
+            + "  - lib/*.cs (pattern, not hashed)");
     }
 
     [Fact]
@@ -58,7 +58,7 @@ public sealed class CleanupSummaryFormatterTests
             + "  - src/A.cs (changed)\n"
             + "  - src/C.cs (status unknown)\n"
             + "  - src/D.cs (changed)\n"
-            + "  - lib/*.cs (pattern, not tracked)\n"
+            + "  - lib/*.cs (pattern, not hashed)\n"
             + "  (+1 unchanged, not listed)");
     }
 
@@ -170,7 +170,7 @@ public sealed class CleanupSummaryFormatterTests
             "Cleanup completed with profile \"Built-in: Full Cleanup\". 1 of 2 hashed file(s) changed on disk:\n"
             + "  - src/A.cs (changed)\n"
             + "  - src/B.cs (unchanged)\n"
-            + "  - lib/*.cs (pattern, not tracked)");
+            + "  - lib/*.cs (pattern, not hashed)");
         minimal.ShouldBe(
             "Cleanup completed with profile \"Built-in: Full Cleanup\". 1 of 2 hashed file(s) changed on disk. "
             + "(1 unchanged, 1 pattern(s) not listed.)");
@@ -228,8 +228,8 @@ public sealed class CleanupSummaryFormatterTests
             "Cleanup completed with profile \"Built-in: Full Cleanup\". Every entry was a wildcard pattern: "
             + "jb cleaned what they matched, and this server hashes named files only, so it cannot report a "
             + "count:\n"
-            + "  - src/**/*.cs (pattern, not tracked)\n"
-            + "  - tests/**/*.cs (pattern, not tracked)");
+            + "  - src/**/*.cs (pattern, not hashed)\n"
+            + "  - tests/**/*.cs (pattern, not hashed)");
     }
 
     [Fact]

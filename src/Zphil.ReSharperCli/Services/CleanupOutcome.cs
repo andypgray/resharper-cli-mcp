@@ -26,6 +26,6 @@ internal enum CleanupFileStatus
     /// </summary>
     StatusUnknown,
 
-    /// <summary>A wildcard pattern handed to jb unexpanded — not a single file, so not tracked.</summary>
+    /// <summary>A wildcard pattern handed to jb unexpanded — not a single file, so not hashed.</summary>
     Pattern
 }

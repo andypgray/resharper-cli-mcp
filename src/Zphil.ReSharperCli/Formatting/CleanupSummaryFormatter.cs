@@ -160,7 +160,7 @@ internal static class CleanupSummaryFormatter
             CleanupFileStatus.Changed => "changed",
             CleanupFileStatus.Unchanged => "unchanged",
             CleanupFileStatus.StatusUnknown => "status unknown",
-            _ => "pattern, not tracked"
+            _ => "pattern, not hashed"
         };
     }
 

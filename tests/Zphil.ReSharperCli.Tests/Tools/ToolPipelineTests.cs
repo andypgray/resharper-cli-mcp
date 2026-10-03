@@ -126,7 +126,7 @@ public sealed class ToolPipelineTests
         // Assert — and the run is affirmed rather than merely not denied.
         result.ShouldNotContain("0 of 0");
         result.ShouldContain("Every entry was a wildcard pattern: jb cleaned what they matched");
-        result.ShouldContain("  - src/**/*.cs (pattern, not tracked)");
+        result.ShouldContain("  - src/**/*.cs (pattern, not hashed)");
     }
 
     [Fact]

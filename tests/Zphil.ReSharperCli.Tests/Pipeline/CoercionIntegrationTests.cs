@@ -14,62 +14,75 @@ namespace Zphil.ReSharperCli.Tests.Pipeline;
 ///     Drives a real MCP client against the server over in-memory pipes to prove the input-coercion
 ///     pipeline end to end.
 /// </summary>
-public sealed class CoercionIntegrationTests
+public sealed class CoercionIntegrationTests(AdvertisedToolsFixture advertised)
+    : IClassFixture<AdvertisedToolsFixture>
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
+    /// <summary>Each enum parameter inspect takes, and the values its schema must list in declaration order.</summary>
+    public static TheoryData<string, string[]> InspectEnumParameters =>
+        new()
+        {
+            { "severity", ["Suggestion", "Warning", "Error"] },
+            // A second enum, which is what shows the re-injection generalises rather than being special-cased to
+            // severity.
+            { "report", ["None", "Markdown"] },
+            // The five levels in ladder order, so the description prose never has to name them.
+            { "detail", ["Full", "High", "Medium", "Low", "Minimal"] }
+        };
+
     [Fact]
-    public async Task ListTools_CleanupFilesParameter_AdvertisesArrayOfStringsAndStaysRequired()
+    public void ListTools_FilesParameter_AdvertisesArrayOfStringsRequiredByCleanupAndNotByInspect()
     {
         // Arrange
-        await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
+        McpClientTool cleanup = advertised.Tools.Single(tool => tool.Name == "resharper_cleanup");
+        McpClientTool inspect = advertised.Tools.Single(tool => tool.Name == "resharper_inspect");
 
         // Act
-        IList<McpClientTool> tools = await harness.Client.ListToolsAsync(cancellationToken: Ct);
+        JsonElement files = cleanup.PropertySchema("files");
 
         // Assert — the schema-erasure guard: StringArrayCoercerFactory would collapse this to {} without
-        // the re-injection step. type/items must survive, and files must stay schema-required.
-        McpClientTool cleanup = tools.Single(tool => tool.Name == "resharper_cleanup");
-        JsonElement files = cleanup.PropertySchema("files");
+        // the re-injection step. type/items must survive, and files must stay schema-required on cleanup
+        // while inspect's stays optional.
         files.GetProperty("type").GetString().ShouldBe("array");
         files.GetProperty("items").GetProperty("type").GetString().ShouldBe("string");
         cleanup.RequiredProperties().ShouldContain("files");
+        inspect.RequiredProperties().ShouldNotContain("files");
     }
 
-    [Fact]
-    public async Task ListTools_InspectSeverityParameter_AdvertisesStringWithEnumValues()
+    [Theory]
+    [MemberData(nameof(InspectEnumParameters))]
+    public void ListTools_InspectEnumParameter_AdvertisesStringWithItsValues(string parameter, string[] values)
     {
         // Arrange
-        await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
+        McpClientTool inspect = advertised.Tools.Single(tool => tool.Name == "resharper_inspect");
 
         // Act
-        IList<McpClientTool> tools = await harness.Client.ListToolsAsync(cancellationToken: Ct);
+        JsonElement schema = inspect.PropertySchema(parameter);
 
         // Assert — EnumValidationConverterFactory erases the enum's shape; re-injection restores both the
-        // string type AND the value list, so the allowed severities travel in the schema itself. This is
-        // the guard that lets the description prose stay free of the enum names (no drift-in-prose test).
-        McpClientTool inspect = tools.Single(tool => tool.Name == "resharper_inspect");
-        JsonElement severity = inspect.PropertySchema("severity");
-        severity.GetProperty("type").GetString().ShouldBe("string");
-        inspect.EnumValues("severity").ShouldBe(["Suggestion", "Warning", "Error"]);
+        // string type AND the value list, so the allowed values travel in the schema itself. This is the
+        // guard that lets the description prose stay free of the enum names.
+        schema.GetProperty("type").GetString().ShouldBe("string");
+        inspect.EnumValues(parameter).ShouldBe(values);
     }
 
     [Fact]
-    public async Task ListTools_ScalarStringParameters_AdvertiseStringType()
+    public void ListTools_ScalarStringParameters_AdvertiseStringType()
     {
         // Arrange — the scalar-string reinjection is load-bearing: this project's exporter erases every
         // string?/string parameter to a bare {} under StringCoercerFactory. Assert a representative one
         // on each tool advertises a plain "string" (not {}, and not a ["string","null"] union).
-        await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
+        McpClientTool inspect = advertised.Tools.Single(tool => tool.Name == "resharper_inspect");
+        McpClientTool cleanup = advertised.Tools.Single(tool => tool.Name == "resharper_cleanup");
 
-        // Act
-        IList<McpClientTool> tools = await harness.Client.ListToolsAsync(cancellationToken: Ct);
+        // Act — inspect.solutionPath (nullable, no default) and cleanup.profile (a real default).
+        JsonElement solutionPath = inspect.PropertySchema("solutionPath");
+        JsonElement profile = cleanup.PropertySchema("profile");
 
-        // Assert — inspect.solutionPath (nullable, no default) and cleanup.profile (a real default).
-        McpClientTool inspect = tools.Single(tool => tool.Name == "resharper_inspect");
-        McpClientTool cleanup = tools.Single(tool => tool.Name == "resharper_cleanup");
-        inspect.PropertySchema("solutionPath").GetProperty("type").GetString().ShouldBe("string");
-        cleanup.PropertySchema("profile").GetProperty("type").GetString().ShouldBe("string");
+        // Assert
+        solutionPath.GetProperty("type").GetString().ShouldBe("string");
+        profile.GetProperty("type").GetString().ShouldBe("string");
     }
 
     [Fact]
@@ -142,8 +155,16 @@ public sealed class CoercionIntegrationTests
         inspectArguments.ShouldContain(expectedSolution);
     }
 
-    [Fact]
-    public async Task CallTool_InspectInvalidSeverity_ReturnsValidValuesErrorAndLogsNothing()
+    [Theory]
+    [InlineData("severity", "HIGH", "Suggestion, Warning, Error")]
+    // The formats jb offers but this server does not are rejected by name, not silently ignored.
+    [InlineData("report", "Xml", "None, Markdown")]
+    // A plausible borrowing from other tools' vocabulary, and not one of these.
+    [InlineData("detail", "Verbose", "Full, High, Medium, Low, Minimal")]
+    public async Task CallTool_InspectInvalidEnumValue_ReturnsValidValuesErrorAndLogsNothing(
+        string parameter,
+        string invalidValue,
+        string validValues)
     {
         // Arrange — the coercer throws inside the SDK argument binder, which wraps it in JsonException(s).
         await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
@@ -153,108 +174,14 @@ public sealed class CoercionIntegrationTests
         // Act
         CallToolResult result = await harness.Client.CallToolAsync(
             "resharper_inspect",
-            new Dictionary<string, object?> { ["severity"] = "HIGH" },
+            new Dictionary<string, object?> { [parameter] = invalidValue },
             cancellationToken: Ct);
 
         // Assert — the friendly valid-values message surfaced, and FindUserError kept it out of the log.
         result.IsError.ShouldBe(true);
         string text = result.Text();
-        text.ShouldContain("HIGH");
-        text.ShouldContain("Valid values: Suggestion, Warning, Error");
-        harness.Logs.Warnings.ShouldBeEmpty();
-    }
-
-    [Fact]
-    public async Task ListTools_InspectReportParameter_AdvertisesStringWithEnumValues()
-    {
-        // Arrange — the second enum on the surface, and therefore the first evidence that the re-injection
-        // above generalises past the one parameter it was written for rather than being special-cased.
-        await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
-
-        // Act
-        IList<McpClientTool> tools = await harness.Client.ListToolsAsync(cancellationToken: Ct);
-
-        // Assert
-        McpClientTool inspect = tools.Single(tool => tool.Name == "resharper_inspect");
-        JsonElement report = inspect.PropertySchema("report");
-        report.GetProperty("type").GetString().ShouldBe("string");
-        inspect.EnumValues("report").ShouldBe(["None", "Markdown"]);
-    }
-
-    [Fact]
-    public async Task ListTools_Inspect_IsStillAdvertisedReadOnly()
-    {
-        // Arrange — the annotation a client gates auto-approval on. It survives the report parameter on
-        // purpose: a run already creates and deletes a temp directory for jb's SARIF, the delta is one file
-        // surviving in a directory this server owns, and at the default nothing is written at all.
-        await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
-
-        // Act
-        IList<McpClientTool> tools = await harness.Client.ListToolsAsync(cancellationToken: Ct);
-
-        // Assert
-        McpClientTool inspect = tools.Single(tool => tool.Name == "resharper_inspect");
-        inspect.ProtocolTool.Annotations?.ReadOnlyHint.ShouldBe(true);
-    }
-
-    [Fact]
-    public async Task CallTool_InspectInvalidReport_ReturnsValidValuesErrorAndLogsNothing()
-    {
-        // Arrange
-        await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
-        harness.Environment.PlantSolution("App.sln");
-        RouteJb(harness.ProcessRunner);
-
-        // Act
-        CallToolResult result = await harness.Client.CallToolAsync(
-            "resharper_inspect",
-            new Dictionary<string, object?> { ["report"] = "Xml" },
-            cancellationToken: Ct);
-
-        // Assert — the formats jb offers but this server does not are rejected by name, not silently ignored.
-        result.IsError.ShouldBe(true);
-        string text = result.Text();
-        text.ShouldContain("Xml");
-        text.ShouldContain("Valid values: None, Markdown");
-        harness.Logs.Warnings.ShouldBeEmpty();
-    }
-
-    [Fact]
-    public async Task ListTools_InspectDetailParameter_AdvertisesStringWithEnumValues()
-    {
-        // Arrange
-        await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
-
-        // Act
-        IList<McpClientTool> tools = await harness.Client.ListToolsAsync(cancellationToken: Ct);
-
-        // Assert — the five levels travel in the schema, in ladder order, so the description prose never
-        // has to name them and cannot drift from them.
-        McpClientTool inspect = tools.Single(tool => tool.Name == "resharper_inspect");
-        JsonElement detail = inspect.PropertySchema("detail");
-        detail.GetProperty("type").GetString().ShouldBe("string");
-        inspect.EnumValues("detail").ShouldBe(["Full", "High", "Medium", "Low", "Minimal"]);
-    }
-
-    [Fact]
-    public async Task CallTool_InspectInvalidDetail_ReturnsValidValuesErrorAndLogsNothing()
-    {
-        // Arrange
-        await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
-        harness.Environment.PlantSolution("App.sln");
-        RouteJb(harness.ProcessRunner);
-
-        // Act — "Verbose" is a plausible borrowing from other tools' vocabulary, and is not one of these.
-        CallToolResult result = await harness.Client.CallToolAsync(
-            "resharper_inspect",
-            new Dictionary<string, object?> { ["detail"] = "Verbose" },
-            cancellationToken: Ct);
-
-        // Assert
-        result.IsError.ShouldBe(true);
-        string text = result.Text();
-        text.ShouldContain("Verbose");
-        text.ShouldContain("Valid values: Full, High, Medium, Low, Minimal");
+        text.ShouldContain(invalidValue);
+        text.ShouldContain($"Valid values: {validValues}");
         harness.Logs.Warnings.ShouldBeEmpty();
     }
 

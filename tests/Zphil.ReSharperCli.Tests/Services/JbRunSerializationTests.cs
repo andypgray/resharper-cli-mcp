@@ -44,42 +44,11 @@ public sealed class JbRunSerializationTests : IDisposable
     }
 
     [Fact]
-    public async Task InspectService_TwoConcurrentCallsAgainstOneSolution_RunOneAtATime()
-    {
-        // Arrange
-        InspectService service = new(_runner);
-
-        // Act
-        await Task.WhenAll(
-            service.RunAsync(_config, null, InspectSeverity.Warning, Ct),
-            service.RunAsync(_config, null, InspectSeverity.Warning, Ct));
-
-        // Assert
-        _probe.Runs.ShouldBe(2);
-        _probe.MaxConcurrent.ShouldBe(1);
-    }
-
-    [Fact]
-    public async Task CleanupService_TwoConcurrentCallsAgainstOneSolution_RunOneAtATime()
-    {
-        // Arrange
-        CleanupService service = new(_runner, NullLogger<CleanupService>.Instance);
-        SolutionFiles.Plant(_solutionDirectory, "src/A.cs", "content");
-
-        // Act
-        await Task.WhenAll(
-            service.RunAsync(_config, ["src/A.cs"], CleanupService.DefaultProfile, Ct),
-            service.RunAsync(_config, ["src/A.cs"], CleanupService.DefaultProfile, Ct));
-
-        // Assert
-        _probe.Runs.ShouldBe(2);
-        _probe.MaxConcurrent.ShouldBe(1);
-    }
-
-    [Fact]
     public async Task InspectAndCleanupOfOneSolution_RunOneAtATime()
     {
-        // Arrange — the two tools share one cache generation, so they contend with each other too.
+        // Arrange — the two tools share one cache generation, so they contend with each other too. The
+        // serialization lives entirely in JbRunner, so the only way either service escapes it is by bypassing
+        // the runner, and one call through each is what catches either of them doing so.
         InspectService inspect = new(_runner);
         CleanupService cleanup = new(_runner, NullLogger<CleanupService>.Instance);
         SolutionFiles.Plant(_solutionDirectory, "src/A.cs", "content");

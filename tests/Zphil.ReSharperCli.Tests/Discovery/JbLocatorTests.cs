@@ -64,7 +64,6 @@ public sealed class JbLocatorTests : IDisposable
 
         // Assert
         installation.ExecutablePath.ShouldBe(DotnetToolsCandidate);
-        installation.ExecutablePath.ShouldContain(Path.Combine(".dotnet", "tools"));
     }
 
     [Fact]
@@ -104,11 +103,14 @@ public sealed class JbLocatorTests : IDisposable
         exception.Message.ShouldNotContain("dotnet tool install");
     }
 
-    [Fact]
-    public async Task LocateAsync_FirstCandidateReportsNoVersion_FallsBackToNextCandidate()
+    [Theory]
+    [InlineData(0, "")] // exits cleanly but reports no version
+    [InlineData(1, "some jb error")] // exits non-zero
+    public async Task LocateAsync_FirstCandidateAnswersWithoutAVersion_FallsBackToNextCandidate(
+        int exitCode, string standardError)
     {
         // Arrange
-        Probe("jb").Returns(new ProcessResult(0, string.Empty, string.Empty));
+        Probe("jb").Returns(new ProcessResult(exitCode, string.Empty, standardError));
         Probe(DotnetToolsCandidate).Returns(Healthy);
         JbLocator locator = Locator();
 
@@ -118,21 +120,6 @@ public sealed class JbLocatorTests : IDisposable
         // Assert
         installation.ExecutablePath.ShouldBe(DotnetToolsCandidate);
         installation.Version.ShouldBe("2026.1.2");
-    }
-
-    [Fact]
-    public async Task LocateAsync_FirstCandidateExitsNonZero_FallsBackToNextCandidate()
-    {
-        // Arrange
-        Probe("jb").Returns(new ProcessResult(1, string.Empty, "some jb error"));
-        Probe(DotnetToolsCandidate).Returns(Healthy);
-        JbLocator locator = Locator();
-
-        // Act
-        JbInstallation installation = await locator.LocateAsync(Ct);
-
-        // Assert
-        installation.ExecutablePath.ShouldBe(DotnetToolsCandidate);
     }
 
     [Fact]
@@ -174,7 +161,7 @@ public sealed class JbLocatorTests : IDisposable
     }
 
     [Fact]
-    public async Task LocateAsync_EveryProbeTimesOut_SaysJbIsInstalledRatherThanMissing()
+    public async Task LocateAsync_EveryProbeTimesOut_SaysJbIsInstalledAndNamesEachCandidateOnce()
     {
         // Arrange — the field shape: two servers starting at once, both probes killed at the cap by a busy
         // machine. Every candidate failed, but a process has to start before it can be killed, so telling
@@ -182,17 +169,21 @@ public sealed class JbLocatorTests : IDisposable
         _processRunner
             .AnyRun()
             .Throws(new ProcessTimeoutException("'jb' timed out after 30 seconds."));
-        JbLocator locator = Locator();
 
         // Act
-        var exception = await Should.ThrowAsync<UserErrorException>(() => locator.LocateAsync(Ct));
+        var exception = await Should.ThrowAsync<UserErrorException>(() => LoggingLocator().LocateAsync(Ct));
 
-        // Assert
-        exception.Message.ShouldStartWith("JetBrains ReSharper CLI tools found, but no candidate reported a version.");
-        exception.Message.ShouldContain("jb is installed and installing it again will not help");
-        exception.Message.ShouldContain("killed after 30 seconds");
-        exception.Message.ShouldContain("retry the call");
-        exception.Message.ShouldNotContain("dotnet tool install");
+        // Assert — the timeout clause follows the candidate's name in both the Tried list and the log line, so
+        // the exception's own "'jb' timed out after ..." wording would name the executable twice over.
+        exception.Message.ShouldBe(
+            "JetBrains ReSharper CLI tools found, but no candidate reported a version.\n\n"
+            + "Tried:\n"
+            + "  jb: timed out after 30 seconds\n"
+            + $"  {DotnetToolsCandidate}: timed out after 30 seconds\n\n"
+            + "At least one candidate started and was killed after 30 seconds without reporting one, "
+            + "so jb is installed and installing it again will not help.\n"
+            + "A probe that slow is usually a machine busy at startup rather than a broken install, so retry the call.");
+        ProbeLineFor("jb").Property("ProbeOutcome").ShouldBe("timed out after 30 seconds");
     }
 
     [Fact]
@@ -234,24 +225,6 @@ public sealed class JbLocatorTests : IDisposable
         exception.Message.ShouldContain("Run `jb inspectcode --version` yourself");
         exception.Message.ShouldContain(expectedDetail);
         exception.Message.ShouldNotContain("dotnet tool install");
-    }
-
-    [Fact]
-    public async Task LocateAsync_ProbeTimesOut_ReportsTheCapWithoutRepeatingTheExecutableName()
-    {
-        // Arrange — the clause follows the candidate's name in both the Tried list and the log line, so the
-        // exception's own "'jb' timed out after ..." wording would name the executable twice over.
-        _processRunner
-            .AnyRun()
-            .Throws(new ProcessTimeoutException("'jb' timed out after 30 seconds."));
-
-        // Act
-        var exception = await Should.ThrowAsync<UserErrorException>(() => LoggingLocator().LocateAsync(Ct));
-
-        // Assert
-        exception.Message.ShouldContain("  jb: timed out after 30 seconds");
-        exception.Message.ShouldNotContain("'jb' timed out");
-        ProbeLineFor("jb").Property("ProbeOutcome").ShouldBe("timed out after 30 seconds");
     }
 
     [Fact]

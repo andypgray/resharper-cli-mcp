@@ -110,10 +110,10 @@ public sealed class ServerLifecycleTests : IDisposable
     }
 
     [Fact]
-    public async Task StartAsync_NeitherLineBelongsToARun()
+    public async Task StartAndStop_OpenNoRunScope()
     {
-        // Arrange — startup and shutdown happen outside any tool call or pre-warm pass, so the RunId column
-        // has nothing to carry and falls back to its fixed-width default rather than rendering empty.
+        // Arrange — startup and shutdown happen outside any tool call or pre-warm pass, so neither line may
+        // carry a run id.
         ServerLifecycle lifecycle = Lifecycle();
 
         // Act

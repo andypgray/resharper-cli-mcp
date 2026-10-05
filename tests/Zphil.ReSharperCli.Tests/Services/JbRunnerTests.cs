@@ -90,6 +90,40 @@ public sealed class JbRunnerTests : IDisposable
     }
 
     [Fact]
+    public void AppendConfigArguments_SettingsFileJbDiscoversItself_OmitsSettingsFlag()
+    {
+        // Arrange — resolved, but a file jb mounts on its own (the adjacent .DotSettings). Passing it as
+        // --settings would re-mount it as a Custom layer above the project layers: inspect would silently
+        // demote every {project}.csproj.DotSettings in the solution, and cleanup, which rewrites files, would
+        // normalize away the style such a file protects. Both services append through this one helper, and
+        // their exact-order pins are what prove each of them does.
+        List<string> arguments = [];
+        ResolvedConfig config = Configs.With("/sln/App.sln", "/cache", "/sln/App.sln.DotSettings");
+
+        // Act
+        JbRunner.AppendConfigArguments(arguments, config);
+
+        // Assert
+        arguments.ShouldBe(["--caches-home=/cache"]);
+    }
+
+    [Fact]
+    public void IncludeArgument_AbsolutePathUnderTheSolution_ReachesJbRelative()
+    {
+        // Arrange — jb's --include takes relative paths only, so an absolute one matches nothing: cleanupcode
+        // exits 3 with "No items were found to cleanup", and an inspect can come back as "No issues found."
+        // rather than as any kind of failure. Both services build --include through this one helper.
+        string solutionDirectory = Path.GetFullPath("/sln");
+        string absolute = Path.Combine(solutionDirectory, "src", "A.cs");
+
+        // Act
+        string include = JbRunner.IncludeArgument([absolute], solutionDirectory);
+
+        // Assert
+        include.ShouldBe("--include=src/A.cs");
+    }
+
+    [Fact]
     public async Task RunAsync_SucceedingRun_StampsTheWarmMarker()
     {
         // Arrange — a real call warms the cache generation just as thoroughly as a pre-warm does, so it has
@@ -104,16 +138,23 @@ public sealed class JbRunnerTests : IDisposable
     }
 
     [Fact]
-    public async Task RunAsync_FailingRun_LeavesTheWarmMarkerUnstamped()
+    public async Task RunAsync_FailingRun_LeavesEverySidecarAsItFoundIt()
     {
-        // Arrange — a jb that exited non-zero warmed nothing worth skipping a pre-warm over.
+        // Arrange — all three sidecars are the clean exit's alone, and a jb that exited non-zero earns none of
+        // them. It warmed nothing worth skipping a pre-warm over. It may have built nothing, so a preceding
+        // reset's promise of a cold next run still stands and the next attempt must not shortcut it. And it
+        // may have given up in seconds, which is no measure of the run the next caller is about to make.
+        JbColdTombstone.Write(_config.SolutionPath, _config.CacheHome, NullLogger.Instance);
         StubExit(2, "boom");
 
         // Act
         await Should.ThrowAsync<UserErrorException>(() => _runner.RunAsync(_config, ["inspectcode", _config.SolutionPath], Ct));
 
         // Assert
-        JbWarmMarker.IsFreshWithin(_config.SolutionPath, _config.CacheHome, RecentlyEnough, NullLogger.Instance).ShouldBeFalse();
+        _config.ShouldSatisfyAllConditions(
+            config => JbWarmMarker.IsFreshWithin(config.SolutionPath, config.CacheHome, RecentlyEnough, NullLogger.Instance).ShouldBeFalse("warm marker stamped"),
+            config => JbColdTombstone.Exists(config.SolutionPath, config.CacheHome, NullLogger.Instance).ShouldBeTrue("cache reset discharged"),
+            config => File.Exists(JbCostRecord.PathFor(config.SolutionPath, config.CacheHome)).ShouldBeFalse("cost recorded"));
     }
 
     [Fact]
@@ -228,21 +269,6 @@ public sealed class JbRunnerTests : IDisposable
     }
 
     [Fact]
-    public async Task RunAsync_FailingRun_LeavesTheCacheResetUndischarged()
-    {
-        // Arrange — a jb that exited non-zero may have built nothing, so the reset's promise still stands and
-        // the next attempt must not be allowed to shortcut it.
-        JbColdTombstone.Write(_config.SolutionPath, _config.CacheHome, NullLogger.Instance);
-        StubExit(2, "boom");
-
-        // Act
-        await Should.ThrowAsync<UserErrorException>(() => _runner.RunAsync(_config, ["inspectcode", _config.SolutionPath], Ct));
-
-        // Assert
-        JbColdTombstone.Exists(_config.SolutionPath, _config.CacheHome, NullLogger.Instance).ShouldBeTrue();
-    }
-
-    [Fact]
     public async Task TryRunAsync_CacheGenerationFree_RunsAndStampsTheWarmMarker()
     {
         // Arrange
@@ -336,20 +362,6 @@ public sealed class JbRunnerTests : IDisposable
     }
 
     [Fact]
-    public async Task RunAsync_FailingRun_RecordsNoCostAtAll()
-    {
-        // Arrange — a jb that exited non-zero may have given up in seconds, which is no measure of the run
-        // the next caller is about to make.
-        StubExit(2, "boom");
-
-        // Act
-        await Should.ThrowAsync<UserErrorException>(() => _runner.RunAsync(_config, ["inspectcode", _config.SolutionPath], Ct));
-
-        // Assert
-        Recorded(JbCostBand.Cold).ShouldBeNull();
-    }
-
-    [Fact]
     public async Task RunAsync_RunHitsTheCapWithAComparableRunOnRecord_NamesWhatThatRunCost()
     {
         // Arrange — the figure that turns "the cap was ten minutes" into evidence about whether raising it
@@ -371,17 +383,28 @@ public sealed class JbRunnerTests : IDisposable
     public async Task RunAsync_RunHitsTheCapWithNothingOnRecord_ReadsExactlyAsItAlwaysHas()
     {
         // Arrange — the first run of a solution is both the one most likely to hit the cap and the one that
-        // can never have a figure, so the no-figure message is the common case rather than an edge.
+        // can never have a figure, so the no-figure message is the common case rather than an edge. Nothing
+        // was watching either, so nothing knows how far jb got: cleanupcode lands here too, because its
+        // per-file output is unrecognisable and its count is always zero. ProcessRunner reports the
+        // mechanical fact and stops there, because it does not know whose timeout it was handed; only the
+        // runner can answer the questions a caller is left with.
         StubTimeout();
 
         // Act
         var exception = await Should.ThrowAsync<UserErrorException>(() => _runner.RunAsync(_config, ["inspectcode", _config.SolutionPath], Ct));
 
-        // Assert — the two sentences still meet with nothing between them.
-        exception.Message.ShouldContain(
-            "A run that long is almost always a cold ReSharper cache. Scoping the next call with `files` will "
-            + "not help");
-        exception.Message.ShouldNotContain("The last");
+        // Assert — every timeout a user meets is one this server chose (an MCP client would have waited far
+        // longer), so the message disowns it, names the variable that moves it, and heads off the scoped
+        // retry that does not work. The cold-cache sentence and the scoping one meet with no figure between
+        // them, and the closing claim about the cache is the general one, hedged, with no invented count.
+        exception.Message.ShouldBe(
+            "jb inspectcode timed out after 10 minutes and was stopped.\n"
+            + "That cap is this server's, not jb's own: raise it by setting RESHARPER_MCP_TIMEOUT_SECS (in seconds) "
+            + "in this server's env block in your MCP client config, then restart the server.\n"
+            + "A run that long is almost always a cold ReSharper cache. "
+            + "Scoping the next call with `files` will not help — jb analyses the whole solution whatever "
+            + "the report is narrowed to. "
+            + "The cache keeps most of what this run built, so a retry resumes rather than starting over.");
     }
 
     [Fact]
@@ -417,40 +440,6 @@ public sealed class JbRunnerTests : IDisposable
     }
 
     [Fact]
-    public async Task RunAsync_RunHitsTheCap_SaysWhoseCapItIsAndNamesTheLever()
-    {
-        // Arrange — ProcessRunner reports the mechanical fact and stops there, because it does not know
-        // whose timeout it was handed. Only the runner can answer the two questions a caller is left with.
-        StubTimeout();
-
-        // Act
-        var exception = await Should.ThrowAsync<UserErrorException>(() => _runner.RunAsync(_config, ["inspectcode", _config.SolutionPath], Ct));
-
-        // Assert — every timeout a user meets is one this server chose (an MCP client would have waited
-        // far longer), so the message has to disown it, name the variable that moves it, and head off the
-        // retry that does not work.
-        exception.Message.ShouldStartWith("jb inspectcode timed out after 10 minutes");
-        exception.Message.ShouldContain("this server's, not jb's own");
-        exception.Message.ShouldContain(JbRunTimeout.Variable);
-        exception.Message.ShouldContain("`files` will not help");
-    }
-
-    [Fact]
-    public async Task RunAsync_RunHitsTheCapWithNoProgressReported_ClaimsNoParticularProgress()
-    {
-        // Arrange — nothing was watching, so nothing knows how far jb got. cleanupcode lands here too: its
-        // per-file output is unrecognisable, so its count is always zero.
-        StubTimeout();
-
-        // Act
-        var exception = await Should.ThrowAsync<UserErrorException>(() => _runner.RunAsync(_config, ["inspectcode", _config.SolutionPath], Ct));
-
-        // Assert — the general claim, hedged, and no invented number.
-        exception.Message.ShouldContain("The cache keeps most of what this run built");
-        exception.Message.ShouldNotContain("by the time it was stopped");
-    }
-
-    [Fact]
     public async Task RunAsync_RunHitsTheCapAfterAnalysingFiles_NamesHowFarItGot()
     {
         // Arrange — a jb that reports 40 files and is then killed at the cap. Until there was a count, the
@@ -464,25 +453,6 @@ public sealed class JbRunnerTests : IDisposable
         // Assert — the count spelled as the progress line spelled it, not as "40 file(s)".
         exception.Message.ShouldContain("jb had reached 40 files by the time it was stopped");
         exception.Message.ShouldContain("a retry resumes from there");
-    }
-
-    [Fact]
-    public async Task RunAsync_RunHitsTheCap_TheCapLogLineCarriesTheCountToo()
-    {
-        // Arrange — the log needs it independently of the message: a UserErrorException is deliberately never
-        // logged, so without this the only record of how far a killed run got dies with the response.
-        CapturingLoggerProvider logs = new();
-        JbRunner runner = JbRunners.Create(_processRunner, _runLock, logs: Logs.Capturing(logs));
-        StubTimeoutAfterAnalysing(7);
-
-        // Act
-        await Should.ThrowAsync<UserErrorException>(() => runner.RunAsync(_config, ["inspectcode", _config.SolutionPath], Ct, _ => { }));
-
-        // Assert — still identified by RunCap alone, with no CacheState or ExitCode of its own: those two
-        // properties are how JbRunLoggingTests tells the opening and closing lines apart.
-        LogEntry killed = logs.WithProperty("RunCap").ShouldHaveSingleItem();
-        killed.Property("FilesSeen").ShouldBe(7);
-        logs.WithProperty("ExitCode").ShouldBeEmpty();
     }
 
     [Fact]

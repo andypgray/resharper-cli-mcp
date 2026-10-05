@@ -27,16 +27,6 @@ public sealed class IssueMarkdownFormatterTests
     private const string NullReferenceMessage = "Possible 'System.NullReferenceException'";
 
     [Fact]
-    public void Format_NoIssues_ReturnsNoIssuesFoundLiteral()
-    {
-        // Act
-        string result = IssueMarkdownFormatter.Format([], DetailLevel.Full);
-
-        // Assert
-        result.ShouldBe("No issues found.");
-    }
-
-    [Fact]
     public void Format_NoIssues_ReturnsTheSameLiteralAtEveryLevel()
     {
         // Act / Assert — a loop over the enum rather than rows, so a level added later is covered without an
@@ -46,39 +36,13 @@ public sealed class IssueMarkdownFormatterTests
     }
 
     [Fact]
-    public void Format_Issues_HeaderCountsIssuesAndDistinctFiles()
-    {
-        // Arrange
-        List<InspectIssue> issues =
-        [
-            new("A.cs", 1, null, "WARNING", "R1", "m1"),
-            new("A.cs", 5, null, "ERROR", "R2", "m2"),
-            new("B.cs", 9, null, "SUGGESTION", "R3", "m3")
-        ];
-
-        // Act
-        string result = IssueMarkdownFormatter.Format(issues, DetailLevel.Full);
-
-        // Assert
-        result.ShouldStartWith("Found 3 issue(s) across 2 file(s):");
-    }
-
-    [Fact]
     public void Format_ThreeIssuesAcrossTwoFiles_ProducesExactMarkdown()
     {
-        // Arrange
-        List<InspectIssue> issues =
-        [
-            new("A.cs", 1, null, "WARNING", "Rule1", "msg one"),
-            new("A.cs", 5, null, "ERROR", "Rule2", "msg two"),
-            new("B.cs", 9, null, "SUGGESTION", "Rule3", "msg three")
-        ];
-
         // Act
-        string result = IssueMarkdownFormatter.Format(issues, DetailLevel.Full);
+        string result = IssueMarkdownFormatter.Format(ThreeIssuesAcrossTwoFiles(), DetailLevel.Full);
 
-        // Assert — the byte-compatibility pin: Full is character for character what this tool returned
-        // before the ladder existed, so a scoped scan is unchanged.
+        // Assert — the byte-compatibility pin: a scoped scan that fits is returned at Full, so Full must not
+        // move by a character. The header counts issues and distinct files.
         const string expected =
             "Found 3 issue(s) across 2 file(s):\n" +
             "\n" +
@@ -114,7 +78,7 @@ public sealed class IssueMarkdownFormatterTests
     }
 
     [Fact]
-    public void Format_Issues_UsesLineFeedNewlinesOnly()
+    public void Format_EveryLevel_IsLineFeedOnlyAndAscii()
     {
         // Act / Assert — StringBuilder.AppendLine would emit \r\n here on Windows; every level joins with \n.
         foreach (DetailLevel level in Enum.GetValues<DetailLevel>())
@@ -280,12 +244,7 @@ public sealed class IssueMarkdownFormatterTests
     public void Format_High_NoRuleRepeatsWithinAFile_IsByteIdenticalToFull()
     {
         // Arrange — the scoped-scan shape: every issue a distinct rule.
-        List<InspectIssue> issues =
-        [
-            new("A.cs", 1, null, "WARNING", "Rule1", "msg one"),
-            new("A.cs", 5, null, "ERROR", "Rule2", "msg two"),
-            new("B.cs", 9, null, "SUGGESTION", "Rule3", "msg three")
-        ];
+        List<InspectIssue> issues = ThreeIssuesAcrossTwoFiles();
 
         // Act / Assert — nothing to collapse, so High costs nothing and ProgressiveRenderer skips it.
         IssueMarkdownFormatter.Format(issues, DetailLevel.High)
@@ -360,17 +319,22 @@ public sealed class IssueMarkdownFormatterTests
         result.ShouldBe("1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23 (+18 more)");
     }
 
-    [Fact]
-    public void DescribeReduction_LevelsThatDropContent_CarryBothRemediesWithTheReportLast()
+    [Theory]
+    [InlineData(nameof(DetailLevel.Medium))]
+    [InlineData(nameof(DetailLevel.Low))]
+    [InlineData(nameof(DetailLevel.Minimal))]
+    public void DescribeReduction_LevelsThatDropContent_CarryBothRemediesWithTheReportLast(string levelName)
     {
-        // Act / Assert — narrowing is "ask for less", the report is "get all of it out of band", and the
-        // second is the better answer for a caller reading this note because it wanted the detail.
-        foreach (DetailLevel level in (DetailLevel[])[DetailLevel.Medium, DetailLevel.Low, DetailLevel.Minimal])
-        {
-            string description = IssueMarkdownFormatter.DescribeReduction(level, 12, false, false);
-            description.ShouldContain(IssueMarkdownFormatter.NarrowingHint);
-            description.ShouldEndWith(IssueMarkdownFormatter.FullReportHint);
-        }
+        // Arrange
+        var level = Enum.Parse<DetailLevel>(levelName);
+
+        // Act
+        string description = IssueMarkdownFormatter.DescribeReduction(level, 12, false, false);
+
+        // Assert — narrowing is "ask for less", the report is "get all of it out of band", and the second is
+        // the better answer for a caller reading this note because it wanted the detail.
+        description.ShouldContain(IssueMarkdownFormatter.NarrowingHint);
+        description.ShouldEndWith(IssueMarkdownFormatter.FullReportHint);
     }
 
     [Fact]
@@ -387,35 +351,39 @@ public sealed class IssueMarkdownFormatterTests
         description.ShouldEndWith(IssueMarkdownFormatter.FullReportHint);
     }
 
-    [Fact]
-    public void DescribeReduction_AReportAlreadyWritten_OffersNoReportAtAnyLevel()
+    [Theory]
+    [InlineData(nameof(DetailLevel.High))]
+    [InlineData(nameof(DetailLevel.Medium))]
+    [InlineData(nameof(DetailLevel.Low))]
+    [InlineData(nameof(DetailLevel.Minimal))]
+    public void DescribeReduction_AReportAlreadyWritten_OffersNoReportAtAnyLevel(string levelName)
     {
         // Arrange — InspectReportNote has already named the file in the banner. Telling a caller to do what
-        // it just did is worse than saying nothing. Looped inside a Fact because DetailLevel is internal and
-        // cannot appear in a public Theory signature (CS0051).
-        DetailLevel[] reduced = [DetailLevel.High, DetailLevel.Medium, DetailLevel.Low, DetailLevel.Minimal];
+        // it just did is worse than saying nothing.
+        var level = Enum.Parse<DetailLevel>(levelName);
 
         // Act / Assert
-        foreach (DetailLevel level in reduced)
-            IssueMarkdownFormatter.DescribeReduction(level, 12, true, false)
-                .ShouldNotContain(IssueMarkdownFormatter.FullReportHint);
+        IssueMarkdownFormatter.DescribeReduction(level, 12, true, false)
+            .ShouldNotContain(IssueMarkdownFormatter.FullReportHint);
     }
 
-    [Fact]
-    public void DescribeReduction_TheLevelTheCallerAskedFor_DropsNarrowingAndKeepsTheReportOffer()
+    [Theory]
+    [InlineData(nameof(DetailLevel.Medium))]
+    [InlineData(nameof(DetailLevel.Low))]
+    [InlineData(nameof(DetailLevel.Minimal))]
+    public void DescribeReduction_TheLevelTheCallerAskedFor_DropsNarrowingAndKeepsTheReportOffer(string levelName)
     {
         // Arrange — the same principle the report flag settled, in the other direction: a caller that
         // passed detail has already asked for less, so "ask for less" is the one remedy that cannot help
         // it. A report is the opposite trade and still can.
-        DetailLevel[] levelsThatNarrow = [DetailLevel.Medium, DetailLevel.Low, DetailLevel.Minimal];
+        var level = Enum.Parse<DetailLevel>(levelName);
 
-        // Act / Assert
-        foreach (DetailLevel level in levelsThatNarrow)
-        {
-            string description = IssueMarkdownFormatter.DescribeReduction(level, 12, false, true);
-            description.ShouldNotContain(IssueMarkdownFormatter.NarrowingHint);
-            description.ShouldEndWith(IssueMarkdownFormatter.FullReportHint);
-        }
+        // Act
+        string description = IssueMarkdownFormatter.DescribeReduction(level, 12, false, true);
+
+        // Assert
+        description.ShouldNotContain(IssueMarkdownFormatter.NarrowingHint);
+        description.ShouldEndWith(IssueMarkdownFormatter.FullReportHint);
     }
 
     [Fact]
@@ -477,6 +445,17 @@ public sealed class IssueMarkdownFormatterTests
             new InspectIssue(RepositoryPath, 12, null, "ERROR", ".CSharpErrors", "Cannot resolve symbol 'OrderDto'"),
             new InspectIssue(RepositoryPath, 5, null, "WARNING", "PossibleNullReferenceException", NullReferenceMessage),
             new InspectIssue(RepositoryPath, 5, null, "WARNING", "PossibleNullReferenceException", NullReferenceMessage)
+        ];
+    }
+
+    /// <summary>Three issues over two files, each a distinct rule: the scoped-scan shape.</summary>
+    private static List<InspectIssue> ThreeIssuesAcrossTwoFiles()
+    {
+        return
+        [
+            new InspectIssue("A.cs", 1, null, "WARNING", "Rule1", "msg one"),
+            new InspectIssue("A.cs", 5, null, "ERROR", "Rule2", "msg two"),
+            new InspectIssue("B.cs", 9, null, "SUGGESTION", "Rule3", "msg three")
         ];
     }
 

@@ -14,7 +14,7 @@ public sealed class RunProgressFormatterTests
 {
     private static readonly TimeSpan Cap = TimeSpan.FromMinutes(10);
 
-    private static readonly string SolutionPath = Path.Combine("C:", "repos", "loadbearing", "LoadBearing.slnx");
+    private static readonly string SolutionPath = Path.Combine("C:", "repo", "App.slnx");
 
     [Theory]
     [InlineData(nameof(JbRunPhase.Turn))]
@@ -30,7 +30,7 @@ public sealed class RunProgressFormatterTests
 
         string message = Format(phase, TimeSpan.FromMilliseconds(3));
 
-        message.ShouldBe("inspectcode on LoadBearing.slnx: starting");
+        message.ShouldBe("inspectcode on App.slnx: starting");
     }
 
     [Fact]
@@ -42,7 +42,7 @@ public sealed class RunProgressFormatterTests
         string message = Format(JbRunPhase.Turn, TimeSpan.FromSeconds(123));
 
         message.ShouldBe(
-            "inspectcode on LoadBearing.slnx: waiting for this server's other jb run to finish "
+            "inspectcode on App.slnx: waiting for this server's other jb run to finish "
             + "(it runs one at a time) — 2 minutes 3 seconds");
     }
 
@@ -54,7 +54,7 @@ public sealed class RunProgressFormatterTests
         string message = Format(JbRunPhase.Queued, TimeSpan.FromSeconds(123));
 
         message.ShouldBe(
-            "inspectcode on LoadBearing.slnx: waiting for another run on this solution's ReSharper cache "
+            "inspectcode on App.slnx: waiting for another run on this solution's ReSharper cache "
             + "— 2 minutes 3 seconds");
     }
 
@@ -67,7 +67,7 @@ public sealed class RunProgressFormatterTests
         string message = Format(JbRunPhase.Queued, TimeSpan.FromSeconds(123), "cache reset");
 
         message.ShouldBe(
-            "cache reset on LoadBearing.slnx: waiting for another run on this solution's ReSharper cache "
+            "cache reset on App.slnx: waiting for another run on this solution's ReSharper cache "
             + "— 2 minutes 3 seconds");
     }
 
@@ -79,58 +79,38 @@ public sealed class RunProgressFormatterTests
         string message = Format(JbRunPhase.Seeding, TimeSpan.FromSeconds(40));
 
         message.ShouldBe(
-            "inspectcode on LoadBearing.slnx: copying a sibling checkout's warm cache — 40 seconds");
+            "inspectcode on App.slnx: copying a sibling checkout's warm cache — 40 seconds");
     }
 
-    [Fact]
-    public void Format_TheSilentPrelude_LeadsWithTheCacheStateAndNamesTheCap()
+    [Theory]
+    // jb spends its first half-minute loading the solution model without a word. What the cache looked like
+    // going in is the best available predictor of how that silence ends, and it is already in hand.
+    [InlineData("cold (none on disk)")]
+    // The other half of telling slow from stuck: the elapsed time says how long this run has been going, and
+    // the cache state says how long a run like it took last time.
+    [InlineData("cold (none on disk; the last cold run took 8 minutes 17 seconds)")]
+    // JbCacheState degrades to a sentence rather than to null, so an unreadable cache still says something.
+    [InlineData("cache state unreadable")]
+    public void Format_TheSilentPrelude_CarriesTheCacheSummaryVerbatimAndNamesTheCap(string summary)
     {
-        // jb spends its first half-minute loading the solution model without a word. What the cache looked
-        // like going in is the best available predictor of how that silence ends, and it is already in hand.
-        string message = Format(
-            JbRunPhase.Starting, TimeSpan.FromSeconds(12), cacheSummary: "cold (none on disk)", cap: Cap);
+        // The whole clause is JbCacheState's, and it reaches a caller through here unaltered.
+        string message = Format(JbRunPhase.Starting, TimeSpan.FromSeconds(12), cacheSummary: summary, cap: Cap);
 
-        message.ShouldBe(
-            "inspectcode on LoadBearing.slnx: cold (none on disk) — 12 seconds, cap 10 minutes");
+        message.ShouldBe($"inspectcode on App.slnx: {summary} — 12 seconds, cap 10 minutes");
     }
 
-    [Fact]
-    public void Format_TheSilentPreludeWithARecordedCost_CarriesTheQuoteThrough()
+    [Theory]
+    [InlineData(nameof(JbRunPhase.Analyzing), "analyzing")]
+    [InlineData(nameof(JbRunPhase.Inspecting), "inspecting")]
+    public void Format_ASweep_CountsFiles(string phaseName, string verb)
     {
-        // The other half of telling slow from stuck: the elapsed time says how long this run has been going,
-        // and the cache state now says how long a run like it took last time. The whole clause is
-        // JbCacheState's, and it reaches a caller through here unaltered.
-        string message = Format(
-            JbRunPhase.Starting,
-            TimeSpan.FromSeconds(12),
-            cacheSummary: "cold (none on disk; the last cold run took 8 minutes 17 seconds)",
-            cap: Cap);
+        // The analysis sweep is most of a cold run, so this is the message a caller actually sits watching.
+        var phase = Enum.Parse<JbRunPhase>(phaseName);
+
+        string message = Format(phase, TimeSpan.FromSeconds(200), filesSeen: 402, cap: Cap);
 
         message.ShouldBe(
-            "inspectcode on LoadBearing.slnx: cold (none on disk; the last cold run took 8 minutes 17 seconds) "
-            + "— 12 seconds, cap 10 minutes");
-    }
-
-    [Fact]
-    public void Format_TheAnalysisSweep_CountsFiles()
-    {
-        // The long phase of a cold run — 451 of 497 seconds on one measured solution — so this is the message
-        // a caller actually sits watching.
-        string message = Format(
-            JbRunPhase.Analyzing, TimeSpan.FromSeconds(200), filesSeen: 402, cap: Cap);
-
-        message.ShouldBe(
-            "inspectcode on LoadBearing.slnx: analyzing 402 files — 3 minutes 20 seconds, cap 10 minutes");
-    }
-
-    [Fact]
-    public void Format_TheInspectionSweep_CountsFilesToo()
-    {
-        string message = Format(
-            JbRunPhase.Inspecting, TimeSpan.FromSeconds(482), filesSeen: 88, cap: Cap);
-
-        message.ShouldBe(
-            "inspectcode on LoadBearing.slnx: inspecting 88 files — 8 minutes 2 seconds, cap 10 minutes");
+            $"inspectcode on App.slnx: {verb} 402 files — 3 minutes 20 seconds, cap 10 minutes");
     }
 
     [Fact]
@@ -142,7 +122,7 @@ public sealed class RunProgressFormatterTests
             JbRunPhase.Cleaning, subcommand: "cleanupcode", elapsed: TimeSpan.FromSeconds(240), cap: Cap);
 
         message.ShouldBe(
-            "cleanupcode on LoadBearing.slnx: rewriting files — 4 minutes, cap 10 minutes");
+            "cleanupcode on App.slnx: rewriting files — 4 minutes, cap 10 minutes");
     }
 
     [Theory]
@@ -155,17 +135,6 @@ public sealed class RunProgressFormatterTests
         string message = Format(JbRunPhase.Analyzing, TimeSpan.FromSeconds(5), filesSeen: filesSeen, cap: Cap);
 
         message.ShouldContain(expected);
-    }
-
-    [Fact]
-    public void Format_AnUnreadableCache_StillSaysSomethingRatherThanNothing()
-    {
-        // JbCacheState degrades to a sentence rather than to null, and it rides through here untouched.
-        string message = Format(
-            JbRunPhase.Starting, TimeSpan.FromSeconds(9), cacheSummary: "cache state unreadable", cap: Cap);
-
-        message.ShouldBe(
-            "inspectcode on LoadBearing.slnx: cache state unreadable — 9 seconds, cap 10 minutes");
     }
 
     [Fact]

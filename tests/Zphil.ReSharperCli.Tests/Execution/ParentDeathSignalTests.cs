@@ -22,14 +22,10 @@ public sealed class ParentDeathSignalTests
         // target argument starts with a dash, and every jb argument does.
         command.FileName.ShouldBe("/usr/bin/setpriv");
         command.Arguments.ShouldBe(["--pdeathsig", "SIGKILL", "--", "/home/u/.dotnet/tools/jb", "inspectcode", "App.sln"]);
-    }
 
-    [Fact]
-    public void Wrap_AWrappedCommand_SaysItWrapped()
-    {
-        // Assert — the flag is the decision Start consumes: a spawn reported as parent-death-signalled must
-        // be one this method actually wrapped.
-        ParentDeathSignal.Wrap("/usr/bin/setpriv", "/usr/bin/jb", "jb", []).Wrapped.ShouldBeTrue();
+        // And the flag says so: a spawn reported as parent-death-signalled must be one this method actually
+        // wrapped.
+        command.Wrapped.ShouldBeTrue();
     }
 
     [Fact]

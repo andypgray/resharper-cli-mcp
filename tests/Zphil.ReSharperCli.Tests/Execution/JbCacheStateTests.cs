@@ -61,18 +61,24 @@ public sealed class JbCacheStateTests
             + "and this run re-keys it");
     }
 
-    [Fact]
-    public void Summary_AWarmRunHandedAFigure_StillQuotesNothing()
+    [Theory]
+    // A part-built generation is the remnant of a run that was killed, and how much of the work survived
+    // depends on when it died. Two resumptions of differently killed runs are not comparable.
+    [InlineData("part-built")]
+    // The reading failed, so there is nothing to say a figure would be comparable to.
+    [InlineData("unreadable")]
+    // Warm is a state and not a band, so a figure has nothing to key it by: the last warm run's length does
+    // not predict the next. The arm still reads warm; it quotes no figure.
+    [InlineData("warm")]
+    public void Summary_AnArmWithNoBandHandedAFigure_StillQuotesNothing(string arm)
     {
-        // Assert — warm is a state and not a band, so a warm state constructed with a duration on it has
-        // nothing to key the figure by and quotes none: across 31 warm runs on two solutions the last warm
-        // run's length predicted the next within a factor of two only 9 times. The state is still warm and
-        // the arm still says so; only the closing clause is gone.
-        JbCacheState state = Warm() with { LastComparableCost = TimeSpan.FromSeconds(39) };
+        // Arrange
+        JbCacheState withoutFigure = ArmNamed(arm);
+        JbCacheState handedAFigure = withoutFigure with { LastComparableCost = TimeSpan.FromSeconds(300) };
 
-        state.Summary.ShouldBe($"warm (14m old marker, {Generation})");
-        state.QuotableCost.ShouldBeNull();
-        state.CostBand.ShouldBeNull();
+        // Assert
+        handedAFigure.Summary.ShouldBe(withoutFigure.Summary);
+        handedAFigure.QuotableCost.ShouldBeNull();
     }
 
     [Fact]
@@ -122,26 +128,6 @@ public sealed class JbCacheStateTests
         state.Summary.ShouldBe(
             $"stale (cache written by jb {AnotherJb}, this is {ThisJb}, and jb rebuilds it; "
             + "the last cold run took 1 minute 56 seconds)");
-    }
-
-    [Fact]
-    public void Summary_PartBuiltHandedAFigure_StillQuotesNothing()
-    {
-        // Assert — a part-built generation is the remnant of a run that was killed, and how much of the work
-        // survived depends on when it died. Two resumptions of differently killed runs are not comparable, so
-        // this arm may not quote even when a figure is put in front of it.
-        JbCacheState state = PartBuilt() with { LastComparableCost = TimeSpan.FromSeconds(300) };
-
-        state.Summary.ShouldBe($"part-built ({Generation}, no warm marker — a run against it was killed)");
-    }
-
-    [Fact]
-    public void Summary_AnUnreadableCacheHandedAFigure_StillQuotesNothing()
-    {
-        // Assert — the reading failed, so there is nothing to say a figure would be comparable to.
-        JbCacheState state = Unreadable() with { LastComparableCost = TimeSpan.FromSeconds(300) };
-
-        state.Summary.ShouldBe("cache state unreadable");
     }
 
     [Theory]

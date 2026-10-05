@@ -8,18 +8,17 @@ using Zphil.ReSharperCli.Tests.TestSupport;
 namespace Zphil.ReSharperCli.Tests.Execution;
 
 /// <summary>
-///     <see cref="JbWarmMarker" /> answers four questions about one cache generation: "did a <c>jb</c> run
-///     against it succeed recently?", which debounces the background pre-warm; "which directory did that run
-///     leave warm?", which is how one solution's cache becomes findable by another; "which <c>jb</c> build
-///     left it that way?", which separates a cache the next run resumes from one it rebuilds in place; and
-///     "did one ever succeed at all?", which is what stands between a transplant and a cache it has no
-///     business deleting. The invariant these tests guard is one-sided per reader, and the sides are not the
-///     same. The three hints must read as <em>not</em> warm, <em>no</em> name and <em>not</em> this build
-///     whatever goes wrong, so they can permit a redundant pre-warm or a skipped copy but never suppress one
-///     forever or point at the wrong directory; <see cref="JbWarmMarker.Exists" /> must read as
-///     <em>protected</em>, because its caller's only use for the other answer is to delete. Plus the
-///     structural fact that a marker bug can never clobber the lock file it sits beside.
+///     Pins the failure direction of each <see cref="JbWarmMarker" /> reader, which is one-sided per reader and
+///     not the same for all of them.
 /// </summary>
+/// <remarks>
+///     The three hints — freshness, generation name and <c>jb</c> build — must read as <em>not</em> warm,
+///     <em>no</em> name and <em>not</em> this build whatever goes wrong, so they can permit a redundant pre-warm
+///     or a skipped copy but never suppress one forever or point at the wrong directory;
+///     <see cref="JbWarmMarker.Exists" /> must read as <em>protected</em>, because its caller's only use for the
+///     other answer is to delete. The structural fact that a marker bug can never clobber the lock file it sits
+///     beside is the sidecar scheme's, and is pinned in <see cref="JbSidecarTests" />.
+/// </remarks>
 public sealed class JbWarmMarkerTests : IDisposable
 {
     private const string SolutionPath = "/repo/App.sln";
@@ -126,9 +125,13 @@ public sealed class JbWarmMarkerTests : IDisposable
         // Act
         StampOutcome outcome = JbWarmMarker.Stamp(SolutionPath, _cacheHome, NullLogger.Instance, "2026.2.1");
 
-        // Assert
+        // Assert — through the content reader and through both single-field readers: each has to read its own
+        // line of a full marker, since a marker written by this build is read by every other feature here.
         outcome.ShouldBe(StampOutcome.NamedGeneration);
         string markerPath = JbWarmMarker.PathFor(SolutionPath, _cacheHome);
+        WarmMarkerContent content = JbWarmMarker.TryReadMarker(markerPath, _cacheHome, NullLogger.Instance);
+        content.GenerationName.ShouldBe(Path.GetFileName(generation));
+        content.JbVersion.ShouldBe("2026.2.1");
         JbWarmMarker.TryReadGenerationName(markerPath, _cacheHome, NullLogger.Instance).ShouldBe(Path.GetFileName(generation));
         JbWarmMarker.TryReadJbVersion(markerPath, NullLogger.Instance).ShouldBe("2026.2.1");
     }
@@ -184,25 +187,6 @@ public sealed class JbWarmMarkerTests : IDisposable
         content.GenerationName.ShouldBe(Path.GetFileName(generation));
         content.JbVersion.ShouldBe("2026.2.1");
         content.SolutionPath.ShouldBeNull();
-    }
-
-    [Fact]
-    public void TryReadMarker_ThreeLineMarker_StillReadsNameAndBuild()
-    {
-        // Arrange — the growth has to leave the two readers that predate it reading what they always did,
-        // since a marker written by this build is read by every other feature here.
-        string generation = CacheHomes.PlantGenerationFor(_cacheHome, SolutionPath);
-        JbWarmMarker.Stamp(SolutionPath, _cacheHome, NullLogger.Instance, "2026.2.1");
-
-        // Act
-        string markerPath = JbWarmMarker.PathFor(SolutionPath, _cacheHome);
-        WarmMarkerContent content = JbWarmMarker.TryReadMarker(markerPath, _cacheHome, NullLogger.Instance);
-
-        // Assert
-        content.GenerationName.ShouldBe(Path.GetFileName(generation));
-        content.JbVersion.ShouldBe("2026.2.1");
-        JbWarmMarker.TryReadGenerationName(markerPath, _cacheHome, NullLogger.Instance).ShouldBe(Path.GetFileName(generation));
-        JbWarmMarker.TryReadJbVersion(markerPath, NullLogger.Instance).ShouldBe("2026.2.1");
     }
 
     [Fact]
@@ -394,17 +378,5 @@ public sealed class JbWarmMarkerTests : IDisposable
         // Assert
         JbWarmMarker.IsFreshWithin("/repo/Other.sln", _cacheHome, OneHour, NullLogger.Instance).ShouldBeFalse();
         JbWarmMarker.IsFreshWithin(SolutionPath, _environment.CreateTempDirectory(), OneHour, NullLogger.Instance).ShouldBeFalse();
-    }
-
-    [Fact]
-    public void PathFor_IsNeverTheLockFilePath()
-    {
-        // Assert — the structural proof that a marker bug cannot clobber the lock: they share a directory
-        // and a key, and only the extension keeps them apart.
-        string marker = JbWarmMarker.PathFor(SolutionPath, _cacheHome);
-        string lockFile = JbRunLock.LockFilePathFor(_cacheHome, JbSidecar.ComputeKey(SolutionPath, _cacheHome));
-
-        marker.ShouldNotBe(lockFile);
-        Path.GetDirectoryName(marker).ShouldBe(Path.GetDirectoryName(lockFile));
     }
 }

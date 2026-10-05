@@ -230,19 +230,30 @@ public sealed class JbRunLoggingTests : IDisposable
     [Fact]
     public async Task RunAsync_KilledAtTheCap_SaysSoRatherThanEndingWithNoLine()
     {
-        // Arrange
+        // Arrange — a jb that reports 7 analysed files and is then killed at the cap.
         _processRunner
             .AnyRunOf("jb")
-            .Returns<ProcessResult>(_ => throw new ProcessTimeoutException("'jb' timed out."));
+            .Returns<ProcessResult>(callInfo =>
+            {
+                Action<string> onLine = callInfo.OutputLineObserver()!;
+                onLine(JbProgressLines.AnalyzingPhaseLine);
+                for (var i = 0; i < 7; i++) onLine($"Analyzing File{i}.cs");
+
+                throw new ProcessTimeoutException("'jb' timed out.");
+            });
 
         // Act
-        await Should.ThrowAsync<UserErrorException>(() => Runner().RunAsync(Config, ["inspectcode", _solutionPath], Ct));
+        await Should.ThrowAsync<UserErrorException>(() => Runner().RunAsync(Config, ["inspectcode", _solutionPath], Ct, _ => { }));
 
-        // Assert — no exit code to report, so the cap is reported instead, at the same level.
+        // Assert — no exit code to report, so the cap is reported instead, at the same level, and identified
+        // by RunCap alone. It carries the count as well as the message does: a UserErrorException is
+        // deliberately never logged, so without it the only record of how far a killed run got dies with the
+        // response.
         LogEntry killed = _logs.WithProperty("RunCap").ShouldHaveSingleItem();
         killed.Level.ShouldBe(LogLevel.Information);
         killed.Property("Subcommand").ShouldBe("inspectcode");
         killed.Property("ElapsedMs").ShouldNotBeNull();
+        killed.Property("FilesSeen").ShouldBe(7);
         _logs.WithProperty("ExitCode").ShouldBeEmpty();
     }
 

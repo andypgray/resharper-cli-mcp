@@ -91,18 +91,4 @@ public sealed class JbColdTombstoneTests : IDisposable
         // Act & Assert
         Should.NotThrow(() => JbColdTombstone.Write(SolutionPath, blocked, NullLogger.Instance));
     }
-
-    [Fact]
-    public void PathFor_SitsBesideTheLockFileAndTheWarmMarkerWithoutColliding()
-    {
-        // Assert — one directory, one key, three extensions: the scheme that keeps a change to any of them
-        // from silently addressing another's file.
-        string tombstone = JbColdTombstone.PathFor(SolutionPath, _cacheHome);
-        string marker = JbWarmMarker.PathFor(SolutionPath, _cacheHome);
-        string lockFile = JbRunLock.LockFilePathFor(_cacheHome, JbSidecar.ComputeKey(SolutionPath, _cacheHome));
-
-        new[] { tombstone, marker, lockFile }.Distinct().Count().ShouldBe(3);
-        Path.GetDirectoryName(tombstone).ShouldBe(Path.GetDirectoryName(lockFile));
-        Path.GetDirectoryName(tombstone).ShouldBe(Path.GetDirectoryName(marker));
-    }
 }

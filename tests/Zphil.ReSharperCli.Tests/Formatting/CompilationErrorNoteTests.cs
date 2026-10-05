@@ -89,13 +89,19 @@ public sealed class CompilationErrorNoteTests
         return CompilationErrorNote.For(issues, CacheHome);
     }
 
-    [Fact]
-    public void For_NoCompilationErrors_SaysNothing()
+    [Theory]
+    // The overwhelmingly common result: ordinary rules.
+    [InlineData("RedundantUsingDirective")]
+    [InlineData("UnusedMember.Global")]
+    // Near misses. Matching is exact and ordinal beyond the one optional dot, and a near miss firing the note
+    // would send an agent to delete its cache over an ordinary warning.
+    [InlineData("CSharpWarnings::CS0168")]
+    [InlineData("csharperrors")] // lower case is a different rule id
+    [InlineData("CSharpErrors.Global")] // a suffixed id is a different rule
+    public void For_ARuleOtherThanTheErrorRule_SaysNothing(string ruleId)
     {
-        // Arrange — the overwhelmingly common result.
-        List<InspectIssue> issues = Issues(
-            ("RedundantUsingDirective", "Using directive is not required"),
-            ("UnusedMember.Global", "Method 'Total' is never used"));
+        // Arrange
+        List<InspectIssue> issues = Issues((ruleId, "an ordinary finding"));
 
         // Act & Assert — empty rather than blank, so the banner concatenation adds no separator either.
         CompilationErrorNote.For(issues, CacheHome).ShouldBeEmpty();
@@ -116,20 +122,6 @@ public sealed class CompilationErrorNoteTests
 
         // Act & Assert
         CompilationErrorNote.For(issues, CacheHome).ShouldStartWith("NOTE: 1 of these issue(s)");
-    }
-
-    [Fact]
-    public void For_ARuleThatMerelyResemblesTheErrorRule_SaysNothing()
-    {
-        // Arrange — matching is exact and ordinal beyond that one optional dot. A near-miss firing the note
-        // would send an agent to delete its cache over an ordinary warning.
-        List<InspectIssue> issues = Issues(
-            ("CSharpWarnings::CS0168", "Variable is declared but never used"),
-            ("csharperrors", "lower case is a different rule id"),
-            ("CSharpErrors.Global", "a suffixed id is a different rule"));
-
-        // Act & Assert
-        CompilationErrorNote.For(issues, CacheHome).ShouldBeEmpty();
     }
 
     [Fact]

@@ -295,18 +295,6 @@ public sealed class JbRunLockTests : IDisposable
     }
 
     [Fact]
-    public void TryAcquire_LockFilePathUnusable_SkipsInsteadOfDegrading()
-    {
-        // Arrange — a *directory* sitting where the lock file goes: the cache home is fine, the file can
-        // never be opened.
-        JbRunLock runLock = JbRunners.Lock(ShortWait);
-        Directory.CreateDirectory(LockFilePath());
-
-        // Act & Assert
-        runLock.TryAcquire(SolutionPath, _cacheHome).ShouldBeNull();
-    }
-
-    [Fact]
     public void TryAcquire_CacheHomeIsNotAValidPath_SkipsInsteadOfDegrading()
     {
         // Arrange — a cache home no path API will accept, so even the lock's key cannot be derived.
@@ -319,10 +307,12 @@ public sealed class JbRunLockTests : IDisposable
     [Fact]
     public async Task TryAcquire_ThatCouldNotProveExclusivity_StillLetsTheNextCallerIn()
     {
-        // Arrange — the gate-leak guard. TryAcquire takes the in-process semaphore, then discovers it cannot
-        // open the lock file and *returns* null rather than throwing, so AcquireAsync's release-on-throw does
-        // not cover it. A leak here would be paid by a real call: it would queue against nothing, burn the
-        // whole wait cap, and fail with a contention error naming a run that never existed.
+        // Arrange — a *directory* sitting where the lock file goes: the cache home is fine, the file can never
+        // be opened. Two claims ride on it. TryAcquire skips rather than degrades, as it does for a cache home
+        // that cannot be created. And the gate-leak guard: TryAcquire takes the in-process semaphore, then
+        // discovers it cannot open the lock file and *returns* null rather than throwing, so AcquireAsync's
+        // release-on-throw does not cover it. A leak here would be paid by a real call: it would queue against
+        // nothing, burn the whole wait cap, and fail with a contention error naming a run that never existed.
         JbRunLock runLock = JbRunners.Lock(ShortWait);
         Directory.CreateDirectory(LockFilePath());
         runLock.TryAcquire(SolutionPath, _cacheHome).ShouldBeNull();

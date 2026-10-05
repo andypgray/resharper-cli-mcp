@@ -109,8 +109,7 @@ public sealed class CleanupSummaryFormatterTests
     [Fact]
     public void Format_SingleChangedFileAtFull_IsPlainPerFileList()
     {
-        // The normal small-batch case: Full output is a plain per-file list. This is exactly what an agent
-        // sees after a one-file cleanup — the scenario the loadbearing probe exercises end to end.
+        // The normal small-batch case, and exactly what an agent sees after a one-file cleanup.
         CleanupOutcome outcome = new(
             "Built-in: Full Cleanup", [new CleanupEntry("src/Probe.cs", CleanupFileStatus.Changed)]);
 

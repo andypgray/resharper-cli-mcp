@@ -13,52 +13,36 @@ namespace Zphil.ReSharperCli.Tests.Formatting;
 /// </summary>
 public sealed class ProgressiveRendererTests
 {
-    [Fact]
-    public void Render_FitsAtFull_NoReductionNote()
+    [Theory]
+    [InlineData(50)]
+    [InlineData(100)] // the boundary is inclusive: exactly at the budget still fits
+    public void Render_FullWithinTheBudget_ReturnsItVerbatim(int length)
     {
         // Arrange
-        var output = new string('x', 50);
+        var output = new string('x', length);
 
         // Act
-        string result = ProgressiveRenderer.Render("input", (_, _) => output, 100).Text;
+        ProgressiveRendering rendering = ProgressiveRenderer.Render("input", (_, _) => output, 100);
 
         // Assert
-        result.ShouldBe(output);
-        result.ShouldNotContain("DETAIL REDUCED");
+        rendering.Level.ShouldBe(DetailLevel.Full);
+        rendering.Text.ShouldBe(output);
     }
 
     [Fact]
-    public void Render_ExactlyAtLimit_NoReductionNote()
+    public void Render_FitsAtHigh_AppendsTheReductionNote()
     {
-        // Arrange
-        var output = new string('x', 100);
+        // Act — Full is too large; High plus its reduction note fits.
+        ProgressiveRendering rendering = ProgressiveRenderer.Render("input", FullOverflows, 400);
 
-        // Act
-        string result = ProgressiveRenderer.Render("input", (_, _) => output, 100).Text;
-
-        // Assert
-        result.ShouldBe(output);
-        result.ShouldNotContain("DETAIL REDUCED");
-    }
-
-    [Fact]
-    public void Render_FitsAtHigh_AppendsReductionNoteNamingLevel()
-    {
-        // Arrange — Full is too large; High plus its reduction note fits.
-        List<DetailLevel> callLog = [];
-
-        // Act
-        string result = ProgressiveRenderer.Render("input", (_, level) =>
-        {
-            callLog.Add(level);
-            return level == DetailLevel.Full ? new string('x', 1000) : new string('y', 50);
-        }, 400).Text;
-
-        // Assert
-        result.ShouldContain("--- DETAIL REDUCED ---");
-        result.ShouldContain("Reduced to High");
-        callLog.ShouldContain(DetailLevel.Full);
-        callLog.ShouldContain(DetailLevel.High);
+        // Assert — the whole note, layout and default description included: the budget it names and the
+        // level it settled at are what a caller reads to decide whether to narrow the scan.
+        rendering.Level.ShouldBe(DetailLevel.High);
+        rendering.Text.ShouldBe(
+            new string('y', 50)
+            + "\n\n--- DETAIL REDUCED ---\n"
+            + "Output exceeded the 400 character limit. Reduced to High: "
+            + "lower-signal detail was collapsed to fit the output budget.");
     }
 
     [Fact]
@@ -87,11 +71,12 @@ public sealed class ProgressiveRendererTests
     public void Render_AllLevelsExceed_ReturnsMinimalForFailsafe()
     {
         // Arrange — every level exceeds the limit.
-        string result = ProgressiveRenderer.Render("input", (_, _) => new string('x', 200), 100).Text;
+        ProgressiveRendering rendering = ProgressiveRenderer.Render("input", (_, _) => new string('x', 200), 100);
 
         // Assert — the note is appended but the output still exceeds the limit; ResponseTruncator finishes.
-        result.ShouldContain("--- DETAIL REDUCED ---");
-        result.ShouldContain("Reduced to Minimal");
+        rendering.Level.ShouldBe(DetailLevel.Minimal);
+        rendering.Text.ShouldContain("--- DETAIL REDUCED ---");
+        rendering.Text.ShouldContain("Reduced to Minimal");
     }
 
     [Fact]
@@ -102,15 +87,16 @@ public sealed class ProgressiveRendererTests
         var small = new string('y', 50);
 
         // Act
-        string result = ProgressiveRenderer.Render(
+        ProgressiveRendering rendering = ProgressiveRenderer.Render(
             "input",
             (_, level) => level >= DetailLevel.Low ? small : large,
-            400).Text;
+            400);
 
         // Assert — reports Low, not High or Medium (which were byte-identical to Full).
-        result.ShouldContain("Reduced to Low");
-        result.ShouldNotContain("Reduced to High");
-        result.ShouldNotContain("Reduced to Medium");
+        rendering.Level.ShouldBe(DetailLevel.Low);
+        rendering.Text.ShouldContain("Reduced to Low");
+        rendering.Text.ShouldNotContain("Reduced to High");
+        rendering.Text.ShouldNotContain("Reduced to Medium");
     }
 
     [Fact]
@@ -131,25 +117,12 @@ public sealed class ProgressiveRendererTests
     }
 
     [Fact]
-    public void Render_ReductionNoteIncludesCharLimit()
-    {
-        // Act
-        string result = ProgressiveRenderer.Render(
-            "input",
-            (_, level) => level == DetailLevel.Full ? new string('x', 1000) : new string('y', 50),
-            400).Text;
-
-        // Assert
-        result.ShouldContain("400 character limit");
-    }
-
-    [Fact]
     public void Render_OutputFitsButNoteWouldNot_FallsToNextLevel()
     {
         // Arrange — High's raw output fits the 200-char budget on its own but not once the reduction note
         // is appended; Medium fits including its note. Returning High would hand the downstream truncator
         // an over-budget string — exactly the mid-chop this renderer exists to prevent.
-        string result = ProgressiveRenderer.Render(
+        ProgressiveRendering rendering = ProgressiveRenderer.Render(
             "input",
             (_, level) => level switch
             {
@@ -157,12 +130,13 @@ public sealed class ProgressiveRendererTests
                 DetailLevel.High => new string('H', 190),
                 _ => new string('M', 20)
             },
-            200).Text;
+            200);
 
         // Assert
-        result.Length.ShouldBeLessThanOrEqualTo(200);
-        result.ShouldNotContain(new string('H', 190));
-        result.ShouldContain("Reduced to Medium");
+        rendering.Level.ShouldBe(DetailLevel.Medium);
+        rendering.Text.Length.ShouldBeLessThanOrEqualTo(200);
+        rendering.Text.ShouldNotContain(new string('H', 190));
+        rendering.Text.ShouldContain("Reduced to Medium");
     }
 
     [Fact]
@@ -171,19 +145,20 @@ public sealed class ProgressiveRendererTests
         // Arrange — every level produces distinct 20-char content; none fits the 10-char limit. Identical
         // lengths across levels would fool a length-based skip into returning a stale earlier level's content
         // under Minimal's label. Content comparison must avoid that.
-        string result = ProgressiveRenderer.Render("input", (_, level) => level switch
+        ProgressiveRendering rendering = ProgressiveRenderer.Render("input", (_, level) => level switch
         {
             DetailLevel.Full => new string('F', 20),
             DetailLevel.High => new string('H', 20),
             DetailLevel.Medium => new string('M', 20),
             DetailLevel.Low => new string('L', 20),
             _ => new string('N', 20)
-        }, 10).Text;
+        }, 10);
 
         // Assert — returned content is the Minimal level (matching the note's label), not stale Full.
-        result.ShouldContain("Reduced to Minimal");
-        result.ShouldContain(new string('N', 20));
-        result.ShouldNotContain(new string('F', 20));
+        rendering.Level.ShouldBe(DetailLevel.Minimal);
+        rendering.Text.ShouldContain("Reduced to Minimal");
+        rendering.Text.ShouldContain(new string('N', 20));
+        rendering.Text.ShouldNotContain(new string('F', 20));
     }
 
     [Fact]
@@ -192,7 +167,7 @@ public sealed class ProgressiveRendererTests
         // Act — a domain can explain its own reduction; the note carries that text instead of the default.
         string result = ProgressiveRenderer.Render(
             "input",
-            (_, level) => level == DetailLevel.Full ? new string('x', 1000) : new string('y', 50),
+            FullOverflows,
             400,
             level => $"custom reduction note for {level}").Text;
 
@@ -286,7 +261,7 @@ public sealed class ProgressiveRendererTests
         var output = new string('x', 50);
 
         // Act — the explicit Full is the whole test, so it must survive cleanup: stripped as a redundant
-        // default, this becomes a duplicate of Render_FitsAtFull_NoReductionNote and silently stops
+        // default, this becomes a duplicate of Render_FullWithinTheBudget_ReturnsItVerbatim and silently stops
         // pinning anything about the cap.
         // ReSharper disable once RedundantArgumentDefaultValue
         string result = ProgressiveRenderer.Render("input", (_, _) => output, 100, startLevel: DetailLevel.Full).Text;
@@ -302,11 +277,18 @@ public sealed class ProgressiveRendererTests
     {
         // Arrange — with Minimal capped, no level above it is ever rendered, so a failsafe still seeding
         // its level at Full would label the returned content with a level nothing produced.
-        string result = ProgressiveRenderer.Render(
-            "input", (_, _) => new string('x', 200), 100, startLevel: DetailLevel.Minimal).Text;
+        ProgressiveRendering rendering = ProgressiveRenderer.Render(
+            "input", (_, _) => new string('x', 200), 100, startLevel: DetailLevel.Minimal);
 
         // Assert — it genuinely is the level asked for; ResponseTruncator's own footer reports the cut.
-        result.ShouldContain("Rendered at the requested detail level Minimal");
-        result.ShouldNotContain("Reduced to Full");
+        rendering.Level.ShouldBe(DetailLevel.Minimal);
+        rendering.Text.ShouldContain("Rendered at the requested detail level Minimal");
+        rendering.Text.ShouldNotContain("Reduced to Full");
+    }
+
+    /// <summary>Full overflows a 400-character budget; every lower level renders 50 characters.</summary>
+    private static string FullOverflows(string _, DetailLevel level)
+    {
+        return level == DetailLevel.Full ? new string('x', 1000) : new string('y', 50);
     }
 }

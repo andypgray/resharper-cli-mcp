@@ -228,30 +228,20 @@ public sealed class CacheResetServiceTests : IDisposable
         JbColdTombstone.Exists(removed.SolutionPath, _cacheHome, NullLogger.Instance).ShouldBeFalse();
     }
 
-    [Fact]
-    public async Task RunAsync_NeighbourWarmedForAPathThatExists_SaysSo()
+    [Theory]
+    // The other checkout someone is still working in. Naming it is what stops the left-alone list reading as
+    // directories the tool could not account for.
+    [InlineData(new[] { "App.sln" }, nameof(LeftAloneAttribution.CheckoutPresent))]
+    // The whole point of recording the path: this generation is reclaimable, and no directory name can say so,
+    // because the hash jb names it by is one-way.
+    [InlineData(new string[0], nameof(LeftAloneAttribution.CheckoutGone))]
+    public async Task RunAsync_NeighbourWarmedForARecordedPath_SaysWhetherThatCheckoutStillExists(
+        string[] theirCheckoutHolds, string expectedAttribution)
     {
-        // Arrange — the other checkout someone is still working in. Naming it is what stops the left-alone
-        // list reading as directories the tool could not account for.
-        string theirSolution = _environment.CreateCheckout("App.sln");
-        string theirs = CacheHomes.PlantWarmDonor(_cacheHome, theirSolution);
-
-        // Act
-        CacheResetOutcome outcome = await _service.RunAsync(_config, Ct);
-
-        // Assert
-        LeftAloneGeneration reported = outcome.LeftAlone.ShouldHaveSingleItem();
-        reported.Name.ShouldBe(Path.GetFileName(theirs));
-        reported.Attribution.ShouldBe(LeftAloneAttribution.CheckoutPresent);
-        reported.LastWarmedFor.ShouldBe(theirSolution);
-    }
-
-    [Fact]
-    public async Task RunAsync_NeighbourWarmedForAPathThatIsGone_SaysItNoLongerExists()
-    {
-        // Arrange — the whole point of recording the path: this generation is reclaimable, and no directory
-        // name can say so, because the hash jb names it by is one-way.
+        // Arrange
         string theirSolution = _environment.CreateSolutionPath("App.sln");
+        string theirDirectory = Path.GetDirectoryName(theirSolution)!;
+        foreach (string file in theirCheckoutHolds) SolutionFiles.Plant(theirDirectory, file);
         string theirs = CacheHomes.PlantWarmDonor(_cacheHome, theirSolution);
 
         // Act
@@ -260,7 +250,7 @@ public sealed class CacheResetServiceTests : IDisposable
         // Assert
         LeftAloneGeneration reported = outcome.LeftAlone.ShouldHaveSingleItem();
         reported.Name.ShouldBe(Path.GetFileName(theirs));
-        reported.Attribution.ShouldBe(LeftAloneAttribution.CheckoutGone);
+        reported.Attribution.ShouldBe(Enum.Parse<LeftAloneAttribution>(expectedAttribution));
         reported.LastWarmedFor.ShouldBe(theirSolution);
     }
 

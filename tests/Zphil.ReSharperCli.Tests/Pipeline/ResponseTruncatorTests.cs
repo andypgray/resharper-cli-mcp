@@ -8,23 +8,14 @@ namespace Zphil.ReSharperCli.Tests.Pipeline;
 
 public sealed class ResponseTruncatorTests
 {
-    [Fact]
-    public void ComputeMaxChars_NullValue_ReturnsDefault()
-    {
-        // Act
-        int result = ResponseTruncator.ComputeMaxChars((string?)null);
-
-        // Assert
-        result.ShouldBe(25_000);
-    }
-
     [Theory]
+    [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
     [InlineData("not-a-number")]
     [InlineData("0")]
     [InlineData("-100")]
-    public void ComputeMaxChars_BlankUnparseableOrNonPositive_ReturnsDefault(string value)
+    public void ComputeMaxChars_UnsetBlankUnparseableOrNonPositive_ReturnsDefault(string? value)
     {
         // Act
         int result = ResponseTruncator.ComputeMaxChars(value);

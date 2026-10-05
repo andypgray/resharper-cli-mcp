@@ -27,6 +27,9 @@ public sealed class ToolAnnotationSurfaceTests(AdvertisedToolsFixture advertised
     public static TheoryData<string, string, bool, bool, bool, bool> AdvertisedTools =>
         new()
         {
+            // Read-only survives the report parameter on purpose: a run already creates and deletes a temp
+            // directory for jb's SARIF, the delta is one file surviving in a directory this server owns, and at
+            // the default nothing is written at all.
             { "resharper_inspect", "ReSharper Inspect Code", true, false, true, false },
             { "resharper_cleanup", "ReSharper Cleanup Code", false, true, true, false },
             { "resharper_reset_cache", "ReSharper Reset Cache", false, true, true, false }

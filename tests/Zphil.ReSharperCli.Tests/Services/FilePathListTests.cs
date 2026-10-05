@@ -26,89 +26,76 @@ public sealed class FilePathListTests : IDisposable
 
     public static bool OnWindows => OperatingSystem.IsWindows();
 
+    /// <summary>
+    ///     Lists in which no entry needs splitting.
+    /// </summary>
+    /// <remarks>
+    ///     The common path allocates nothing, so the caller's own list comes back rather than a copy of it.
+    /// </remarks>
+    public static TheoryData<string[]> NothingToSplit => new()
+    {
+        new[] { "src/A.cs", "src/**/*.cs" },
+        Array.Empty<string>()
+    };
+
+    /// <summary>
+    ///     Entries the path APIs refuse outright, one per way they refuse.
+    /// </summary>
+    /// <remarks>
+    ///     Relative, so the row needs no instance state: <see cref="FilePathList.ResolvesToExistingFile" />
+    ///     resolves it against the solution directory, which is where the refusal happens.
+    /// </remarks>
+    public static TheoryData<string> EntriesTheRuntimeRefuses => new()
+    {
+        // An embedded null, which Path.GetFullPath throws on as an ArgumentException.
+        "src/\0.cs",
+        // An entry past the NT path limit rather than the legacy 260-character one, which the runtime no longer
+        // enforces. Windows raises PathTooLongException, an IOException and not an ArgumentException, so it
+        // reaches the other catch.
+        new string('a', 40_000)
+    };
+
     public void Dispose()
     {
         _environment.Dispose();
     }
 
-    [Fact]
-    public void Split_CommaJoinedEntry_YieldsOnePathPerFragment()
+    // Each row is one facet of the rule: split on "," and ";", trim each fragment, drop the empty ones, and keep
+    // request order with the fragments in the joined entry's place. A Split counterexample found by
+    // FilePathListPropertyTests lands here as a row.
+    [Theory]
+    [InlineData(new[] { "src/A.cs, src/B.cs" }, new[] { "src/A.cs", "src/B.cs" })]
+    // A semicolon already reaches jb as its own separator (both tools join files with ";"), so without the split
+    // inspect works and cleanup rejects it. Splitting makes the two agree.
+    [InlineData(new[] { "src/A.cs;src/B.cs" }, new[] { "src/A.cs", "src/B.cs" })]
+    [InlineData(new[] { "a.cs;b.cs,c.cs" }, new[] { "a.cs", "b.cs", "c.cs" })]
+    [InlineData(new[] { "  src/A.cs  ;  src/B.cs  " }, new[] { "src/A.cs", "src/B.cs" })]
+    // A trailing delimiter or a doubled one is exactly what hand-joining produces, and an empty fragment would
+    // reach jb as an --include pattern matching nothing.
+    [InlineData(new[] { "a.cs,,b.cs," }, new[] { "a.cs", "b.cs" })]
+    // Inspect's argument is globs, not paths; splitting must not disturb the wildcards.
+    [InlineData(new[] { "src/**/*.cs;tests/**/*.cs" }, new[] { "src/**/*.cs", "tests/**/*.cs" })]
+    [InlineData(new[] { "src/A.cs", "src/B.cs;src/C.cs", "src/D.cs" }, new[] { "src/A.cs", "src/B.cs", "src/C.cs", "src/D.cs" })]
+    // A caller who joins once tends to join throughout, so the second joined entry must be split into the list
+    // the first one started rather than replacing it.
+    [InlineData(new[] { "a.cs;b.cs", "c.cs", "d.cs,e.cs" }, new[] { "a.cs", "b.cs", "c.cs", "d.cs", "e.cs" })]
+    public void Split_JoinedEntries_ExpandInPlaceOnEitherDelimiter(string[] files, string[] expected)
     {
-        // Act
-        IReadOnlyList<string> split = FilePathList.Split(["src/A.cs, src/B.cs"], _solutionDirectory);
-
-        // Assert
-        split.ShouldBe(["src/A.cs", "src/B.cs"]);
-    }
-
-    [Fact]
-    public void Split_SemicolonJoinedEntry_YieldsOnePathPerFragment()
-    {
-        // Arrange — a semicolon already reaches jb as its own separator (both tools join files with ";"), so
-        // inspect happens to work today and cleanup rejects it. Splitting makes the two agree.
-
-        // Act
-        IReadOnlyList<string> split = FilePathList.Split(["src/A.cs;src/B.cs"], _solutionDirectory);
-
-        // Assert
-        split.ShouldBe(["src/A.cs", "src/B.cs"]);
-    }
-
-    [Fact]
-    public void Split_EntryMixingBothDelimiters_SplitsOnEach()
-    {
-        // Act
-        IReadOnlyList<string> split = FilePathList.Split(["a.cs;b.cs,c.cs"], _solutionDirectory);
-
-        // Assert
-        split.ShouldBe(["a.cs", "b.cs", "c.cs"]);
-    }
-
-    [Fact]
-    public void Split_FragmentsPaddedWithWhitespace_AreTrimmed()
-    {
-        // Act
-        IReadOnlyList<string> split = FilePathList.Split(["  src/A.cs  ;  src/B.cs  "], _solutionDirectory);
-
-        // Assert
-        split.ShouldBe(["src/A.cs", "src/B.cs"]);
-    }
-
-    [Fact]
-    public void Split_EmptyFragments_AreDropped()
-    {
-        // Arrange — a trailing delimiter or a doubled one is exactly what hand-joining produces, and an empty
-        // fragment would reach jb as an --include pattern matching nothing.
-
-        // Act
-        IReadOnlyList<string> split = FilePathList.Split(["a.cs,,b.cs,"], _solutionDirectory);
-
-        // Assert
-        split.ShouldBe(["a.cs", "b.cs"]);
-    }
-
-    [Fact]
-    public void Split_JoinedGlobs_KeepsEachPatternIntact()
-    {
-        // Arrange — inspect's argument is globs, not paths; splitting must not disturb the wildcards.
-
-        // Act
-        IReadOnlyList<string> split = FilePathList.Split(["src/**/*.cs;tests/**/*.cs"], _solutionDirectory);
-
-        // Assert
-        split.ShouldBe(["src/**/*.cs", "tests/**/*.cs"]);
-    }
-
-    [Fact]
-    public void Split_EntryWithNoDelimiter_ReturnsTheOriginalList()
-    {
-        // Arrange
-        string[] files = ["src/A.cs", "src/**/*.cs"];
-
         // Act
         IReadOnlyList<string> split = FilePathList.Split(files, _solutionDirectory);
 
-        // Assert — the common path allocates nothing.
+        // Assert
+        split.ShouldBe(expected);
+    }
+
+    [Theory]
+    [MemberData(nameof(NothingToSplit))]
+    public void Split_NothingToSplit_ReturnsTheOriginalList(string[] files)
+    {
+        // Act
+        IReadOnlyList<string> split = FilePathList.Split(files, _solutionDirectory);
+
+        // Assert
         split.ShouldBeSameAs(files);
     }
 
@@ -125,31 +112,6 @@ public sealed class FilePathListTests : IDisposable
 
         // Assert
         split.ShouldBeSameAs(files);
-    }
-
-    [Fact]
-    public void Split_MixedList_SplitsOnlyTheJoinedEntries()
-    {
-        // Act
-        IReadOnlyList<string> split = FilePathList.Split(
-            ["src/A.cs", "src/B.cs;src/C.cs", "src/D.cs"], _solutionDirectory);
-
-        // Assert — request order is preserved, with the fragments in the joined entry's place.
-        split.ShouldBe(["src/A.cs", "src/B.cs", "src/C.cs", "src/D.cs"]);
-    }
-
-    [Fact]
-    public void Split_SeveralJoinedEntries_AreEachSplitInPlace()
-    {
-        // Arrange — a caller who joins once tends to join throughout, so the second joined entry must be
-        // split into the list the first one started rather than replacing it.
-
-        // Act
-        IReadOnlyList<string> split = FilePathList.Split(
-            ["a.cs;b.cs", "c.cs", "d.cs,e.cs"], _solutionDirectory);
-
-        // Assert
-        split.ShouldBe(["a.cs", "b.cs", "c.cs", "d.cs", "e.cs"]);
     }
 
     [Fact]
@@ -176,31 +138,26 @@ public sealed class FilePathListTests : IDisposable
         split.ShouldBeNull();
     }
 
-    [Fact]
-    public void Split_EmptyFiles_ReturnsTheOriginalList()
+    // jb's --include takes "a set of relative paths" and matches them against the solution model, so an
+    // absolute entry is an Ant pattern that matches nothing at all.
+    [Theory]
+    [InlineData("src/A.cs")]
+    // Inspect's argument is globs, and an absolute one is just as unmatchable as an absolute path. Relativising
+    // must not disturb the wildcards it carries.
+    [InlineData("src/**/*.cs")]
+    // A project living above the solution file is a legitimate layout, so this is translated best-effort rather
+    // than rejected: "../" is still the relative path jb asked for.
+    [InlineData("../shared/A.cs")]
+    public void ToIncludePattern_FullyQualifiedEntry_IsRespeltRelativeToTheSolution(string relative)
     {
         // Arrange
-        string[] files = [];
+        string fullyQualified = Path.GetFullPath(Path.Combine(_solutionDirectory, relative));
 
         // Act
-        IReadOnlyList<string> split = FilePathList.Split(files, _solutionDirectory);
+        string pattern = FilePathList.ToIncludePattern(fullyQualified, _solutionDirectory);
 
-        // Assert
-        split.ShouldBeSameAs(files);
-    }
-
-    [Fact]
-    public void ToIncludePattern_AbsolutePathUnderTheSolution_BecomesAForwardSlashedRelativePath()
-    {
-        // Arrange — jb's --include takes "a set of relative paths" and matches them against the solution
-        // model, so an absolute entry is an Ant pattern that matches nothing at all.
-        string absolute = Path.Combine(_solutionDirectory, "src", "A.cs");
-
-        // Act
-        string pattern = FilePathList.ToIncludePattern(absolute, _solutionDirectory);
-
-        // Assert
-        pattern.ShouldBe("src/A.cs");
+        // Assert — forward-slashed whatever the platform's separator.
+        pattern.ShouldBe(relative);
     }
 
     [Fact(Skip = "Only Windows spells a path with a drive letter.", SkipUnless = nameof(OnWindows))]
@@ -257,34 +214,6 @@ public sealed class FilePathListTests : IDisposable
     }
 
     [Fact]
-    public void ToIncludePattern_RootedWildcard_KeepsItsWildcards()
-    {
-        // Arrange — inspect's argument is globs, and an absolute one is just as unmatchable as an absolute
-        // path. Relativising must not disturb the wildcards it carries.
-        string absolute = Path.Combine(_solutionDirectory, "src", "**", "*.cs");
-
-        // Act
-        string pattern = FilePathList.ToIncludePattern(absolute, _solutionDirectory);
-
-        // Assert
-        pattern.ShouldBe("src/**/*.cs");
-    }
-
-    [Fact]
-    public void ToIncludePattern_PathOutsideTheSolutionDirectory_BecomesTheParentRelativeForm()
-    {
-        // Arrange — a project living above the solution file is a legitimate layout, so this is translated
-        // best-effort rather than rejected: "../" is still the relative path jb asked for.
-        string outside = Path.Combine(Path.GetDirectoryName(_solutionDirectory)!, "shared", "A.cs");
-
-        // Act
-        string pattern = FilePathList.ToIncludePattern(outside, _solutionDirectory);
-
-        // Assert
-        pattern.ShouldBe("../shared/A.cs");
-    }
-
-    [Fact]
     public void ToIncludePattern_PathTheRuntimeRejects_IsKeptVerbatimRatherThanThrowing()
     {
         // Arrange — an embedded null throws out of the path APIs. Translation runs on the way to jb, so it
@@ -323,26 +252,14 @@ public sealed class FilePathListTests : IDisposable
         FilePathList.ResolvesToExistingFile("src/Missing.cs", _solutionDirectory).ShouldBeFalse();
     }
 
-    [Fact]
-    public void ResolvesToExistingFile_PathTheRuntimeRejects_IsFalseRatherThanThrowing()
+    [Theory]
+    [MemberData(nameof(EntriesTheRuntimeRefuses))]
+    public void ResolvesToExistingFile_EntryTheRuntimeRefuses_IsFalseRatherThanThrowing(string refused)
     {
-        // Arrange — an embedded null throws out of Path.GetFullPath. It names no file, and this predicate
-        // runs before validation has had a chance to reject anything.
-
-        // Act & Assert
-        FilePathList.ResolvesToExistingFile("src/\0.cs", _solutionDirectory).ShouldBeFalse();
-    }
-
-    [Fact]
-    public void ResolvesToExistingFile_EntryBeyondTheOsPathLimit_IsFalseRatherThanThrowing()
-    {
-        // Arrange — the same refusal reaching the other catch. This predicate decides whether an entry
-        // splits and whether the call is rejected as missing, so a throw here fails both tools with an
-        // unexpected error instead of naming the entry.
-        string tooLong = EntryBeyondTheOsPathLimit();
-
-        // Act & Assert
-        FilePathList.ResolvesToExistingFile(tooLong, _solutionDirectory).ShouldBeFalse();
+        // Act & Assert — a refused entry names no file, and this predicate runs before validation has had a
+        // chance to reject anything. It decides whether an entry splits and whether the call is rejected as
+        // missing, so a throw here fails both tools with an unexpected error instead of naming the entry.
+        FilePathList.ResolvesToExistingFile(refused, _solutionDirectory).ShouldBeFalse();
     }
 
     [Fact]

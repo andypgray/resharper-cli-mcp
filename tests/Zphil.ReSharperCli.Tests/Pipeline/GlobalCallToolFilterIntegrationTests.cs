@@ -1,4 +1,3 @@
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using NSubstitute;
 using Shouldly;
@@ -15,10 +14,7 @@ namespace Zphil.ReSharperCli.Tests.Pipeline;
 
 /// <summary>
 ///     Drives a real MCP client against the server over in-memory pipes to lock down
-///     <see cref="GlobalCallToolFilter" />'s three branches — silent user-error, logged unexpected-error,
-///     truncated success — end to end, plus two regression pins (cleanup's required <c>files</c>
-///     schema and the negotiated server identity). It is the automated stand-in for a manual stdio
-///     smoke test.
+///     <see cref="GlobalCallToolFilter" /> end to end: the automated stand-in for a manual stdio smoke test.
 /// </summary>
 public sealed class GlobalCallToolFilterIntegrationTests
 {
@@ -162,22 +158,6 @@ public sealed class GlobalCallToolFilterIntegrationTests
     private static IReadOnlyList<LogEntry> LinesFrom(McpPipelineHarness harness, Type category)
     {
         return harness.Logs.Entries.Where(entry => entry.Category == category.FullName).ToList();
-    }
-
-    [Fact]
-    public async Task ListTools_CleanupRequiresFiles_InspectDoesNot()
-    {
-        // Arrange
-        await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
-
-        // Act
-        IList<McpClientTool> tools = await harness.Client.ListToolsAsync(cancellationToken: Ct);
-
-        // Assert — cleanup's files parameter is schema-required; inspect's stays optional.
-        McpClientTool cleanup = tools.Single(tool => tool.Name == "resharper_cleanup");
-        McpClientTool inspect = tools.Single(tool => tool.Name == "resharper_inspect");
-        cleanup.RequiredProperties().ShouldContain("files");
-        inspect.RequiredProperties().ShouldNotContain("files");
     }
 
     [Fact]

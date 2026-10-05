@@ -148,30 +148,19 @@ public sealed class ConfigResolverTests : IDisposable
 
     // ── Solution: current-directory scan ──────────────────────────────────────
 
-    [Fact]
-    public async Task ResolveAsync_SingleSlnInCurrentDirectory_UsesIt()
+    [Theory]
+    [InlineData("Only.sln")]
+    [InlineData("Modern.slnx")]
+    public async Task ResolveAsync_SingleSolutionInCurrentDirectory_UsesIt(string fileName)
     {
         // Arrange
-        _environment.PlantSolution("Only.sln");
+        _environment.PlantSolution(fileName);
 
         // Act
         ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
 
         // Assert
-        config.SolutionPath.ShouldEndWith("Only.sln");
-    }
-
-    [Fact]
-    public async Task ResolveAsync_SingleSlnxInCurrentDirectory_IsRecognized()
-    {
-        // Arrange
-        _environment.PlantSolution("Modern.slnx");
-
-        // Act
-        ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
-
-        // Assert
-        config.SolutionPath.ShouldEndWith("Modern.slnx");
+        config.SolutionPath.ShouldEndWith(fileName);
     }
 
     [Fact]
@@ -239,22 +228,6 @@ public sealed class ConfigResolverTests : IDisposable
     // ── Settings chain ────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task ResolveAsync_JbSettingsPathEnvExists_UsesIt()
-    {
-        // Arrange
-        _environment.PlantSolution("App.sln");
-        string settings = Path.Combine(_environment.CreateTempDirectory(), "Custom.DotSettings");
-        File.WriteAllText(settings, string.Empty);
-        _environment.SetVariable("JB_SETTINGS_PATH", settings);
-
-        // Act
-        ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
-
-        // Assert
-        config.SettingsPath.ShouldBe(Path.GetFullPath(settings));
-    }
-
-    [Fact]
     public async Task ResolveAsync_AdjacentDotSettingsExists_IsPreferred()
     {
         // Arrange
@@ -283,7 +256,7 @@ public sealed class ConfigResolverTests : IDisposable
     }
 
     [Fact]
-    public async Task ResolveAsync_NoSettingsAnywhere_ReturnsNull()
+    public async Task ResolveAsync_NoSettingsAnywhere_ResolvesNullSettingsAndNullProfile()
     {
         // Arrange
         _environment.PlantSolution("App.sln");
@@ -294,6 +267,7 @@ public sealed class ConfigResolverTests : IDisposable
         // Assert
         config.SettingsPath.ShouldBeNull();
         config.SettingsPathIsCustomLayer.ShouldBeFalse();
+        config.CleanupProfile.ShouldBeNull();
     }
 
     // ── Settings: the custom-layer split ──────────────────────────────────────
@@ -303,7 +277,7 @@ public sealed class ConfigResolverTests : IDisposable
     // solution would silently stop applying. Only a JB_SETTINGS_PATH outside those two earns the flag.
 
     [Fact]
-    public async Task ResolveAsync_JbSettingsPathNamesAFileJbCannotDiscover_IsACustomLayer()
+    public async Task ResolveAsync_JbSettingsPathNamesAFileJbCannotDiscover_UsesItAsACustomLayer()
     {
         // Arrange
         _environment.PlantSolution("App.sln");
@@ -314,7 +288,9 @@ public sealed class ConfigResolverTests : IDisposable
         // Act
         ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
 
-        // Assert — the one case --settings exists for: jb has no way to find this file on its own.
+        // Assert — the top of the settings chain, and the one case --settings exists for: jb has no way to
+        // find this file on its own.
+        config.SettingsPath.ShouldBe(Path.GetFullPath(settings));
         config.SettingsPathIsCustomLayer.ShouldBeTrue();
     }
 
@@ -399,50 +375,6 @@ public sealed class ConfigResolverTests : IDisposable
     }
 
     [Fact]
-    public async Task ResolveAsync_SettingsWithoutSilentCleanupProfile_ResolvesNullProfile()
-    {
-        // Arrange — a settings file that tunes something else entirely.
-        _environment.PlantSolution("App.sln");
-        DotSettingsFixtures.PlantBeside(_environment.CurrentDirectory, DotSettingsFixtures.SettingSeverity("RedundantCast", "DO_NOT_SHOW"));
-
-        // Act
-        ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
-
-        // Assert
-        config.CleanupProfile.ShouldBeNull();
-    }
-
-    [Fact]
-    public async Task ResolveAsync_SilentCleanupProfileIsBlank_ResolvesNullProfile()
-    {
-        // Arrange — a blank name would reach jb as --profile= and fail the run; it must read as "unset".
-        _environment.PlantSolution("App.sln");
-        DotSettingsFixtures.PlantBeside(_environment.CurrentDirectory, DotSettingsFixtures.Declaring("   "));
-
-        // Act
-        ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
-
-        // Assert
-        config.CleanupProfile.ShouldBeNull();
-    }
-
-    [Fact]
-    public async Task ResolveAsync_MalformedSettingsFile_ResolvesNullProfileWithoutThrowing()
-    {
-        // Arrange — a settings file this server cannot parse must degrade to the built-in default, not
-        // fail every cleanup call.
-        _environment.PlantSolution("App.sln");
-        DotSettingsFixtures.PlantBeside(_environment.CurrentDirectory, DotSettingsFixtures.Unparseable());
-
-        // Act
-        ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
-
-        // Assert
-        config.CleanupProfile.ShouldBeNull();
-        config.SettingsPath.ShouldNotBeNull(); // jb reads the file itself and has its own opinion of it
-    }
-
-    [Fact]
     public async Task ResolveAsync_SettingsDeclareProfileBehindAnIllegalComment_StillResolvesIt()
     {
         // Arrange — the field failure: a comment containing `--` is illegal XML but ReSharper and jb read
@@ -456,19 +388,6 @@ public sealed class ConfigResolverTests : IDisposable
         // Assert
         config.CleanupProfile.ShouldBe("House: Keep Named Arguments");
         config.Warnings.SettingsRead.ShouldBeNull(); // recovered, so there is nothing to report
-    }
-
-    [Fact]
-    public async Task ResolveAsync_NoSettingsAnywhere_ResolvesNullProfile()
-    {
-        // Arrange
-        _environment.PlantSolution("App.sln");
-
-        // Act
-        ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
-
-        // Assert
-        config.CleanupProfile.ShouldBeNull();
     }
 
     [Fact]
@@ -493,10 +412,11 @@ public sealed class ConfigResolverTests : IDisposable
     // ── Warnings ──────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task ResolveAsync_UnreadableSettingsFile_RecordsTheReadFailureAsAWarning()
+    public async Task ResolveAsync_UnparseableSettingsFile_ResolvesNullProfileAndRecordsTheReadFailureAsAWarning()
     {
-        // Arrange — the fallback to Full Cleanup rewrites the code the declared profile was protecting, so
-        // the failure has to reach the caller and not just the log.
+        // Arrange — a settings file this server cannot parse must degrade to the built-in default, not fail
+        // every cleanup call. But the fallback to Full Cleanup rewrites the code the declared profile was
+        // protecting, so the failure has to reach the caller and not just the log.
         _environment.PlantSolution("App.sln");
         DotSettingsFixtures.PlantBeside(_environment.CurrentDirectory, DotSettingsFixtures.Unparseable());
 
@@ -504,6 +424,8 @@ public sealed class ConfigResolverTests : IDisposable
         ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
 
         // Assert
+        config.CleanupProfile.ShouldBeNull();
+        config.SettingsPath.ShouldNotBeNull(); // jb reads the file itself and has its own opinion of it
         config.Warnings.ShouldNotBeNull();
         config.Warnings.SettingsRead.ShouldNotBeNull();
         config.Warnings.SettingsRead.Path.ShouldBe(config.SettingsPath);
@@ -566,11 +488,14 @@ public sealed class ConfigResolverTests : IDisposable
 
     // ── Cache home + extensions ───────────────────────────────────────────────
 
-    [Fact]
-    public async Task ResolveAsync_NoCacheHomeEnv_DefaultsToDotJbCacheUnderHome()
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")] // empty is treated as unset, not as the current directory
+    public async Task ResolveAsync_JbCacheHomeUnsetOrEmpty_DefaultsToDotJbCacheUnderHome(string? value)
     {
         // Arrange
         _environment.PlantSolution("App.sln");
+        _environment.SetVariable("JB_CACHE_HOME", value);
 
         // Act
         ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
@@ -592,20 +517,6 @@ public sealed class ConfigResolverTests : IDisposable
 
         // Assert
         config.CacheHome.ShouldBe(cache);
-    }
-
-    [Fact]
-    public async Task ResolveAsync_JbCacheHomeEnvEmpty_DefaultsToDotJbCacheUnderHome()
-    {
-        // Arrange
-        _environment.PlantSolution("App.sln");
-        _environment.SetVariable("JB_CACHE_HOME", string.Empty);
-
-        // Act
-        ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
-
-        // Assert  (empty is treated as unset, not as the current directory)
-        config.CacheHome.ShouldBe(Path.Combine(_environment.HomeDirectory, ".jb-cache"));
     }
 
     [Fact]

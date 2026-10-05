@@ -69,33 +69,6 @@ public sealed class InspectServiceArgumentTests
     }
 
     [Fact]
-    public void BuildArguments_MultipleFiles_JoinsIncludeWithSemicolons()
-    {
-        // Act
-        List<string> arguments = InspectService.BuildArguments(
-            Configs.Bare(SolutionPath, CacheHome), OutputFile, ["A.cs", "B.cs", "C.cs"], InspectSeverity.Warning);
-
-        // Assert
-        arguments.ShouldContain("--include=A.cs;B.cs;C.cs");
-    }
-
-    [Fact]
-    public void BuildArguments_AbsolutePathUnderTheSolution_ReachesJbRelative()
-    {
-        // Arrange — the same defect as cleanup's, and worse here: jb exits 0 having matched nothing, so an
-        // absolute glob used to come back as "No issues found." rather than as any kind of failure.
-        string solutionPath = Path.GetFullPath("/sln/App.sln");
-        string absolute = Path.Combine(Path.GetDirectoryName(solutionPath)!, "src", "A.cs");
-
-        // Act
-        List<string> arguments = InspectService.BuildArguments(
-            Configs.Bare(solutionPath, CacheHome), OutputFile, [absolute], InspectSeverity.Warning);
-
-        // Assert
-        arguments.ShouldContain("--include=src/A.cs");
-    }
-
-    [Fact]
     public void BuildArguments_EmptyFiles_OmitsIncludeFlag()
     {
         // Act
@@ -103,41 +76,6 @@ public sealed class InspectServiceArgumentTests
 
         // Assert
         arguments.Any(a => a.StartsWith("--include", StringComparison.Ordinal)).ShouldBeFalse();
-    }
-
-    [Fact]
-    public void BuildArguments_NullSettings_OmitsSettingsFlag()
-    {
-        // Act
-        List<string> arguments = InspectService.BuildArguments(Configs.Bare(SolutionPath, CacheHome), OutputFile, null, InspectSeverity.Warning);
-
-        // Assert
-        arguments.Any(a => a.StartsWith("--settings", StringComparison.Ordinal)).ShouldBeFalse();
-    }
-
-    [Fact]
-    public void BuildArguments_SettingsFileJbDiscoversItself_OmitsSettingsFlag()
-    {
-        // Act — resolved, but a file jb mounts on its own (the adjacent .DotSettings). Passing it as
-        // --settings would re-mount it as a Custom layer above the project layers, silently demoting
-        // every {project}.csproj.DotSettings in the solution.
-        List<string> arguments = InspectService.BuildArguments(
-            Configs.With(SolutionPath, CacheHome, "/sln/App.sln.DotSettings"), OutputFile, null, InspectSeverity.Warning);
-
-        // Assert
-        arguments.Any(a => a.StartsWith("--settings", StringComparison.Ordinal)).ShouldBeFalse();
-    }
-
-    [Fact]
-    public void BuildArguments_ConfigExtensions_AppendsExtensionFlags()
-    {
-        // Act
-        List<string> arguments = InspectService.BuildArguments(
-            Configs.With(SolutionPath, CacheHome, extensions: "Cfg.Ext", extensionSource: "cfg-source"), OutputFile, null, InspectSeverity.Warning);
-
-        // Assert
-        arguments.ShouldContain("-x=Cfg.Ext");
-        arguments.ShouldContain("--source=cfg-source");
     }
 
     [Fact]

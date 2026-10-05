@@ -23,6 +23,25 @@ public sealed class ToolPipelineTests
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
+    /// <summary>
+    ///     The <c>profile</c> argument a caller passes against a solution declaring
+    ///     <c>House: Keep Named Arguments</c>, and the profile the cleanup runs with.
+    /// </summary>
+    public static TheoryData<string?, string> ProfileArgumentsAgainstADeclaredProfile =>
+        new()
+        {
+            // Omitted: the whole point of the declared profile — a caller that does not know it exists still
+            // gets it. Without this, a repo that narrowed its cleanup silently gets Full Cleanup instead.
+            { null, "House: Keep Named Arguments" },
+            // Passed: the caller's profile overrides the declared one.
+            { "Built-in: Reformat Code", "Built-in: Reformat Code" },
+            // Blank: it would reach jb as --profile= and fail the run, so it reads as "unspecified" and falls
+            // through, exactly as a blank declared profile does.
+            { "   ", "House: Keep Named Arguments" },
+            // Padded with whitespace: trimmed before it is used.
+            { "  Built-in: Reformat Code  ", "Built-in: Reformat Code" }
+        };
+
     [Fact]
     public async Task InspectAsync_SolutionInWorkingDirectory_ReturnsFormattedIssues()
     {
@@ -251,27 +270,11 @@ public sealed class ToolPipelineTests
         await _processRunner.DidNotReceive().AnyRunWith(args => args != null && JbStubs.IsRunOf(args, "cleanupcode"));
     }
 
-    [Fact]
-    public async Task CleanupAsync_SolutionDeclaresProfileAndCallerOmitsOne_UsesTheDeclaredProfile()
-    {
-        // Arrange — the whole point of the declared profile: a caller that does not know it exists still
-        // gets it. Without this, a repo that narrowed its cleanup silently gets Full Cleanup instead.
-        using FakeEnvironment environment = new();
-        environment.PlantSolution("App.sln");
-        DotSettingsFixtures.PlantBeside(environment.CurrentDirectory, DotSettingsFixtures.Declaring("House: Keep Named Arguments"));
-        SolutionFiles.Plant(environment.CurrentDirectory, "src/A.cs");
-        StubJb();
-        ResharperTools tools = ToolHarness.Build(_processRunner, environment);
-
-        // Act
-        string result = await tools.CleanupAsync(["src/A.cs"], cancellationToken: Ct);
-
-        // Assert
-        result.ShouldStartWith("Cleanup completed with profile \"House: Keep Named Arguments\".");
-    }
-
-    [Fact]
-    public async Task CleanupAsync_CallerPassesProfile_OverridesTheDeclaredProfile()
+    [Theory]
+    [MemberData(nameof(ProfileArgumentsAgainstADeclaredProfile))]
+    public async Task CleanupAsync_SolutionDeclaresAProfile_RunsWithTheProfileTheArgumentResolvesTo(
+        string? profile,
+        string expected)
     {
         // Arrange
         using FakeEnvironment environment = new();
@@ -282,53 +285,16 @@ public sealed class ToolPipelineTests
         ResharperTools tools = ToolHarness.Build(_processRunner, environment);
 
         // Act
-        string result = await tools.CleanupAsync(["src/A.cs"], "Built-in: Reformat Code", cancellationToken: Ct);
+        string result = await tools.CleanupAsync(["src/A.cs"], profile, cancellationToken: Ct);
 
         // Assert
-        result.ShouldStartWith("Cleanup completed with profile \"Built-in: Reformat Code\".");
-    }
-
-    [Fact]
-    public async Task CleanupAsync_BlankProfileArgument_FallsBackToTheDeclaredProfile()
-    {
-        // Arrange — a blank argument would reach jb as --profile= and fail the run. It has to read as
-        // "unspecified" and fall through, exactly as a blank declared profile does.
-        using FakeEnvironment environment = new();
-        environment.PlantSolution("App.sln");
-        DotSettingsFixtures.PlantBeside(environment.CurrentDirectory, DotSettingsFixtures.Declaring("House: Keep Named Arguments"));
-        SolutionFiles.Plant(environment.CurrentDirectory, "src/A.cs");
-        StubJb();
-        ResharperTools tools = ToolHarness.Build(_processRunner, environment);
-
-        // Act
-        string result = await tools.CleanupAsync(["src/A.cs"], "   ", cancellationToken: Ct);
-
-        // Assert
-        result.ShouldStartWith("Cleanup completed with profile \"House: Keep Named Arguments\".");
-    }
-
-    [Fact]
-    public async Task CleanupAsync_ProfileArgumentPaddedWithWhitespace_IsTrimmed()
-    {
-        // Arrange
-        using FakeEnvironment environment = new();
-        environment.PlantSolution("App.sln");
-        SolutionFiles.Plant(environment.CurrentDirectory, "src/A.cs");
-        StubJb();
-        ResharperTools tools = ToolHarness.Build(_processRunner, environment);
-
-        // Act
-        string result = await tools.CleanupAsync(
-            ["src/A.cs"], "  Built-in: Reformat Code  ", cancellationToken: Ct);
-
-        // Assert
-        result.ShouldStartWith("Cleanup completed with profile \"Built-in: Reformat Code\".");
+        result.ShouldStartWith($"Cleanup completed with profile \"{expected}\".");
     }
 
     [Fact]
     public async Task CleanupAsync_SolutionDeclaresNoProfile_FallsBackToFullCleanup()
     {
-        // Arrange
+        // Arrange — the end of the chain, kept out of the theory above because it plants no settings file.
         using FakeEnvironment environment = new();
         environment.PlantSolution("App.sln");
         SolutionFiles.Plant(environment.CurrentDirectory, "src/A.cs");
@@ -813,23 +779,19 @@ public sealed class ToolPipelineTests
     {
         // Arrange — a 3-issue result fits at every level, so where a response lands is the parameter's
         // doing alone. The note is asserted against the enum member's own name, which is also what pins
-        // the tool-facing enum and the formatting ladder to the same five spellings.
+        // the tool-facing enum and the formatting ladder to the same spellings. Full is the no-cap
+        // default and comes back verbatim with nothing to announce, which DetailFull_IsByteIdentical pins.
         using FakeEnvironment environment = new();
         environment.PlantSolution("App.sln");
         StubJb(Fixtures.ReadSarif("inspect-sample.json"));
         ResharperTools tools = ToolHarness.Build(_processRunner, environment);
+        IEnumerable<InspectDetail> cappingDetails = Enum.GetValues<InspectDetail>()
+            .Where(detail => detail != InspectDetail.Full);
 
         // Act / Assert
-        foreach (InspectDetail detail in Enum.GetValues<InspectDetail>())
+        foreach (InspectDetail detail in cappingDetails)
         {
             string result = await tools.InspectAsync(detail: detail, cancellationToken: Ct);
-
-            // Full is the no-cap default and comes back verbatim, so there is nothing to announce.
-            if (detail == InspectDetail.Full)
-            {
-                result.ShouldNotContain("--- DETAIL REDUCED ---");
-                continue;
-            }
 
             result.ShouldContain($"Rendered at the requested detail level {detail}");
         }

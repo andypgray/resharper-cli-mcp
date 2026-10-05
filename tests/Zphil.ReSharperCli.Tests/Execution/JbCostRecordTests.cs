@@ -244,22 +244,6 @@ public sealed class JbCostRecordTests : IDisposable
         bands.Select(JbCostRecord.Label).Distinct().Count().ShouldBe(bands.Length);
     }
 
-    [Fact]
-    public void PathFor_SitsBesideTheOtherThreeSidecarsWithoutColliding()
-    {
-        // Assert — one directory, one key, four extensions: the scheme that keeps a change to any of them
-        // from silently addressing another's file.
-        string cost = JbCostRecord.PathFor(SolutionPath, _cacheHome);
-        string tombstone = JbColdTombstone.PathFor(SolutionPath, _cacheHome);
-        string marker = JbWarmMarker.PathFor(SolutionPath, _cacheHome);
-        string lockFile = JbRunLock.LockFilePathFor(_cacheHome, JbSidecar.ComputeKey(SolutionPath, _cacheHome));
-
-        new[] { cost, tombstone, marker, lockFile }.Distinct().Count().ShouldBe(4);
-        Path.GetDirectoryName(cost).ShouldBe(Path.GetDirectoryName(lockFile));
-        Path.GetDirectoryName(cost).ShouldBe(Path.GetDirectoryName(marker));
-        Path.GetDirectoryName(cost).ShouldBe(Path.GetDirectoryName(tombstone));
-    }
-
     private TimeSpan? Read(JbCostBand band)
     {
         return JbCostRecord.TryRead(SolutionPath, _cacheHome, band, NullLogger.Instance);

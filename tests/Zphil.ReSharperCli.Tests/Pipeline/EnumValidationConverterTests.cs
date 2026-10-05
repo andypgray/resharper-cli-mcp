@@ -17,53 +17,37 @@ public sealed class EnumValidationConverterTests
         Converters = { new EnumValidationConverterFactory() }
     };
 
-    [Fact]
-    public void Deserialize_ValidName_RoundTrips()
+    [Theory]
+    [InlineData("Warning")]
+    // A lowercase name parses too, via ignoreCase.
+    [InlineData("warning")]
+    public void Deserialize_AMemberNameInAnyCase_Binds(string name)
     {
+        // Arrange
+        string json = JsonSerializer.Serialize(name);
+
         // Act
-        var result = JsonSerializer.Deserialize<InspectSeverity>("\"Warning\"", Options);
+        var result = JsonSerializer.Deserialize<InspectSeverity>(json, Options);
 
         // Assert
         result.ShouldBe(InspectSeverity.Warning);
     }
 
-    [Fact]
-    public void Deserialize_UnknownName_ThrowsUserErrorWithValidList()
+    [Theory]
+    [InlineData("HIGH")]
+    // A numeric string would bind to an ordinal via Enum.TryParse, violating the "integers not admitted"
+    // contract, so it is refused like any unknown name.
+    [InlineData("1")]
+    public void Deserialize_AStringThatIsNoMemberName_ThrowsNamingItAndTheValidList(string name)
     {
+        // Arrange
+        string json = JsonSerializer.Serialize(name);
+
         // Act
-        var ex = Should.Throw<UserErrorException>(() =>
-            JsonSerializer.Deserialize<InspectSeverity>("\"HIGH\"", Options));
+        var ex = Should.Throw<UserErrorException>(() => JsonSerializer.Deserialize<InspectSeverity>(json, Options));
 
-        // Assert — message names the bad value and every valid enum name.
-        ex.Message.ShouldContain("\"HIGH\"");
-        ex.Message.ShouldContain("Suggestion");
-        ex.Message.ShouldContain("Warning");
-        ex.Message.ShouldContain("Error");
-    }
-
-    [Fact]
-    public void Deserialize_CaseInsensitiveName_Succeeds()
-    {
-        // Act — lowercase name should parse via ignoreCase.
-        var result = JsonSerializer.Deserialize<InspectSeverity>("\"warning\"", Options);
-
-        // Assert
-        result.ShouldBe(InspectSeverity.Warning);
-    }
-
-    [Fact]
-    public void Deserialize_NumericString_ThrowsUserErrorWithValidList()
-    {
-        // Act — a numeric string ("1") would bind to an ordinal via Enum.TryParse, violating the
-        // "integers not admitted" contract. Reject it with the valid-values list.
-        var ex = Should.Throw<UserErrorException>(() =>
-            JsonSerializer.Deserialize<InspectSeverity>("\"1\"", Options));
-
-        // Assert — bad value plus valid names so the model self-corrects to a name.
-        ex.Message.ShouldContain("\"1\"");
-        ex.Message.ShouldContain("Suggestion");
-        ex.Message.ShouldContain("Warning");
-        ex.Message.ShouldContain("Error");
+        // Assert — the bad value plus every valid name, so the model self-corrects to a name.
+        ex.Message.ShouldBe($"Invalid value \"{name}\" for parameter. Valid values: Suggestion, Warning, Error.");
     }
 
     [Fact]

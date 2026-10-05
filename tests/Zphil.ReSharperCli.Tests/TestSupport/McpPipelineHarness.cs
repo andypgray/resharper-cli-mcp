@@ -143,11 +143,9 @@ internal sealed class McpPipelineHarness : IAsyncDisposable
 
         // Capture everything the server logs and nothing else, so "no warning" / "exactly one warning"
         // assertions see the filter alone rather than the default console/debug providers. Down to Trace,
-        // because the filter's own call envelope is Debug and the default minimum of Information would hide
-        // it — and would hide it in a way that looks exactly like a filter that never logged.
-        builder.Logging.ClearProviders();
-        builder.Logging.SetMinimumLevel(LogLevel.Trace);
-        builder.Logging.AddProvider(logs);
+        // because the filter's own call envelope is Debug and would otherwise be hidden in a way that looks
+        // exactly like a filter that never logged.
+        builder.Logging.CaptureInto(logs);
 
         // The Program.cs service graph, with the two seams faked.
         builder.Services.AddSingleton<IEnvironment>(environment);
@@ -158,8 +156,7 @@ internal sealed class McpPipelineHarness : IAsyncDisposable
         // The lock and the runner are the two the composition root builds by factory, because the run cap is a
         // value rather than a service; the loggers come from the host's own factory, so everything the graph
         // writes reaches the capturing provider above.
-        builder.Services.AddSingleton(provider => new JbRunLock(
-            JbRunTimeout.Default, provider.GetRequiredService<ILogger<JbRunLock>>()));
+        builder.Services.AddSingleton(provider => JbRunners.Lock(logs: provider.GetRequiredService<ILoggerFactory>()));
         builder.Services.AddSingleton<JbRunYield>();
         // A brisk heartbeat, so a test watching progress notifications sees a second beat in tens of
         // milliseconds instead of paying the production ten seconds per run of the suite.

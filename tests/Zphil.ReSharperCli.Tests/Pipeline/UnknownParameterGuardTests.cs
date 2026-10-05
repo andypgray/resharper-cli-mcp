@@ -3,6 +3,7 @@ using ModelContextProtocol.Protocol;
 using Shouldly;
 using Xunit;
 using Zphil.ReSharperCli.Pipeline;
+using Zphil.ReSharperCli.Tests.TestSupport;
 
 namespace Zphil.ReSharperCli.Tests.Pipeline;
 

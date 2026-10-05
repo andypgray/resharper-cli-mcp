@@ -19,7 +19,7 @@ public sealed class ConfigResolverTests : IDisposable
     {
         _processRunner
             .AnyRunOf("jb")
-            .Returns(new ProcessResult(0, "Version: 2026.1.2\n", string.Empty));
+            .Returns(JbStubs.VersionProbeAnswer);
         _resolver = new ConfigResolver(
             new JbLocator(_processRunner, _environment, NullLogger<JbLocator>.Instance),
             _environment,
@@ -39,7 +39,7 @@ public sealed class ConfigResolverTests : IDisposable
     public async Task ResolveAsync_SolutionOverrideExists_UsesResolvedOverride()
     {
         // Arrange
-        string overridePath = CreateSolutionInCurrentDirectory("Explicit.sln");
+        string overridePath = _environment.PlantSolution("Explicit.sln");
 
         // Act
         ResolvedConfig config = await _resolver.ResolveAsync(overridePath, Ct);
@@ -83,7 +83,7 @@ public sealed class ConfigResolverTests : IDisposable
     {
         // Arrange — the ordinary reset, which is most of them. Relaxing the branch must not change what it
         // does when the file is there.
-        string overridePath = CreateSolutionInCurrentDirectory("Explicit.sln");
+        string overridePath = _environment.PlantSolution("Explicit.sln");
 
         // Act
         ResolvedConfig config = await _resolver.ResolveForCacheResetAsync(overridePath, Ct);
@@ -122,8 +122,7 @@ public sealed class ConfigResolverTests : IDisposable
     public async Task ResolveAsync_JbSolutionPathEnvExists_UsesIt()
     {
         // Arrange
-        string sln = Path.Combine(_environment.CreateTempDirectory(), "Env.sln");
-        File.WriteAllText(sln, string.Empty);
+        string sln = _environment.CreateCheckout("Env.sln");
         _environment.SetVariable("JB_SOLUTION_PATH", sln);
 
         // Act
@@ -153,7 +152,7 @@ public sealed class ConfigResolverTests : IDisposable
     public async Task ResolveAsync_SingleSlnInCurrentDirectory_UsesIt()
     {
         // Arrange
-        CreateSolutionInCurrentDirectory("Only.sln");
+        _environment.PlantSolution("Only.sln");
 
         // Act
         ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
@@ -166,7 +165,7 @@ public sealed class ConfigResolverTests : IDisposable
     public async Task ResolveAsync_SingleSlnxInCurrentDirectory_IsRecognized()
     {
         // Arrange
-        CreateSolutionInCurrentDirectory("Modern.slnx");
+        _environment.PlantSolution("Modern.slnx");
 
         // Act
         ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
@@ -191,7 +190,7 @@ public sealed class ConfigResolverTests : IDisposable
     public async Task ResolveAsync_DirectoryNamedLikeSolutionAlongsideRealSolution_ResolvesTheRealFile()
     {
         // Arrange — a *directory* named "Fake.sln" must not be counted as a solution file.
-        CreateSolutionInCurrentDirectory("App.sln");
+        _environment.PlantSolution("App.sln");
         Directory.CreateDirectory(Path.Combine(_environment.CurrentDirectory, "Fake.sln"));
 
         // Act
@@ -205,8 +204,8 @@ public sealed class ConfigResolverTests : IDisposable
     public async Task ResolveAsync_MultipleSolutionsInCurrentDirectory_ThrowsListingNamesNotPaths()
     {
         // Arrange
-        CreateSolutionInCurrentDirectory("Alpha.sln");
-        CreateSolutionInCurrentDirectory("Beta.slnx");
+        _environment.PlantSolution("Alpha.sln");
+        _environment.PlantSolution("Beta.slnx");
 
         // Act
         var exception = await Should.ThrowAsync<UserErrorException>(() => _resolver.ResolveAsync(null, Ct));
@@ -224,8 +223,8 @@ public sealed class ConfigResolverTests : IDisposable
     public async Task ResolveAsync_SolutionOnlyInParentDirectory_StillThrows()
     {
         // Arrange
-        string parent = _environment.CreateTempDirectory();
-        File.WriteAllText(Path.Combine(parent, "Parent.sln"), string.Empty);
+        string parentSolution = _environment.CreateCheckout("Parent.sln");
+        string parent = Path.GetDirectoryName(parentSolution)!;
         string child = Path.Combine(parent, "child");
         Directory.CreateDirectory(child);
         _environment.CurrentDirectory = child;
@@ -243,7 +242,7 @@ public sealed class ConfigResolverTests : IDisposable
     public async Task ResolveAsync_JbSettingsPathEnvExists_UsesIt()
     {
         // Arrange
-        CreateSolutionInCurrentDirectory("App.sln");
+        _environment.PlantSolution("App.sln");
         string settings = Path.Combine(_environment.CreateTempDirectory(), "Custom.DotSettings");
         File.WriteAllText(settings, string.Empty);
         _environment.SetVariable("JB_SETTINGS_PATH", settings);
@@ -259,8 +258,8 @@ public sealed class ConfigResolverTests : IDisposable
     public async Task ResolveAsync_AdjacentDotSettingsExists_IsPreferred()
     {
         // Arrange
-        CreateSolutionInCurrentDirectory("App.sln");
-        File.WriteAllText(Path.Combine(_environment.CurrentDirectory, "App.sln.DotSettings"), string.Empty);
+        _environment.PlantSolution("App.sln");
+        DotSettingsFixtures.PlantBeside(_environment.CurrentDirectory, string.Empty);
 
         // Act
         ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
@@ -273,7 +272,7 @@ public sealed class ConfigResolverTests : IDisposable
     public async Task ResolveAsync_OnlySharedSettingsExist_UsesSharedSettings()
     {
         // Arrange
-        CreateSolutionInCurrentDirectory("App.sln");
+        _environment.PlantSolution("App.sln");
         string sharedSettings = WriteSharedGlobalSettings();
 
         // Act
@@ -287,7 +286,7 @@ public sealed class ConfigResolverTests : IDisposable
     public async Task ResolveAsync_NoSettingsAnywhere_ReturnsNull()
     {
         // Arrange
-        CreateSolutionInCurrentDirectory("App.sln");
+        _environment.PlantSolution("App.sln");
 
         // Act
         ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
@@ -307,7 +306,7 @@ public sealed class ConfigResolverTests : IDisposable
     public async Task ResolveAsync_JbSettingsPathNamesAFileJbCannotDiscover_IsACustomLayer()
     {
         // Arrange
-        CreateSolutionInCurrentDirectory("App.sln");
+        _environment.PlantSolution("App.sln");
         string settings = Path.Combine(_environment.CreateTempDirectory(), "Custom.DotSettings");
         File.WriteAllText(settings, string.Empty);
         _environment.SetVariable("JB_SETTINGS_PATH", settings);
@@ -323,8 +322,8 @@ public sealed class ConfigResolverTests : IDisposable
     public async Task ResolveAsync_AdjacentDotSettings_IsNotACustomLayer()
     {
         // Arrange
-        CreateSolutionInCurrentDirectory("App.sln");
-        WriteAdjacentSettings(string.Empty);
+        _environment.PlantSolution("App.sln");
+        DotSettingsFixtures.PlantBeside(_environment.CurrentDirectory, string.Empty);
 
         // Act
         ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
@@ -338,7 +337,7 @@ public sealed class ConfigResolverTests : IDisposable
     public async Task ResolveAsync_SharedGlobalSettings_IsNotACustomLayer()
     {
         // Arrange
-        CreateSolutionInCurrentDirectory("App.sln");
+        _environment.PlantSolution("App.sln");
         WriteSharedGlobalSettings();
 
         // Act
@@ -355,8 +354,8 @@ public sealed class ConfigResolverTests : IDisposable
     {
         // Arrange — hardening: what the env var names is what jb would discover anyway, so passing it
         // as --settings would demote the project layers exactly as the discovered branch would.
-        CreateSolutionInCurrentDirectory("App.sln");
-        WriteAdjacentSettings(string.Empty);
+        _environment.PlantSolution("App.sln");
+        DotSettingsFixtures.PlantBeside(_environment.CurrentDirectory, string.Empty);
         _environment.SetVariable("JB_SETTINGS_PATH", Path.Combine(_environment.CurrentDirectory, "App.sln.DotSettings"));
 
         // Act
@@ -371,7 +370,7 @@ public sealed class ConfigResolverTests : IDisposable
     public async Task ResolveAsync_JbSettingsPathNamesTheSharedGlobalSettings_IsNotACustomLayer()
     {
         // Arrange
-        CreateSolutionInCurrentDirectory("App.sln");
+        _environment.PlantSolution("App.sln");
         string sharedSettings = WriteSharedGlobalSettings();
         _environment.SetVariable("JB_SETTINGS_PATH", sharedSettings);
 
@@ -389,8 +388,8 @@ public sealed class ConfigResolverTests : IDisposable
     public async Task ResolveAsync_SettingsDeclareSilentCleanupProfile_ResolvesIt()
     {
         // Arrange
-        CreateSolutionInCurrentDirectory("App.sln");
-        WriteAdjacentSettings(DotSettingsFixtures.Declaring("House: Keep Named Arguments"));
+        _environment.PlantSolution("App.sln");
+        DotSettingsFixtures.PlantBeside(_environment.CurrentDirectory, DotSettingsFixtures.Declaring("House: Keep Named Arguments"));
 
         // Act
         ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
@@ -403,13 +402,8 @@ public sealed class ConfigResolverTests : IDisposable
     public async Task ResolveAsync_SettingsWithoutSilentCleanupProfile_ResolvesNullProfile()
     {
         // Arrange — a settings file that tunes something else entirely.
-        CreateSolutionInCurrentDirectory("App.sln");
-        WriteAdjacentSettings(
-            """
-            <wpf:ResourceDictionary xml:space="preserve" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:s="clr-namespace:System;assembly=mscorlib" xmlns:wpf="http://schemas.microsoft.com/winfx/2006/xaml/presentation">
-            	<s:String x:Key="/Default/CodeInspection/Highlighting/InspectionSeverities/=RedundantCast/@EntryIndexedValue">DO_NOT_SHOW</s:String>
-            </wpf:ResourceDictionary>
-            """);
+        _environment.PlantSolution("App.sln");
+        DotSettingsFixtures.PlantBeside(_environment.CurrentDirectory, DotSettingsFixtures.SettingSeverity("RedundantCast", "DO_NOT_SHOW"));
 
         // Act
         ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
@@ -422,8 +416,8 @@ public sealed class ConfigResolverTests : IDisposable
     public async Task ResolveAsync_SilentCleanupProfileIsBlank_ResolvesNullProfile()
     {
         // Arrange — a blank name would reach jb as --profile= and fail the run; it must read as "unset".
-        CreateSolutionInCurrentDirectory("App.sln");
-        WriteAdjacentSettings(DotSettingsFixtures.Declaring("   "));
+        _environment.PlantSolution("App.sln");
+        DotSettingsFixtures.PlantBeside(_environment.CurrentDirectory, DotSettingsFixtures.Declaring("   "));
 
         // Act
         ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
@@ -437,8 +431,8 @@ public sealed class ConfigResolverTests : IDisposable
     {
         // Arrange — a settings file this server cannot parse must degrade to the built-in default, not
         // fail every cleanup call.
-        CreateSolutionInCurrentDirectory("App.sln");
-        WriteAdjacentSettings(DotSettingsFixtures.Unparseable());
+        _environment.PlantSolution("App.sln");
+        DotSettingsFixtures.PlantBeside(_environment.CurrentDirectory, DotSettingsFixtures.Unparseable());
 
         // Act
         ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
@@ -453,8 +447,8 @@ public sealed class ConfigResolverTests : IDisposable
     {
         // Arrange — the field failure: a comment containing `--` is illegal XML but ReSharper and jb read
         // the file happily, so rejecting it here turned the declared-profile feature off without a word.
-        CreateSolutionInCurrentDirectory("App.sln");
-        WriteAdjacentSettings(DotSettingsFixtures.DeclaringBehindIllegalComment("House: Keep Named Arguments"));
+        _environment.PlantSolution("App.sln");
+        DotSettingsFixtures.PlantBeside(_environment.CurrentDirectory, DotSettingsFixtures.DeclaringBehindIllegalComment("House: Keep Named Arguments"));
 
         // Act
         ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
@@ -468,7 +462,7 @@ public sealed class ConfigResolverTests : IDisposable
     public async Task ResolveAsync_NoSettingsAnywhere_ResolvesNullProfile()
     {
         // Arrange
-        CreateSolutionInCurrentDirectory("App.sln");
+        _environment.PlantSolution("App.sln");
 
         // Act
         ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
@@ -486,8 +480,8 @@ public sealed class ConfigResolverTests : IDisposable
         string awkwardDirectory = Path.Combine(_environment.CreateTempDirectory(), "100%#done");
         Directory.CreateDirectory(awkwardDirectory);
         _environment.CurrentDirectory = awkwardDirectory;
-        CreateSolutionInCurrentDirectory("App.sln");
-        WriteAdjacentSettings(DotSettingsFixtures.Declaring("House: Keep Named Arguments"));
+        _environment.PlantSolution("App.sln");
+        DotSettingsFixtures.PlantBeside(_environment.CurrentDirectory, DotSettingsFixtures.Declaring("House: Keep Named Arguments"));
 
         // Act
         ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
@@ -503,8 +497,8 @@ public sealed class ConfigResolverTests : IDisposable
     {
         // Arrange — the fallback to Full Cleanup rewrites the code the declared profile was protecting, so
         // the failure has to reach the caller and not just the log.
-        CreateSolutionInCurrentDirectory("App.sln");
-        WriteAdjacentSettings(DotSettingsFixtures.Unparseable());
+        _environment.PlantSolution("App.sln");
+        DotSettingsFixtures.PlantBeside(_environment.CurrentDirectory, DotSettingsFixtures.Unparseable());
 
         // Act
         ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
@@ -520,7 +514,7 @@ public sealed class ConfigResolverTests : IDisposable
     public async Task ResolveAsync_JbSettingsPathEnvMissing_WarnsAndFallsThroughToNull()
     {
         // Arrange
-        CreateSolutionInCurrentDirectory("App.sln");
+        _environment.PlantSolution("App.sln");
         string missing = Path.Combine(_environment.CurrentDirectory, "missing.DotSettings");
         _environment.SetVariable("JB_SETTINGS_PATH", missing);
 
@@ -539,8 +533,8 @@ public sealed class ConfigResolverTests : IDisposable
     {
         // Arrange — a bad env path does not stop the chain, so the run is configured by a file the user did
         // not name. Silently substituting one settings file for another is still worth saying out loud.
-        CreateSolutionInCurrentDirectory("App.sln");
-        WriteAdjacentSettings(DotSettingsFixtures.Declaring("House: Keep Named Arguments"));
+        _environment.PlantSolution("App.sln");
+        DotSettingsFixtures.PlantBeside(_environment.CurrentDirectory, DotSettingsFixtures.Declaring("House: Keep Named Arguments"));
         string missing = Path.Combine(_environment.CurrentDirectory, "missing.DotSettings");
         _environment.SetVariable("JB_SETTINGS_PATH", missing);
 
@@ -558,8 +552,8 @@ public sealed class ConfigResolverTests : IDisposable
     public async Task ResolveAsync_EverythingResolvesCleanly_RecordsNoWarnings()
     {
         // Arrange
-        CreateSolutionInCurrentDirectory("App.sln");
-        WriteAdjacentSettings(DotSettingsFixtures.Declaring("House: Keep Named Arguments"));
+        _environment.PlantSolution("App.sln");
+        DotSettingsFixtures.PlantBeside(_environment.CurrentDirectory, DotSettingsFixtures.Declaring("House: Keep Named Arguments"));
 
         // Act
         ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
@@ -576,7 +570,7 @@ public sealed class ConfigResolverTests : IDisposable
     public async Task ResolveAsync_NoCacheHomeEnv_DefaultsToDotJbCacheUnderHome()
     {
         // Arrange
-        CreateSolutionInCurrentDirectory("App.sln");
+        _environment.PlantSolution("App.sln");
 
         // Act
         ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
@@ -589,7 +583,7 @@ public sealed class ConfigResolverTests : IDisposable
     public async Task ResolveAsync_JbCacheHomeEnvSet_UsesIt()
     {
         // Arrange
-        CreateSolutionInCurrentDirectory("App.sln");
+        _environment.PlantSolution("App.sln");
         string cache = _environment.CreateTempDirectory();
         _environment.SetVariable("JB_CACHE_HOME", cache);
 
@@ -604,7 +598,7 @@ public sealed class ConfigResolverTests : IDisposable
     public async Task ResolveAsync_JbCacheHomeEnvEmpty_DefaultsToDotJbCacheUnderHome()
     {
         // Arrange
-        CreateSolutionInCurrentDirectory("App.sln");
+        _environment.PlantSolution("App.sln");
         _environment.SetVariable("JB_CACHE_HOME", string.Empty);
 
         // Act
@@ -618,7 +612,7 @@ public sealed class ConfigResolverTests : IDisposable
     public async Task ResolveAsync_JbCacheHomeEnvRelative_IsAnchoredUnderCurrentDirectory()
     {
         // Arrange
-        CreateSolutionInCurrentDirectory("App.sln");
+        _environment.PlantSolution("App.sln");
         _environment.SetVariable("JB_CACHE_HOME", "relative-cache");
 
         // Act
@@ -633,20 +627,20 @@ public sealed class ConfigResolverTests : IDisposable
     {
         // Arrange — the probe already parses it and used to log it and drop it. It is what a run stamps into
         // the warm marker, so a cache another build wrote can be told from one this build can resume.
-        CreateSolutionInCurrentDirectory("App.sln");
+        _environment.PlantSolution("App.sln");
 
         // Act
         ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
 
         // Assert — the version the stubbed probe reported, verbatim.
-        config.JbVersion.ShouldBe("2026.1.2");
+        config.JbVersion.ShouldBe(JbStubs.Version);
     }
 
     [Fact]
     public async Task ResolveAsync_JbExtensionsEmptyString_ResolvesToNull()
     {
         // Arrange
-        CreateSolutionInCurrentDirectory("App.sln");
+        _environment.PlantSolution("App.sln");
         _environment.SetVariable("JB_EXTENSIONS", string.Empty);
 
         // Act
@@ -660,7 +654,7 @@ public sealed class ConfigResolverTests : IDisposable
     public async Task ResolveAsync_JbExtensionsAndSourceSet_UsesValues()
     {
         // Arrange
-        CreateSolutionInCurrentDirectory("App.sln");
+        _environment.PlantSolution("App.sln");
         _environment.SetVariable("JB_EXTENSIONS", "Foo.Plugin;Bar.Plugin");
         _environment.SetVariable("JB_EXTENSION_SOURCE", "https://example.test/nuget");
 
@@ -680,11 +674,11 @@ public sealed class ConfigResolverTests : IDisposable
         // Arrange — the reason the resolver holds no cache. An agent that declares a cleanup profile
         // mid-session (exactly what the configuration guide tells it to do) must not keep getting Full
         // Cleanup — the very rewrite the profile was defined to prevent — until the client restarts us.
-        CreateSolutionInCurrentDirectory("App.sln");
+        _environment.PlantSolution("App.sln");
         ResolvedConfig before = await _resolver.ResolveAsync(null, Ct);
         before.CleanupProfile.ShouldBeNull();
 
-        WriteAdjacentSettings(DotSettingsFixtures.Declaring("House: Keep Named Arguments"));
+        DotSettingsFixtures.PlantBeside(_environment.CurrentDirectory, DotSettingsFixtures.Declaring("House: Keep Named Arguments"));
 
         // Act
         ResolvedConfig after = await _resolver.ResolveAsync(null, Ct);
@@ -700,7 +694,7 @@ public sealed class ConfigResolverTests : IDisposable
         // Arrange — resolving fresh every call must not mean re-probing jb. That probe is the one
         // genuinely expensive step, and JbLocator caches it until jb's files change; the rest is a
         // directory enumeration and a small XML read.
-        CreateSolutionInCurrentDirectory("App.sln");
+        _environment.PlantSolution("App.sln");
 
         // Act
         await _resolver.ResolveAsync(null, Ct);
@@ -715,12 +709,11 @@ public sealed class ConfigResolverTests : IDisposable
     public async Task ResolveAsync_DifferentCurrentDirectory_ResolvesTheOtherSolution()
     {
         // Arrange
-        CreateSolutionInCurrentDirectory("First.sln");
+        _environment.PlantSolution("First.sln");
         ResolvedConfig first = await _resolver.ResolveAsync(null, Ct);
 
-        string secondDirectory = _environment.CreateTempDirectory();
-        File.WriteAllText(Path.Combine(secondDirectory, "Second.sln"), string.Empty);
-        _environment.CurrentDirectory = secondDirectory;
+        string secondSolution = _environment.CreateCheckout("Second.sln");
+        _environment.CurrentDirectory = Path.GetDirectoryName(secondSolution)!;
 
         // Act
         ResolvedConfig second = await _resolver.ResolveAsync(null, Ct);
@@ -730,24 +723,12 @@ public sealed class ConfigResolverTests : IDisposable
         second.SolutionPath.ShouldEndWith("Second.sln");
     }
 
-    private void WriteAdjacentSettings(string content)
-    {
-        File.WriteAllText(Path.Combine(_environment.CurrentDirectory, "App.sln.DotSettings"), content);
-    }
-
     private string WriteSharedGlobalSettings()
     {
         string sharedSettings = Path.Combine(ExpectedSharedSettingsDirectory(), "GlobalSettingsStorage.DotSettings");
         Directory.CreateDirectory(Path.GetDirectoryName(sharedSettings)!);
         File.WriteAllText(sharedSettings, string.Empty);
         return sharedSettings;
-    }
-
-    private string CreateSolutionInCurrentDirectory(string fileName)
-    {
-        string path = Path.Combine(_environment.CurrentDirectory, fileName);
-        File.WriteAllText(path, string.Empty);
-        return path;
     }
 
     private string ExpectedSharedSettingsDirectory()

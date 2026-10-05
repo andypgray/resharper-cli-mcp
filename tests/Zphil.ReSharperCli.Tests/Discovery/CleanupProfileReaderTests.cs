@@ -25,7 +25,7 @@ public sealed class CleanupProfileReaderTests : IDisposable
     public void Read_WellFormedSettingsDeclaringAProfile_ReturnsTheName()
     {
         // Arrange
-        string path = Write(DotSettingsFixtures.Declaring("House: Keep Named Arguments"));
+        string path = DotSettingsFixtures.PlantBeside(_environment.CurrentDirectory, DotSettingsFixtures.Declaring("House: Keep Named Arguments"));
 
         // Act
         DeclaredCleanupProfile declared = CleanupProfileReader.Read(path, NullLogger.Instance);
@@ -42,7 +42,7 @@ public sealed class CleanupProfileReaderTests : IDisposable
         // has no lenient mode for it (XmlReaderSettings.CheckCharacters = false does not relax the rule), and
         // ReSharper reads such a file happily. Rejecting it here silently applied Full Cleanup instead of the
         // profile the repo declared — the exact rewrite that profile was defined to prevent.
-        string path = Write(DotSettingsFixtures.DeclaringBehindIllegalComment("House: Keep Named Arguments"));
+        string path = DotSettingsFixtures.PlantBeside(_environment.CurrentDirectory, DotSettingsFixtures.DeclaringBehindIllegalComment("House: Keep Named Arguments"));
 
         // Act
         DeclaredCleanupProfile declared = CleanupProfileReader.Read(path, NullLogger.Instance);
@@ -58,7 +58,7 @@ public sealed class CleanupProfileReaderTests : IDisposable
         // Arrange — the lenient pass discards `<!-- ... -->` non-greedily, which is XML's own rule: the first
         // `-->` ends the comment and everything after it is markup again. A greedy match would swallow the
         // declaration and read the file as declaring nothing.
-        string path = Write(
+        string path = DotSettingsFixtures.PlantBeside(_environment.CurrentDirectory,
             """
             <wpf:ResourceDictionary xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:s="clr-namespace:System;assembly=mscorlib" xmlns:wpf="http://schemas.microsoft.com/winfx/2006/xaml/presentation">
             	<!-- illegal -- here -->
@@ -78,7 +78,7 @@ public sealed class CleanupProfileReaderTests : IDisposable
     public void Read_BrokenBeyondCommentStripping_ReportsTheFailureWithPathAndReason()
     {
         // Arrange
-        string path = Write(DotSettingsFixtures.Unparseable());
+        string path = DotSettingsFixtures.PlantBeside(_environment.CurrentDirectory, DotSettingsFixtures.Unparseable());
 
         // Act
         DeclaredCleanupProfile declared = CleanupProfileReader.Read(path, NullLogger.Instance);
@@ -96,7 +96,7 @@ public sealed class CleanupProfileReaderTests : IDisposable
         // Arrange — the reported reason comes from the lenient pass, so it names what is genuinely still
         // wrong rather than the comment we deliberately tolerated. Comments are replaced by the newlines they
         // spanned, which is what keeps that line number pointing at the real file.
-        string path = Write(DotSettingsFixtures.Unparseable());
+        string path = DotSettingsFixtures.PlantBeside(_environment.CurrentDirectory, DotSettingsFixtures.Unparseable());
 
         // Act
         DeclaredCleanupProfile declared = CleanupProfileReader.Read(path, NullLogger.Instance);
@@ -113,12 +113,7 @@ public sealed class CleanupProfileReaderTests : IDisposable
     {
         // Arrange — a settings file that tunes something else entirely. "Declares nothing" is not a failure,
         // and must not produce a warning: it is the ordinary case for most repos.
-        string path = Write(
-            """
-            <wpf:ResourceDictionary xml:space="preserve" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:s="clr-namespace:System;assembly=mscorlib" xmlns:wpf="http://schemas.microsoft.com/winfx/2006/xaml/presentation">
-            	<s:String x:Key="/Default/CodeInspection/Highlighting/InspectionSeverities/=RedundantCast/@EntryIndexedValue">DO_NOT_SHOW</s:String>
-            </wpf:ResourceDictionary>
-            """);
+        string path = DotSettingsFixtures.PlantBeside(_environment.CurrentDirectory, DotSettingsFixtures.SettingSeverity("RedundantCast", "DO_NOT_SHOW"));
 
         // Act
         DeclaredCleanupProfile declared = CleanupProfileReader.Read(path, NullLogger.Instance);
@@ -132,7 +127,7 @@ public sealed class CleanupProfileReaderTests : IDisposable
     public void Read_BlankDeclaredProfile_ReadsAsUnsetRatherThanAsAFailure()
     {
         // Arrange — a blank name would reach jb as --profile= and fail the run.
-        string path = Write(DotSettingsFixtures.Declaring("   "));
+        string path = DotSettingsFixtures.PlantBeside(_environment.CurrentDirectory, DotSettingsFixtures.Declaring("   "));
 
         // Act
         DeclaredCleanupProfile declared = CleanupProfileReader.Read(path, NullLogger.Instance);
@@ -169,12 +164,5 @@ public sealed class CleanupProfileReaderTests : IDisposable
         declared.Name.ShouldBeNull();
         declared.Failure.ShouldNotBeNull();
         declared.Failure.Path.ShouldBe(path);
-    }
-
-    private string Write(string content)
-    {
-        string path = Path.Combine(_environment.CurrentDirectory, "App.sln.DotSettings");
-        File.WriteAllText(path, content);
-        return path;
     }
 }

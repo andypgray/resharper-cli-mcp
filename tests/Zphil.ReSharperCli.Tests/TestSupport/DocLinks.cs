@@ -17,13 +17,9 @@ internal static partial class DocLinks
     private static partial Regex UrlPattern();
 
     /// <summary>All <c>*.md</c> files under the repo root, excluding build output and VCS directories.</summary>
-    public static IReadOnlyList<string> EnumerateMarkdown()
+    private static IReadOnlyList<string> EnumerateMarkdown()
     {
-        return Directory
-            .EnumerateFiles(RepoRoot.Location, "*.md", SearchOption.AllDirectories)
-            .Where(path => !IsExcludedDirectory(path))
-            .OrderBy(path => path, StringComparer.Ordinal)
-            .ToList();
+        return RepoRoot.EnumerateCommitted("*.md");
     }
 
     /// <summary>
@@ -44,7 +40,7 @@ internal static partial class DocLinks
                 string url = TrimTrailingPunctuation(match.Value);
                 if (!IsCuratedDocLink(url)) continue;
 
-                if (!citingFilesByUrl.TryGetValue(url, out var citingFiles))
+                if (!citingFilesByUrl.TryGetValue(url, out SortedSet<string>? citingFiles))
                 {
                     citingFiles = new SortedSet<string>(StringComparer.Ordinal);
                     citingFilesByUrl[url] = citingFiles;
@@ -80,13 +76,5 @@ internal static partial class DocLinks
     private static string TrimTrailingPunctuation(string url)
     {
         return url.TrimEnd('.', ',', ';', ':', '!', '?');
-    }
-
-    private static bool IsExcludedDirectory(string path)
-    {
-        string relativePath = Path.GetRelativePath(RepoRoot.Location, path);
-        string[] segments = relativePath.Split(
-            Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        return segments.Any(segment => segment is "bin" or "obj" or ".git");
     }
 }

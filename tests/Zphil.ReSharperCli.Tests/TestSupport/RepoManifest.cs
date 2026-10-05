@@ -19,25 +19,61 @@ internal static class RepoManifest
     /// </summary>
     public static string? ReadString(string manifestPath, string jsonPointer)
     {
-        string manifest = File.ReadAllText(Path.Combine(RepoRoot.Location, manifestPath));
-        using JsonDocument document = JsonDocument.Parse(manifest);
+        return Read(manifestPath, jsonPointer).GetString();
+    }
 
-        return Resolve(document.RootElement, jsonPointer).GetString();
+    /// <summary>
+    ///     The value at <paramref name="jsonPointer" />, for a test that walks an array or an object from there.
+    /// </summary>
+    /// <remarks>
+    ///     Detached from the parsed document, so it outlives this call. Throws when the pointer names nothing.
+    /// </remarks>
+    public static JsonElement Read(string manifestPath, string jsonPointer)
+    {
+        using JsonDocument document = Parse(manifestPath);
+
+        if (!TryResolve(document.RootElement, jsonPointer, out JsonElement value))
+            throw new KeyNotFoundException($"{manifestPath} has nothing at {jsonPointer}.");
+
+        return value.Clone();
+    }
+
+    /// <summary>Whether the manifest has anything at <paramref name="jsonPointer" />, JSON <c>null</c> included.</summary>
+    public static bool Has(string manifestPath, string jsonPointer)
+    {
+        using JsonDocument document = Parse(manifestPath);
+
+        return TryResolve(document.RootElement, jsonPointer, out _);
+    }
+
+    private static JsonDocument Parse(string manifestPath)
+    {
+        string manifest = RepoRoot.ReadText(manifestPath);
+        return JsonDocument.Parse(manifest);
     }
 
     /// <summary>
     ///     Walks a JSON pointer — <c>/packages/0/version</c> — from <paramref name="root" />, indexing an
     ///     array when a segment is a number and reading a property otherwise.
     /// </summary>
-    private static JsonElement Resolve(JsonElement root, string jsonPointer)
+    private static bool TryResolve(JsonElement root, string jsonPointer, out JsonElement value)
     {
         JsonElement current = root;
+        value = default;
 
         foreach (string segment in jsonPointer.Split('/', StringSplitOptions.RemoveEmptyEntries))
-            current = int.TryParse(segment, out int index)
-                ? current[index]
-                : current.GetProperty(segment);
+            if (int.TryParse(segment, out int index))
+            {
+                if (current.ValueKind != JsonValueKind.Array || index >= current.GetArrayLength()) return false;
 
-        return current;
+                current = current[index];
+            }
+            else if (current.ValueKind != JsonValueKind.Object || !current.TryGetProperty(segment, out current))
+            {
+                return false;
+            }
+
+        value = current;
+        return true;
     }
 }

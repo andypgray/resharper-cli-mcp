@@ -34,18 +34,12 @@ public sealed class CacheWarmerTests : IDisposable
 
     public CacheWarmerTests()
     {
-        _solutionPath = Path.Combine(_environment.CurrentDirectory, "App.sln");
-        File.WriteAllText(_solutionPath, string.Empty);
+        _solutionPath = _environment.PlantSolution("App.sln");
 
         _cacheHome = _environment.CreateTempDirectory();
         _environment.SetVariable("JB_CACHE_HOME", _cacheHome);
 
-        _loggerFactory = LoggerFactory.Create(builder =>
-        {
-            builder.ClearProviders();
-            builder.AddProvider(_logs);
-            builder.SetMinimumLevel(LogLevel.Trace);
-        });
+        _loggerFactory = Logs.Capturing(_logs);
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -681,10 +675,33 @@ public sealed class CacheWarmerTests : IDisposable
         return BuildGraph().Warmer;
     }
 
+    /// <summary>
+    ///     The tool graph as far as <see cref="InspectService" />, topped with the warmer, so these tests drive
+    ///     the real discovery → lock → process path rather than a stubbed one.
+    /// </summary>
+    /// <remarks>
+    ///     The lock is private to the returned warmer: a test that needs the cache generation held takes the
+    ///     lock <em>file</em>, which is what another server process looks like anyway.
+    /// </remarks>
     private WarmerGraph BuildGraph()
     {
-        return ToolHarness.BuildCacheWarmer(_probe, _environment, _loggerFactory.CreateLogger<CacheWarmer>());
+        JbLocator jbLocator = new(_probe, _environment, NullLogger<JbLocator>.Instance);
+        ConfigResolver configResolver = new(jbLocator, _environment, NullLogger<ConfigResolver>.Instance);
+        JbRunner jbRunner = JbRunners.Create(_probe);
+        InspectService inspectService = new(jbRunner);
+        ILogger<CacheWarmer> logger = _loggerFactory.CreateLogger<CacheWarmer>();
+        CacheWarmer warmer = new(configResolver, inspectService, jbRunner, _environment, logger);
+        return new WarmerGraph(warmer, jbRunner);
     }
+
+    /// <summary>
+    ///     A warmer and the runner underneath it, handed back together because the two are wired to each other.
+    /// </summary>
+    /// <remarks>
+    ///     A foreground run hitting its cap is what re-arms the warmer, and only a run driven through
+    ///     <em>this</em> runner reaches <em>that</em> warmer.
+    /// </remarks>
+    private sealed record WarmerGraph(CacheWarmer Warmer, JbRunner Runner);
 
     /// <summary>
     ///     A scriptable <c>jb</c>: it answers the version probe so discovery succeeds, records every real run,
@@ -763,9 +780,9 @@ public sealed class CacheWarmerTests : IDisposable
             JbStubs.WriteEmptySarifIfRequested(arguments);
 
             // And a run that exits 0 has left its cache generation behind, for the same reason.
-            if (ExitCode == 0) CacheHomes.PlantGenerationFromJbRun(arguments);
-
-            return new ProcessResult(ExitCode, string.Empty, string.Empty);
+            return ExitCode == 0
+                ? JbStubs.Succeed(arguments)
+                : new ProcessResult(ExitCode, string.Empty, string.Empty);
         }
     }
 }

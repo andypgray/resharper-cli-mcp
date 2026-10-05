@@ -111,12 +111,11 @@ public sealed class PreWarmTriggerTests
             .AnyRun()
             .Returns(call =>
             {
-                var arguments = call.Arg<IReadOnlyList<string>>();
+                IReadOnlyList<string> arguments = call.Arguments();
 
                 if (JbStubs.IsVersionProbe(arguments)) return JbStubs.VersionProbeAnswer;
 
-                CacheHomes.PlantGenerationFromJbRun(arguments);
-                return new ProcessResult(0, string.Empty, string.Empty);
+                return JbStubs.Succeed(arguments);
             });
     }
 
@@ -132,10 +131,10 @@ public sealed class PreWarmTriggerTests
             .AnyRun()
             .Returns(call =>
             {
-                if (JbStubs.IsVersionProbe(call.Arg<IReadOnlyList<string>>()))
+                if (JbStubs.IsVersionProbe(call.Arguments()))
                     return JbStubs.VersionProbeAnswer;
 
-                var cancellationToken = call.Arg<CancellationToken>();
+                CancellationToken cancellationToken = call.Token();
                 started.TrySetResult();
 
                 // Bounded so a regression that stopped cancelling fails this test instead of wedging the run.
@@ -143,7 +142,7 @@ public sealed class PreWarmTriggerTests
 
                 // Exactly what ProcessRunner surfaces once it has tree-killed the process on that token.
                 cancellationToken.ThrowIfCancellationRequested();
-                return new ProcessResult(0, string.Empty, string.Empty);
+                return JbStubs.Success;
             });
     }
 

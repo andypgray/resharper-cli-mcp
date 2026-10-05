@@ -30,8 +30,7 @@ public sealed class CleanupServiceTests : IDisposable
     public CleanupServiceTests()
     {
         _solutionDirectory = _environment.CurrentDirectory;
-        string solutionPath = Path.Combine(_solutionDirectory, "App.sln");
-        File.WriteAllText(solutionPath, string.Empty);
+        string solutionPath = _environment.PlantSolution("App.sln");
 
         // The cache home is a real directory: JbRunLock creates it and takes its lock file there, so a
         // literal like "/cache" would leave a stray folder at the drive root.
@@ -50,7 +49,7 @@ public sealed class CleanupServiceTests : IDisposable
     public async Task RunAsync_FileRewritten_ClassifiesChanged()
     {
         // Arrange — jb "cleans up" the file by writing different bytes during its run.
-        string path = PlantFile("src/A.cs", "original");
+        string path = SolutionFiles.Plant(_solutionDirectory, "src/A.cs", "original");
         StubJbRunning(() => File.WriteAllText(path, "cleaned up"));
 
         // Act
@@ -68,7 +67,7 @@ public sealed class CleanupServiceTests : IDisposable
     {
         // Arrange — jb re-writes the file with byte-identical content (a new mtime, same bytes). Content
         // hashing must call this Unchanged; a (length, mtime) heuristic would wrongly report Changed.
-        string path = PlantFile("src/A.cs", "same bytes");
+        string path = SolutionFiles.Plant(_solutionDirectory, "src/A.cs", "same bytes");
         StubJbRunning(() => File.WriteAllText(path, "same bytes"));
 
         // Act
@@ -83,7 +82,7 @@ public sealed class CleanupServiceTests : IDisposable
     {
         // Arrange — jb deletes the file (exit 0), so the after-hash read fails. The run already succeeded, so
         // the outcome must classify it StatusUnknown rather than letting the hash failure throw.
-        string path = PlantFile("src/A.cs", "content");
+        string path = SolutionFiles.Plant(_solutionDirectory, "src/A.cs", "content");
         StubJbRunning(() => File.Delete(path));
 
         // Act
@@ -97,7 +96,7 @@ public sealed class CleanupServiceTests : IDisposable
     public async Task RunAsync_MixedConcreteAndWildcard_ClassifiesEachInOrder()
     {
         // Arrange — one concrete file jb rewrites, plus a wildcard that stays a Pattern (never a single file).
-        string path = PlantFile("src/A.cs", "before");
+        string path = SolutionFiles.Plant(_solutionDirectory, "src/A.cs", "before");
         StubJbRunning(() => File.WriteAllText(path, "after"));
 
         // Act
@@ -129,7 +128,7 @@ public sealed class CleanupServiceTests : IDisposable
     public async Task RunAsync_AbsoluteExistingPathUntouched_ClassifiesUnchanged()
     {
         // Arrange — an absolute path jb does not modify.
-        string absolute = PlantFile("src/Real.cs", "x");
+        string absolute = SolutionFiles.Plant(_solutionDirectory, "src/Real.cs", "x");
         StubExit(0);
 
         // Act
@@ -147,14 +146,14 @@ public sealed class CleanupServiceTests : IDisposable
         // Arrange — the field failure, through the service that builds the argument. jb's --include takes
         // relative paths only, so an absolute one is an Ant pattern matched against the solution model that
         // can never hit.
-        string absolute = PlantFile("src/A.cs", "x");
+        string absolute = SolutionFiles.Plant(_solutionDirectory, "src/A.cs", "x");
         List<string>? arguments = null;
         _processRunner
             .AnyRunOf("jb")
             .Returns(call =>
             {
-                arguments = [.. call.Arg<IReadOnlyList<string>>()];
-                return new ProcessResult(0, string.Empty, string.Empty);
+                arguments = [.. call.Arguments()];
+                return JbStubs.Success;
             });
 
         // Act
@@ -169,7 +168,7 @@ public sealed class CleanupServiceTests : IDisposable
     public async Task RunAsync_NonZeroExit_ThrowsUserErrorSurfacingStderr()
     {
         // Arrange — a non-zero exit throws before any classification.
-        PlantFile("A.cs", "x");
+        SolutionFiles.Plant(_solutionDirectory, "A.cs", "x");
         _processRunner
             .AnyRunOf("jb")
             .Returns(new ProcessResult(1, string.Empty, "Unknown profile 'No Such Profile'"));
@@ -187,8 +186,8 @@ public sealed class CleanupServiceTests : IDisposable
         // Arrange — jb's own signal for this reads as a success to an agent that has just made 27 edits:
         // "No items were found to cleanup" is the whole of the stderr, and a pass got skipped in the field
         // because of it. The framing is cleanup's to give, since only cleanup knows N files were named.
-        PlantFile("src/A.cs", "x");
-        PlantFile("src/B.cs", "x");
+        SolutionFiles.Plant(_solutionDirectory, "src/A.cs", "x");
+        SolutionFiles.Plant(_solutionDirectory, "src/B.cs", "x");
         _processRunner
             .AnyRunOf("jb")
             .Returns(new ProcessResult(3, string.Empty, "No items were found to cleanup"));
@@ -212,7 +211,7 @@ public sealed class CleanupServiceTests : IDisposable
     {
         // Arrange — the report echoes the caller's own spelling, so the failure message is the one place the
         // translated form is visible. That is what makes "these are the patterns jb was given" true.
-        string absolute = PlantFile("src/A.cs", "x");
+        string absolute = SolutionFiles.Plant(_solutionDirectory, "src/A.cs", "x");
         _processRunner
             .AnyRunOf("jb")
             .Returns(new ProcessResult(3, string.Empty, "No items were found to cleanup"));
@@ -230,7 +229,7 @@ public sealed class CleanupServiceTests : IDisposable
     {
         // Arrange — jb does not always say why. A bare "jb reported:" with nothing after it reads as output
         // that went missing, so the line is only there when there is something to quote.
-        PlantFile("src/A.cs", "x");
+        SolutionFiles.Plant(_solutionDirectory, "src/A.cs", "x");
         StubExit(9);
 
         // Act
@@ -247,7 +246,7 @@ public sealed class CleanupServiceTests : IDisposable
         // Arrange — the discriminator the typed exception exists for. A cleanup killed at the cap may already
         // have rewritten files, so it must not be told nothing was cleaned up, and the runner's message names
         // the variable that moves the cap.
-        PlantFile("src/A.cs", "x");
+        SolutionFiles.Plant(_solutionDirectory, "src/A.cs", "x");
         _processRunner
             .AnyRunOf("jb")
             .ThrowsAsync(new ProcessTimeoutException("'jb' timed out."));
@@ -273,14 +272,6 @@ public sealed class CleanupServiceTests : IDisposable
         await _processRunner.DidNotReceive().AnyRun();
     }
 
-    private string PlantFile(string relativePath, string content = "")
-    {
-        string fullPath = Path.Combine(_solutionDirectory, relativePath);
-        Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
-        File.WriteAllText(fullPath, content);
-        return fullPath;
-    }
-
     private void StubExit(int exitCode)
     {
         _processRunner
@@ -296,7 +287,7 @@ public sealed class CleanupServiceTests : IDisposable
             .Returns(_ =>
             {
                 duringRun();
-                return new ProcessResult(0, string.Empty, string.Empty);
+                return JbStubs.Success;
             });
     }
 }

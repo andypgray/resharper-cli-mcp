@@ -62,6 +62,23 @@ internal static class JbRunners
         return new CacheResetService(runLock, runYield, Logs.For<CacheResetService>(logs), heartbeat);
     }
 
+    /// <summary>
+    ///     A cache reset with a lock and a yield of its own, for a test about the reset alone.
+    /// </summary>
+    /// <remarks>
+    ///     It arbitrates against nothing: no runner shares its yield, so it can never stand a pre-warm down, and
+    ///     only a holder of the lock <em>file</em> can make it queue — which is what such a test wants, and why
+    ///     this is not <see cref="Reset" />.
+    /// </remarks>
+    /// <param name="cap">Bounds its queue wait.</param>
+    public static CacheResetService StandaloneReset(
+        TimeSpan cap,
+        ILoggerFactory? logs = null,
+        TimeSpan? heartbeat = null)
+    {
+        return Reset(Lock(cap, logs), Yield(logs), logs, heartbeat);
+    }
+
     public static JbRunner Create(IProcessRunner processRunner, TimeSpan? cap = null, ILoggerFactory? logs = null)
     {
         return Create(processRunner, Lock(cap, logs), cap, logs);

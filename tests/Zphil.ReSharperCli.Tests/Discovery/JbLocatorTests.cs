@@ -17,6 +17,9 @@ public sealed class JbLocatorTests : IDisposable
     private const string VersionOutput =
         "JetBrains Inspect Code 2026.1.2\nRunning on x64 OS in x64 architecture\nVersion: 2026.1.2\n";
 
+    /// <summary>A candidate answering the probe the way a healthy <c>jb</c> does, banner and all.</summary>
+    private static readonly ProcessResult Healthy = new(0, VersionOutput, string.Empty);
+
     private readonly FakeEnvironment _environment = new();
 
     private readonly CapturingLoggerProvider _logs = new();
@@ -37,8 +40,8 @@ public sealed class JbLocatorTests : IDisposable
     public async Task LocateAsync_JbOnPath_ReturnsPathCandidateWithParsedVersion()
     {
         // Arrange
-        Probe("jb").Returns(new ProcessResult(0, VersionOutput, string.Empty));
-        JbLocator locator = new(_processRunner, _environment, NullLogger<JbLocator>.Instance);
+        Probe("jb").Returns(Healthy);
+        JbLocator locator = Locator();
 
         // Act
         JbInstallation installation = await locator.LocateAsync(Ct);
@@ -53,8 +56,8 @@ public sealed class JbLocatorTests : IDisposable
     {
         // Arrange
         Probe("jb").Throws(new Win32Exception("The system cannot find the file specified."));
-        Probe(DotnetToolsCandidate).Returns(new ProcessResult(0, VersionOutput, string.Empty));
-        JbLocator locator = new(_processRunner, _environment, NullLogger<JbLocator>.Instance);
+        Probe(DotnetToolsCandidate).Returns(Healthy);
+        JbLocator locator = Locator();
 
         // Act
         JbInstallation installation = await locator.LocateAsync(Ct);
@@ -69,7 +72,7 @@ public sealed class JbLocatorTests : IDisposable
     {
         // Arrange
         Probe("jb").Returns(new ProcessResult(0, "  ReSharper CLI build 12345  \n", string.Empty));
-        JbLocator locator = new(_processRunner, _environment, NullLogger<JbLocator>.Instance);
+        JbLocator locator = Locator();
 
         // Act
         JbInstallation installation = await locator.LocateAsync(Ct);
@@ -90,7 +93,7 @@ public sealed class JbLocatorTests : IDisposable
         _processRunner
             .AnyRun()
             .Returns(new ProcessResult(0, standardOutput!, string.Empty));
-        JbLocator locator = new(_processRunner, _environment, NullLogger<JbLocator>.Instance);
+        JbLocator locator = Locator();
 
         // Act
         var exception = await Should.ThrowAsync<UserErrorException>(() => locator.LocateAsync(Ct));
@@ -106,8 +109,8 @@ public sealed class JbLocatorTests : IDisposable
     {
         // Arrange
         Probe("jb").Returns(new ProcessResult(0, string.Empty, string.Empty));
-        Probe(DotnetToolsCandidate).Returns(new ProcessResult(0, VersionOutput, string.Empty));
-        JbLocator locator = new(_processRunner, _environment, NullLogger<JbLocator>.Instance);
+        Probe(DotnetToolsCandidate).Returns(Healthy);
+        JbLocator locator = Locator();
 
         // Act
         JbInstallation installation = await locator.LocateAsync(Ct);
@@ -122,8 +125,8 @@ public sealed class JbLocatorTests : IDisposable
     {
         // Arrange
         Probe("jb").Returns(new ProcessResult(1, string.Empty, "some jb error"));
-        Probe(DotnetToolsCandidate).Returns(new ProcessResult(0, VersionOutput, string.Empty));
-        JbLocator locator = new(_processRunner, _environment, NullLogger<JbLocator>.Instance);
+        Probe(DotnetToolsCandidate).Returns(Healthy);
+        JbLocator locator = Locator();
 
         // Act
         JbInstallation installation = await locator.LocateAsync(Ct);
@@ -139,8 +142,8 @@ public sealed class JbLocatorTests : IDisposable
         // the cap, and the next candidate answering inside it. A timeout settles the remedy only once every
         // candidate has failed, so stopping at the first would turn this recovered call into an error.
         Probe("jb").Throws(new ProcessTimeoutException("'jb' timed out after 30 seconds."));
-        Probe(DotnetToolsCandidate).Returns(new ProcessResult(0, VersionOutput, string.Empty));
-        JbLocator locator = new(_processRunner, _environment, NullLogger<JbLocator>.Instance);
+        Probe(DotnetToolsCandidate).Returns(Healthy);
+        JbLocator locator = Locator();
 
         // Act
         JbInstallation installation = await locator.LocateAsync(Ct);
@@ -158,7 +161,7 @@ public sealed class JbLocatorTests : IDisposable
         _processRunner
             .AnyRun()
             .Throws(new Win32Exception("The system cannot find the file specified."));
-        JbLocator locator = new(_processRunner, _environment, NullLogger<JbLocator>.Instance);
+        JbLocator locator = Locator();
 
         // Act
         var exception = await Should.ThrowAsync<UserErrorException>(() => locator.LocateAsync(Ct));
@@ -179,7 +182,7 @@ public sealed class JbLocatorTests : IDisposable
         _processRunner
             .AnyRun()
             .Throws(new ProcessTimeoutException("'jb' timed out after 30 seconds."));
-        JbLocator locator = new(_processRunner, _environment, NullLogger<JbLocator>.Instance);
+        JbLocator locator = Locator();
 
         // Act
         var exception = await Should.ThrowAsync<UserErrorException>(() => locator.LocateAsync(Ct));
@@ -198,7 +201,7 @@ public sealed class JbLocatorTests : IDisposable
         // Arrange — one candidate proving a jb exists is enough, however the others ended.
         Probe("jb").Throws(new Win32Exception("The system cannot find the file specified."));
         Probe(DotnetToolsCandidate).Throws(new ProcessTimeoutException("timed out"));
-        JbLocator locator = new(_processRunner, _environment, NullLogger<JbLocator>.Instance);
+        JbLocator locator = Locator();
 
         // Act
         var exception = await Should.ThrowAsync<UserErrorException>(() => locator.LocateAsync(Ct));
@@ -221,7 +224,7 @@ public sealed class JbLocatorTests : IDisposable
         _processRunner
             .AnyRun()
             .Returns(new ProcessResult(exitCode, string.Empty, standardError));
-        JbLocator locator = new(_processRunner, _environment, NullLogger<JbLocator>.Instance);
+        JbLocator locator = Locator();
 
         // Act
         var exception = await Should.ThrowAsync<UserErrorException>(() => locator.LocateAsync(Ct));
@@ -255,8 +258,8 @@ public sealed class JbLocatorTests : IDisposable
     public async Task LocateAsync_CalledTwiceAfterSuccess_DoesNotReprobe()
     {
         // Arrange
-        Probe("jb").Returns(new ProcessResult(0, VersionOutput, string.Empty));
-        JbLocator locator = new(_processRunner, _environment, NullLogger<JbLocator>.Instance);
+        Probe("jb").Returns(Healthy);
+        JbLocator locator = Locator();
 
         // Act
         await locator.LocateAsync(Ct);
@@ -299,8 +302,8 @@ public sealed class JbLocatorTests : IDisposable
         // read of one or two files.
         JbInstalls.PlantGlobalToolShim(_environment.HomeDirectory);
         Probe("jb").Throws(new Win32Exception("The system cannot find the file specified."));
-        Probe(DotnetToolsCandidate).Returns(new ProcessResult(0, VersionOutput, string.Empty));
-        JbLocator locator = new(_processRunner, _environment, NullLogger<JbLocator>.Instance);
+        Probe(DotnetToolsCandidate).Returns(Healthy);
+        JbLocator locator = Locator();
 
         // Act
         await locator.LocateAsync(Ct);
@@ -318,8 +321,8 @@ public sealed class JbLocatorTests : IDisposable
         string directory = _environment.CreateTempDirectory();
         string jb = JbInstalls.PlantJbIn(directory);
         _environment.SetVariable(PathSearch.PathVariable, directory);
-        Probe("jb").Returns(new ProcessResult(0, VersionOutput, string.Empty));
-        JbLocator locator = new(_processRunner, _environment, NullLogger<JbLocator>.Instance);
+        Probe("jb").Returns(Healthy);
+        JbLocator locator = Locator();
         await locator.LocateAsync(Ct);
 
         // Act
@@ -337,7 +340,7 @@ public sealed class JbLocatorTests : IDisposable
         // ProcessRunner writes either of its own lines, and a candidate that fails before a later one
         // succeeds never reaches the "No jb reported a version" summary, so its time was attributed to nothing.
         Probe("jb").Throws(new Win32Exception("The system cannot find the file specified."));
-        Probe(DotnetToolsCandidate).Returns(new ProcessResult(0, VersionOutput, string.Empty));
+        Probe(DotnetToolsCandidate).Returns(Healthy);
 
         // Act
         await LoggingLocator().LocateAsync(Ct);
@@ -353,7 +356,7 @@ public sealed class JbLocatorTests : IDisposable
     public async Task LocateAsync_CandidateReportsAVersion_LogsThatCandidateToo()
     {
         // Arrange
-        Probe("jb").Returns(new ProcessResult(0, VersionOutput, string.Empty));
+        Probe("jb").Returns(Healthy);
 
         // Act
         await LoggingLocator().LocateAsync(Ct);
@@ -371,7 +374,7 @@ public sealed class JbLocatorTests : IDisposable
         // Arrange — cancellation is the one ending that is not a candidate's fault. Read as a failure it
         // would be logged as one and the loop would go on probing after the call the probe serves has gone.
         Probe("jb").Throws(new OperationCanceledException());
-        Probe(DotnetToolsCandidate).Returns(new ProcessResult(0, VersionOutput, string.Empty));
+        Probe(DotnetToolsCandidate).Returns(Healthy);
 
         // Act
         await Should.ThrowAsync<OperationCanceledException>(() => LoggingLocator().LocateAsync(Ct));
@@ -384,6 +387,11 @@ public sealed class JbLocatorTests : IDisposable
     private Task<ProcessResult> Probe(string fileName)
     {
         return _processRunner.AnyRunOf(fileName);
+    }
+
+    private JbLocator Locator()
+    {
+        return new JbLocator(_processRunner, _environment, NullLogger<JbLocator>.Instance);
     }
 
     private JbLocator LoggingLocator()

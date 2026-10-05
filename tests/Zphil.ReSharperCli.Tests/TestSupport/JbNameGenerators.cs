@@ -36,7 +36,7 @@ internal static class JbNameGenerators
     ///     ASCII digits. Negative values are about half of the real ones, so they are drawn deliberately
     ///     rather than left to chance.
     /// </summary>
-    internal static Gen<string> CacheHash()
+    private static Gen<string> CacheHash()
     {
         Gen<string> digits = Gen.Choose(1, 10)
             .SelectMany(digitCount => Gen.Elements("0123456789".ToCharArray()).ListOf(digitCount))
@@ -49,7 +49,7 @@ internal static class JbNameGenerators
     ///     A generation number: <c>00</c> for the first, and the higher ones <c>jb</c> forks when it cannot
     ///     open the generation it wanted. Non-negative and zero-padded, matching what appears on disk.
     /// </summary>
-    internal static Gen<string> GenerationNumber()
+    private static Gen<string> GenerationNumber()
     {
         return Gen.Choose(0, 99).Select(generation => generation.ToString("00"));
     }

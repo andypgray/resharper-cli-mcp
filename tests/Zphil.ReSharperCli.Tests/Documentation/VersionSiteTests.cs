@@ -78,11 +78,10 @@ public sealed partial class VersionSiteTests
     {
         // Arrange
         string declaredVersion = DeclaredCsprojVersion();
-        string manifest = File.ReadAllText(Path.Combine(RepoRoot.Location, manifestPath));
+        JsonElement servers = RepoManifest.Read(manifestPath, "/mcpServers");
 
         // Act
-        using JsonDocument document = JsonDocument.Parse(manifest);
-        string? pinnedArgument = LauncherArguments(document)
+        string? pinnedArgument = LauncherArguments(servers)
             .FirstOrDefault(argument => argument.StartsWith(PinPrefix, StringComparison.Ordinal));
 
         // Assert
@@ -111,12 +110,8 @@ public sealed partial class VersionSiteTests
     [Fact]
     public void RootAgentPluginManifest_DeclaresNoVersion()
     {
-        // Arrange
-        string manifest = File.ReadAllText(Path.Combine(RepoRoot.Location, "plugin.json"));
-
         // Act
-        using JsonDocument document = JsonDocument.Parse(manifest);
-        bool declaresVersion = document.RootElement.TryGetProperty("version", out _);
+        bool declaresVersion = RepoManifest.Has("plugin.json", "/version");
 
         // Assert
         declaresVersion.ShouldBeFalse(
@@ -129,8 +124,7 @@ public sealed partial class VersionSiteTests
     /// </summary>
     private static string DeclaredCsprojVersion()
     {
-        string csproj = File.ReadAllText(
-            Path.Combine(RepoRoot.Location, "src", "Zphil.ReSharperCli", "Zphil.ReSharperCli.csproj"));
+        string csproj = RepoRoot.ReadText(RepoRoot.ProductCsproj);
         Match declaredVersion = CsprojVersion().Match(csproj);
         declaredVersion.Success.ShouldBeTrue(
             "The csproj must declare a <Version> for the version sites to agree with.");
@@ -142,10 +136,8 @@ public sealed partial class VersionSiteTests
     ///     Every string in every server's <c>args</c> array. Enumerating the servers rather than naming the
     ///     <c>resharper</c> key means renaming that key cannot make the assertions above vacuous.
     /// </summary>
-    private static IEnumerable<string> LauncherArguments(JsonDocument manifest)
+    private static IEnumerable<string> LauncherArguments(JsonElement servers)
     {
-        JsonElement servers = manifest.RootElement.GetProperty("mcpServers");
-
         foreach (JsonProperty server in servers.EnumerateObject())
         {
             if (!server.Value.TryGetProperty("args", out JsonElement arguments))

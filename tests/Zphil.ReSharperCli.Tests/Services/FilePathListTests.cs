@@ -2,6 +2,7 @@ using Shouldly;
 using Xunit;
 using Zphil.ReSharperCli.Services;
 using Zphil.ReSharperCli.Tests.TestDoubles;
+using Zphil.ReSharperCli.Tests.TestSupport;
 
 namespace Zphil.ReSharperCli.Tests.Services;
 
@@ -117,7 +118,7 @@ public sealed class FilePathListTests : IDisposable
         // Arrange — the guard that makes splitting safe for the destructive tool: a comma is a legal filename
         // character, so an entry that already resolves to a real file is kept verbatim.
         string[] files = ["Foo,Bar.cs"];
-        PlantFile("Foo,Bar.cs");
+        SolutionFiles.Plant(_solutionDirectory, "Foo,Bar.cs");
 
         // Act
         IReadOnlyList<string> split = FilePathList.Split(files, _solutionDirectory);
@@ -314,7 +315,7 @@ public sealed class FilePathListTests : IDisposable
     public void ResolvesToExistingFile_AbsolutePath_IgnoresTheSolutionDirectory()
     {
         // Arrange
-        string absolute = PlantFile("src/A.cs");
+        string absolute = SolutionFiles.Plant(_solutionDirectory, "src/A.cs");
 
         // Act & Assert
         FilePathList.ResolvesToExistingFile(absolute, _solutionDirectory).ShouldBeTrue();
@@ -348,7 +349,7 @@ public sealed class FilePathListTests : IDisposable
     public void FindMissing_ReportsTheEntriesThatNameNoFile_AndLeavesTheOthersOut()
     {
         // Arrange
-        PlantFile("src/A.cs");
+        SolutionFiles.Plant(_solutionDirectory, "src/A.cs");
 
         // Act
         List<string> missing = FilePathList.FindMissing(["src/A.cs", "src/Typo.cs"], _solutionDirectory);
@@ -380,13 +381,5 @@ public sealed class FilePathListTests : IDisposable
     private string EntryBeyondTheOsPathLimit()
     {
         return _solutionDirectory + Path.DirectorySeparatorChar + new string('a', 40_000);
-    }
-
-    private string PlantFile(string relativePath)
-    {
-        string fullPath = Path.Combine(_solutionDirectory, relativePath);
-        Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
-        File.WriteAllText(fullPath, string.Empty);
-        return fullPath;
     }
 }

@@ -13,7 +13,9 @@ namespace Zphil.ReSharperCli.Tests.Services;
 
 public sealed class InspectServiceArgumentTests
 {
+    private const string CacheHome = "/cache";
     private const string OutputFile = "/tmp/out/results.json";
+    private const string SolutionPath = "/sln/App.sln";
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
@@ -21,7 +23,7 @@ public sealed class InspectServiceArgumentTests
     public void BuildArguments_MinimalConfig_ProducesExactFixedOrder()
     {
         // Act
-        List<string> arguments = InspectService.BuildArguments(Config(), OutputFile, null, InspectSeverity.Warning);
+        List<string> arguments = InspectService.BuildArguments(Configs.Bare(SolutionPath, CacheHome), OutputFile, null, InspectSeverity.Warning);
 
         // Assert
         arguments.ShouldBe(
@@ -42,7 +44,7 @@ public sealed class InspectServiceArgumentTests
     {
         // Act — the settings file is one jb cannot discover, which is the only shape that earns --settings.
         List<string> arguments = InspectService.BuildArguments(
-            Config("/team/Shared.DotSettings", true, "Cfg.Ext", "cfg-source"),
+            Configs.With(SolutionPath, CacheHome, "/team/Shared.DotSettings", true, "Cfg.Ext", "cfg-source"),
             OutputFile,
             ["src/A.cs", "src/B.cs"],
             InspectSeverity.Error);
@@ -71,7 +73,7 @@ public sealed class InspectServiceArgumentTests
     {
         // Act
         List<string> arguments = InspectService.BuildArguments(
-            Config(), OutputFile, ["A.cs", "B.cs", "C.cs"], InspectSeverity.Warning);
+            Configs.Bare(SolutionPath, CacheHome), OutputFile, ["A.cs", "B.cs", "C.cs"], InspectSeverity.Warning);
 
         // Assert
         arguments.ShouldContain("--include=A.cs;B.cs;C.cs");
@@ -87,7 +89,7 @@ public sealed class InspectServiceArgumentTests
 
         // Act
         List<string> arguments = InspectService.BuildArguments(
-            Config(solutionPath: solutionPath), OutputFile, [absolute], InspectSeverity.Warning);
+            Configs.Bare(solutionPath, CacheHome), OutputFile, [absolute], InspectSeverity.Warning);
 
         // Assert
         arguments.ShouldContain("--include=src/A.cs");
@@ -97,7 +99,7 @@ public sealed class InspectServiceArgumentTests
     public void BuildArguments_EmptyFiles_OmitsIncludeFlag()
     {
         // Act
-        List<string> arguments = InspectService.BuildArguments(Config(), OutputFile, [], InspectSeverity.Warning);
+        List<string> arguments = InspectService.BuildArguments(Configs.Bare(SolutionPath, CacheHome), OutputFile, [], InspectSeverity.Warning);
 
         // Assert
         arguments.Any(a => a.StartsWith("--include", StringComparison.Ordinal)).ShouldBeFalse();
@@ -107,7 +109,7 @@ public sealed class InspectServiceArgumentTests
     public void BuildArguments_NullSettings_OmitsSettingsFlag()
     {
         // Act
-        List<string> arguments = InspectService.BuildArguments(Config(), OutputFile, null, InspectSeverity.Warning);
+        List<string> arguments = InspectService.BuildArguments(Configs.Bare(SolutionPath, CacheHome), OutputFile, null, InspectSeverity.Warning);
 
         // Assert
         arguments.Any(a => a.StartsWith("--settings", StringComparison.Ordinal)).ShouldBeFalse();
@@ -120,7 +122,7 @@ public sealed class InspectServiceArgumentTests
         // --settings would re-mount it as a Custom layer above the project layers, silently demoting
         // every {project}.csproj.DotSettings in the solution.
         List<string> arguments = InspectService.BuildArguments(
-            Config("/sln/App.sln.DotSettings"), OutputFile, null, InspectSeverity.Warning);
+            Configs.With(SolutionPath, CacheHome, "/sln/App.sln.DotSettings"), OutputFile, null, InspectSeverity.Warning);
 
         // Assert
         arguments.Any(a => a.StartsWith("--settings", StringComparison.Ordinal)).ShouldBeFalse();
@@ -131,7 +133,7 @@ public sealed class InspectServiceArgumentTests
     {
         // Act
         List<string> arguments = InspectService.BuildArguments(
-            Config(extensions: "Cfg.Ext", extensionSource: "cfg-source"), OutputFile, null, InspectSeverity.Warning);
+            Configs.With(SolutionPath, CacheHome, extensions: "Cfg.Ext", extensionSource: "cfg-source"), OutputFile, null, InspectSeverity.Warning);
 
         // Assert
         arguments.ShouldContain("-x=Cfg.Ext");
@@ -159,17 +161,16 @@ public sealed class InspectServiceArgumentTests
     {
         // Arrange
         using FakeEnvironment environment = new();
-        ResolvedConfig config = new(
-            "/sln/App.sln", "/team/Shared.DotSettings", true, null, environment.CreateTempDirectory(), "Cfg.Ext", "cfg-source", "jb",
-            ConfigWarnings.None);
+        ResolvedConfig config = Configs.With(
+            SolutionPath, environment.CreateTempDirectory(), "/team/Shared.DotSettings", true, "Cfg.Ext", "cfg-source");
         var processRunner = Substitute.For<IProcessRunner>();
         IReadOnlyList<string>? captured = null;
         processRunner
             .AnyRun()
             .Returns(call =>
             {
-                captured = call.Arg<IReadOnlyList<string>>();
-                return new ProcessResult(0, string.Empty, string.Empty);
+                captured = call.Arguments();
+                return JbStubs.Success;
             });
         InspectService service = new(JbRunners.Create(processRunner));
 
@@ -182,24 +183,5 @@ public sealed class InspectServiceArgumentTests
         string outputFile = JbStubs.OutputPathOf(captured).ShouldNotBeNull();
         captured.ShouldBe(InspectService.BuildArguments(config, outputFile, null, InspectService.WarmUpSeverity));
         captured.Any(argument => argument.StartsWith("--include", StringComparison.Ordinal)).ShouldBeFalse();
-    }
-
-    private static ResolvedConfig Config(
-        string? settings = null,
-        bool settingsIsCustomLayer = false,
-        string? extensions = null,
-        string? extensionSource = null,
-        string solutionPath = "/sln/App.sln")
-    {
-        return new ResolvedConfig(
-            solutionPath,
-            settings,
-            settingsIsCustomLayer,
-            null,
-            "/cache",
-            extensions,
-            extensionSource,
-            "jb",
-            ConfigWarnings.None);
     }
 }

@@ -41,9 +41,9 @@ public sealed class InspectServiceTests : IDisposable
         string? outputPath = null;
         StubRun(callInfo =>
         {
-            outputPath = JbStubs.OutputPathOf(callInfo.ArgAt<IReadOnlyList<string>>(1))!;
+            outputPath = JbStubs.OutputPathOf(callInfo.Arguments())!;
             File.WriteAllText(outputPath, sarif);
-            return new ProcessResult(0, string.Empty, string.Empty);
+            return JbStubs.Success;
         });
 
         // Act
@@ -62,7 +62,7 @@ public sealed class InspectServiceTests : IDisposable
         string? outputPath = null;
         StubRun(callInfo =>
         {
-            outputPath = JbStubs.OutputPathOf(callInfo.ArgAt<IReadOnlyList<string>>(1))!;
+            outputPath = JbStubs.OutputPathOf(callInfo.Arguments())!;
             return new ProcessResult(5, string.Empty, "boom: analysis failed");
         });
 
@@ -95,8 +95,8 @@ public sealed class InspectServiceTests : IDisposable
         // Arrange — jb exits 0 and writes an output file, but its contents are not valid JSON.
         StubRun(callInfo =>
         {
-            JbStubs.WriteSarifIfRequested(callInfo.ArgAt<IReadOnlyList<string>>(1), "{ this is not valid SARIF json");
-            return new ProcessResult(0, string.Empty, string.Empty);
+            JbStubs.WriteSarifIfRequested(callInfo.Arguments(), "{ this is not valid SARIF json");
+            return JbStubs.Success;
         });
 
         // Act

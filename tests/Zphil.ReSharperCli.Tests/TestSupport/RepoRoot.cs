@@ -8,10 +8,48 @@ namespace Zphil.ReSharperCli.Tests.TestSupport;
 /// </summary>
 internal static class RepoRoot
 {
+    /// <summary>The server's project file, relative to the root — where its version, icon and description are declared.</summary>
+    public const string ProductCsproj = "src/Zphil.ReSharperCli/Zphil.ReSharperCli.csproj";
+
     private const string SolutionFileName = "Zphil.ReSharperCli.slnx";
+
+    /// <summary>
+    ///     Directory names whose contents are never committed: build output, the release staging tree, and
+    ///     git's own store. Matched case-insensitively, as a case-insensitive file system would.
+    /// </summary>
+    private static readonly string[] UncommittedDirectories = ["bin", "obj", "artifacts", ".git"];
 
     /// <summary>Absolute path to the repository root.</summary>
     public static string Location { get; } = Locate();
+
+    /// <summary>The text of the file at <paramref name="segments" />, relative to the root.</summary>
+    public static string ReadText(params string[] segments)
+    {
+        string[] path = [Location, .. segments];
+        return File.ReadAllText(Path.Combine(path));
+    }
+
+    /// <summary>
+    ///     Every file under the root matching <paramref name="pattern" />, in ordinal order, outside the
+    ///     directories that hold build output or git's store — the working tree's own files rather than copies
+    ///     of them that a build or a release stage left behind.
+    /// </summary>
+    public static IReadOnlyList<string> EnumerateCommitted(string pattern)
+    {
+        return Directory
+            .EnumerateFiles(Location, pattern, SearchOption.AllDirectories)
+            .Where(path => !IsUnderUncommittedDirectory(path))
+            .OrderBy(path => path, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    private static bool IsUnderUncommittedDirectory(string path)
+    {
+        string relativePath = Path.GetRelativePath(Location, path);
+        string[] segments = relativePath.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+        return segments.Any(segment => UncommittedDirectories.Contains(segment, StringComparer.OrdinalIgnoreCase));
+    }
 
     private static string Locate()
     {

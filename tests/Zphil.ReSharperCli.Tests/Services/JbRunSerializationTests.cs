@@ -31,8 +31,7 @@ public sealed class JbRunSerializationTests : IDisposable
     public JbRunSerializationTests()
     {
         _solutionDirectory = _environment.CurrentDirectory;
-        string solutionPath = Path.Combine(_solutionDirectory, "App.sln");
-        File.WriteAllText(solutionPath, string.Empty);
+        string solutionPath = _environment.PlantSolution("App.sln");
         _config = Configs.Bare(solutionPath, _environment.CreateTempDirectory());
         _runner = JbRunners.Create(_probe);
     }
@@ -65,7 +64,7 @@ public sealed class JbRunSerializationTests : IDisposable
     {
         // Arrange
         CleanupService service = new(_runner, NullLogger<CleanupService>.Instance);
-        PlantFile("src/A.cs");
+        SolutionFiles.Plant(_solutionDirectory, "src/A.cs", "content");
 
         // Act
         await Task.WhenAll(
@@ -83,7 +82,7 @@ public sealed class JbRunSerializationTests : IDisposable
         // Arrange — the two tools share one cache generation, so they contend with each other too.
         InspectService inspect = new(_runner);
         CleanupService cleanup = new(_runner, NullLogger<CleanupService>.Instance);
-        PlantFile("src/A.cs");
+        SolutionFiles.Plant(_solutionDirectory, "src/A.cs", "content");
 
         // Act
         Task inspectRun = inspect.RunAsync(_config, null, InspectSeverity.Warning, Ct);
@@ -135,13 +134,6 @@ public sealed class JbRunSerializationTests : IDisposable
         _probe.MaxConcurrent.ShouldBe(2);
     }
 
-    private void PlantFile(string relativePath)
-    {
-        string fullPath = Path.Combine(_solutionDirectory, relativePath);
-        Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
-        File.WriteAllText(fullPath, "content");
-    }
-
     /// <summary>
     ///     A <see cref="IProcessRunner" /> that records how many runs were ever in flight together and holds
     ///     each one long enough that unserialized callers would demonstrably overlap.
@@ -173,7 +165,7 @@ public sealed class JbRunSerializationTests : IDisposable
             {
                 await Task.Delay(TimeSpan.FromMilliseconds(200), cancellationToken);
                 JbStubs.WriteEmptySarifIfRequested(arguments);
-                return new ProcessResult(0, string.Empty, string.Empty);
+                return JbStubs.Success;
             }
             finally
             {

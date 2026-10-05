@@ -1,36 +1,9 @@
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using Shouldly;
 using Xunit;
 using Zphil.ReSharperCli.Tests.TestSupport;
 
 namespace Zphil.ReSharperCli.Tests.Pipeline;
-
-/// <summary>
-///     One MCP pipeline and one <c>tools/list</c> for the whole class. Every case here asks the same
-///     question of the same answer, so a harness per case would be four servers started to read one
-///     response — and these run in parallel with the progress tests, where the concurrency is not free.
-/// </summary>
-public sealed class AdvertisedToolsFixture : IAsyncLifetime
-{
-    private McpPipelineHarness? _harness;
-
-    /// <summary>The advertised tool list, read once.</summary>
-    public IList<McpClientTool> Tools { get; private set; } = [];
-
-    public async ValueTask InitializeAsync()
-    {
-        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
-
-        _harness = await McpPipelineHarness.StartAsync(cancellationToken);
-        Tools = await _harness.Client.ListToolsAsync(cancellationToken: cancellationToken);
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        if (_harness is not null) await _harness.DisposeAsync();
-    }
-}
 
 /// <summary>
 ///     The surface every MCP client and directory listing renders for this server — the tool names, their

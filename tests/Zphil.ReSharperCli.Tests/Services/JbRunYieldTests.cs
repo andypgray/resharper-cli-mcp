@@ -436,7 +436,7 @@ public sealed class JbRunYieldTests : IDisposable
                 throw;
             }
 
-            return new ProcessResult(0, string.Empty, string.Empty);
+            return JbStubs.Success;
         }
 
         /// <summary>Wait until one more run has started than the last time this was awaited.</summary>

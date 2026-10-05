@@ -63,6 +63,18 @@ internal static class ProcessRuns
             Arg.Any<Action<string>?>());
     }
 
+    /// <summary>The argument list the run was given, read off a recorded call.</summary>
+    public static IReadOnlyList<string> Arguments(this CallInfo call)
+    {
+        return call.ArgAt<IReadOnlyList<string>>(1);
+    }
+
+    /// <summary>The cancellation token the run was given, read off a recorded call.</summary>
+    public static CancellationToken Token(this CallInfo call)
+    {
+        return call.ArgAt<CancellationToken>(3);
+    }
+
     /// <summary>
     ///     The line observer the run was given, read off a recorded call. <see langword="null" /> for a caller
     ///     that asked for no progress — which is what a speculative pass and a version probe both do.

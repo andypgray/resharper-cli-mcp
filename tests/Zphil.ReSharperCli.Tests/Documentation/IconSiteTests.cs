@@ -83,7 +83,7 @@ public sealed partial class IconSiteTests
     public void BundlePackScript_StagesTheCommittedRenderTheManifestNames()
     {
         // Arrange
-        string script = File.ReadAllText(Path.Combine(RepoRoot.Location, "mcpb", "pack.sh"));
+        string script = RepoRoot.ReadText("mcpb", "pack.sh");
 
         // Act
         Match staged = StagedBundleIcon().Match(script);
@@ -159,17 +159,15 @@ public sealed partial class IconSiteTests
 
     private static string Csproj()
     {
-        return File.ReadAllText(
-            Path.Combine(RepoRoot.Location, "src", "Zphil.ReSharperCli", "Zphil.ReSharperCli.csproj"));
+        return RepoRoot.ReadText(RepoRoot.ProductCsproj);
     }
 
     /// <summary>The <c>icons</c> array declared by the MCP registry manifest.</summary>
     private static IReadOnlyList<RegistryIcon> RegistryIcons()
     {
-        string manifest = File.ReadAllText(Path.Combine(RepoRoot.Location, ".mcp", "server.json"));
-        using JsonDocument document = JsonDocument.Parse(manifest);
+        JsonElement icons = RepoManifest.Read(".mcp/server.json", "/icons");
 
-        return document.RootElement.GetProperty("icons")
+        return icons
             .EnumerateArray()
             .Select(icon => new RegistryIcon(
                 icon.GetProperty("src").GetString()!,

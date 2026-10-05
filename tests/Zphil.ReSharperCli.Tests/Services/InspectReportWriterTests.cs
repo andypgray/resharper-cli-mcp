@@ -1,5 +1,3 @@
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
 using Xunit;
 using Zphil.ReSharperCli.Services;
@@ -80,11 +78,10 @@ public sealed class InspectReportWriterTests : IDisposable
     {
         // Arrange — one report backdated past the retention window and one left fresh, both matching the
         // naming the prune sweeps for.
-        string directory = Directory.CreateDirectory(
-            Path.Combine(_root, InspectReportWriter.ReportsDirectoryName)).FullName;
+        string directory = ReportsDirectory();
         string expired = WriteExisting(directory, "Old-inspect-aaaaaaaa.md");
         string fresh = WriteExisting(directory, "Old-inspect-bbbbbbbb.md");
-        File.SetLastWriteTimeUtc(expired, DateTime.UtcNow - InspectReportWriter.RetentionPeriod - TimeSpan.FromDays(1));
+        Expire(expired);
 
         // Act
         InspectReportOutcome outcome = Writer().WriteMarkdown("body", "/sln/App.sln");
@@ -100,10 +97,9 @@ public sealed class InspectReportWriterTests : IDisposable
     {
         // Arrange — the prune runs in a directory named for this server, but it still matches only the names
         // this class writes: deleting by age alone would reach anything a user happened to put there.
-        string directory = Directory.CreateDirectory(
-            Path.Combine(_root, InspectReportWriter.ReportsDirectoryName)).FullName;
+        string directory = ReportsDirectory();
         string bystander = WriteExisting(directory, "notes.md");
-        File.SetLastWriteTimeUtc(bystander, DateTime.UtcNow - InspectReportWriter.RetentionPeriod - TimeSpan.FromDays(1));
+        Expire(bystander);
 
         // Act
         Writer().WriteMarkdown("body", "/sln/App.sln");
@@ -119,10 +115,9 @@ public sealed class InspectReportWriterTests : IDisposable
         // the report it asked for. An expired file held open is the portable way to make one delete fail on
         // Windows; where the platform allows deleting an open file the delete simply succeeds, and the
         // assertion below is the same either way.
-        string directory = Directory.CreateDirectory(
-            Path.Combine(_root, InspectReportWriter.ReportsDirectoryName)).FullName;
+        string directory = ReportsDirectory();
         string expired = WriteExisting(directory, "Old-inspect-cccccccc.md");
-        File.SetLastWriteTimeUtc(expired, DateTime.UtcNow - InspectReportWriter.RetentionPeriod - TimeSpan.FromDays(1));
+        Expire(expired);
         using FileStream held = new(expired, FileMode.Open, FileAccess.Read, FileShare.None);
 
         // Act
@@ -141,7 +136,7 @@ public sealed class InspectReportWriterTests : IDisposable
         // failing must not cost the caller the summary as well.
         File.WriteAllText(Path.Combine(_root, InspectReportWriter.ReportsDirectoryName), "not a directory");
         CapturingLoggerProvider logs = new();
-        InspectReportWriter writer = new(_root, Logs.Capturing(logs).CreateLogger<InspectReportWriter>());
+        InspectReportWriter writer = Writer(logs);
 
         // Act
         InspectReportOutcome outcome = writer.WriteMarkdown("body", "/sln/App.sln");
@@ -153,9 +148,25 @@ public sealed class InspectReportWriterTests : IDisposable
         logs.Warnings[0].Message.ShouldContain(outcome.Path);
     }
 
-    private InspectReportWriter Writer()
+    private InspectReportWriter Writer(CapturingLoggerProvider? logs = null)
     {
-        return new InspectReportWriter(_root, NullLogger<InspectReportWriter>.Instance);
+        return new InspectReportWriter(_root, Logs.For<InspectReportWriter>(logs));
+    }
+
+    /// <summary>The directory the writer under test keeps its reports in, created ahead of it.</summary>
+    private string ReportsDirectory()
+    {
+        string path = Path.Combine(_root, InspectReportWriter.ReportsDirectoryName);
+        return Directory.CreateDirectory(path).FullName;
+    }
+
+    /// <summary>
+    ///     Back-dates <paramref name="path" /> a day past the retention window, so the next prune is due to take
+    ///     it.
+    /// </summary>
+    private static void Expire(string path)
+    {
+        File.SetLastWriteTimeUtc(path, DateTime.UtcNow - InspectReportWriter.RetentionPeriod - TimeSpan.FromDays(1));
     }
 
     private static string WriteExisting(string directory, string fileName)

@@ -54,9 +54,14 @@ public sealed class JbContractFixture : IAsyncLifetime
     /// </remarks>
     internal const string CleanFileName = "Clean.cs";
 
+    /// <summary>The file cleanup is run over: committed misformatted, and restored before every pass.</summary>
+    internal const string MisformattedFileName = "Misformatted.cs";
+
+    /// <summary>The cleanup profile the fixture solution's <c>.DotSettings</c> declares.</summary>
+    internal const string DeclaredProfile = "Built-in: Reformat Code";
+
     private const string FixtureDirectoryName = "ContractSolution";
     private const string SolutionFileName = "ContractFixture.slnx";
-    private const string MisformattedFileName = "Misformatted.cs";
 
     /// <summary>A file that genuinely does not compile, planted only in the copy that exists to provoke one.</summary>
     private const string BrokenFileName = "Broken.cs";
@@ -88,8 +93,6 @@ public sealed class JbContractFixture : IAsyncLifetime
     /// </summary>
     private static readonly Lazy<JbPresence> Presence = new(LocateJb);
 
-    private readonly FakeEnvironment _environment = new();
-
     /// <summary>Filled as the runs below go past, keyed by subcommand.</summary>
     private readonly Dictionary<string, ProgressVocabulary> _progressVocabularies = new(StringComparer.Ordinal);
 
@@ -103,6 +106,13 @@ public sealed class JbContractFixture : IAsyncLifetime
     ///     fixture still costs nothing on a machine without one.
     /// </summary>
     private ChildProcessLifetime? _childLifetime;
+
+    /// <summary>
+    ///     The environment seam, created only once <see cref="InitializeAsync" /> has decided there is a
+    ///     <c>jb</c> to run: constructing one creates two temp directories, and the fixture has to cost nothing
+    ///     on a machine without <c>jb</c>.
+    /// </summary>
+    private FakeEnvironment? _environment;
 
     /// <summary>The process seam every run goes through, kept so a cleanup pass can read back what jb printed.</summary>
     private LineRecordingRunner? _runs;
@@ -158,20 +168,28 @@ public sealed class JbContractFixture : IAsyncLifetime
 
     internal string CacheHome { get; private set; } = "";
 
-    private static string FixtureDirectory => Path.Combine(AppContext.BaseDirectory, "Fixtures", FixtureDirectoryName);
+    private static string FixtureDirectory => Fixtures.PathTo(FixtureDirectoryName);
+
+    /// <summary>
+    ///     <see cref="_environment" />, for the steps <see cref="InitializeAsync" /> reaches only after creating
+    ///     it.
+    /// </summary>
+    private FakeEnvironment SeamEnvironment =>
+        _environment ?? throw new InvalidOperationException("No jb was found, so no environment was created.");
 
     public async ValueTask InitializeAsync()
     {
         if (!IsInstalled) return;
 
+        _environment = new FakeEnvironment();
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;
 
         // The machine's real home directory, so JbLocator's ~/.dotnet/tools/jb candidate resolves for a
         // client that did not inherit PATH. Reading the real environment is allowed here; it is writing it
         // that the parallel run cannot survive.
-        _environment.HomeDirectory = new SystemEnvironment().HomeDirectory;
-        CacheHome = _environment.CreateTempDirectory();
-        _environment.SetVariable("JB_CACHE_HOME", CacheHome);
+        SeamEnvironment.HomeDirectory = new SystemEnvironment().HomeDirectory;
+        CacheHome = SeamEnvironment.CreateTempDirectory();
+        SeamEnvironment.SetVariable("JB_CACHE_HOME", CacheHome);
 
         ILoggerFactory serverLog = Logs.Capturing(_serverLog);
 
@@ -195,10 +213,10 @@ public sealed class JbContractFixture : IAsyncLifetime
             BrokenFileContent,
             cancellationToken);
 
-        _environment.SetVariable("JB_SOLUTION_PATH", SolutionPath);
+        SeamEnvironment.SetVariable("JB_SOLUTION_PATH", SolutionPath);
 
-        JbLocator locator = new(processRunner, _environment, NullLogger<JbLocator>.Instance);
-        ConfigResolver configResolver = new(locator, _environment, NullLogger<ConfigResolver>.Instance);
+        JbLocator locator = new(processRunner, SeamEnvironment, NullLogger<JbLocator>.Instance);
+        ConfigResolver configResolver = new(locator, SeamEnvironment, NullLogger<ConfigResolver>.Instance);
         JbRunner jbRunner = JbRunners.Create(processRunner, logs: serverLog);
         InspectService inspectService = new(jbRunner);
         CleanupService cleanupService = new(jbRunner, serverLog.CreateLogger<CleanupService>());
@@ -230,7 +248,7 @@ public sealed class JbContractFixture : IAsyncLifetime
     {
         // Every run this fixture made has finished by now, so closing the job kills nothing it still needed.
         _childLifetime?.Dispose();
-        _environment.Dispose();
+        _environment?.Dispose();
 
         return ValueTask.CompletedTask;
     }
@@ -240,7 +258,7 @@ public sealed class JbContractFixture : IAsyncLifetime
     /// </summary>
     private string PlantSolution(string name)
     {
-        string destination = Path.Combine(_environment.CreateTempDirectory(), name);
+        string destination = Path.Combine(SeamEnvironment.CreateTempDirectory(), name);
         CopyDirectory(FixtureDirectory, destination);
 
         return Path.Combine(destination, SolutionFileName);
@@ -270,14 +288,14 @@ public sealed class JbContractFixture : IAsyncLifetime
     private async Task<ResolvedConfig> ResolveBrokenSolutionAsync(
         ConfigResolver configResolver, string brokenSolutionPath, CancellationToken cancellationToken)
     {
-        _environment.SetVariable("JB_CACHE_HOME", _environment.CreateTempDirectory());
+        SeamEnvironment.SetVariable("JB_CACHE_HOME", SeamEnvironment.CreateTempDirectory());
         try
         {
             return await configResolver.ResolveAsync(brokenSolutionPath, cancellationToken);
         }
         finally
         {
-            _environment.SetVariable("JB_CACHE_HOME", CacheHome);
+            SeamEnvironment.SetVariable("JB_CACHE_HOME", CacheHome);
         }
     }
 
@@ -437,7 +455,7 @@ public sealed class JbContractFixture : IAsyncLifetime
 
         // The environment's temp-directory lifecycle, like every other scratch this fixture makes: the
         // few-KB SARIF lives until DisposeAsync deletes it with the rest.
-        string outputFile = Path.Combine(_environment.CreateTempDirectory(), "results.json");
+        string outputFile = Path.Combine(SeamEnvironment.CreateTempDirectory(), "results.json");
         List<string> inspectArguments = InspectService.BuildArguments(
             Config, outputFile, [MisformattedFileName], InspectSeverity.Suggestion);
         ReplaceIncludeWith(inspectArguments, absolutePath);

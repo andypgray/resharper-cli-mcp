@@ -57,30 +57,4 @@ internal static class ToolHarness
             environment,
             Logs.For<ResharperTools>(logs));
     }
-
-    /// <summary>
-    ///     The same graph as far as <see cref="InspectService" />, topped with the background
-    ///     <see cref="CacheWarmer" />, so its tests drive the real discovery → lock → process path rather than
-    ///     a stubbed one. The lock is private to the returned warmer: a test that needs the cache generation
-    ///     held takes the lock <em>file</em>, which is what another server process looks like anyway.
-    /// </summary>
-    public static WarmerGraph BuildCacheWarmer(
-        IProcessRunner processRunner,
-        IEnvironment environment,
-        ILogger<CacheWarmer> logger)
-    {
-        JbLocator jbLocator = new(processRunner, environment, NullLogger<JbLocator>.Instance);
-        ConfigResolver configResolver = new(jbLocator, environment, NullLogger<ConfigResolver>.Instance);
-        JbRunner jbRunner = JbRunners.Create(processRunner);
-        InspectService inspectService = new(jbRunner);
-        CacheWarmer warmer = new(configResolver, inspectService, jbRunner, environment, logger);
-        return new WarmerGraph(warmer, jbRunner);
-    }
 }
-
-/// <summary>
-///     A warmer and the runner underneath it. The runner is handed back because the two are wired to each
-///     other: a foreground run hitting its cap is what re-arms the warmer, and only a run driven through
-///     <em>this</em> runner reaches <em>that</em> warmer.
-/// </summary>
-internal sealed record WarmerGraph(CacheWarmer Warmer, JbRunner Runner);

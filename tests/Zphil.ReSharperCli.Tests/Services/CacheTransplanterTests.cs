@@ -66,7 +66,7 @@ public sealed class CacheTransplanterTests : IDisposable
         File.ReadAllText(Path.Combine(target, "Db", "CURRENT")).ShouldBe("cache");
         File.ReadAllText(Path.Combine(target, "Db", "000001.log")).ShouldBe("leveldb");
         Directory.Exists(donor).ShouldBeTrue();
-        Directory.EnumerateDirectories(_cacheHome, "*.transplanting").ShouldBeEmpty();
+        Directory.EnumerateDirectories(_cacheHome, "*" + CacheTransplanter.InProgressSuffix).ShouldBeEmpty();
     }
 
     [Fact]
@@ -122,7 +122,7 @@ public sealed class CacheTransplanterTests : IDisposable
         File.ReadAllText(Path.Combine(target, "Db", "CURRENT")).ShouldBe("cache");
         File.ReadAllText(Path.Combine(target, "Db", "000001.log")).ShouldBe("leveldb");
         Directory.Exists(donor).ShouldBeTrue();
-        Directory.EnumerateDirectories(_cacheHome, "*.transplanting").ShouldBeEmpty();
+        Directory.EnumerateDirectories(_cacheHome, "*" + CacheTransplanter.InProgressSuffix).ShouldBeEmpty();
     }
 
     [Fact]
@@ -152,7 +152,7 @@ public sealed class CacheTransplanterTests : IDisposable
         // outranks the replacement path: the user asked for cold.
         CacheHomes.PlantWarmDonor(_cacheHome, _mainSolution);
         ResolvedConfig config = ConfigFor(_worktreeSolution);
-        CacheResetService reset = JbRunners.Reset(JbRunners.Lock(TimeSpan.FromSeconds(1)), JbRunners.Yield());
+        CacheResetService reset = JbRunners.StandaloneReset(TimeSpan.FromSeconds(1));
         await reset.RunAsync(config, Ct);
         string husk = CacheHomes.PlantGenerationFor(_cacheHome, _worktreeSolution);
         File.WriteAllText(Path.Combine(husk, "Db", "CURRENT"), "part-built since the reset");
@@ -174,7 +174,7 @@ public sealed class CacheTransplanterTests : IDisposable
         CacheHomes.PlantWarmDonor(_cacheHome, _mainSolution);
         ResolvedConfig config = ConfigFor(_worktreeSolution);
         CacheHomes.PlantGenerationFor(_cacheHome, _worktreeSolution);
-        CacheResetService reset = JbRunners.Reset(JbRunners.Lock(TimeSpan.FromSeconds(1)), JbRunners.Yield());
+        CacheResetService reset = JbRunners.StandaloneReset(TimeSpan.FromSeconds(1));
         await reset.RunAsync(config, Ct);
 
         // Act
@@ -331,30 +331,14 @@ public sealed class CacheTransplanterTests : IDisposable
     [Fact]
     public async Task TryTransplantAsync_CancelledPartWayThroughTheCopy_ThrowsAndLeavesNothingBehind()
     {
-        // Arrange — cancellation is how a foreground call reclaims a cache generation, so it arrives mid-copy
-        // by design rather than by accident. Enough files that the copy is still running when it lands.
-        string donor = CacheHomes.PlantWarmDonor(_cacheHome, _mainSolution);
-        for (var index = 0; index < 2000; index++)
-            await File.WriteAllTextAsync(Path.Combine(donor, "Db", $"{index:D5}.ldb"), "x", Ct);
-
-        string inProgress = InProgressPath();
-        using CancellationTokenSource cancelling = new();
-
-        // The token rather than its source: a struct copy, so the running copy cannot end up reading a source
-        // this method has already disposed on its way out.
-        CancellationToken reclaimed = cancelling.Token;
-        Task<bool> transplant = Task.Run(
-            () => Transplanter().TryTransplantAsync(ConfigFor(_worktreeSolution), reclaimed), Ct);
-
-        // Act — as soon as there is a partial copy to abandon.
-        while (!Directory.Exists(inProgress) && !transplant.IsCompleted) await Task.Delay(1, Ct);
-        await cancelling.CancelAsync();
+        // Act — cancellation is how a foreground call reclaims a cache generation, so it arrives mid-copy by
+        // design rather than by accident.
+        await TransplantCancelledMidCopyAsync();
 
         // Assert — cancellation is the one thing this reports by throwing, and it takes the partial copy with
         // it: neither a generation jb could open nor a stray tree nothing would ever clean up.
-        await Should.ThrowAsync<OperationCanceledException>(() => transplant);
         Directory.Exists(TargetPath()).ShouldBeFalse();
-        Directory.Exists(inProgress).ShouldBeFalse();
+        Directory.Exists(InProgressPath()).ShouldBeFalse();
     }
 
     [Fact]
@@ -398,31 +382,17 @@ public sealed class CacheTransplanterTests : IDisposable
     {
         // Arrange — the order pinned from the direction that matters most. A foreground call reclaiming the
         // generation lands mid-copy by design, and what it reclaims must still be the part-built remnant it
-        // was going to resume. Enough files that the copy is still running when the cancel arrives.
-        string donor = CacheHomes.PlantWarmDonor(_cacheHome, _mainSolution);
-        for (var index = 0; index < 2000; index++)
-            await File.WriteAllTextAsync(Path.Combine(donor, "Db", $"{index:D5}.ldb"), "x", Ct);
-
+        // was going to resume.
         string husk = CacheHomes.PlantGenerationFor(_cacheHome, _worktreeSolution);
         await File.WriteAllTextAsync(Path.Combine(husk, "Db", "CURRENT"), "part-built", Ct);
 
-        string inProgress = InProgressPath();
-        using CancellationTokenSource cancelling = new();
-
-        // The token rather than its source, for the reason given in the test above.
-        CancellationToken reclaimed = cancelling.Token;
-        Task<bool> transplant = Task.Run(
-            () => Transplanter().TryTransplantAsync(ConfigFor(_worktreeSolution), reclaimed), Ct);
-
-        // Act — as soon as there is a partial copy to abandon.
-        while (!Directory.Exists(inProgress) && !transplant.IsCompleted) await Task.Delay(1, Ct);
-        await cancelling.CancelAsync();
+        // Act
+        await TransplantCancelledMidCopyAsync();
 
         // Assert — the remnant is exactly as it was, because the delete only ever happens after the whole
         // copy is standing beside it. Cancellation can cost the copy and nothing else.
-        await Should.ThrowAsync<OperationCanceledException>(() => transplant);
         File.ReadAllText(Path.Combine(husk, "Db", "CURRENT")).ShouldBe("part-built");
-        Directory.Exists(inProgress).ShouldBeFalse();
+        Directory.Exists(InProgressPath()).ShouldBeFalse();
     }
 
     [Fact]
@@ -654,7 +624,38 @@ public sealed class CacheTransplanterTests : IDisposable
 
     private string InProgressPath()
     {
-        return TargetPath() + ".transplanting";
+        return TargetPath() + CacheTransplanter.InProgressSuffix;
+    }
+
+    /// <summary>
+    ///     Seeds the worktree from a donor big enough that the copy is still running when it is cancelled,
+    ///     cancels it as soon as there is a partial copy to abandon, and returns once it has thrown.
+    /// </summary>
+    /// <remarks>
+    ///     Throwing is how a transplant reports a cancellation, and the only thing it reports by throwing.
+    /// </remarks>
+    private async Task TransplantCancelledMidCopyAsync()
+    {
+        string donor = CacheHomes.PlantWarmDonor(_cacheHome, _mainSolution);
+        for (var index = 0; index < 2000; index++)
+            await File.WriteAllTextAsync(Path.Combine(donor, "Db", $"{index:D5}.ldb"), "x", Ct);
+
+        string inProgress = InProgressPath();
+        using CancellationTokenSource cancelling = new();
+
+        // The token rather than its source: a struct copy, so the running copy cannot end up reading a source
+        // this method has already disposed on its way out.
+        CancellationToken reclaimed = cancelling.Token;
+
+        // On the pool, because the copy itself is synchronous: called directly, the whole copy could run on
+        // this thread before a task came back to cancel.
+        Task<bool> transplant = Task.Run(
+            () => Transplanter().TryTransplantAsync(ConfigFor(_worktreeSolution), reclaimed), Ct);
+
+        while (!Directory.Exists(inProgress) && !transplant.IsCompleted) await Task.Delay(1, Ct);
+        await cancelling.CancelAsync();
+
+        await Should.ThrowAsync<OperationCanceledException>(() => transplant);
     }
 
     /// <summary>

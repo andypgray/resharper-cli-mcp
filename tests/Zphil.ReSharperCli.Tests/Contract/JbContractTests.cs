@@ -127,8 +127,8 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
     public void SeverityToken_WidensTheReportRatherThanSelectingOneTier()
     {
         // Act
-        int suggestions = CountOf("SUGGESTION");
-        int warnings = CountOf("WARNING");
+        int suggestions = CountOf(InspectSeverity.Suggestion.ToJbToken());
+        int warnings = CountOf(InspectSeverity.Warning.ToJbToken());
 
         // Assert — --severity=SUGGESTION is a floor, not an exact match: warnings have to come back with the
         // suggestions. If it ever became an exact filter, `severity: "Suggestion"` would silently stop
@@ -159,8 +159,8 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
         // fixture's .DotSettings, ConfigResolver carries it, CleanupService passes it as --profile, and jb
         // accepts it. jb never reads that key itself, so this is the only thing making a repo's declared
         // narrowing apply to a call that named no profile.
-        fixture.Config.CleanupProfile.ShouldBe("Built-in: Reformat Code");
-        fixture.DeclaredProfileCleanup.Outcome.Profile.ShouldBe("Built-in: Reformat Code");
+        fixture.Config.CleanupProfile.ShouldBe(JbContractFixture.DeclaredProfile);
+        fixture.DeclaredProfileCleanup.Outcome.Profile.ShouldBe(JbContractFixture.DeclaredProfile);
         fixture.DeclaredProfileCleanup.ShouldHaveRewrittenTheFile();
     }
 
@@ -168,7 +168,7 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
     public void IncludePattern_TranslatedFromAnAbsolutePath_Matches()
     {
         // Arrange — the entry the declared-profile pass was given, which is the form an agent tends to send.
-        string absolute = Path.Combine(fixture.Config.SolutionDirectory, "Misformatted.cs");
+        string absolute = Path.Combine(fixture.Config.SolutionDirectory, JbContractFixture.MisformattedFileName);
 
         // Act
         string pattern = FilePathList.ToIncludePattern(absolute, fixture.Config.SolutionDirectory);
@@ -206,7 +206,7 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
         // Assert — a client sees issues, not an error, and the rendered markdown names a file from the
         // fixture. Everything the other checks assert one layer at a time has to hold at once for this to.
         result.IsError.ShouldNotBe(true);
-        string text = result.Content.OfType<TextContentBlock>().First().Text;
+        string text = result.Text();
         text.ShouldContain("Unused.cs");
         harness.Logs.Warnings.ShouldBeEmpty();
     }
@@ -239,7 +239,7 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
 
         // The leading dot on the rule id is jb's own and nothing documents it. CompilationErrorNote already
         // matches the undotted spelling too, so a rename here is cosmetic rather than a break.
-        if (!fixture.BrokenSolutionIssues.Any(issue => issue.RuleId == CompilationErrorNote.RuleId))
+        if (BrokenCompilationErrors() == 0)
             findings.Add(
                 $"A solution with a genuine compilation error reported no `{CompilationErrorNote.RuleId}` "
                 + $"issue. Rule ids seen: {RuleIdsOf(fixture.BrokenSolutionIssues)}.");
@@ -360,7 +360,7 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
         builder.Append($"| jb version | {fixture.Installation.Version} |\n");
         builder.Append($"| Last hand-verified major line | {JbContractFixture.LastVerifiedMajorLine} |\n");
         builder.Append($"| Issues reported solution-wide at SUGGESTION | {fixture.Issues.Count} |\n");
-        builder.Append($"| Of those, WARNING | {CountOf("WARNING")} |\n");
+        builder.Append($"| Of those, WARNING | {CountOf(InspectSeverity.Warning.ToJbToken())} |\n");
         builder.Append($"| Compilation-error issues on the broken copy | {BrokenCompilationErrors()} |\n");
         builder.Append($"| Absolute --include, cleanupcode exit | {raw.CleanupExitCode} |\n");
         builder.Append(

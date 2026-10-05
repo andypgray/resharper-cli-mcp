@@ -16,12 +16,22 @@ internal static class Logs
 {
     public static ILoggerFactory Capturing(CapturingLoggerProvider provider)
     {
-        return LoggerFactory.Create(builder =>
-        {
-            builder.ClearProviders();
-            builder.SetMinimumLevel(LogLevel.Trace);
-            builder.AddProvider(provider);
-        });
+        return LoggerFactory.Create(builder => builder.CaptureInto(provider));
+    }
+
+    /// <summary>
+    ///     Routes everything <paramref name="builder" /> logs to <paramref name="provider" /> and nothing else,
+    ///     down to <see cref="LogLevel.Trace" />.
+    /// </summary>
+    /// <remarks>
+    ///     For a host that builds its own logging, so its assertions see what the code under test wrote rather
+    ///     than what the default console and debug providers add.
+    /// </remarks>
+    public static void CaptureInto(this ILoggingBuilder builder, CapturingLoggerProvider provider)
+    {
+        builder.ClearProviders();
+        builder.SetMinimumLevel(LogLevel.Trace);
+        builder.AddProvider(provider);
     }
 
     /// <summary>

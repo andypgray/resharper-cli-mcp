@@ -33,12 +33,13 @@ public sealed class CacheResetServiceTests : IDisposable
     private readonly string _cacheHome;
     private readonly ResolvedConfig _config;
     private readonly FakeEnvironment _environment = new();
-    private readonly CacheResetService _service = JbRunners.Reset(JbRunners.Lock(TimeSpan.FromSeconds(1)), JbRunners.Yield());
+    private readonly CacheResetService _service = JbRunners.StandaloneReset(TimeSpan.FromSeconds(1));
 
     public CacheResetServiceTests()
     {
         _cacheHome = _environment.CreateTempDirectory();
-        _config = ConfigFor("App.sln", _cacheHome);
+        string solutionPath = _environment.PlantSolution("App.sln");
+        _config = Configs.Bare(solutionPath, _cacheHome);
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -343,7 +344,7 @@ public sealed class CacheResetServiceTests : IDisposable
         // what lets the test hit the cap.
         string ours = CacheHomes.PlantGenerationFor(_cacheHome, _config.SolutionPath);
         await using FileStream held = CacheHomes.HoldLockFile(_cacheHome, _config.SolutionPath);
-        CacheResetService service = JbRunners.Reset(JbRunners.Lock(TimeSpan.FromMilliseconds(250)), JbRunners.Yield());
+        CacheResetService service = JbRunners.StandaloneReset(TimeSpan.FromMilliseconds(250));
 
         // Act
         var exception = await Should.ThrowAsync<UserErrorException>(() => service.RunAsync(_config, Ct));
@@ -362,8 +363,7 @@ public sealed class CacheResetServiceTests : IDisposable
         CacheHomes.PlantGenerationFor(_cacheHome, _config.SolutionPath);
         FileStream held = CacheHomes.HoldLockFile(_cacheHome, _config.SolutionPath);
         RecordingSink<string> lines = new(Generous);
-        CacheResetService service = JbRunners.Reset(
-            JbRunners.Lock(Generous), JbRunners.Yield(), heartbeat: Brisk);
+        CacheResetService service = JbRunners.StandaloneReset(Generous, heartbeat: Brisk);
 
         // Act — the wait has to outlast JbRunLock.NotableWait before a beat stops reading "starting", so
         // this genuinely waits the second out rather than shortening the threshold to suit itself.
@@ -404,8 +404,7 @@ public sealed class CacheResetServiceTests : IDisposable
         // as an unobserved exception; scoping the reporter to the acquire is what rules it out.
         await using FileStream held = CacheHomes.HoldLockFile(_cacheHome, _config.SolutionPath);
         RecordingSink<string> lines = new(Generous);
-        CacheResetService service = JbRunners.Reset(
-            JbRunners.Lock(TimeSpan.FromMilliseconds(250)), JbRunners.Yield(), heartbeat: Brisk);
+        CacheResetService service = JbRunners.StandaloneReset(TimeSpan.FromMilliseconds(250), heartbeat: Brisk);
 
         // Act — beats first, so this pins a reporter that stopped rather than one that never started.
         Task<CacheResetOutcome> refused = service.RunAsync(_config, Ct, lines.Record);
@@ -427,8 +426,7 @@ public sealed class CacheResetServiceTests : IDisposable
         // reporter's scope, so however long they take, nothing beats over them.
         RecordingSink<string> lines = new(Generous);
         CacheHomes.PlantGenerationFor(_cacheHome, _config.SolutionPath);
-        CacheResetService service = JbRunners.Reset(
-            JbRunners.Lock(TimeSpan.FromSeconds(1)), JbRunners.Yield(), heartbeat: Brisk);
+        CacheResetService service = JbRunners.StandaloneReset(TimeSpan.FromSeconds(1), heartbeat: Brisk);
 
         // Act
         CacheResetOutcome outcome = await service.RunAsync(_config, Ct, lines.Record);
@@ -459,8 +457,7 @@ public sealed class CacheResetServiceTests : IDisposable
         string ours = CacheHomes.PlantGenerationFor(_cacheHome, _config.SolutionPath);
         CacheHomes.PlantGenerationFor(_cacheHome, _environment.CreateSolutionPath("App.sln"));
 
-        CacheResetService service = JbRunners.Reset(
-            JbRunners.Lock(TimeSpan.FromSeconds(1)), JbRunners.Yield(), Logs.Capturing(logs));
+        CacheResetService service = JbRunners.StandaloneReset(TimeSpan.FromSeconds(1), Logs.Capturing(logs));
 
         // Act
         await service.RunAsync(_config, Ct);
@@ -484,8 +481,7 @@ public sealed class CacheResetServiceTests : IDisposable
         ResolvedConfig removed = RemovedCheckout();
         CacheHomes.PlantGenerationFor(_cacheHome, removed.SolutionPath);
 
-        CacheResetService service = JbRunners.Reset(
-            JbRunners.Lock(TimeSpan.FromSeconds(1)), JbRunners.Yield(), Logs.Capturing(logs));
+        CacheResetService service = JbRunners.StandaloneReset(TimeSpan.FromSeconds(1), Logs.Capturing(logs));
 
         // Act
         await service.RunAsync(removed, Ct);
@@ -510,13 +506,5 @@ public sealed class CacheResetServiceTests : IDisposable
     private ResolvedConfig RemovedCheckout()
     {
         return Configs.Bare(_environment.CreateSolutionPath("App.sln"), _cacheHome);
-    }
-
-    private ResolvedConfig ConfigFor(string solutionFileName, string cacheHome)
-    {
-        string solutionPath = Path.Combine(_environment.CurrentDirectory, solutionFileName);
-        File.WriteAllText(solutionPath, string.Empty);
-
-        return Configs.Bare(solutionPath, cacheHome);
     }
 }

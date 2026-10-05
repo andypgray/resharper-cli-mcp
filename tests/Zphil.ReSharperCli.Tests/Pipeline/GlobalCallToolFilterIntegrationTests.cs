@@ -1,4 +1,3 @@
-using System.Text.Json;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using NSubstitute;
@@ -42,7 +41,7 @@ public sealed class GlobalCallToolFilterIntegrationTests
 
         // Assert — surfaced as an error result with the exact message, and the filter stayed silent.
         result.IsError.ShouldBe(true);
-        TextOf(result).ShouldBe("At least one file must be specified.");
+        result.Text().ShouldBe("At least one file must be specified.");
         harness.Logs.Warnings.ShouldBeEmpty();
     }
 
@@ -78,18 +77,14 @@ public sealed class GlobalCallToolFilterIntegrationTests
         harness.Environment.SetVariable("MAX_MCP_OUTPUT_TOKENS", "40");
         harness.Environment.PlantSolution("App.sln");
         string sarif = Fixtures.ReadSarif("inspect-sample.json");
-        RouteJb(harness.ProcessRunner, arguments =>
-        {
-            JbStubs.WriteSarifIfRequested(arguments, sarif);
-            return new ProcessResult(0, string.Empty, string.Empty);
-        });
+        RouteJb(harness.ProcessRunner, arguments => JbStubs.Succeed(arguments, sarif));
 
         // Act
         CallToolResult result = await harness.Client.CallToolAsync("resharper_inspect", cancellationToken: Ct);
 
         // Assert — a successful result, truncated, carrying the inspect-only narrowing hint, unlogged.
         result.IsError.ShouldNotBe(true);
-        string text = TextOf(result);
+        string text = result.Text();
         text.ShouldStartWith("Found 3 issue(s) across 2 file(s)."); // Minimal's header, cut at the cap not mid-word
         text.ShouldContain("--- RESPONSE TRUNCATED ---");
         text.ShouldContain("Narrow the scan");
@@ -107,18 +102,14 @@ public sealed class GlobalCallToolFilterIntegrationTests
         harness.Environment.SetVariable("MAX_MCP_OUTPUT_TOKENS", "600");
         harness.Environment.PlantSolution("App.sln");
         string sarif = Fixtures.ReadSarif("inspect-repetitive.json");
-        RouteJb(harness.ProcessRunner, arguments =>
-        {
-            JbStubs.WriteSarifIfRequested(arguments, sarif);
-            return new ProcessResult(0, string.Empty, string.Empty);
-        });
+        RouteJb(harness.ProcessRunner, arguments => JbStubs.Succeed(arguments, sarif));
 
         // Act
         CallToolResult result = await harness.Client.CallToolAsync("resharper_inspect", cancellationToken: Ct);
 
         // Assert — reduced, not chopped: every issue still counted, every file still named, nothing logged.
         result.IsError.ShouldNotBe(true);
-        string text = TextOf(result);
+        string text = result.Text();
         text.ShouldStartWith("Found 26 issue(s) across 2 file(s):");
         text.ShouldContain("--- DETAIL REDUCED ---");
         text.ShouldContain("x12, lines 13-24");
@@ -136,11 +127,7 @@ public sealed class GlobalCallToolFilterIntegrationTests
         await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
         harness.Environment.PlantSolution("App.sln");
         string sarif = Fixtures.ReadSarif("inspect-sample.json");
-        RouteJb(harness.ProcessRunner, arguments =>
-        {
-            JbStubs.WriteSarifIfRequested(arguments, sarif);
-            return new ProcessResult(0, string.Empty, string.Empty);
-        });
+        RouteJb(harness.ProcessRunner, arguments => JbStubs.Succeed(arguments, sarif));
 
         // Act
         CallToolResult result = await harness.Client.CallToolAsync("resharper_inspect", cancellationToken: Ct);
@@ -189,8 +176,8 @@ public sealed class GlobalCallToolFilterIntegrationTests
         // Assert — cleanup's files parameter is schema-required; inspect's stays optional.
         McpClientTool cleanup = tools.Single(tool => tool.Name == "resharper_cleanup");
         McpClientTool inspect = tools.Single(tool => tool.Name == "resharper_inspect");
-        RequiredProperties(cleanup).ShouldContain("files");
-        RequiredProperties(inspect).ShouldNotContain("files");
+        cleanup.RequiredProperties().ShouldContain("files");
+        inspect.RequiredProperties().ShouldNotContain("files");
     }
 
     [Fact]
@@ -276,10 +263,10 @@ public sealed class GlobalCallToolFilterIntegrationTests
             .AnyRun()
             .Returns(async callInfo =>
             {
-                var arguments = callInfo.ArgAt<IReadOnlyList<string>>(1);
+                IReadOnlyList<string> arguments = callInfo.Arguments();
                 if (JbStubs.IsVersionProbe(arguments)) return JbStubs.VersionProbeAnswer;
 
-                var cancellationToken = callInfo.ArgAt<CancellationToken>(3);
+                CancellationToken cancellationToken = callInfo.Token();
                 started.TrySetResult();
 
                 try
@@ -295,31 +282,14 @@ public sealed class GlobalCallToolFilterIntegrationTests
                 }
 
                 stopped.TrySetResult(false);
-                return new ProcessResult(0, string.Empty, string.Empty);
+                return JbStubs.Success;
             });
     }
 
-    private static string TextOf(CallToolResult result)
-    {
-        return result.Content.OfType<TextContentBlock>().First().Text;
-    }
-
-    /// <summary>The names in a tool's input-schema <c>required</c> array, or empty when it has none.</summary>
-    private static IReadOnlyList<string> RequiredProperties(McpClientTool tool)
-    {
-        if (!tool.JsonSchema.TryGetProperty("required", out JsonElement required)
-            || required.ValueKind != JsonValueKind.Array)
-            return [];
-
-        return required.EnumerateArray().Select(element => element.GetString()!).ToList();
-    }
-
     /// <summary>
-    ///     Routes the process-runner substitute by jb sub-command: the version probe succeeds, and an
-    ///     <c>inspectcode</c> run is handed to <paramref name="onInspect" /> (which either writes SARIF to the
-    ///     <c>-o=</c> path and returns success, or throws to simulate an unexpected failure). Everything else
-    ///     succeeds with exit code 0. A run that exits 0 leaves its cache generation behind, because a real
-    ///     one does — see <see cref="CacheHomes.PlantGenerationFromJbRun" />.
+    ///     Routes the process-runner substitute by jb sub-command: the version probe succeeds, an
+    ///     <c>inspectcode</c> run is handed to <paramref name="onInspect" />, and anything else is answered by
+    ///     <see cref="JbStubs.Succeed" />.
     /// </summary>
     private static void RouteJb(IProcessRunner processRunner, Func<IReadOnlyList<string>, ProcessResult> onInspect)
     {
@@ -327,17 +297,13 @@ public sealed class GlobalCallToolFilterIntegrationTests
             .AnyRun()
             .Returns(callInfo =>
             {
-                var arguments = callInfo.ArgAt<IReadOnlyList<string>>(1);
+                IReadOnlyList<string> arguments = callInfo.Arguments();
 
                 if (JbStubs.IsVersionProbe(arguments)) return JbStubs.VersionProbeAnswer;
 
-                ProcessResult result = arguments.Count > 0 && arguments[0] == "inspectcode"
+                return JbStubs.IsRunOf(arguments, "inspectcode")
                     ? onInspect(arguments)
-                    : new ProcessResult(0, string.Empty, string.Empty);
-
-                if (result.ExitCode == 0) CacheHomes.PlantGenerationFromJbRun(arguments);
-
-                return result;
+                    : JbStubs.Succeed(arguments);
             });
     }
 }

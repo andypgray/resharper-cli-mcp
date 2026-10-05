@@ -6,7 +6,6 @@ using NSubstitute;
 using Shouldly;
 using Xunit;
 using Zphil.ReSharperCli.Execution;
-using Zphil.ReSharperCli.Tests.TestDoubles;
 using Zphil.ReSharperCli.Tests.TestSupport;
 
 namespace Zphil.ReSharperCli.Tests.Pipeline;
@@ -31,10 +30,10 @@ public sealed class CoercionIntegrationTests
         // Assert — the schema-erasure guard: StringArrayCoercerFactory would collapse this to {} without
         // the re-injection step. type/items must survive, and files must stay schema-required.
         McpClientTool cleanup = tools.Single(tool => tool.Name == "resharper_cleanup");
-        JsonElement files = PropertySchema(cleanup, "files");
+        JsonElement files = cleanup.PropertySchema("files");
         files.GetProperty("type").GetString().ShouldBe("array");
         files.GetProperty("items").GetProperty("type").GetString().ShouldBe("string");
-        RequiredProperties(cleanup).ShouldContain("files");
+        cleanup.RequiredProperties().ShouldContain("files");
     }
 
     [Fact]
@@ -50,9 +49,9 @@ public sealed class CoercionIntegrationTests
         // string type AND the value list, so the allowed severities travel in the schema itself. This is
         // the guard that lets the description prose stay free of the enum names (no drift-in-prose test).
         McpClientTool inspect = tools.Single(tool => tool.Name == "resharper_inspect");
-        JsonElement severity = PropertySchema(inspect, "severity");
+        JsonElement severity = inspect.PropertySchema("severity");
         severity.GetProperty("type").GetString().ShouldBe("string");
-        EnumValues(severity).ShouldBe(["Suggestion", "Warning", "Error"]);
+        inspect.EnumValues("severity").ShouldBe(["Suggestion", "Warning", "Error"]);
     }
 
     [Fact]
@@ -69,8 +68,8 @@ public sealed class CoercionIntegrationTests
         // Assert — inspect.solutionPath (nullable, no default) and cleanup.profile (a real default).
         McpClientTool inspect = tools.Single(tool => tool.Name == "resharper_inspect");
         McpClientTool cleanup = tools.Single(tool => tool.Name == "resharper_cleanup");
-        PropertySchema(inspect, "solutionPath").GetProperty("type").GetString().ShouldBe("string");
-        PropertySchema(cleanup, "profile").GetProperty("type").GetString().ShouldBe("string");
+        inspect.PropertySchema("solutionPath").GetProperty("type").GetString().ShouldBe("string");
+        cleanup.PropertySchema("profile").GetProperty("type").GetString().ShouldBe("string");
     }
 
     [Fact]
@@ -79,7 +78,7 @@ public sealed class CoercionIntegrationTests
         // Arrange — a bare string where files : string[] is advertised. Must be single-coerced.
         await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
         harness.Environment.PlantSolution("App.sln");
-        PlantFile(harness.Environment, "src/A.cs");
+        SolutionFiles.Plant(harness.Environment.CurrentDirectory, "src/A.cs");
         List<string>? cleanupArguments = null;
         RouteJb(harness.ProcessRunner, arguments => cleanupArguments = [.. arguments]);
 
@@ -101,8 +100,8 @@ public sealed class CoercionIntegrationTests
         // Arrange — the dominant malformed shape: a JSON array encoded as a string.
         await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
         harness.Environment.PlantSolution("App.sln");
-        PlantFile(harness.Environment, "src/A.cs");
-        PlantFile(harness.Environment, "src/B.cs");
+        SolutionFiles.Plant(harness.Environment.CurrentDirectory, "src/A.cs");
+        SolutionFiles.Plant(harness.Environment.CurrentDirectory, "src/B.cs");
         List<string>? cleanupArguments = null;
         RouteJb(harness.ProcessRunner, arguments => cleanupArguments = [.. arguments]);
 
@@ -159,7 +158,7 @@ public sealed class CoercionIntegrationTests
 
         // Assert — the friendly valid-values message surfaced, and FindUserError kept it out of the log.
         result.IsError.ShouldBe(true);
-        string text = TextOf(result);
+        string text = result.Text();
         text.ShouldContain("HIGH");
         text.ShouldContain("Valid values: Suggestion, Warning, Error");
         harness.Logs.Warnings.ShouldBeEmpty();
@@ -177,9 +176,9 @@ public sealed class CoercionIntegrationTests
 
         // Assert
         McpClientTool inspect = tools.Single(tool => tool.Name == "resharper_inspect");
-        JsonElement report = PropertySchema(inspect, "report");
+        JsonElement report = inspect.PropertySchema("report");
         report.GetProperty("type").GetString().ShouldBe("string");
-        EnumValues(report).ShouldBe(["None", "Markdown"]);
+        inspect.EnumValues("report").ShouldBe(["None", "Markdown"]);
     }
 
     [Fact]
@@ -214,7 +213,7 @@ public sealed class CoercionIntegrationTests
 
         // Assert — the formats jb offers but this server does not are rejected by name, not silently ignored.
         result.IsError.ShouldBe(true);
-        string text = TextOf(result);
+        string text = result.Text();
         text.ShouldContain("Xml");
         text.ShouldContain("Valid values: None, Markdown");
         harness.Logs.Warnings.ShouldBeEmpty();
@@ -232,9 +231,9 @@ public sealed class CoercionIntegrationTests
         // Assert — the five levels travel in the schema, in ladder order, so the description prose never
         // has to name them and cannot drift from them.
         McpClientTool inspect = tools.Single(tool => tool.Name == "resharper_inspect");
-        JsonElement detail = PropertySchema(inspect, "detail");
+        JsonElement detail = inspect.PropertySchema("detail");
         detail.GetProperty("type").GetString().ShouldBe("string");
-        EnumValues(detail).ShouldBe(["Full", "High", "Medium", "Low", "Minimal"]);
+        inspect.EnumValues("detail").ShouldBe(["Full", "High", "Medium", "Low", "Minimal"]);
     }
 
     [Fact]
@@ -253,7 +252,7 @@ public sealed class CoercionIntegrationTests
 
         // Assert
         result.IsError.ShouldBe(true);
-        string text = TextOf(result);
+        string text = result.Text();
         text.ShouldContain("Verbose");
         text.ShouldContain("Valid values: Full, High, Medium, Low, Minimal");
         harness.Logs.Warnings.ShouldBeEmpty();
@@ -277,7 +276,7 @@ public sealed class CoercionIntegrationTests
 
         // Assert — the guard names the key and the spelling that binds, ahead of the binder, and logs nothing.
         result.IsError.ShouldBe(true);
-        TextOf(result).ShouldBe($"Unknown parameter \"{key}\" on \"resharper_cleanup\". Valid: files, profile, solutionPath.");
+        result.Text().ShouldBe($"Unknown parameter \"{key}\" on \"resharper_cleanup\". Valid: files, profile, solutionPath.");
         harness.Logs.Warnings.ShouldBeEmpty();
     }
 
@@ -328,50 +327,15 @@ public sealed class CoercionIntegrationTests
         // Assert — refused before jb ran. The harness leaves the pre-warm off, so the capture can only see
         // this call.
         result.IsError.ShouldBe(true);
-        TextOf(result).ShouldStartWith("Unknown parameter \"Severity\" on \"resharper_inspect\". Valid: ");
+        result.Text().ShouldStartWith("Unknown parameter \"Severity\" on \"resharper_inspect\". Valid: ");
         inspectArguments.ShouldBeNull();
         harness.Logs.Warnings.ShouldBeEmpty();
     }
 
-    private static JsonElement PropertySchema(McpClientTool tool, string propertyName)
-    {
-        return tool.JsonSchema.GetProperty("properties").GetProperty(propertyName);
-    }
-
-    /// <summary>The values in a parameter schema's <c>enum</c> array, in declaration order.</summary>
-    private static IReadOnlyList<string> EnumValues(JsonElement propertySchema)
-    {
-        return propertySchema.GetProperty("enum").EnumerateArray().Select(element => element.GetString()!).ToList();
-    }
-
-    /// <summary>The names in a tool's input-schema <c>required</c> array, or empty when it has none.</summary>
-    private static IReadOnlyList<string> RequiredProperties(McpClientTool tool)
-    {
-        if (!tool.JsonSchema.TryGetProperty("required", out JsonElement required)
-            || required.ValueKind != JsonValueKind.Array)
-            return [];
-
-        return required.EnumerateArray().Select(element => element.GetString()!).ToList();
-    }
-
-    private static string TextOf(CallToolResult result)
-    {
-        return result.Content.OfType<TextContentBlock>().First().Text;
-    }
-
-    private static void PlantFile(FakeEnvironment environment, string relativePath)
-    {
-        string fullPath = Path.Combine(environment.CurrentDirectory, relativePath);
-        Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
-        File.WriteAllText(fullPath, string.Empty);
-    }
-
     /// <summary>
-    ///     Routes the process-runner substitute by jb sub-command: the version probe succeeds; the
-    ///     inspectcode/cleanupcode run is handed to <paramref name="onCommand" /> for argument capture, and
-    ///     inspectcode additionally writes <paramref name="inspectSarif" /> to its <c>-o=</c> path when
-    ///     supplied. Everything succeeds with exit code 0, leaving the cache generation behind that a real
-    ///     successful run leaves — see <see cref="CacheHomes.PlantGenerationFromJbRun" />.
+    ///     Routes the process-runner substitute by jb sub-command: the version probe succeeds, and the
+    ///     inspectcode/cleanupcode run is handed to <paramref name="onCommand" /> for argument capture, then
+    ///     answered by <see cref="JbStubs.Succeed" /> with <paramref name="inspectSarif" /> as its report.
     /// </summary>
     private static void RouteJb(
         IProcessRunner processRunner,
@@ -382,17 +346,13 @@ public sealed class CoercionIntegrationTests
             .AnyRun()
             .Returns(callInfo =>
             {
-                var arguments = callInfo.ArgAt<IReadOnlyList<string>>(1);
+                IReadOnlyList<string> arguments = callInfo.Arguments();
 
                 if (JbStubs.IsVersionProbe(arguments)) return JbStubs.VersionProbeAnswer;
 
                 onCommand?.Invoke(arguments);
 
-                if (inspectSarif is not null) JbStubs.WriteSarifIfRequested(arguments, inspectSarif);
-
-                CacheHomes.PlantGenerationFromJbRun(arguments);
-
-                return new ProcessResult(0, string.Empty, string.Empty);
+                return JbStubs.Succeed(arguments, inspectSarif);
             });
     }
 }

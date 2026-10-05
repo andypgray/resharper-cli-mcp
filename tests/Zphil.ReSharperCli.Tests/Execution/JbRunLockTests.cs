@@ -44,7 +44,7 @@ public sealed class JbRunLockTests : IDisposable
     public async Task AcquireAsync_SecondCallerInSameProcess_WaitsUntilTheFirstReleases()
     {
         // Arrange
-        JbRunLock runLock = JbRunners.Lock(JbRunTimeout.Default);
+        JbRunLock runLock = JbRunners.Lock();
         IDisposable first = await runLock.AcquireAsync(SolutionPath, _cacheHome, Ct);
 
         // Act
@@ -63,7 +63,7 @@ public sealed class JbRunLockTests : IDisposable
     {
         // Arrange — a handle taken outside this JbRunLock instance, standing in for another server process.
         // Without the file half of the lock this test fails: the in-process semaphore is uncontended here.
-        JbRunLock runLock = JbRunners.Lock(JbRunTimeout.Default);
+        JbRunLock runLock = JbRunners.Lock();
         FileStream otherProcess = OpenLockFileExclusively();
 
         // Act
@@ -215,7 +215,7 @@ public sealed class JbRunLockTests : IDisposable
     {
         // Arrange — the full production wait cap on purpose. If the zero-wait were a shorter promise rather
         // than structural, this test would hang instead of failing, which is the distinction worth pinning.
-        JbRunLock runLock = JbRunners.Lock(JbRunTimeout.Default);
+        JbRunLock runLock = JbRunners.Lock();
         await using FileStream otherProcess = OpenLockFileExclusively();
         var waited = Stopwatch.StartNew();
 
@@ -231,7 +231,7 @@ public sealed class JbRunLockTests : IDisposable
     public async Task TryAcquire_WhileACallerInThisProcessHoldsTheLease_SkipsWithoutWaiting()
     {
         // Arrange — the in-process half: the speculative caller never queues behind a real one.
-        JbRunLock runLock = JbRunners.Lock(JbRunTimeout.Default);
+        JbRunLock runLock = JbRunners.Lock();
         using IDisposable foreground = await runLock.AcquireAsync(SolutionPath, _cacheHome, Ct);
         var waited = Stopwatch.StartNew();
 
@@ -247,7 +247,7 @@ public sealed class JbRunLockTests : IDisposable
     public void TryAcquire_Granted_HoldsBothHalvesUntilDisposed()
     {
         // Arrange
-        JbRunLock runLock = JbRunners.Lock(JbRunTimeout.Default);
+        JbRunLock runLock = JbRunners.Lock();
 
         // Act
         IDisposable? lease = runLock.TryAcquire(SolutionPath, _cacheHome);
@@ -357,7 +357,7 @@ public sealed class JbRunLockTests : IDisposable
     {
         // Arrange — the production wait cap on the lock, and a short patience for this acquire: a caller that
         // already holds another lease must not be able to sit on it for the run cap, and must not fail either.
-        JbRunLock runLock = JbRunners.Lock(JbRunTimeout.Default);
+        JbRunLock runLock = JbRunners.Lock();
         await using FileStream otherProcess = OpenLockFileExclusively();
         var waited = Stopwatch.StartNew();
 
@@ -375,7 +375,7 @@ public sealed class JbRunLockTests : IDisposable
     {
         // Arrange — the reason it waits at all rather than trying once: a donor is normally free within a
         // moment, and the run it was busy with is exactly what made it worth copying.
-        JbRunLock runLock = JbRunners.Lock(JbRunTimeout.Default);
+        JbRunLock runLock = JbRunners.Lock();
         FileStream otherProcess = OpenLockFileExclusively();
         Task release = Task.Run(async () =>
         {

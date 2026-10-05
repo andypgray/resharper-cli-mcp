@@ -1,4 +1,3 @@
-using System.Text.Json;
 using ModelContextProtocol;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
@@ -253,7 +252,7 @@ public sealed class ProgressNotificationTests
 
         foreach (McpClientTool tool in tools)
         {
-            IReadOnlyList<string> properties = PropertyNames(tool);
+            IReadOnlyList<string> properties = tool.PropertyNames();
 
             properties.ShouldNotContain("progress");
             properties.ShouldNotContain("context");
@@ -310,15 +309,13 @@ public sealed class ProgressNotificationTests
             .AnyRun()
             .Returns(async callInfo =>
             {
-                var arguments = callInfo.ArgAt<IReadOnlyList<string>>(1);
+                IReadOnlyList<string> arguments = callInfo.Arguments();
                 if (JbStubs.IsVersionProbe(arguments)) return JbStubs.VersionProbeAnswer;
 
                 await duringRun(callInfo);
 
                 JbStubs.WriteEmptySarifIfRequested(arguments);
-                CacheHomes.PlantGenerationFromJbRun(arguments);
-
-                return new ProcessResult(0, string.Empty, string.Empty);
+                return JbStubs.Succeed(arguments);
             });
     }
 
@@ -355,13 +352,6 @@ public sealed class ProgressNotificationTests
 
             return Task.CompletedTask;
         });
-    }
-
-    private static IReadOnlyList<string> PropertyNames(McpClientTool tool)
-    {
-        if (!tool.JsonSchema.TryGetProperty("properties", out JsonElement properties)) return [];
-
-        return properties.EnumerateObject().Select(property => property.Name).ToList();
     }
 
     /// <summary>The client end of the channel: everything the server sent, in the order it arrived.</summary>

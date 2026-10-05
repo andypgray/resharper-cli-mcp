@@ -1,5 +1,4 @@
 using System.Text;
-using System.Text.Json;
 using System.Text.RegularExpressions;
 using Shouldly;
 using Xunit;
@@ -34,8 +33,7 @@ public sealed partial class RespectfulWrappingTests
     public void NuGetPackageDescription_CarriesTheUnofficialNotice()
     {
         // Arrange
-        string csproj = File.ReadAllText(
-            Path.Combine(RepoRoot.Location, "src", "Zphil.ReSharperCli", "Zphil.ReSharperCli.csproj"));
+        string csproj = RepoRoot.ReadText(RepoRoot.ProductCsproj);
 
         // Act
         Match match = CsprojDescription().Match(csproj);
@@ -49,7 +47,7 @@ public sealed partial class RespectfulWrappingTests
     public void ReadmeOpeningParagraph_CarriesTheUnofficialNotice()
     {
         // Arrange
-        string readme = File.ReadAllText(Path.Combine(RepoRoot.Location, "README.md"));
+        string readme = RepoRoot.ReadText("README.md");
 
         // Act — the first prose block, skipping the title, the mcp-name comment, and the badge row.
         string openingParagraph = readme
@@ -94,12 +92,8 @@ public sealed partial class RespectfulWrappingTests
     [Fact]
     public void McpRegistryManifest_CarriesTheUnofficialNoticeWithinTheRegistryCap()
     {
-        // Arrange
-        string manifest = File.ReadAllText(Path.Combine(RepoRoot.Location, ".mcp", "server.json"));
-
         // Act
-        using JsonDocument document = JsonDocument.Parse(manifest);
-        string description = document.RootElement.GetProperty("description").GetString()!;
+        string description = RepoManifest.ReadString(".mcp/server.json", "/description")!;
 
         // Assert
         description.ShouldContain(Disclaimer);

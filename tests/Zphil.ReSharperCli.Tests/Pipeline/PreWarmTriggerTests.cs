@@ -10,13 +10,16 @@ namespace Zphil.ReSharperCli.Tests.Pipeline;
 
 /// <summary>
 ///     The trigger, through the registration path the server really uses: connecting a client is what starts
-///     the pre-warm, and nothing in a tool call is. Driven over the in-process client/server harness, which
-///     composes the DI graph the way <c>Program.cs</c> does, because calling <c>Start()</c> by hand would
-///     prove only that the method works and nothing about whether it is ever reached — which is exactly the
-///     part that MCP's move from the <c>initialize</c> handshake to <c>server/discover</c> would otherwise
-///     have broken silently. The shutdown case belongs here for the same reason: it has to run through the
-///     real host stop, since that is what must not leave a <c>jb</c> behind.
+///     the pre-warm, and nothing in a tool call is.
 /// </summary>
+/// <remarks>
+///     Driven over the in-process client/server harness, which composes the DI graph the way <c>Program.cs</c>
+///     does, because calling <c>Start()</c> by hand would prove only that the method works and nothing about
+///     whether it is ever reached, which is the part a protocol change breaks silently: MCP's move from the
+///     <c>initialize</c> handshake to <c>server/discover</c> is one. The shutdown case belongs here for the
+///     same reason: it has to run through the real host stop, since that is what must not leave a <c>jb</c>
+///     behind.
+/// </remarks>
 public sealed class PreWarmTriggerTests
 {
     private static readonly TimeSpan Generous = TimeSpan.FromSeconds(30);
@@ -39,7 +42,7 @@ public sealed class PreWarmTriggerTests
     [Fact]
     public async Task LaterMessages_DoNotStartFurtherPasses()
     {
-        // Arrange — the warmer is re-armable now, so the one-shot lives here instead. Without it every
+        // Arrange — the warmer is re-armable, so the one-shot lives in the trigger. Without it every
         // message would reach Start, and Start would keep saying yes: config resolution is deliberately
         // uncached (a directory enumeration plus a full settings parse each time) and jb discovery caches
         // successes only, so a server sitting in a repo with no solution would re-probe two jb candidates at

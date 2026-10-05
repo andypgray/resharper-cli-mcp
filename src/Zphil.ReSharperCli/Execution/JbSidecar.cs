@@ -5,12 +5,13 @@ using Microsoft.Extensions.Logging;
 namespace Zphil.ReSharperCli.Execution;
 
 /// <summary>
-///     The naming scheme of every file this server itself writes into a cache home — the run lock file, the
-///     warm marker, the cold tombstone, the cost record — and the mechanics they share. One prefix, one key
-///     per cache generation, one extension per artifact, so the four always sit side by side, and compose
-///     (<see cref="PathForKey" />), parse (<see cref="FindAll" />) and read (<see cref="ReadLines" />) live
-///     in one class a scheme change cannot move half of.
+///     The naming scheme of every file this server itself writes into a cache home, and the mechanics those
+///     files share.
 /// </summary>
+/// <remarks>
+///     One prefix, one key per cache generation, one extension per artifact, so they always sit side by side,
+///     and composing, parsing and reading them live in one class a scheme change cannot move half of.
+/// </remarks>
 internal static class JbSidecar
 {
     /// <summary>
@@ -20,11 +21,14 @@ internal static class JbSidecar
     internal const string Prefix = ".resharper-cli-mcp-";
 
     /// <summary>
-    ///     Identifies one cache generation: a short hash of the normalised (solution, cache home) pair.
-    ///     Both paths are absolute by contract — <c>ResolvedConfig</c> resolves them — so normalising here
-    ///     only folds separators and Windows casing, and never consults the process working directory. The
-    ///     key is one-way: nothing can invert it back into a solution path, and nothing needs to.
+    ///     Computes the key that identifies one cache generation: a short hash of the normalised (solution,
+    ///     cache home) pair.
     /// </summary>
+    /// <remarks>
+    ///     Both paths are absolute by contract — <c>ResolvedConfig</c> resolves them — so normalising here only
+    ///     folds separators and Windows casing, and never consults the process working directory. The key is
+    ///     one-way: nothing can invert it back into a solution path, and nothing needs to.
+    /// </remarks>
     internal static string ComputeKey(string solutionPath, string cacheHome)
     {
         var material = $"{Normalize(solutionPath)}\n{Normalize(cacheHome)}";
@@ -33,11 +37,13 @@ internal static class JbSidecar
     }
 
     /// <summary>
-    ///     The path of the sidecar carrying <paramref name="extension" /> for one key: inside the cache home
-    ///     itself, and deliberately not in the temp directory — the cache home <em>is</em> the shared
-    ///     resource, so two sessions sharing a cache address the same sidecars even when their temp
-    ///     directories differ.
+    ///     The path of the sidecar carrying <paramref name="extension" /> for one key, inside the cache home
+    ///     itself.
     /// </summary>
+    /// <remarks>
+    ///     Deliberately not in the temp directory — the cache home <em>is</em> the shared resource, so two
+    ///     sessions sharing a cache address the same sidecars even when their temp directories differ.
+    /// </remarks>
     internal static string PathForKey(string cacheHome, string key, string extension)
     {
         return Path.Combine(Path.GetFullPath(cacheHome), $"{Prefix}{key}.{extension}");
@@ -52,8 +58,9 @@ internal static class JbSidecar
     /// <summary>
     ///     Every sidecar carrying <paramref name="extension" /> under the cache home, with the key its file
     ///     name embeds — the inverse of <see cref="PathForKey" />, for a caller that knows only the cache
-    ///     home. A cache home that does not exist yet holds nothing.
+    ///     home.
     /// </summary>
+    /// <remarks>A cache home that does not exist yet holds nothing.</remarks>
     internal static IEnumerable<(string Key, string SidecarPath)> FindAll(string cacheHome, string extension)
     {
         string home = Path.GetFullPath(cacheHome);
@@ -64,7 +71,7 @@ internal static class JbSidecar
     }
 
     /// <summary>
-    ///     Open the sidecar for (re)creation, truncating whatever was there.
+    ///     Opens the sidecar for (re)creation, truncating whatever was there.
     /// </summary>
     /// <remarks>
     ///     <see cref="FileShare.ReadWrite" />: a concurrent server writing or reading the same generation's
@@ -108,12 +115,12 @@ internal static class JbSidecar
     }
 
     /// <summary>
-    ///     Delete one sidecar, treating both an absent file and an ordinary filesystem failure as quiet
-    ///     outcomes — each artifact's caller documents which way its failures are allowed to point, and none
-    ///     of them may fail the call it runs inside. <paramref name="artifact" /> is how the log names what
-    ///     would not go.
+    ///     Deletes one sidecar, treating both an absent file and an ordinary filesystem failure as quiet
+    ///     outcomes.
     /// </summary>
     /// <remarks>
+    ///     Each artifact's caller documents which way its failures are allowed to point, and none of them may
+    ///     fail the call it runs inside. <paramref name="artifact" /> is how the log names what would not go.
     ///     The logger is a parameter because this class is static by design and its callers are not. Passing
     ///     theirs in is what keeps the whole server on one logging system: a static <c>Serilog.Log</c> here
     ///     would bypass the <c>ILogger</c> pipeline, render with no <c>SourceContext</c>, and be invisible to

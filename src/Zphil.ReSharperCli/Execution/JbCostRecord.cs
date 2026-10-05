@@ -9,20 +9,21 @@ namespace Zphil.ReSharperCli.Execution;
 ///     the last run like it can predict.
 /// </summary>
 /// <remarks>
-///     Two bands rather than one number, because one number would lie. Measured on a single solution: 497
-///     seconds cold, 456 seeded, 39 warm. A run that quoted a remembered figure without saying which of those
-///     it came from would tell a warm caller to expect eight minutes, which is worse than saying nothing.
 ///     <para>
-///         Warm is a state a run starts in and a line describes, and it is not a band. Measured over 31 warm
-///         runs on two solutions between 2026-08-22 and 2026-08-28, the figure the previous warm run left
-///         correlated with the next one's actual duration at 0.02, landed within a factor of two 9 times in
-///         31, and was out by a median of 119 seconds against a median actual duration of 78 seconds — the
-///         error is the size of the quantity. The cause is structural rather than a matter of tuning: a warm
-///         run's cost is set by how much source changed since the last one, which nothing here observes, so
-///         the last figure is a lag-one estimator of a series driven by something unobserved. A running
-///         median over the recorded runs was tried on the same data and was no better. Left out of the enum
-///         rather than gated out at each door, so that a warm figure cannot be recorded or quoted by any
-///         caller rather than merely declined by the ones that remembered to ask.
+///         Two bands rather than one number, because one number would lie: on one solution, cold and seeded
+///         runs each took the better part of ten minutes and a warm one well under one. A run that quoted a
+///         remembered figure without saying which of those it came from would tell a warm caller to expect
+///         minutes it will not take, which is worse than saying nothing.
+///     </para>
+///     <para>
+///         Warm is a state a run starts in and a line describes, and it is not a band. Measured, the figure
+///         the previous warm run left does not predict the next one's duration — the error is the size of the
+///         quantity. The cause is structural rather than a matter of tuning: a warm run's cost is set by how
+///         much source changed since the last one, which nothing here observes, so the last figure is a
+///         lag-one estimator of a series driven by something unobserved, and a running median over the
+///         recorded runs does no better. Left out of the enum rather than gated out at each door, so that a
+///         warm figure cannot be recorded or quoted by any caller rather than merely declined by the ones that
+///         remembered to ask.
 ///     </para>
 ///     <para>
 ///         Two more states have no band, and that is the same judgement pointed the other way — an unreadable
@@ -41,27 +42,27 @@ internal enum JbCostBand
 
 /// <summary>
 ///     How long the last <c>jb</c> run against this solution took, per <see cref="JbCostBand" />, in a file
-///     beside the warm marker. The heartbeat says how long a run has been going against the cap; this is what
-///     lets the same line say how long a run like it usually takes, which is the other half of telling slow
-///     from stuck.
+///     beside the warm marker.
 /// </summary>
 /// <remarks>
+///     <para>
+///         The heartbeat says how long a run has been going against the cap; this is what lets the same line
+///         say how long a run like it usually takes, which is the other half of telling slow from stuck.
+///     </para>
 ///     <para>
 ///         Its failure direction is <see cref="JbWarmMarker" />'s rather than
 ///         <see cref="JbColdTombstone" />'s, and the difference is worth stating: a lost stamp costs a
 ///         missing hint, while a lost tombstone risks a promise to the user going unkept. So every failure
 ///         here — an unwritable cache home, a file this build cannot parse, a key that cannot be derived —
-///         lands at <c>Debug</c> and degrades to "no figure", which renders as the line that was there before
-///         this file existed.
+///         lands at <c>Debug</c> and degrades to "no figure", which renders as a line with no figure in it.
 ///     </para>
 ///     <para>
 ///         <see cref="Stamp" /> is read-modify-write and keeps every line it did not recognise, so a band a
 ///         later build records does not lose its figure to an earlier one running beside it in the same cache
-///         home. There is no locking, and none is needed: every read and write here happens under the
-///         solution's <see cref="JbRunLock" /> lease — the stamp under the runner's, the clear under the
-///         reset's, and the read inside <see cref="JbCacheState.Read" />, which runs under the same lease.
-///         The <see cref="FileShare.ReadWrite" /> on the reads is for the cache home's other occupants
-///         rather than for this file's own callers.
+///         home. There is no locking of its own, and none is needed: every read and write happens under the
+///         solution's <see cref="JbRunLock" /> lease, which a caller must hold. The
+///         <see cref="FileShare.ReadWrite" /> on the reads is for the cache home's other occupants rather than
+///         for this file's own callers.
 ///     </para>
 /// </remarks>
 internal static class JbCostRecord
@@ -69,8 +70,8 @@ internal static class JbCostRecord
     private const string Extension = "cost";
 
     /// <summary>
-    ///     Where the record for one cache generation lives: beside the lock file, the warm marker and the
-    ///     cold tombstone, under <see cref="JbSidecar" />'s one key for the generation.
+    ///     Where the record for one cache generation lives: beside the other sidecars, under
+    ///     <see cref="JbSidecar" />'s one key for the generation.
     /// </summary>
     internal static string PathFor(string solutionPath, string cacheHome)
     {
@@ -92,12 +93,14 @@ internal static class JbCostRecord
     }
 
     /// <summary>
-    ///     Record that a run starting from <paramref name="band" /> took <paramref name="cost" />, replacing
+    ///     Records that a run starting from <paramref name="band" /> took <paramref name="cost" />, replacing
     ///     whatever that band last cost and leaving every other band's figure where it was.
     /// </summary>
     /// <remarks>
-    ///     Whole seconds, because that is the resolution every reader renders at and a figure with more of
-    ///     them in the file than in the sentence invites a diff that means nothing.
+    ///     <para>
+    ///         Whole seconds, because that is the resolution every reader renders at and a figure with more of
+    ///         them in the file than in the sentence invites a diff that means nothing.
+    ///     </para>
     ///     <para>
     ///         A <c>warm</c> line an earlier build wrote, from when that was a band, is left exactly where it
     ///         is rather than swept up — the rule this file keeps for any line it does not recognise. A reset
@@ -157,10 +160,12 @@ internal static class JbCostRecord
     }
 
     /// <summary>
-    ///     Forget every figure recorded for this solution — for a cache reset, which has just ended the
-    ///     lineage they describe. Swallows failures the way <see cref="Stamp" /> does, and clearing a record
-    ///     that was never written is not one of them.
+    ///     Forgets every figure recorded for this solution, whose lineage a cache reset has just ended.
     /// </summary>
+    /// <remarks>
+    ///     Swallows failures the way <see cref="Stamp" /> does, and clearing a record that was never written is
+    ///     not one of them.
+    /// </remarks>
     internal static void Clear(string solutionPath, string cacheHome, ILogger logger)
     {
         JbSidecar.TryDelete(solutionPath, cacheHome, Extension, "recorded jb run costs", logger);
@@ -184,10 +189,12 @@ internal static class JbCostRecord
 
     /// <summary>
     ///     The duration <paramref name="line" /> carries, or <see langword="null" /> when it carries
-    ///     something this build cannot read as one. <see cref="NumberStyles.None" /> is the whole guard: it
-    ///     refuses a sign, a separator and surrounding space, so a hand-edited or half-written file quotes
-    ///     nothing rather than quoting nonsense.
+    ///     something this build cannot read as one.
     /// </summary>
+    /// <remarks>
+    ///     <see cref="NumberStyles.None" /> is the whole guard: it refuses a sign, a separator and surrounding
+    ///     space, so a hand-edited or half-written file quotes nothing rather than quoting nonsense.
+    /// </remarks>
     private static TimeSpan? Seconds(string line, string label)
     {
         string value = line[(label.Length + 1)..];

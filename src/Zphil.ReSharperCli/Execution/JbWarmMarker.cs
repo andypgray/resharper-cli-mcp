@@ -38,10 +38,12 @@ internal enum StampOutcome
 /// <summary>
 ///     Everything one warm marker records: the cache generation directory the run left warm, or
 ///     <see langword="null" /> when the marker names none this server should act on; the <c>jb</c> build
-///     that wrote it; and the solution path it was run against. A record rather than a tuple because the
-///     content has grown twice, and a caller destructuring three anonymous strings positionally is one field
-///     away from reading the wrong one.
+///     that wrote it; and the solution path it was run against.
 /// </summary>
+/// <remarks>
+///     A record rather than a tuple because a caller destructuring three anonymous strings positionally is one
+///     field away from reading the wrong one.
+/// </remarks>
 internal sealed record WarmMarkerContent(string? GenerationName, string? JbVersion, string? SolutionPath);
 
 /// <summary>
@@ -75,9 +77,9 @@ internal sealed record WarmMarkerContent(string? GenerationName, string? JbVersi
 ///         a cache worth protecting.
 ///     </para>
 ///     <para>
-///         The content grew a second line — the <c>jb</c> build that wrote the generation — and then a third,
-///         the solution path, and both growths are safe in the one direction that cannot be tested from
-///         here. A previously released server reads the whole file as one string and asks
+///         The content has three lines — the generation, the <c>jb</c> build that wrote it, and the solution
+///         path — and the second and third are safe in the one direction that cannot be tested from here. An
+///         older release of this server reads the whole file as one string and asks
 ///         <see cref="IsBareDirectoryName" /> of it, which passes for two lines: a newline is no path
 ///         separator, so both survive the guard as one implausible name. What declines them is the directory
 ///         lookup behind it — nothing under the cache home is called that — so that build answers null,
@@ -98,11 +100,11 @@ internal sealed record WarmMarkerContent(string? GenerationName, string? JbVersi
 ///         The silence is total, which leaves one thing worth saying out loud with nowhere here to say it:
 ///         that the derivation this server makes from <c>jb</c>'s directory naming has stopped matching what
 ///         <c>jb</c> writes. That is not a filesystem failure and nothing else would ever report it, so
-///         <see cref="Stamp" /> hands it back as <see cref="StampOutcome.NoGenerationMatched" /> and
-///         <see cref="Services.JbRunner" /> is what turns it into a warning said once. Returned rather than
-///         logged because "once" has to mean once per server session, and a latch on a static field here
-///         would be once per <em>process</em>: exact only while a process holds a single session, and under a
-///         parallel test run the first session to see drift absorbs every later session's warning.
+///         <see cref="Stamp" /> hands it back as <see cref="StampOutcome.NoGenerationMatched" /> for its caller
+///         to warn about once. Returned rather than logged because "once" has to mean once per server
+///         session, and a latch on a static field here would be once per <em>process</em>: exact only while a
+///         process holds a single session, and under a parallel test run the first session to see drift
+///         absorbs every later session's warning.
 ///     </para>
 /// </remarks>
 internal static class JbWarmMarker
@@ -110,7 +112,7 @@ internal static class JbWarmMarker
     private const string Extension = "warm";
 
     /// <summary>
-    ///     Where the marker for one cache generation lives: beside its lock file and cold tombstone, under
+    ///     Where the marker for one cache generation lives: beside the other sidecars, under
     ///     <see cref="JbSidecar" />'s one key for the generation.
     /// </summary>
     internal static string PathFor(string solutionPath, string cacheHome)
@@ -119,11 +121,13 @@ internal static class JbWarmMarker
     }
 
     /// <summary>
-    ///     Every warm marker under <paramref name="cacheHome" />, with the key its file name carries. For
-    ///     donor discovery, which starts from nothing but the cache home: the key is one-way, so the owning
-    ///     solution's path is not recoverable — and does not need to be, because the generation's name is
-    ///     read from the marker's content and the donor's lock is taken by key.
+    ///     Every warm marker under <paramref name="cacheHome" />, with the key its file name carries.
     /// </summary>
+    /// <remarks>
+    ///     For a caller that starts from nothing but the cache home: the key is one-way, so the owning
+    ///     solution's path is not recoverable — and does not need to be, because the generation's name is read
+    ///     from the marker's content and its lock is taken by key.
+    /// </remarks>
     internal static IEnumerable<(string Key, string MarkerPath)> FindAll(string cacheHome)
     {
         return JbSidecar.FindAll(cacheHome, Extension);
@@ -214,17 +218,16 @@ internal static class JbWarmMarker
     /// <summary>
     ///     Every generation directory a marker under <paramref name="cacheHome" /> names, mapped to the
     ///     solution path that marker records — or to <see langword="null" /> where it records none, which is
-    ///     every marker written before this server recorded one. For the cache reset, which can name the
-    ///     generations it left alone and otherwise has no way to say whose they are.
+    ///     every marker written before this server recorded one.
     /// </summary>
     /// <remarks>
-    ///     Absent and present-with-null are different answers and the caller is owed both: a generation
-    ///     missing from the map had no successful run through this server stamp it at all, while one mapped
-    ///     to null was stamped by a build that recorded no path and will name itself after the next clean
-    ///     run. Two markers naming one directory is reachable only through the case scenario
-    ///     <see cref="JbCacheGenerations.NameComparison" /> documents, and the first wins — an attribution is
-    ///     a sentence in a report, so a tie is not worth a policy. Every filesystem failure answers an empty
-    ///     map: a report that cannot attribute is still a correct report.
+    ///     A generation's name records only a one-way hash, so this is the only way to say whose it is. Absent
+    ///     and present-with-null are different answers and the caller is owed both: a generation missing from the map
+    ///     had no successful run through this server stamp it at all, while one mapped to null was stamped by a build
+    ///     that recorded no path and will name itself after the next clean run. Two markers naming one directory is
+    ///     reachable only through the case scenario <see cref="JbCacheGenerations.NameComparison" /> documents, and the
+    ///     first wins — an attribution is a sentence in a report, so a tie is not worth a policy. Every filesystem
+    ///     failure answers an empty map: a report that cannot attribute is still a correct report.
     /// </remarks>
     internal static Dictionary<string, string?> FindRecordedSolutionPaths(string cacheHome, ILogger logger)
     {
@@ -302,12 +305,14 @@ internal static class JbWarmMarker
     }
 
     /// <summary>
-    ///     Forget that a run against this cache generation ever succeeded — for a caller that has just dropped
-    ///     the generation the marker describes, leaving the claim behind untrue. Swallows failures like
-    ///     <see cref="Stamp" /> does, and deleting a marker that was never there is not one: the cost of a
-    ///     marker that will not go is a redundant pre-warm, which is the direction this file is always
-    ///     allowed to fail in.
+    ///     Forgets that a run against this cache generation ever succeeded, once the generation the marker
+    ///     describes has been dropped and the claim is untrue.
     /// </summary>
+    /// <remarks>
+    ///     Swallows failures like <see cref="Stamp" /> does, and deleting a marker that was never there is not
+    ///     one: the cost of a marker that will not go is a redundant pre-warm, which is the direction this file
+    ///     is always allowed to fail in.
+    /// </remarks>
     internal static void Clear(string solutionPath, string cacheHome, ILogger logger)
     {
         JbSidecar.TryDelete(solutionPath, cacheHome, Extension, "jb warm marker", logger);
@@ -315,15 +320,14 @@ internal static class JbWarmMarker
 
     /// <summary>
     ///     How long ago a run against this cache generation last succeeded, or <see langword="null" /> when
-    ///     none is recorded — no marker, or one this server cannot read. The one mtime read behind both
-    ///     <see cref="IsFreshWithin" />'s debounce and the cache-state line a run starts with, so "recently
-    ///     warm" and "warm, and this old" cannot come to disagree.
+    ///     none is recorded — no marker, or one this server cannot read.
     /// </summary>
     /// <remarks>
-    ///     A negative span is possible and is passed through rather than hidden: a moved clock or a cache home
-    ///     copied between machines dates a marker into the future, and each caller decides what to do with
-    ///     that — the debounce reads it as stale so it cannot suppress pre-warming forever, while the log
-    ///     shows the operator the nonsense the filesystem is reporting.
+    ///     The one mtime read behind every freshness judgement, so "recently warm" and "warm, and this old"
+    ///     cannot come to disagree. A negative span is possible and is passed through rather than hidden: a
+    ///     moved clock or a cache home copied between machines dates a marker into the future, and each caller
+    ///     decides what to do with that — the debounce reads it as stale so it cannot suppress pre-warming
+    ///     forever, while the log shows the operator the nonsense the filesystem is reporting.
     /// </remarks>
     internal static TimeSpan? Age(string solutionPath, string cacheHome, ILogger logger)
     {
@@ -340,10 +344,12 @@ internal static class JbWarmMarker
     }
 
     /// <summary>
-    ///     Whether a run against this cache generation succeeded within <paramref name="window" />. A missing
-    ///     or unreadable marker reads as stale, and so does a future-dated one — a moved clock, or a cache
-    ///     home copied between machines — so it cannot suppress pre-warming forever.
+    ///     Whether a run against this cache generation succeeded within <paramref name="window" />.
     /// </summary>
+    /// <remarks>
+    ///     A missing or unreadable marker reads as stale, and so does a future-dated one — a moved clock, or a
+    ///     cache home copied between machines — so it cannot suppress pre-warming forever.
+    /// </remarks>
     internal static bool IsFreshWithin(string solutionPath, string cacheHome, TimeSpan window, ILogger logger)
     {
         return Age(solutionPath, cacheHome, logger) is { } age && age >= TimeSpan.Zero && age < window;
@@ -401,13 +407,14 @@ internal static class JbWarmMarker
     }
 
     /// <summary>
-    ///     The marker's lines, trimmed, in order — the shared parse behind every content reader here. A
-    ///     marker written by any build of this server is a few dozen bytes, so reading it whole costs nothing
-    ///     and keeps each reader a question about one line rather than about a file format. The open, and the
-    ///     absent-file-means-nothing-recorded split, are <see cref="JbSidecar.ReadLines" />'s; the trim is
-    ///     this artifact's own judgement, since its lines are compared ordinally and a stray space would fail
-    ///     them.
+    ///     The marker's lines, trimmed, in order — the shared parse behind every content reader here.
     /// </summary>
+    /// <remarks>
+    ///     A marker written by any build of this server is a few dozen bytes, so reading it whole costs nothing
+    ///     and keeps each reader a question about one line rather than about a file format. The open, and the
+    ///     absent-file-means-nothing-recorded split, are <see cref="JbSidecar.ReadLines" />'s; the trim is this
+    ///     artifact's own judgement, since its lines are compared ordinally and a stray space would fail them.
+    /// </remarks>
     private static IReadOnlyList<string> ReadLines(string markerFilePath)
     {
         return JbSidecar.ReadLines(markerFilePath).Select(line => line.Trim()).ToList();

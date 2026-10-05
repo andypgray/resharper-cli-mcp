@@ -4,10 +4,7 @@ using Zphil.ReSharperCli.Formatting;
 
 namespace Zphil.ReSharperCli.Tests.Formatting;
 
-/// <summary>
-///     The one spelling of a duration, pinned: the run cap in a timeout message, the elapsed time on a
-///     progress line, and the uptime on the shutdown line all read through it.
-/// </summary>
+/// <summary>Pins <see cref="DurationFormatter" />'s spelling of a duration.</summary>
 public sealed class DurationFormatterTests
 {
     [Theory]

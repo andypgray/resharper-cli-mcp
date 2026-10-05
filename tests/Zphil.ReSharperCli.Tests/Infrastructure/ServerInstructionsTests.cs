@@ -7,14 +7,14 @@ using Zphil.ReSharperCli.Services;
 
 namespace Zphil.ReSharperCli.Tests.Infrastructure;
 
-/// <summary>
-///     Guards the embedded <c>server-instructions.md</c> resource. A rename of the file or its manifest
-///     resource id would otherwise surface only as a runtime failure when a client connects; these
-///     load-time assertions turn it into a test failure instead. They also pin the resident-cost budget:
-///     instructions ride verbatim in every session's system prompt whether or not a tool is ever called,
-///     while tool schemas and resources load on demand, so anything that can live in a schema or a guide
-///     must not live here.
-/// </summary>
+/// <summary>Guards the embedded <c>server-instructions.md</c> resource.</summary>
+/// <remarks>
+///     A rename of the file or its manifest resource id would otherwise surface only as a runtime failure when
+///     a client connects; these load-time assertions turn it into a test failure instead. They also pin the
+///     resident-cost budget: instructions ride verbatim in every session's system prompt whether or not a tool
+///     is ever called, while tool schemas and resources load on demand, so anything that can live in a schema
+///     or a guide must not live here.
+/// </remarks>
 public sealed class ServerInstructionsTests
 {
     [Fact]
@@ -44,8 +44,7 @@ public sealed class ServerInstructionsTests
     {
         // The unofficial-wrapper notice is required in the NuGet description, the README's first paragraph,
         // and .mcp/server.json (see RespectfulWrappingTests) — not in the always-resident instructions,
-        // where it costs every session tokens no agent can act on. It also survives in both guide resources,
-        // the derive_style_guide prompt, and the server's own Title, negotiated on initialize.
+        // where it costs every session tokens no agent can act on.
         ServerInstructions.Text.ShouldNotContain("affiliated");
     }
 

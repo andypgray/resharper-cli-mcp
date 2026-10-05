@@ -8,18 +8,16 @@ using Zphil.ReSharperCli.Infrastructure;
 namespace Zphil.ReSharperCli.Services;
 
 /// <summary>
-///     The server's one piece of background work: populate the ReSharper cache generation a tool call is
-///     going to want, in an idle window rather than in the user's. A session usually idles for minutes
-///     between the handshake and its first call, and a cold <c>jb inspectcode</c> costs minutes.
-///     <see cref="Pipeline.PreWarmTrigger" /> owns the signal that gets the first pass going.
+///     The server's one piece of background work: populates the ReSharper cache generation a tool call is
+///     going to want, in an idle window rather than in the user's.
 /// </summary>
 /// <remarks>
 ///     <para>
 ///         One <em>kind</em> of speculative work and at most one pass in flight, but not at most one pass per
 ///         process. A pass may recur on a signal that a real call has just handed the cache generation back —
-///         today only a foreground run hitting the cap — and never on a timer or per message. A timer would
-///         be a second background job; a pass that started itself would be a loop; a per-message trigger
-///         would pay a settings parse and a <c>jb</c> re-probe on every message for nothing.
+///         a foreground run hitting the cap — and never on a timer or per message. A timer would be a second background
+///         job; a pass that started itself would be a loop; a per-message trigger would pay a settings parse and a
+///         <c>jb</c> re-probe on every message for nothing.
 ///     </para>
 ///     <para>
 ///         It decides <em>when</em> a warm-up runs; <see cref="InspectService.WarmCacheAsync" /> decides
@@ -44,9 +42,9 @@ namespace Zphil.ReSharperCli.Services;
 ///         kill <c>jb</c> without <em>waiting</em> for it, and a <c>jb</c> outliving this process keeps
 ///         ReSharper's own cache-generation lock after the OS has dropped our lock-file handle. This is the
 ///         orderly half of that problem, and the only half anything in-process can reach: a server killed
-///         outright never runs this method at all, which is what <see cref="ChildProcessLifetime" /> covers —
-///         completely on Windows, for <c>jb</c> itself on Linux, and not at all on macOS. So the drain still
-///         has to be right on every platform, and on macOS it remains the only thing there is.
+///         outright never runs this method at all, which is what <see cref="ChildProcessLifetime" /> covers,
+///         unequally by platform and not at all on macOS. So the drain has to be right on every platform, and
+///         on macOS it is the only thing there is.
 ///     </para>
 /// </remarks>
 internal sealed class CacheWarmer(
@@ -132,7 +130,7 @@ internal sealed class CacheWarmer(
     }
 
     /// <summary>
-    ///     Cancel a pre-warm in flight and wait for it to let go, so the process never leaves a <c>jb</c>
+    ///     Cancels a pre-warm in flight and waits for it to let go, so the process never leaves a <c>jb</c>
     ///     behind holding ReSharper's cache-generation lock.
     /// </summary>
     public async Task StopAsync(CancellationToken cancellationToken)
@@ -175,14 +173,17 @@ internal sealed class CacheWarmer(
     }
 
     /// <summary>
-    ///     Begin a pre-warm pass. At most one is ever in flight, and none starts once the host has stopped;
-    ///     beyond that a caller may re-arm, which is what lets a call that just hit the run cap be followed by
-    ///     speculative work rather than by nothing at all. Returns immediately.
+    ///     Begins a pre-warm pass, and returns immediately.
     /// </summary>
+    /// <remarks>
+    ///     At most one is ever in flight, and none starts once the host has stopped; beyond that a caller may
+    ///     re-arm, which is what lets a call that just hit the run cap be followed by speculative work rather
+    ///     than by nothing at all.
+    /// </remarks>
     /// <param name="target">
     ///     The solution to warm, when the caller already knows it — a re-arm after a foreground timeout does,
     ///     and it is the solution that actually timed out rather than whatever the working directory would
-    ///     resolve to. Omitted, the pass resolves its own target as it always has.
+    ///     resolve to. Omitted, the pass resolves its own target.
     /// </param>
     public void Start(ResolvedConfig? target = null)
     {
@@ -226,8 +227,9 @@ internal sealed class CacheWarmer(
         return !OffSpellings.Contains(envValue?.Trim(), StringComparer.OrdinalIgnoreCase);
     }
 
-    /// <summary>Never throws: it is the top of a fire-and-forget task, so an escape would be an unobserved exception.</summary>
+    /// <summary>Runs one pass and records how it ended.</summary>
     /// <remarks>
+    ///     Never throws: it is the top of a fire-and-forget task, so an escape would be an unobserved exception.
     ///     The enabled check and the target resolution sit here rather than in <see cref="WarmAsync" /> for the
     ///     sake of the outcome line: they are what produce the solution the pass was aimed at, and a pass that
     ///     ends in a cancellation or an unexpected fault has to be able to say which solution that was. It also
@@ -285,14 +287,14 @@ internal sealed class CacheWarmer(
     }
 
     /// <summary>
-    ///     Record how a pass settled, at <c>Information</c> to pair with the start — where this used to be
-    ///     <c>Debug</c>, and a field log therefore showed pre-warms beginning and never ending, so whether two
-    ///     overlapping passes had contended, and which of them won, was unanswerable.
+    ///     Logs how a pass settled, at <c>Information</c> to pair with the start.
     /// </summary>
     /// <remarks>
-    ///     <see cref="WarmUpOutcome.Disabled" /> is the one exception, and it goes to <c>Debug</c> because the
-    ///     startup line already names the switch's position. Restating a startup fact once per session at
-    ///     <c>Information</c> is exactly the noise this level was cleared out to make room for real events.
+    ///     Without an ending line, a log shows pre-warms beginning and never ending, and whether two overlapping
+    ///     passes contended, and which of them won, is unanswerable. <see cref="WarmUpOutcome.Disabled" /> is the
+    ///     one exception, and it goes to <c>Debug</c> because the startup line already names the switch's
+    ///     position. Restating a startup fact once per session at <c>Information</c> is exactly the noise that
+    ///     level is kept clear of.
     /// </remarks>
     private void ReportOutcome(WarmUpOutcome outcome, ResolvedConfig? config, TimeSpan elapsed)
     {
@@ -318,9 +320,9 @@ internal sealed class CacheWarmer(
 
         // One arm per ending, because the outcome line this produces sits directly under the run lines
         // JbRunner wrote, and a summary that collapses them contradicts what they say: a pass killed at the
-        // cap logs that the cap killed it, and then used to call itself a skip in the very next line. The
-        // default throws for the same reason: a new ending absorbed into "skipped" would misreport spent
-        // work as costless, silently.
+        // cap logs that the cap killed it, and must not call itself a skip in the very next line. The default
+        // throws for the same reason: a new ending absorbed into "skipped" would misreport spent work as
+        // costless, silently.
         return run switch
         {
             SpeculativeRunOutcome.NotStarted => WarmUpOutcome.Skipped,
@@ -355,10 +357,13 @@ internal sealed class CacheWarmer(
     }
 
     /// <summary>
-    ///     The solution a pass with no given target warms, or <see langword="null" /> when there is none —
-    ///     no <c>jb</c> installed, or no solution in the working directory, which is the ordinary shape of a
-    ///     server started somewhere that is not a .NET repo. There is nothing to warm and nobody to tell.
+    ///     The solution a pass with no given target warms, or <see langword="null" /> when there is none.
     /// </summary>
+    /// <remarks>
+    ///     None means no <c>jb</c> installed, or no solution in the working directory, which is the ordinary
+    ///     shape of a server started somewhere that is not a .NET repo. There is nothing to warm and nobody to
+    ///     tell.
+    /// </remarks>
     private async Task<ResolvedConfig?> TryResolveTargetAsync()
     {
         try

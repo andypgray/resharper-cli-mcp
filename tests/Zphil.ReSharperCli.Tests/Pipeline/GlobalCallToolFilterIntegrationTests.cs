@@ -90,10 +90,10 @@ public sealed class GlobalCallToolFilterIntegrationTests
     [Fact]
     public async Task CallTool_InspectOverBudget_ReducesDetailInsteadOfTruncating()
     {
-        // Arrange — a 600-token budget (1,500-char cap) against a fixture shaped like the run that motivated
-        // the ladder: 24 issues of one rule with distinct messages across 2 files, plus 2 others. Listed in
-        // full that is ~3,000 characters; collapsing the repeated rule to one line per file brings it inside
-        // the budget. This is the only end-to-end proof of the tool -> renderer -> filter wiring.
+        // Arrange — a 600-token budget (1,500-char cap) against a fixture shaped like a solution-wide run:
+        // 24 issues of one rule with distinct messages across 2 files, plus 2 others. Listed in full that is
+        // ~3,000 characters; collapsing the repeated rule to one line per file brings it inside the budget.
+        // This is the only end-to-end proof of the tool -> renderer -> filter wiring.
         await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
         harness.Environment.SetVariable("MAX_MCP_OUTPUT_TOKENS", "600");
         harness.Environment.PlantSolution("App.sln");
@@ -129,7 +129,7 @@ public sealed class GlobalCallToolFilterIntegrationTests
         CallToolResult result = await harness.Client.CallToolAsync("resharper_inspect", cancellationToken: Ct);
 
         // Assert — the id the filter opened the scope with reached both ends of the call: the config
-        // resolution, and JbRunner four constructor hops down, neither of which has a parameter for it.
+        // resolution, and JbRunner several constructor hops down, neither of which has a parameter for it.
         result.IsError.ShouldNotBe(true);
         IReadOnlyList<LogEntry> filterLines = LinesFrom(harness, typeof(GlobalCallToolFilter));
         filterLines.ShouldNotBeEmpty();
@@ -229,10 +229,10 @@ public sealed class GlobalCallToolFilterIntegrationTests
     }
 
     /// <summary>
-    ///     An <c>inspectcode</c> that parks until its token is cancelled, exactly as a long run looks, and
-    ///     reports through <paramref name="started" /> that it began — completing it with <c>true</c> only
-    ///     once cancellation actually reached it, which is what <see cref="ProcessRunner" /> surfaces after
-    ///     tree-killing <c>jb</c>.
+    ///     An <c>inspectcode</c> that parks until its token is cancelled, exactly as a long run looks. It
+    ///     reports through <paramref name="started" /> that it began, and completes <paramref name="stopped" />
+    ///     with <c>true</c> only once cancellation actually reached it, throwing as <see cref="ProcessRunner" />
+    ///     does after tree-killing <c>jb</c>.
     /// </summary>
     private static void RouteParkingJb(
         IProcessRunner processRunner,

@@ -106,16 +106,15 @@ public sealed class JbCostRecordTests : IDisposable
         // Act
         JbCostRecord.Stamp(SolutionPath, _cacheHome, JbCostBand.Seeded, TimeSpan.FromSeconds(456), NullLogger.Instance);
 
-        // Assert — the unknown line survives verbatim, the known ones read back, and neither band this build
-        // understands has picked up the stranger's number.
+        // Assert
         File.ReadAllLines(JbCostRecord.PathFor(SolutionPath, _cacheHome)).ShouldContain("lukewarm 120");
         Read(JbCostBand.Cold).ShouldBe(TimeSpan.FromSeconds(497));
         Read(JbCostBand.Seeded).ShouldBe(TimeSpan.FromSeconds(456));
     }
 
     [Theory]
-    // Not a number at all, a signed one, an empty value, and a fractional one: every shape a hand-edited or
-    // half-written file takes. None may reach a sentence claiming to be a measurement.
+    // The shapes a hand-edited or half-written file takes. None may reach a sentence claiming to be a
+    // measurement.
     [InlineData("cold soon\n")]
     [InlineData("cold -497\n")]
     [InlineData("cold \n")]
@@ -149,8 +148,8 @@ public sealed class JbCostRecordTests : IDisposable
     public void Stamp_CacheHomeThatCannotHoldTheRecord_DegradesQuietlyRatherThanThrowing()
     {
         // Arrange — this runs at the tail of a jb run the user already waited minutes for, so throwing would
-        // fail a call whose work is done. The direction is the warm marker's, not the tombstone's: what is
-        // lost here is a hint, never a promise, so it goes no louder than debug.
+        // fail a call whose work is done. What is lost here is a hint, never a promise, so it goes no louder
+        // than debug.
         CapturingLoggerProvider logs = new();
         ILogger logger = Logs.For<JbCostRecordTests>(logs);
         string blocked = CacheHomes.BlockedCacheHome(_environment);
@@ -168,8 +167,7 @@ public sealed class JbCostRecordTests : IDisposable
     [Fact]
     public void TryRead_PathNoFileApiWillAccept_ReportsNoFigureInsteadOfThrowing()
     {
-        // Arrange — the cache home every other sidecar here degrades on, where even the key cannot be
-        // derived.
+        // Arrange — a path where even the key cannot be derived.
         string invalid = _cacheHome + "\0invalid";
 
         // Assert
@@ -181,9 +179,8 @@ public sealed class JbCostRecordTests : IDisposable
     [Fact]
     public void Stamp_OneSolution_SaysNothingAboutAnother()
     {
-        // Arrange — the record is per cache generation, exactly like the lock and the marker beside it. Two
-        // checkouts of one repository share a cache home and are hashed apart, and their costs differ by
-        // whether either has ever been analysed.
+        // Arrange — the record is per cache generation. Two checkouts of one repository share a cache home and
+        // are hashed apart, and their costs differ by whether either has ever been analysed.
         JbCostRecord.Stamp(SolutionPath, _cacheHome, JbCostBand.Cold, TimeSpan.FromSeconds(497), NullLogger.Instance);
 
         // Assert
@@ -210,10 +207,9 @@ public sealed class JbCostRecordTests : IDisposable
     [Fact]
     public void Stamp_AfterALineAnEarlierBuildLeftForTheWarmBand_LeavesItWhereItIs()
     {
-        // Arrange — a cache home carried across an upgrade from a build that recorded warm as a band, met by
-        // a run that does record. Sweeping the line up would be the read-modify-write rule broken from the
-        // inside, and there is nothing to gain by it: a reset deletes the file outright, and until then
-        // nothing reads that line, because no band names it.
+        // Arrange — a warm line, which no band names. Sweeping it up would be the read-modify-write rule broken
+        // from the inside, and there is nothing to gain by it: a reset deletes the file outright, and until
+        // then nothing reads that line.
         File.WriteAllText(JbCostRecord.PathFor(SolutionPath, _cacheHome), "warm 39\n");
 
         // Act

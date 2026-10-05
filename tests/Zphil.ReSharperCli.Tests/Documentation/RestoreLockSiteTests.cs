@@ -4,21 +4,21 @@ using Zphil.ReSharperCli.Tests.TestSupport;
 
 namespace Zphil.ReSharperCli.Tests.Documentation;
 
-/// <summary>
-///     Holds every project in the tree to declaring <c>RestoreLockedMode</c> itself. The lock-file policy is
-///     explained once in <c>Directory.Build.props</c>, but it cannot be <em>declared</em> there: OpenSSF
-///     Scorecard's Pinned-Dependencies check parses csproj files directly and never imports that file, and it
-///     credits the property all-or-nothing — every tracked csproj setting it pins the whole restore finding,
-///     while some setting it scores exactly as none. So a fourth project added without the property silently
+/// <summary>Holds every project in the tree to declaring <c>RestoreLockedMode</c> itself.</summary>
+/// <remarks>
+///     The lock-file policy is explained once in <c>Directory.Build.props</c>, but it cannot be <em>declared</em>
+///     there: OpenSSF Scorecard's Pinned-Dependencies check parses csproj files directly and never imports that
+///     file, and it credits the property all-or-nothing — every tracked csproj setting it pins the whole restore
+///     finding, while some setting it scores exactly as none. So a project added without the property silently
 ///     drops the published score rather than breaking a build, which is the failure this test exists to make
 ///     loud.
-/// </summary>
+/// </remarks>
 public sealed class RestoreLockSiteTests
 {
     /// <summary>The literal Scorecard's XML unmarshalling accepts; a <c>$(Property)</c> reference forfeits the credit.</summary>
     private const string Declaration = "<RestoreLockedMode>true</RestoreLockedMode>";
 
-    /// <summary>The projects committed today: src, tests, and the contract fixture.</summary>
+    /// <summary>A floor on the committed projects, which are at least src, tests, and the contract fixture.</summary>
     private const int KnownProjectCount = 3;
 
     [Fact]

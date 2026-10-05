@@ -23,19 +23,20 @@ internal sealed class ProcessTimeoutException(string message) : UserErrorExcepti
 
 /// <summary>
 ///     The single seam through which all product code spawns external processes (i.e. <c>jb</c>).
-///     Faked with NSubstitute in tests so no test launches a real process except
-///     <c>ProcessRunnerTests</c>.
 /// </summary>
 internal interface IProcessRunner
 {
     /// <summary>
-    ///     Run <paramref name="fileName" /> with <paramref name="arguments" /> (passed verbatim, never
-    ///     shell-joined), capturing stdout/stderr. A non-zero exit code is <em>returned</em> in the
-    ///     result, not thrown. Exceeding <paramref name="timeout" /> kills the process tree and throws
-    ///     <see cref="ProcessTimeoutException" />; a missing executable surfaces as a
-    ///     <see cref="System.ComponentModel.Win32Exception" />.
+    ///     Runs <paramref name="fileName" /> with <paramref name="arguments" /> (passed verbatim, never
+    ///     shell-joined), capturing stdout/stderr.
     /// </summary>
     /// <remarks>
+    ///     <para>
+    ///         A non-zero exit code is <em>returned</em> in the result, not thrown. Exceeding
+    ///         <paramref name="timeout" /> kills the process tree and throws
+    ///         <see cref="ProcessTimeoutException" />; a missing executable surfaces as a
+    ///         <see cref="System.ComponentModel.Win32Exception" />.
+    ///     </para>
     ///     <para>
     ///         <paramref name="onOutputLine" />, when given, is called with each complete line of
     ///         <em>standard output</em> as it arrives, for a caller that has to report a long run's advance

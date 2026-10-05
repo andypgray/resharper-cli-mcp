@@ -12,15 +12,7 @@ using Zphil.ReSharperCli.Tests.TestSupport;
 namespace Zphil.ReSharperCli.Tests.Services;
 
 /// <summary>
-///     What <see cref="JbRunner" /> owns on behalf of both services: naming the failed subcommand in the
-///     error, bounding how much of a failed run's standard error comes back with it, and stamping the warm
-///     marker on every run that succeeds — and, when that stamp can name no generation, saying so once for
-///     the session it belongs to. It is also where a run's duration is recorded under the cache band it
-///     started in, and where the band read before <c>jb</c> ran is what a timeout message quotes. Also the
-///     shape of the speculative entry point — it skips instead
-///     of queueing, and reports instead of throwing — which is what lets background work never affect a
-///     call the user made, and the ending it names for each of those, since a caller that cannot tell a run
-///     given up after minutes from one that never started will say the wrong one out loud.
+///     What <see cref="JbRunner" /> owns for every <c>jb</c> run, through both of its entry points.
 /// </summary>
 public sealed class JbRunnerTests : IDisposable
 {
@@ -300,10 +292,9 @@ public sealed class JbRunnerTests : IDisposable
     [Fact]
     public async Task RunAsync_RunFiredByATransplant_RecordsItAsSeededRatherThanCold()
     {
-        // Arrange — the band that most needs keeping apart. Measured on one solution, a seeded run took 456
-        // seconds and the warm run after it 39, so a seeded figure filed under cold would quote seven minutes
-        // at a caller about to wait forty seconds — and cold at the moment of the read is exactly what a
-        // solution about to be seeded looks like.
+        // Arrange — the band that most needs keeping apart. A seeded run can cost many times the warm run after
+        // it, so a seeded figure filed under cold would quote minutes at a caller about to wait seconds — and
+        // cold at the moment of the read is exactly what a solution about to be seeded looks like.
         CacheHomes.PlantWarmDonor(_config.CacheHome, SiblingSolutionPath());
         StubExit(0, string.Empty);
 
@@ -318,9 +309,9 @@ public sealed class JbRunnerTests : IDisposable
     [Fact]
     public async Task RunAsync_WarmRun_RecordsNoCost()
     {
-        // Arrange — the band that is measured and dropped. Across 31 warm runs on two solutions the figure a
-        // warm run left predicted the next one's duration at a correlation of 0.02, so there is nothing here
-        // worth a file: the record is not written, rather than written and then declined on the way out.
+        // Arrange — warm is not a band: the figure a warm run leaves does not predict the next one's duration,
+        // so there is nothing here worth a file. The record is not written, rather than written and then
+        // declined on the way out.
         CacheHomes.PlantWarmDonor(_config.CacheHome, _config.SolutionPath);
         StubExit(0, string.Empty);
 
@@ -442,12 +433,13 @@ public sealed class JbRunnerTests : IDisposable
     [Fact]
     public async Task RunAsync_RunHitsTheCapAfterAnalysingFiles_NamesHowFarItGot()
     {
-        // Arrange — a jb that reports 40 files and is then killed at the cap. Until there was a count, the
-        // promise that "a retry resumes rather than starting over" was made with confidence it had not
-        // earned: a run killed having analysed 40 files and one killed at 1,200 read identically.
+        // Arrange — a jb that reports 40 files and is then killed at the cap. Without the count, the promise
+        // that "a retry resumes rather than starting over" is made with confidence it has not earned: a run
+        // killed having analysed 40 files and one killed at 1,200 read identically.
         StubTimeoutAfterAnalysing(40);
 
-        // Act
+        // Act — with a progress callback, even one that drops every line: the runner watches jb's output only
+        // when it has somewhere to report progress, so without one there is no count to report.
         var exception = await Should.ThrowAsync<UserErrorException>(() => _runner.RunAsync(_config, ["inspectcode", _config.SolutionPath], Ct, _ => { }));
 
         // Assert — the count spelled as the progress line spelled it, not as "40 file(s)".
@@ -695,9 +687,12 @@ public sealed class JbRunnerTests : IDisposable
     }
 
     /// <summary>
-    ///     What this solution has on record for <paramref name="band" />. A stubbed run finishes in
-    ///     microseconds, so presence is the assertable fact and the figure itself is not.
+    ///     What this solution has on record for <paramref name="band" />.
     /// </summary>
+    /// <remarks>
+    ///     A stubbed run finishes in microseconds, so presence is the assertable fact and the figure itself is
+    ///     not.
+    /// </remarks>
     private TimeSpan? Recorded(JbCostBand band)
     {
         return JbCostRecord.TryRead(_config.SolutionPath, _config.CacheHome, band, NullLogger.Instance);

@@ -7,12 +7,9 @@ using Zphil.ReSharperCli.Tests.TestSupport;
 namespace Zphil.ReSharperCli.Tests.Services;
 
 /// <summary>
-///     <see cref="FilePathList.Split" /> rescues the measured caller mistake of joining several paths into
-///     one <c>files</c> element, without ever reinterpreting an element that names a real file. These tests
-///     plant real files under a per-instance temp directory (so the parallel run stays race-free), because
-///     the existing-file guard is the whole reason splitting is safe for the destructive tool.
-///     <see cref="FilePathList.ToIncludePattern" /> is the other half: the spelling <c>jb</c>'s
-///     <c>--include</c> can actually match, which is relative-only.
+///     Pins <see cref="FilePathList" /> over real files planted under a per-instance temp directory (so the
+///     parallel run stays race-free), because the existing-file guard is the whole reason splitting is safe
+///     for the destructive tool.
 /// </summary>
 public sealed class FilePathListTests : IDisposable
 {
@@ -163,9 +160,9 @@ public sealed class FilePathListTests : IDisposable
     [Fact(Skip = "Only Windows spells a path with a drive letter.", SkipUnless = nameof(OnWindows))]
     public void ToIncludePattern_TheFieldSpelling_Resolves()
     {
-        // Arrange — verbatim from the field report: a lowercase drive letter and forward slashes, which is
+        // Arrange — a real agent's spelling, verbatim: a lowercase drive letter and forward slashes, which is
         // how an agent tends to write a Windows path. GetRelativePath compares case-insensitively on Windows,
-        // so the drive letter is not the problem the report guessed it was — being absolute at all is.
+        // so the drive letter is not the problem it looks like — being absolute at all is.
         const string solutionDirectory = @"C:\Users\dev\source\repos\app";
         const string entry = "c:/Users/dev/source/repos/app/tests/App.Tests/Foo/BarTests.cs";
 

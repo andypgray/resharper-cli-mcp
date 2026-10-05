@@ -7,10 +7,10 @@ using Serilog.Extensions.Logging;
 namespace Zphil.ReSharperCli.Infrastructure;
 
 /// <summary>
-///     Configures Serilog file logging for post-mortem debugging of catastrophic crashes that can't
-///     reach the MCP client. Logs to <c>%LOCALAPPDATA%/Zphil.ReSharperCli/logs/</c>. Nothing is written
-///     to stdout — that channel is reserved for MCP JSON-RPC.
+///     Configures Serilog file logging: the record of what this server did, and of the crashes that cannot
+///     reach the MCP client.
 /// </summary>
+/// <remarks>Nothing is written to stdout — that channel is reserved for MCP JSON-RPC.</remarks>
 internal static class SerilogConfiguration
 {
     private const string OutputTemplate =
@@ -21,12 +21,14 @@ internal static class SerilogConfiguration
 
     /// <summary>
     ///     The framework categories quieted to <see cref="LogEventLevel.Warning" />, matched as
-    ///     <c>SourceContext</c> prefixes. Without them <c>Information</c> is roughly 95% MCP SDK and Hosting
-    ///     chatter, and the handful of lines this server writes about its own caching are unfindable inside
-    ///     it. Quieting them is what makes <c>Information</c> mean "something this server did" — which is
-    ///     also why every line the SDK used to supply for free, the request timing above all, has a
-    ///     replacement of this server's own.
+    ///     <c>SourceContext</c> prefixes.
     /// </summary>
+    /// <remarks>
+    ///     Without them <c>Information</c> is roughly 95% MCP SDK and Hosting chatter, and the handful of lines
+    ///     this server writes about its own caching are unfindable inside it. Quieting them is what makes
+    ///     <c>Information</c> mean "something this server did" — which is also why the lines the SDK would
+    ///     otherwise supply, the request timing above all, have replacements of this server's own.
+    /// </remarks>
     internal static readonly string[] QuietedCategories = ["ModelContextProtocol", "Microsoft.Hosting"];
 
     /// <summary>
@@ -46,21 +48,22 @@ internal static class SerilogConfiguration
 
     /// <summary>
     ///     Whether <see cref="SessionId" /> came from <c>CLAUDE_CODE_SESSION_ID</c> rather than being
-    ///     invented here. Named in the startup line because it decides whether a log line can be traced back
-    ///     to a client transcript at all.
+    ///     invented here, which decides whether a log line can be traced back to a client transcript at all.
     /// </summary>
     internal static bool SessionIdIsClientSupplied => Session.FromClient;
 
     /// <summary>
-    ///     Creates the static <see cref="Log.Logger" /> with a daily rolling file sink. Call before any
-    ///     host building so crash handlers can use it immediately. Returns the minimum level it resolved,
-    ///     so the composition root can hand the startup fingerprint the level actually in force rather
-    ///     than have it re-derived — a second parse could drift from the sink it claims to describe.
+    ///     Creates the static <see cref="Log.Logger" /> with a daily rolling file sink.
     /// </summary>
+    /// <remarks>Call before any host building so crash handlers can use it immediately.</remarks>
+    /// <returns>
+    ///     The minimum level it resolved: the level actually in force, which a second parse elsewhere could
+    ///     contradict.
+    /// </returns>
     public static LogEventLevel InitializeFileLogger()
     {
-        // Through the seam rather than Environment.GetEnvironmentVariable, matching every other variable this
-        // server reads. Instantiated rather than injected because this runs before the host exists.
+        // Through the seam rather than Environment.GetEnvironmentVariable, as the services read their
+        // variables. Instantiated rather than injected because this runs before the host exists.
         LogEventLevel minimumLevel = ParseLogLevel(new SystemEnvironment().GetVariable(LogLevelVariable));
 
         Log.Logger = Configure(new LoggerConfiguration(), minimumLevel)
@@ -78,9 +81,8 @@ internal static class SerilogConfiguration
     }
 
     /// <summary>
-    ///     Everything about the logger that is not the sink: minimum level, the quieted framework categories,
-    ///     and the enrichers behind <see cref="OutputTemplate" />'s <c>{SessionId}</c> and <c>{RunId}</c>
-    ///     columns. Separated from the file sink so a test can pin the level policy against an in-memory one.
+    ///     Everything about the logger that is not the sink, kept apart from the file sink so the level policy
+    ///     can be exercised against an in-memory one.
     /// </summary>
     /// <remarks>
     ///     Enricher order is load-bearing, because every one of these adds its property only if absent:
@@ -118,16 +120,18 @@ internal static class SerilogConfiguration
     }
 
     /// <summary>
-    ///     Adds Serilog and console (stderr) logging to the host builder. Console goes to stderr because
-    ///     stdout is reserved for the MCP JSON-RPC protocol.
+    ///     Adds Serilog and console (stderr) logging to the host builder.
     /// </summary>
     /// <remarks>
-    ///     The category filters here govern the <em>console</em> and nothing else, and that is not a
-    ///     redundancy with <see cref="Configure" />'s overrides — it is the other half of the same policy.
-    ///     <c>AddSerilog</c> registers a provider-scoped <c>Trace</c> rule of its own, and a rule naming a
-    ///     provider outranks one naming only a category however specific it is, so a category filter added
-    ///     here can never reach the file sink. Serilog's own overrides are what quiet the file; these quiet
-    ///     the stderr stream the MCP client captures.
+    ///     <para>Console goes to stderr because stdout is reserved for the MCP JSON-RPC protocol.</para>
+    ///     <para>
+    ///         The category filters here govern the <em>console</em> and nothing else, and that is not a
+    ///         redundancy with <see cref="Configure" />'s overrides — it is the other half of the same policy.
+    ///         <c>AddSerilog</c> registers a provider-scoped <c>Trace</c> rule of its own, and a rule naming a
+    ///         provider outranks one naming only a category however specific it is, so a category filter
+    ///         added here can never reach the file sink. Serilog's own overrides are what quiet the file; these
+    ///         quiet the stderr stream the MCP client captures.
+    ///     </para>
     /// </remarks>
     public static void AddSerilogLogging(this HostApplicationBuilder builder)
     {
@@ -140,18 +144,17 @@ internal static class SerilogConfiguration
 
     /// <summary>
     ///     Parses a <see cref="LogLevelVariable" /> value into a Serilog level, accepting both
-    ///     <see cref="LogLevel" /> and <see cref="LogEventLevel" /> names and falling back to
-    ///     <see cref="LogEventLevel.Warning" /> for null, blank, or unrecognised input.
+    ///     <see cref="LogLevel" /> and <see cref="LogEventLevel" /> names.
     /// </summary>
+    /// <remarks>Null, blank, or unrecognised input falls back to <see cref="LogEventLevel.Warning" />.</remarks>
     internal static LogEventLevel ParseLogLevel(string? envValue)
     {
         if (string.IsNullOrWhiteSpace(envValue)) return LogEventLevel.Warning;
 
-        // Accept Microsoft.Extensions.Logging.LogLevel names. Enum.TryParse also binds numeric strings
-        // ("99") to an undefined enum value, so guard with Enum.IsDefined to keep them on the fallback.
+        // Enum.TryParse also binds numeric strings ("99") to an undefined enum value, so both parses guard
+        // with Enum.IsDefined to keep them on the fallback.
         if (Enum.TryParse(envValue, true, out LogLevel msLevel) && Enum.IsDefined(msLevel)) return LevelConvert.ToSerilogLevel(msLevel);
 
-        // Also accept Serilog level names directly.
         if (Enum.TryParse(envValue, true, out LogEventLevel serilogLevel) && Enum.IsDefined(serilogLevel)) return serilogLevel;
 
         return LogEventLevel.Warning;

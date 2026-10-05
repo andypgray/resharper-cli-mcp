@@ -78,8 +78,9 @@ public sealed class ResharperToolsInspectTests : IDisposable
     [Fact]
     public async Task InspectAsync_AbsolutePaths_ReachJbRelative()
     {
-        // Arrange — the same defect, and the dangerous half: jb exits 0 having matched nothing, so an
-        // unmatched absolute path came back as "No issues found." with no error anywhere.
+        // Arrange — jb's --include matches relative paths only, and here the miss is silent: jb exits 0 having
+        // matched nothing, so an absolute path passed through verbatim comes back as "No issues found." with no
+        // error anywhere.
         List<string>? inspectArguments = null;
         StubJb(
             Fixtures.ReadSarif("inspect-sample.json"),
@@ -97,8 +98,9 @@ public sealed class ResharperToolsInspectTests : IDisposable
     [Fact]
     public async Task InspectAsync_EntryJoiningSeveralGlobs_IsSplitIntoSeparatePatterns()
     {
-        // Arrange — the same mistake is worse here: the joined string reaches jb as one pattern that matches
-        // nothing, and the tool reports "No issues found." for a scan that never looked at the files asked for.
+        // Arrange — several globs joined into one array element. Unsplit, the joined string reaches jb as one
+        // pattern that matches nothing, and the tool reports "No issues found." for a scan that never looked at
+        // the files asked for.
         List<string>? inspectArguments = null;
         StubJb(
             Fixtures.ReadSarif("inspect-sample.json"),
@@ -161,7 +163,7 @@ public sealed class ResharperToolsInspectTests : IDisposable
         // Arrange — a tree where the project layer narrows a rule the solution layer reports: on a direct
         // jb run ProjectShared outranks SolutionShared, so the project's DO_NOT_SHOW wins. Passing the
         // solution file as --settings would re-mount it as a Custom layer above the project layer and
-        // resurrect every finding the project scoped away (measured in the field: 0 findings became 83).
+        // resurrect every finding the project scoped away.
         DotSettingsFixtures.PlantBeside(_environment.CurrentDirectory, DotSettingsFixtures.SettingSeverity("MethodHasAsyncOverload", "WARNING"));
         SolutionFiles.Plant(_environment.CurrentDirectory, "Proj/Proj.csproj");
         SolutionFiles.Plant(_environment.CurrentDirectory, "Proj/Proj.csproj.DotSettings", DotSettingsFixtures.SettingSeverity("MethodHasAsyncOverload", "DO_NOT_SHOW"));
@@ -182,9 +184,9 @@ public sealed class ResharperToolsInspectTests : IDisposable
     [Fact]
     public async Task InspectAsync_AFilesEntryThatNamesNoFile_NamesItAndStillReturns()
     {
-        // Arrange — inspect is read-only, and a files scope is measured to buy no time (269 s scoped against
-        // 272 s solution-wide), so failing the call would charge a full second run for what a note gives
-        // away free. It came back as a bare result before, and the scan silently covered less than asked.
+        // Arrange — inspect is read-only, and a files scope buys no time, so failing the call would charge a
+        // full second run for what a note gives away free. Without the note the result is bare, and the scan
+        // silently covers less than asked.
         StubJb(Fixtures.ReadSarif("empty-runs.json"));
         ResharperTools tools = Tools();
 
@@ -225,8 +227,8 @@ public sealed class ResharperToolsInspectTests : IDisposable
     [Fact]
     public async Task InspectAsync_AScopeThatAllResolves_IsByteIdenticalToTheRunWithoutTheNote()
     {
-        // Arrange — the default-path pin. A fourth preamble may not move a byte of what a well-formed
-        // scoped call already gets, which is what makes it free to add.
+        // Arrange — the default-path pin. The scope note may not move a byte of what a well-formed scoped
+        // call already gets, which is what makes it free to add.
         SolutionFiles.Plant(_environment.CurrentDirectory, "src/A.cs");
         StubJb(Fixtures.ReadSarif("inspect-sample.json"));
         ResharperTools tools = Tools();
@@ -263,7 +265,7 @@ public sealed class ResharperToolsInspectTests : IDisposable
     [Fact]
     public async Task InspectAsync_ResultCarriesCompilationErrors_LeadsWithTheStaleCacheNote()
     {
-        // Arrange — the incident's shape reaching a real tool result: the note has to be joined onto the
+        // Arrange — phantom compilation errors reaching a real tool result: the note has to be joined onto the
         // banner inside the tool method, or it exists and nobody ever sees it.
         string cacheHome = _environment.CreateTempDirectory();
         _environment.SetVariable("JB_CACHE_HOME", cacheHome);
@@ -402,13 +404,13 @@ public sealed class ResharperToolsInspectTests : IDisposable
         result.ShouldNotContain("File199.cs"); // the response could not carry what the file does
     }
 
-    // detail is the third internal enum on the surface, so the same CS0051 constraint applies: every case
-    // is a Fact with the value as a body literal.
+    // detail is an internal enum too, so the same CS0051 constraint applies: every case is a Fact with the
+    // value as a body literal.
     [Fact]
     public async Task InspectAsync_DetailLowOnAResultThatFitsAtFull_ReturnsTheRollupAndSaysItWasAskedFor()
     {
         // Arrange — 3 issues render at Full well inside the default 25,000-character budget, so nothing
-        // about this response is the budget's doing. Before the parameter, overflowing was the only way in.
+        // about this response is the budget's doing.
         StubJb(Fixtures.ReadSarif("inspect-sample.json"));
         ResharperTools tools = Tools();
 
@@ -445,8 +447,8 @@ public sealed class ResharperToolsInspectTests : IDisposable
     [Fact]
     public async Task InspectAsync_DetailFull_IsByteIdenticalToTheCallThatPassesNoDetail()
     {
-        // Arrange — the default-path pin. A fifth parameter may not move a byte of what every existing
-        // caller already gets, which is what makes it free to add.
+        // Arrange — the default-path pin. The detail parameter may not move a byte of what a caller that omits
+        // it gets, which is what makes it free to add.
         StubJb(Fixtures.ReadSarif("inspect-sample.json"));
         ResharperTools tools = Tools();
 
@@ -511,10 +513,9 @@ public sealed class ResharperToolsInspectTests : IDisposable
     [Fact]
     public async Task InspectAsync_DetailMinimalAndNothingFound_ReturnsOnlyTheOneLine()
     {
-        // Arrange — the gap that let the defect ship: nothing pinned a zero-issue run at a capped level. The
-        // formatter answers "No issues found." at all five, so passing detail reduced nothing, and the note
-        // went on to describe a collapse of a listing that never existed and offer a report file for findings
-        // there are none of.
+        // Arrange — a zero-issue run at a capped level. The formatter answers "No issues found." at every
+        // level, so passing detail reduces nothing, and a note here would describe a collapse of a listing that
+        // never existed and offer a report file for findings there are none of.
         StubJb(Fixtures.ReadSarif("empty-runs.json"));
         ResharperTools tools = Tools();
 
@@ -628,9 +629,12 @@ public sealed class ResharperToolsInspectTests : IDisposable
     /// <summary>
     ///     A SARIF document with one compilation error and <paramref name="warnings" /> ordinary warnings, each
     ///     in its own long-pathed file — enough files that the issue listing cannot fit a squeezed budget at
-    ///     any level above Minimal. Generated rather than a fixture: the only thing that matters about it is
-    ///     its size, and a 200-result JSON file would be unreadable to a maintainer.
+    ///     any level above Minimal.
     /// </summary>
+    /// <remarks>
+    ///     Generated rather than a fixture: the only thing that matters about it is its size, and a 200-result
+    ///     JSON file would be unreadable to a maintainer.
+    /// </remarks>
     private static string ManyIssuesSarif(int warnings)
     {
         List<object> results =
@@ -667,11 +671,11 @@ public sealed class ResharperToolsInspectTests : IDisposable
         }
     }
 
-    /// <summary>
-    ///     The report path out of the response's preamble, read the way an agent would. Anchored on the
-    ///     report note's own wording rather than on the first quotation mark in the response: the
-    ///     compilation-error note leads when it applies, and it quotes the cache home.
-    /// </summary>
+    /// <summary>The report path out of the response's preamble, read the way an agent would.</summary>
+    /// <remarks>
+    ///     Anchored on the report note's own wording rather than on the first quotation mark in the response:
+    ///     the compilation-error note leads when it applies, and it quotes the cache home.
+    /// </remarks>
     private static string PathFromNote(string result)
     {
         const string anchor = "written to \"";

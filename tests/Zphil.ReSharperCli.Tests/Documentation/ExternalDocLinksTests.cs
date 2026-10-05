@@ -6,15 +6,14 @@ using Zphil.ReSharperCli.Tests.TestSupport;
 namespace Zphil.ReSharperCli.Tests.Documentation;
 
 /// <summary>
-///     Guards the curated external documentation links (JetBrains + StyleCop.Analyzers) that the README
-///     and the embedded prompt/resource cite. <see cref="ExtractsCuratedExternalDocLinks" /> is offline and
-///     runs on every PR: it fails only if a doc edit drops or malforms a curated link.
-///     <see
-///         cref="CuratedDocLinks_AreLive" />
-///     is a network check gated behind the <c>ExternalLinks</c> trait and
-///     runs on a weekly schedule; it is <em>warn-only</em> — a dead third-party page is reported but never
-///     fails the build, so a JetBrains docs reorganization cannot turn this repo red.
+///     Guards the curated external documentation links (JetBrains + StyleCop.Analyzers) that the repository's
+///     Markdown cites.
 /// </summary>
+/// <remarks>
+///     The liveness check is <em>warn-only</em>: a dead third-party page is reported but never fails the build,
+///     so a JetBrains docs reorganization cannot turn this repo red. The offline extraction check is the one
+///     that fails, and only when a doc edit drops or malforms a curated link.
+/// </remarks>
 public sealed class ExternalDocLinksTests(ITestOutputHelper output)
 {
     private const int MaxAttempts = 2;
@@ -26,8 +25,8 @@ public sealed class ExternalDocLinksTests(ITestOutputHelper output)
     public void ExtractsCuratedExternalDocLinks()
     {
         // Act
-        var links = DocLinks.ExtractExternalDocLinks();
-        var urls = links.Select(link => link.Url).ToList();
+        IReadOnlyList<ExternalDocLink> links = DocLinks.ExtractExternalDocLinks();
+        List<string> urls = links.Select(link => link.Url).ToList();
 
         // Assert — the curated set is present. Guards against a doc edit silently dropping a link, and
         // guarantees the scheduled liveness check never degrades to "0 links, all healthy".
@@ -50,7 +49,7 @@ public sealed class ExternalDocLinksTests(ITestOutputHelper output)
     public async Task CuratedDocLinks_AreLive()
     {
         // Arrange
-        var links = DocLinks.ExtractExternalDocLinks();
+        IReadOnlyList<ExternalDocLink> links = DocLinks.ExtractExternalDocLinks();
 
         // The only hard assertion: the check actually ran. Staleness below is warn-only, so this is the
         // one way the test goes red — if the extractor or doc structure genuinely breaks.
@@ -60,6 +59,7 @@ public sealed class ExternalDocLinksTests(ITestOutputHelper output)
         // if a setter threw. AllowAutoRedirect is already the SocketsHttpHandler default; set for intent.
         using SocketsHttpHandler handler = new();
         handler.AllowAutoRedirect = true;
+        // TODO: Document why — the redirect cap of 10.
         handler.MaxAutomaticRedirections = 10;
         using HttpClient client = new(handler);
         // JetBrains/Cloudflare answer empty-User-Agent requests with 403; send a real one.
@@ -69,10 +69,10 @@ public sealed class ExternalDocLinksTests(ITestOutputHelper output)
         // Act — fan out across the deduped set. Task.WhenAll is awaited before this scope disposes
         // `client`, so the capture is safe (ReSharper's dataflow can't prove it — hence the suppression).
         // ReSharper disable once AccessToDisposedClosure
-        var results = await Task.WhenAll(links.Select(link => CheckAsync(client, link, Ct)));
+        LinkResult[] results = await Task.WhenAll(links.Select(link => CheckAsync(client, link, Ct)));
 
         // Report — warn, don't fail.
-        var unhealthy = results
+        List<LinkResult> unhealthy = results
             .Where(result => !result.Healthy)
             .OrderBy(result => result.Link.Url, StringComparer.Ordinal)
             .ToList();
@@ -86,8 +86,8 @@ public sealed class ExternalDocLinksTests(ITestOutputHelper output)
         string report = BuildReport(unhealthy);
         output.WriteLine(report);
 
-        // The scheduled workflow sets LINKCHECK_REPORT and turns the file into a job summary + warning
-        // annotations. Reading env is fine here; the "no env mutation in tests" rule bars only writes.
+        // LINKCHECK_REPORT names a file for a workflow to publish as a job summary and warning annotations.
+        // Reading env is fine here; the "no env mutation in tests" rule bars only writes.
         string? reportPath = Environment.GetEnvironmentVariable("LINKCHECK_REPORT");
         if (!string.IsNullOrWhiteSpace(reportPath)) await File.WriteAllTextAsync(reportPath, report, Ct);
     }
@@ -123,6 +123,7 @@ public sealed class ExternalDocLinksTests(ITestOutputHelper output)
             }
             catch (HttpRequestException ex)
             {
+                // No response at all, like the timeout above — retry, then report.
                 status = $"request error: {ex.Message}";
             }
 

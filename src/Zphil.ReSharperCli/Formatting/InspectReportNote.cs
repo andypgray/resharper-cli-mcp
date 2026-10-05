@@ -4,14 +4,14 @@ namespace Zphil.ReSharperCli.Formatting;
 
 /// <summary>
 ///     The line an inspect result leads with when the caller asked for a report file: where it went, or why
-///     it did not. The last of inspect's preambles, so it sits immediately above the listing it refers to.
+///     it did not.
 /// </summary>
 /// <remarks>
 ///     <para>
-///         Like its neighbours it is charged to the budget by <c>ResponseTruncator.BudgetForBody</c>
-///         before rendering, which is what puts it outside the reduction ladder — a note naming the file
-///         would otherwise vanish at <c>Minimal</c>, precisely when the response is most reduced and the file
-///         matters most. Being a prefix, it survives hard truncation too.
+///         It is charged to the budget before rendering (<c>ResponseTruncator.BudgetForBody</c>), which is
+///         what puts it outside the reduction ladder — a note naming the file would otherwise vanish at
+///         <c>Minimal</c>, precisely when the response is most reduced and the file matters most. Being a
+///         prefix, it survives hard truncation too.
 ///     </para>
 ///     <para>
 ///         It does not claim the file holds anything the response lacks. A scoped scan that fits at
@@ -23,8 +23,7 @@ internal static class InspectReportNote
 {
     /// <summary>
     ///     The note for <paramref name="outcome" />, or <c>""</c> when no report was asked for
-    ///     (<paramref name="outcome" /> is <see langword="null" />) — in which case the response is
-    ///     byte-for-byte what it has always been.
+    ///     (<paramref name="outcome" /> is <see langword="null" />).
     /// </summary>
     public static string For(InspectReportOutcome? outcome, int issueCount)
     {

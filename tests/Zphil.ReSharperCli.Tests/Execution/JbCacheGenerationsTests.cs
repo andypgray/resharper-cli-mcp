@@ -8,11 +8,10 @@ using Zphil.ReSharperCli.Tests.TestSupport;
 namespace Zphil.ReSharperCli.Tests.Execution;
 
 /// <summary>
-///     <see cref="JbCacheGenerations" /> reads an undocumented directory layout on behalf of a caller that
-///     deletes what it returns, so the invariant under test is one-sided in the opposite direction to
-///     <see cref="JbWarmMarkerTests" />: anything not provably this solution's cache must be skipped. The
-///     sibling-solution cases model a shape that occurs in real cache homes — <c>_App.100200300.00</c>
-///     sitting beside <c>_App.Core.400500600.00</c>, the pair a loose prefix match would conflate.
+///     Pins the one-sided invariant of <see cref="JbCacheGenerations" />, whose answers may be deleted: anything
+///     not provably this solution's cache is skipped. The sibling-solution cases model a shape that occurs in
+///     real cache homes — <c>_App.100200300.00</c> sitting beside <c>_App.Core.400500600.00</c>, the pair a
+///     loose prefix match would conflate.
 /// </summary>
 public sealed class JbCacheGenerationsTests : IDisposable
 {
@@ -70,9 +69,9 @@ public sealed class JbCacheGenerationsTests : IDisposable
         File.WriteAllText(Path.Combine(cacheHome, ".resharper-cli-mcp-abc.lock"), string.Empty);
 
         // Act
-        var generations = JbCacheGenerations.Find(cacheHome, "App");
+        List<JbCacheGeneration> generations = JbCacheGenerations.Find(cacheHome, "App");
 
-        // Assert — both generations of App, one hash between them, and nothing belonging to a neighbour.
+        // Assert
         generations.Select(generation => generation.Name)
             .ShouldBe(["_App.100200300.00", "_App.100200300.01"]);
         generations.Select(generation => generation.Hash).Distinct().ShouldHaveSingleItem();
@@ -82,14 +81,14 @@ public sealed class JbCacheGenerationsTests : IDisposable
     [Fact]
     public void Find_TwoSolutionsSharingAFileName_ReturnsBothHashes()
     {
-        // Arrange — the ambiguity the reset tool refuses on, reproduced here because this is where it becomes
-        // visible: same file name, different directories, so jb hashed them apart and recorded neither path.
+        // Arrange — same file name, different directories, so jb hashed them apart and recorded neither path:
+        // by name alone the two cannot be told apart.
         string cacheHome = _environment.CreateTempDirectory();
         CacheHomes.PlantGeneration(cacheHome, "_App.1344362500.00");
         CacheHomes.PlantGeneration(cacheHome, "_App.-1749040816.00");
 
         // Act
-        var generations = JbCacheGenerations.Find(cacheHome, "App");
+        List<JbCacheGeneration> generations = JbCacheGenerations.Find(cacheHome, "App");
 
         // Assert
         generations.Select(generation => generation.Hash).Distinct().Count().ShouldBe(2);
@@ -108,8 +107,7 @@ public sealed class JbCacheGenerationsTests : IDisposable
     public void FindFor_TwoCheckoutsSharingACacheHome_SplitsOwnershipByTheComputedHash()
     {
         // Arrange — this solution's generation planted under its real computed hash, beside a same-named
-        // checkout at another path and a solution that shares nothing but the cache home. This is the one
-        // predicate the reset's delete, the seeding check, and the warm marker all hang off.
+        // checkout at another path and a solution that shares nothing but the cache home.
         string cacheHome = _environment.CreateTempDirectory();
         string ours = CacheHomes.PlantGenerationFor(cacheHome, "/repo/App.sln");
         string theirs = CacheHomes.PlantGenerationFor(cacheHome, "/elsewhere/App.sln");
@@ -138,7 +136,7 @@ public sealed class JbCacheGenerationsTests : IDisposable
     [Fact]
     public void IsNeighbourOf_TheSolutionsOwnGeneration_IsFalse()
     {
-        // Assert — the donor filter's other half: a generation of this very solution is not a donor.
+        // Assert
         string own = JbSolutionCacheHash.FirstGenerationDirectoryName("/repo/App.sln");
 
         JbCacheGenerations.IsNeighbourOf(own, "/repo/App.sln").ShouldBeFalse();

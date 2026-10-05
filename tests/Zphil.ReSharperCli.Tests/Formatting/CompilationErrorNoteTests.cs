@@ -8,16 +8,9 @@ using Zphil.ReSharperCli.Tools;
 namespace Zphil.ReSharperCli.Tests.Formatting;
 
 /// <summary>
-///     <see cref="CompilationErrorNote" /> exists because a stale ReSharper index cost a whole session of
-///     forensics once. These pin the two halves of getting that right: it fires on the one rule that carries
-///     the symptom, and it says nothing at all otherwise — a note on every ordinary inspect result would be
+///     Pins <see cref="CompilationErrorNote" />'s text, and that it fires on the one rule that carries
+///     compilation errors and says nothing at all otherwise: a note on every ordinary inspect result would be
 ///     noise charged to every response's budget.
-///     <para>
-///         The text itself is pinned whole, because the ordering is the feature: the build leads, the
-///         never-restored origin is named with its mechanism, and the cache reset is conditional on the
-///         discriminator's answer rather than an imperative. A length pin sits beside it, since this note is
-///         charged to every affected response before the ladder runs.
-///     </para>
 /// </summary>
 public sealed class CompilationErrorNoteTests
 {
@@ -26,7 +19,7 @@ public sealed class CompilationErrorNoteTests
     [Fact]
     public void For_CompilationErrors_LeadsWithTheBuildAndGatesTheResetOnIt()
     {
-        // Arrange — the incident's shape: a resolution failure and its knock-on ambiguity, in a file the
+        // Arrange — the symptom as it arrives: a resolution failure and its knock-on ambiguity, in a file the
         // author never touched, beside an ordinary warning. The rule id carries jb's leading dot, as taken
         // from a real 2026.1.2 SARIF document rather than assumed.
         List<InspectIssue> issues = Issues(
@@ -51,14 +44,12 @@ public sealed class CompilationErrorNoteTests
     [Fact]
     public void For_CompilationErrors_NamesTheNeverRestoredOriginFirstAndGatesTheResetOnTheBuild()
     {
-        // A fresh worktree inspected before a build reported 13,990 compilation errors out of 17,971
-        // findings, and every one of them was real. The note used to spend three of its four sentences on
-        // the stale-index branch and close with the reset as an unconditional imperative — which on that
-        // checkout drops the generation, blocks seeding from a sibling, and buys a cold rebuild on top of
-        // the build that was needed anyway. These are the properties of the text a future edit must keep:
-        // the cheap branch is named with its mechanism and comes first; the reset is gated on the
-        // discriminator's answer rather than arriving as an imperative; and the cold analysis it costs is
-        // stated rather than left for the caller to discover on the next call.
+        // On a checkout that was never built the compilation errors are real, often most of the findings,
+        // and an unconditional reset there drops the generation, blocks seeding from a sibling, and buys a
+        // cold rebuild on top of the build that was needed anyway. These are the properties of the text a
+        // future edit must keep: the cheap branch is named with its mechanism and comes first; the reset is
+        // gated on the discriminator's answer rather than arriving as an imperative; and the cold analysis it
+        // costs is stated rather than left for the caller to discover on the next call.
         string note = NoteForOneError();
 
         note.ShouldContain("never built or never restored, every unrestored package reference reports here");
@@ -74,8 +65,8 @@ public sealed class CompilationErrorNoteTests
     public void For_CompilationErrors_StaysWithinTheBudgetThisNoteIsWorth()
     {
         // This note is charged to every affected response before the ladder runs, so every character it
-        // spends is one the findings do not get. 500 was the ceiling the rewrite was written against, and
-        // nothing recorded it until now — which is to say the next edit would have spent it.
+        // spends is one the findings do not get. 500 is the ceiling the text is written to; without this pin
+        // the next edit spends it.
         string note = NoteForOneError();
 
         // Assert — the cache home is the caller's, so measure the note without it.

@@ -9,8 +9,8 @@ namespace Zphil.ReSharperCli.Infrastructure;
 /// </summary>
 /// <remarks>
 ///     <para>
-///         It exists because the interesting lines of a slow run are written by six different classes and
-///         two concurrent callers are ordinary: a pre-warm and a tool call overlap by design, and their
+///         It exists because the interesting lines of a slow run are written by several classes and two
+///         concurrent callers are ordinary: a pre-warm and a tool call overlap by design, and their
 ///         cache-state, queue-wait and run lines interleave in one file with nothing to tell them apart.
 ///         <c>{SessionId}</c> already separates processes, so this only has to separate work inside one.
 ///     </para>
@@ -33,23 +33,23 @@ internal static class RunIdScope
 
     /// <summary>
     ///     What the column reads for a line written outside any run — startup, shutdown, the framework's own
-    ///     warnings. Dashes rather than blank so the column keeps its width and an empty <c>[]</c> never
-    ///     appears, which is the shape the whole log used to have.
+    ///     warnings.
     /// </summary>
+    /// <remarks>Dashes rather than blank so the column keeps its width and an empty <c>[]</c> never appears.</remarks>
     internal const string OutsideARun = "----";
 
     private static int _counter;
 
     /// <summary>
-    ///     Open a scope tagging everything logged under it — on this async flow, by any logger in the process
-    ///     — with the next run id. Dispose to close it.
+    ///     Opens a scope tagging everything logged under it — on this async flow, by any logger in the process
+    ///     — with the next run id.
     /// </summary>
     public static IDisposable? Begin(ILogger logger)
     {
         return logger.BeginScope("{" + PropertyName + "}", Next());
     }
 
-    /// <summary>The next id, formatted as the template renders it. Internal so a test can pin the width.</summary>
+    /// <summary>The next id, formatted as the template renders it.</summary>
     internal static string Next()
     {
         return Interlocked.Increment(ref _counter).ToString("D4", CultureInfo.InvariantCulture);

@@ -2,9 +2,7 @@ namespace Zphil.ReSharperCli.Services;
 
 /// <summary>
 ///     How much detail <c>resharper_inspect</c>'s response carries, as a <em>cap</em> on the reduction ladder
-///     rather than a level it is pinned to. Validated at the argument-binding layer by
-///     <see cref="Pipeline.EnumValidationConverterFactory" />, which lists these names back to the caller on
-///     an unrecognised value.
+///     rather than a level it is pinned to.
 /// </summary>
 /// <remarks>
 ///     <para>
@@ -30,7 +28,7 @@ internal enum InspectDetail
 {
     /// <summary>
     ///     Every issue on its own line with its file, line, severity, rule and message. The default, and the
-    ///     no-cap case: the ladder decides on its own exactly as it did before this parameter existed.
+    ///     no-cap case: the ladder decides on its own.
     /// </summary>
     Full,
 

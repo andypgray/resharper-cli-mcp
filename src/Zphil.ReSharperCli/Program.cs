@@ -29,9 +29,9 @@ if (!args.Contains("--stdio") && !Console.IsInputRedirected)
     return;
 }
 
-// A real MCP client launched us over piped stdio. Bring up the file logger and crash handlers
-// before host building so a catastrophic startup failure still lands in the post-mortem log. The
-// resolved level is kept for the startup fingerprint, which must report the sink's actual level.
+// Bring up the file logger and crash handlers before host building so a catastrophic startup failure
+// still lands in the post-mortem log. The resolved level is kept for the startup fingerprint, which must
+// report the sink's actual level.
 LogEventLevel logLevel = SerilogConfiguration.InitializeFileLogger();
 SerilogConfiguration.RegisterCrashHandlers();
 
@@ -42,7 +42,6 @@ builder.AddSerilogLogging();
 // its own run, and those two caps only mean anything together if they are the same number.
 TimeSpan runTimeout = JbRunTimeout.Resolve(Environment.GetEnvironmentVariable(JbRunTimeout.Variable));
 
-// The two fakeable seams plus the pure/concrete graph composed over them — all singletons.
 builder.Services.AddSingleton<IEnvironment, SystemEnvironment>();
 
 // Ahead of the runner that spawns through it. The container disposes it at host shutdown, after the hosted
@@ -54,9 +53,8 @@ builder.Services.AddSingleton<ConfigResolver>();
 builder.Services.AddSingleton(provider => new JbRunLock(
     runTimeout, provider.GetRequiredService<ILogger<JbRunLock>>()));
 
-// Shared on purpose, like the lock and for the same reason: the lock decides who waits, the yield decides
-// who is made to wait, the slot decides how many run at once, and a second instance of any of them would
-// arbitrate against nothing.
+// Shared on purpose, like the lock and for the same reason: each arbitrates between callers, and a second
+// instance of any of them would arbitrate against nothing.
 builder.Services.AddSingleton<JbRunYield>();
 builder.Services.AddSingleton<JbRunSlot>();
 

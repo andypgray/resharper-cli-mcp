@@ -5,22 +5,22 @@ using Zphil.ReSharperCli.Discovery;
 namespace Zphil.ReSharperCli.Services;
 
 /// <summary>
-///     Runs <c>jb cleanupcode</c> in place over the given files with a named profile, returning a structured
-///     <see cref="CleanupOutcome" />: the profile plus a per-entry <see cref="CleanupFileStatus" />
-///     classification computed by hashing each concrete file before and after the run, so the caller can see
-///     which files cleanup actually rewrote. Formatting lives in <c>CleanupSummaryFormatter</c>. Mutating: a
-///     non-zero exit (e.g. an unknown profile, or an <c>--include</c> set that matched nothing) surfaces from
+///     Runs <c>jb cleanupcode</c> in place over the given files with a named profile, and classifies what
+///     changed by hashing each concrete file before and after the run.
+/// </summary>
+/// <remarks>
+///     A non-zero exit (e.g. an unknown profile, or an <c>--include</c> set that matched nothing) surfaces from
 ///     <see cref="JbRunner" /> and is restated here as a failed pass — see <see cref="FailedPassMessage" /> —
 ///     rather than being silently swallowed.
-/// </summary>
+/// </remarks>
 internal sealed class CleanupService(JbRunner jbRunner, ILogger<CleanupService> logger)
 {
     /// <summary>The profile applied when the caller does not specify one.</summary>
     public const string DefaultProfile = "Built-in: Full Cleanup";
 
     /// <summary>
-    ///     Clean up <paramref name="files" /> in <paramref name="config" />'s solution with
-    ///     <paramref name="profile" />, and classify what changed.
+    ///     Cleans up <paramref name="files" /> in <paramref name="config" />'s solution with
+    ///     <paramref name="profile" />, and classifies what changed.
     /// </summary>
     /// <remarks>
     ///     <paramref name="onProgress" /> is passed straight through, as inspect's is, and is omitted when
@@ -78,8 +78,7 @@ internal sealed class CleanupService(JbRunner jbRunner, ILogger<CleanupService> 
 
         // Debug: this is already in the response, and its interest to the log is the ratio over time rather
         // than any one call. A profile that stopped matching anything shows up here as pass after pass
-        // rewriting nothing — the shape the exit-code-3 "No items were found to cleanup" defect had, which an
-        // agent read as "nothing needed changing" and moved on from.
+        // rewriting nothing, which a caller reading only the response takes for "nothing needed changing".
         logger.LogDebug(
             "jb cleanupcode with profile {CleanupProfile} rewrote {ChangedCount} of {RequestedCount} requested entries",
             resolvedProfile,
@@ -89,7 +88,7 @@ internal sealed class CleanupService(JbRunner jbRunner, ILogger<CleanupService> 
         return new CleanupOutcome(resolvedProfile, entries);
     }
 
-    /// <summary>Build the <c>jb cleanupcode</c> argument list. Order is pinned by tests.</summary>
+    /// <summary>Builds the <c>jb cleanupcode</c> argument list. Order is pinned by tests.</summary>
     internal static List<string> BuildArguments(
         ResolvedConfig config,
         IReadOnlyList<string> files,
@@ -110,14 +109,15 @@ internal sealed class CleanupService(JbRunner jbRunner, ILogger<CleanupService> 
     }
 
     /// <summary>
-    ///     Restate a non-zero <c>jb cleanupcode</c> exit in cleanup's own terms. The failure that made this
-    ///     necessary reads as a success: <c>jb</c> exits 3 with "No items were found to cleanup", and an agent
-    ///     that has just made 27 edits reads that tail as "nothing needed changing" and moves on — which is how
-    ///     a whole cleanup pass got skipped in the field. Only this class knows the caller named specific files
-    ///     and got none of them, so only this class can say so, and it lists the patterns <c>jb</c> was
-    ///     actually given (translated, unlike the report's own entries) because that spelling is the thing the
-    ///     caller cannot see.
+    ///     Restates a non-zero <c>jb cleanupcode</c> exit in cleanup's own terms.
     /// </summary>
+    /// <remarks>
+    ///     The commonest such failure reads as a success: <c>jb</c> exits 3 with "No items were found to
+    ///     cleanup", and an agent that has just made a run of edits reads that tail as "nothing needed changing"
+    ///     and moves on. Only this class knows the caller named specific files and got none of them, so only
+    ///     this class can say so, and it lists the patterns <c>jb</c> was actually given (translated, unlike the
+    ///     report's own entries) because that spelling is the thing the caller cannot see.
+    /// </remarks>
     private static string FailedPassMessage(
         JbExitCodeException failure,
         IReadOnlyList<string> files,
@@ -141,14 +141,7 @@ internal sealed class CleanupService(JbRunner jbRunner, ILogger<CleanupService> 
                + "that is on disk but in no project matches nothing.";
     }
 
-    /// <summary>
-    ///     Classify one requested entry against its pre-run hash. A wildcard (see
-    ///     <see cref="FilePathList.IsPattern" />) is <see cref="CleanupFileStatus.Pattern" />; an unreadable before- or
-    ///     after-state is
-    ///     <see cref="CleanupFileStatus.StatusUnknown" />; otherwise the entry is
-    ///     <see cref="CleanupFileStatus.Changed" /> or <see cref="CleanupFileStatus.Unchanged" /> by hash
-    ///     equality.
-    /// </summary>
+    /// <summary>Classifies one requested entry against its pre-run hash.</summary>
     private static CleanupFileStatus Classify(string entry, byte[]? beforeHash, string solutionDirectory)
     {
         if (FilePathList.IsPattern(entry)) return CleanupFileStatus.Pattern;
@@ -162,12 +155,14 @@ internal sealed class CleanupService(JbRunner jbRunner, ILogger<CleanupService> 
     }
 
     /// <summary>
-    ///     SHA-256 of the file's content, or <see langword="null" /> if it cannot be read. Content hashing is
-    ///     deliberate: <c>(length, mtime)</c> false-positives on a touch-with-identical-content and
-    ///     false-negatives on a same-length edit, while holding the raw bytes would pin every before-buffer
-    ///     across a jb run that can last minutes. Never throws — a transient lock (AV/indexer) or a file jb deleted
-    ///     must not turn a completed cleanup into a reported error.
+    ///     SHA-256 of the file's content, or <see langword="null" /> if it cannot be read.
     /// </summary>
+    /// <remarks>
+    ///     Content hashing is deliberate: <c>(length, mtime)</c> false-positives on a touch-with-identical-content
+    ///     and false-negatives on a same-length edit, while holding the raw bytes would pin every before-buffer
+    ///     across a jb run that can last minutes. Never throws — a transient lock (AV/indexer) or a file jb
+    ///     deleted must not turn a completed cleanup into a reported error.
+    /// </remarks>
     private static byte[]? HashFile(string resolvedPath)
     {
         try

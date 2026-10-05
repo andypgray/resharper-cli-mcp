@@ -16,7 +16,7 @@ public sealed class ChildProcessLifetimeTests
     /// <summary>Read by <c>SkipUnless</c>: macOS today, and any future platform with nothing to reach for.</summary>
     public static bool WithoutAPrimitive => !OperatingSystem.IsWindows() && !OperatingSystem.IsLinux();
 
-    /// <summary>Read by <c>SkipUnless</c> on the case that pins which primitive Windows resolves to.</summary>
+    /// <summary>Read by <c>SkipUnless</c>.</summary>
     public static bool OnWindows => OperatingSystem.IsWindows();
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -37,8 +37,8 @@ public sealed class ChildProcessLifetimeTests
     [Fact(Skip = "The job object is a Windows primitive.", SkipUnless = nameof(OnWindows))]
     public void Guarantee_OnWindows_IsTheJobObject()
     {
-        // Assert — a job creation that quietly failed would leave a server reporting "none" and behaving as
-        // it did before, which is safe but is not the fix.
+        // Assert — a job creation that quietly failed would leave a server reporting "none", which is safe but
+        // lets a jb outlive its server.
         using ChildProcessLifetime lifetime = Lifetime();
 
         lifetime.Guarantee.ShouldBe(ChildProcessLifetime.KillOnJobClose);
@@ -61,8 +61,8 @@ public sealed class ChildProcessLifetimeTests
     [Fact(Skip = "Windows and Linux both have a primitive to apply.", SkipUnless = nameof(WithoutAPrimitive))]
     public async Task Dispose_WhereThePlatformOffersNoPrimitive_LeavesARunningChildExactlyAsItWas()
     {
-        // Arrange — the deliberate limit rather than an oversight: a platform with no equivalent keeps
-        // today's behaviour rather than gaining a heuristic that is wrong in ways nobody can predict.
+        // Arrange — the deliberate limit rather than an oversight: a platform with no equivalent gets no guard
+        // rather than a heuristic that is wrong in ways nobody can predict.
         ChildProcessLifetime lifetime = Lifetime();
         lifetime.Guarantee.ShouldBe(ChildProcessLifetime.NoGuarantee);
 
@@ -79,7 +79,7 @@ public sealed class ChildProcessLifetimeTests
             // Act
             lifetime.Dispose();
 
-            // Assert — still running a second later, which is the behaviour this platform has always had.
+            // Assert
             await Task.Delay(TimeSpan.FromSeconds(1), Ct);
             child.HasExited.ShouldBeFalse();
         }

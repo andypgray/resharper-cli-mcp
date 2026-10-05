@@ -4,48 +4,34 @@ namespace Zphil.ReSharperCli.Execution;
 
 /// <summary>
 ///     Who outranks whom for the cache generation: a caller the user is waiting on always wins, and
-///     speculative work either stands down or is taken off it. The third policy over a <c>jb</c> run,
-///     beside <see cref="JbRunLock" /> — who may run at all — <see cref="JbRunTimeout" /> — for how long —
-///     <see cref="JbRunProgress" /> — how it reports itself — and <see cref="JbRunSlot" /> — how many run
-///     at once.
+///     speculative work either stands down or is taken off it.
 /// </summary>
 /// <remarks>
 ///     <para>
 ///         Its own type rather than a rule inside the class that runs <c>jb</c>, because the precedence
 ///         belongs to every caller the user is waiting on and running <c>jb</c> is only what most of them
-///         do. Written into the runner, it missed the one tool that spawns no process at all: a cache reset
-///         queued behind a speculative pass for up to the whole run cap, where an inspect would have
-///         reclaimed the generation in a second or two.
+///         do. Written into the runner, it would miss the one tool that spawns no process at all: a cache
+///         reset would queue behind a speculative pass for up to the whole run cap, where an inspect reclaims
+///         the generation in a second or two.
 ///     </para>
 ///     <para>
 ///         Process-wide rather than keyed per cache generation, so a caller against one solution stands a
-///         pre-warm of another one down. Deliberate, and not an approximation of a per-generation rule that
-///         was merely too much bookkeeping to keep: <see cref="JbRunLock" /> partitions a
-///         <em>directory</em>, because a directory is what two <c>jb</c> processes ruin between them, while
-///         this count partitions the <em>machine</em>, because a <c>jb</c> run is a full multi-core
-///         analysis of a whole solution whatever the report is narrowed to. Keying it would set that
-///         analysis going beside the call already racing the run cap, and would hold the speculative
-///         solution's lease for minutes — which is exactly the state <c>CacheTransplanter</c> reads as "no
-///         donor" when the next cold checkout comes looking for one. <see cref="JbRunSlot" /> applies the
-///         same partition to the calls themselves, one step further out: two calls against different
-///         solutions contend for nothing this or the lock can see, and share the machine rather than the
-///         work. What leaving this process-wide costs is one speculative pass: a server pointed at two
-///         solutions — a client that resolves a worktree separately from its main checkout is today's only
-///         such shape — never pre-warms the one nothing calls, for the life of the process, and nothing
-///         re-arms it, since the only re-arm is a foreground run hitting the cap and it carries that run's
-///         own configuration, while the trigger that starts the first pass fires once per host. One pass
-///         nobody is waiting on, against a cold analysis running beside a call that is already late.
+///         pre-warm of another one down. <see cref="JbRunLock" /> partitions a <em>directory</em>, because a
+///         directory is what two <c>jb</c> processes ruin between them, while this count partitions the
+///         <em>machine</em>, because a <c>jb</c> run is a full multi-core analysis of a whole solution whatever
+///         the report is narrowed to. Keying it would set that analysis going beside the call already racing
+///         the run cap, and would hold the speculative solution's lease for minutes, which a cold checkout
+///         looking for a donor reads as "no donor". What leaving it process-wide costs is one speculative pass:
+///         a server pointed at two solutions never pre-warms the one nothing calls, and nothing re-arms it. One
+///         pass nobody is waiting on, against a cold analysis running beside a call that is already late.
 ///     </para>
 ///     <para>
 ///         In-process only. A pre-warm running in another server process cannot be yielded to, and a call
-///         there queues behind it exactly as it queues behind another session's real call. What that costs
-///         was measured on 2026-08-27, two sessions on one repository: a call queued 168 s behind the other
-///         session's pre-warm of the same solution, then ran warm in 54 s. The 168 s is not what a
-///         stand-down would have saved, though, and reading it that way is the trap. The pass was building
-///         the very cache the call then ran warm on, so what the call paid over running cold itself was at
-///         most one warm run, less whatever in-flight work a cancel would have thrown away. Once in 33
-///         foreground acquisitions over seven days, against a sidecar-and-polling protocol between
-///         processes of possibly different versions — which is why there is no cross-process stand-down.
+///         there queues behind it exactly as it queues behind another session's real call. That costs little:
+///         the pass is usually building the very cache the call then runs warm on, so what the call pays over
+///         running cold is at most one warm run, and the overlap is rare — too little to justify a
+///         sidecar-and-polling protocol between processes of possibly different versions, which is why there
+///         is no cross-process stand-down.
 ///     </para>
 ///     <para>
 ///         <see cref="Interlocked" /> throughout, and no member waits on anything: cancelling a pass can
@@ -60,24 +46,28 @@ namespace Zphil.ReSharperCli.Execution;
 internal sealed class JbRunYield(ILogger<JbRunYield> logger)
 {
     /// <summary>
-    ///     How many callers the user is waiting on hold a claim right now. Two different reasons to stand a
-    ///     pre-warm down, pointing the same way: a run analyses the whole solution into the same cache
-    ///     generation a pre-warm would, so the speculative pass has nothing left to buy; a reset builds
-    ///     nothing at all, and a pre-warm during one would rebuild exactly what the call exists to drop.
-    ///     Starting one anyway is also the only way pre-warming could ever delay a call inside this process.
-    ///     Reading this <em>after</em> publishing <see cref="_speculativeRun" /> is what closes the gap
-    ///     between the two: whichever of the pair reads stale, the other has already seen the write it
-    ///     needed.
+    ///     How many callers the user is waiting on hold a claim right now.
     /// </summary>
     /// <remarks>
-    ///     A count rather than the latch this used to be, and the difference is not bookkeeping. A latch
-    ///     that is never cleared retires speculative work for the life of the process, so the moment it is
-    ///     worth most — a foreground run has just hit the cap, the cache is part-built, the user is idle
-    ///     reading an error saying a retry resumes from there — is exactly the moment the server has
-    ///     guaranteed it will never run again. Clearing the latch on the way out instead would be wrong for
-    ///     the opposite reason: with two callers overlapping, "the first one returned" is not "nobody is
-    ///     waiting", and clearing on that first return opens the generation behind the second one's back.
-    ///     Only a count says both things.
+    ///     <para>
+    ///         Two different reasons to stand a pre-warm down, pointing the same way: a run analyses the whole
+    ///         solution into the same cache generation a pre-warm would, so the speculative pass has nothing
+    ///         left to buy; a reset builds nothing at all, and a pre-warm during one would rebuild exactly what
+    ///         the call exists to drop. Starting one anyway is also the only way pre-warming could ever delay a
+    ///         call inside this process. Reading this <em>after</em> publishing <see cref="_speculativeRun" />
+    ///         is what closes the gap between the two: whichever of the pair reads stale, the other has already
+    ///         seen the write it needed.
+    ///     </para>
+    ///     <para>
+    ///         A count rather than a latch, and the difference is not bookkeeping. A latch that is never
+    ///         cleared would retire speculative work for the life of the process, so the moment it is worth
+    ///         most — a foreground run has just hit the cap, the cache is part-built, the user is idle reading
+    ///         an error saying a retry resumes from there — would be exactly the moment the server had
+    ///         guaranteed it would never run again. Clearing the latch on the way out instead would be wrong for
+    ///         the opposite reason: with two callers overlapping, "the first one returned" is not "nobody is
+    ///         waiting", and clearing on that first return opens the generation behind the second one's back.
+    ///         Only a count says both things.
+    ///     </para>
     /// </remarks>
     private int _foregroundCallers;
 
@@ -91,9 +81,9 @@ internal sealed class JbRunYield(ILogger<JbRunYield> logger)
     ///         reference may be about to cancel it, and that window cannot be closed without holding a lock
     ///         across a cancellation that may tree-kill a process on this very thread. One undisposed linked
     ///         source — one per speculative pass, not one per process — is the cheaper trade, and
-    ///         <see cref="Reclaim" /> catches the disposal race regardless. Passes stay bounded because only
-    ///         a foreground timeout starts one and no pass re-arms itself, so the total tracks what the user
-    ///         did rather than a timer.
+    ///         <see cref="Reclaim" /> catches the disposal race regardless. Passes stay bounded because, after
+    ///         the first, only a foreground timeout starts one and no pass re-arms itself, so the total tracks
+    ///         what the user did rather than a timer.
     ///     </para>
     ///     <para>
     ///         Cancelling is not instantaneous. The lease drops only after <see cref="ProcessRunner" /> sees
@@ -105,14 +95,14 @@ internal sealed class JbRunYield(ILogger<JbRunYield> logger)
     private SpeculativeRun? _speculativeRun;
 
     /// <summary>
-    ///     Count a caller the user is waiting on in, and take the cache generation back from any speculative
-    ///     run holding it. Disposing the returned claim stands that caller back down.
+    ///     Counts a caller the user is waiting on in, and takes the cache generation back from any speculative
+    ///     run holding it.
     /// </summary>
     /// <remarks>
-    ///     There is deliberately no way to reclaim without entering first. Cancelling the pass in flight
-    ///     without counting yourself in leaves the door open behind you — the next pass to arrive is then
-    ///     the one that delays the call — and making that unrepresentable rather than a convention two call
-    ///     sites keep is most of the reason this is a type.
+    ///     Disposing the returned claim stands that caller back down. There is deliberately no way to reclaim
+    ///     without entering first. Cancelling the pass in flight without counting yourself in leaves the door open
+    ///     behind you — the next pass to arrive is then the one that delays the call — and making that unrepresentable
+    ///     rather than a convention two call sites keep is most of the reason this is a type.
     /// </remarks>
     public IDisposable EnterForeground()
     {
@@ -123,15 +113,18 @@ internal sealed class JbRunYield(ILogger<JbRunYield> logger)
         Reclaim();
 
         // Stood down once and only once: a double dispose would drop the count below what is in flight and
-        // let a pre-warm start behind a live call, which is the bug the count replaced a latch to avoid.
+        // let a pre-warm start behind a live call.
         return new ReleaseOnce(() => Interlocked.Decrement(ref _foregroundCallers));
     }
 
     /// <summary>
-    ///     Claim the cache generation speculatively, or <see langword="null" /> when a caller the user is
-    ///     waiting on is already in flight. The claim carries the token the speculative work must run
-    ///     under — that is how it hears about being stood down — and withdraws itself when disposed.
+    ///     Claims the cache generation speculatively.
     /// </summary>
+    /// <remarks>
+    ///     Answers <see langword="null" /> when a caller the user is waiting on is already in flight. The claim
+    ///     carries the token the speculative work must run under — that is how it hears about being stood
+    ///     down — and withdraws itself when disposed.
+    /// </remarks>
     public SpeculativeRun? TryEnterSpeculative(CancellationToken cancellationToken)
     {
         // Publish before reading the count: a foreground caller that has already gone past its own reclaim
@@ -152,13 +145,15 @@ internal sealed class JbRunYield(ILogger<JbRunYield> logger)
     }
 
     /// <summary>
-    ///     Hand the cache generation to the caller: cancel the speculative run holding it, if any. The catch
-    ///     is total rather than a list of the exceptions cancellation is known to raise, because the failure
-    ///     mode it guards is not a noisy one — an escaping throw would leave the count raised with no claim
-    ///     ever returned, silently retiring the pre-warm for the life of the process. Degrading to a queued
-    ///     call is the behaviour without any of this, and a background optimisation must never be able to
-    ///     fail one.
+    ///     Hands the cache generation to the caller: cancels the speculative run holding it, if any.
     /// </summary>
+    /// <remarks>
+    ///     The catch is total rather than a list of the exceptions cancellation is known to raise, because the
+    ///     failure mode it guards is not a noisy one — an escaping throw would leave the count raised with no
+    ///     claim ever returned, silently retiring the pre-warm for the life of the process. Degrading to a
+    ///     queued call is the behaviour without any of this, and a background optimisation must never be able
+    ///     to fail one.
+    /// </remarks>
     private void Reclaim()
     {
         try
@@ -187,23 +182,24 @@ internal sealed class JbRunYield(ILogger<JbRunYield> logger)
         /// <summary>What the speculative work runs under, so being stood down reaches it as a cancellation.</summary>
         public CancellationToken Token => _source.Token;
 
-        /// <summary>
-        ///     Withdraw this claim. Compare-and-swap on this instance, never a blind clear: by the time a
-        ///     pass ends the field may already hold a <em>later</em> one, and a finished pre-warm must not
-        ///     have its successor cancelled on its behalf. Deliberately leaves the source undisposed, for
-        ///     the reason given on <see cref="_speculativeRun" />.
-        /// </summary>
+        /// <summary>Withdraws this claim.</summary>
+        /// <remarks>
+        ///     Compare-and-swap on this instance, never a blind clear: by the time a pass ends the field may
+        ///     already hold a <em>later</em> one, and a finished pre-warm must not have its successor cancelled
+        ///     on its behalf. Deliberately leaves the source undisposed, for the reason given on
+        ///     <see cref="_speculativeRun" />.
+        /// </remarks>
         public void Dispose()
         {
             Interlocked.CompareExchange(ref owner._speculativeRun, null, this);
         }
 
-        /// <summary>
-        ///     Stand this pass down. Reaching it means already holding the claim, and the only way to hold
-        ///     another pass's claim is to take it out of <see cref="_speculativeRun" /> — which is private
-        ///     to <see cref="JbRunYield" /> and read in exactly one place, after a caller has counted
-        ///     itself in.
-        /// </summary>
+        /// <summary>Stands this pass down.</summary>
+        /// <remarks>
+        ///     Reaching it means already holding the claim, and the only way to hold another pass's claim is to
+        ///     take it out of <see cref="_speculativeRun" /> — which is private to <see cref="JbRunYield" /> and
+        ///     read in exactly one place, after a caller has counted itself in.
+        /// </remarks>
         internal void Cancel()
         {
             _source.Cancel();

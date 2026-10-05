@@ -126,8 +126,7 @@ public sealed class CleanupSummaryFormatterTests
     public void Format_NamedFilesOnly_CountsThemWithoutQualifyingTheDenominator()
     {
         // The ordinary batch: every entry was hashed, so the count spans everything the caller asked for and
-        // the header needs no qualifier. Byte-for-byte what it has always said, which is what the factored
-        // header keeps structurally true rather than duplicated across two literals.
+        // the header needs no qualifier.
         CleanupOutcome outcome = new(
             "Built-in: Full Cleanup",
             [
@@ -200,11 +199,11 @@ public sealed class CleanupSummaryFormatterTests
             + "  - src/C.cs (status unknown)");
     }
 
-    /// <summary>
-    ///     The field case: an agent cleaned up with a glob, jb rewrote 26 files, and the header said
-    ///     "0 of 0 file(s) changed on disk" — which the agent read as "nothing changed" and went to git to
-    ///     disprove. Nothing was measured, so the header states that instead of a ratio over an empty set.
-    /// </summary>
+    /// <summary>A batch of nothing but wildcards, so nothing is measured.</summary>
+    /// <remarks>
+    ///     The header states that instead of a ratio over an empty set: "0 of 0 file(s) changed on disk" reads
+    ///     as "nothing changed" after a run that rewrote every file the globs matched.
+    /// </remarks>
     private static CleanupOutcome AllWildcards()
     {
         return new CleanupOutcome(

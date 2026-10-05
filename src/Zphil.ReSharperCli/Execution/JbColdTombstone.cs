@@ -4,15 +4,15 @@ namespace Zphil.ReSharperCli.Execution;
 
 /// <summary>
 ///     A zero-byte file beside the warm marker recording that this solution's cache was <em>deliberately</em>
-///     dropped, and that the next <c>jb</c> run against it is meant to be cold. Written by a cache reset,
-///     cleared by the first run that succeeds afterwards.
+///     dropped, and that the next <c>jb</c> run against it is meant to be cold.
 /// </summary>
 /// <remarks>
 ///     <para>
-///         Only one thing reads it, and only one thing needs it: seeding a cold generation by copying a warm
-///         sibling's would otherwise undo a reset silently and immediately, handing back the very index the
-///         user asked to be rid of. An absent cache and an emptied one look identical on disk, so the
-///         intention has to be recorded somewhere, and it has to outlive the process that recorded it.
+///         Written by a cache reset, cleared by the first run that succeeds afterwards. It exists for one
+///         reader: seeding a cold generation by copying a warm sibling's would otherwise undo a reset silently
+///         and immediately, handing back the very index the user asked to be rid of. An absent cache and an emptied one
+///         look identical on disk, so the intention has to be recorded somewhere, and it has to outlive the process
+///         that recorded it.
 ///     </para>
 ///     <para>
 ///         Its failure direction is the opposite of the <see cref="JbWarmMarker" /> readers that answer
@@ -30,9 +30,9 @@ internal static class JbColdTombstone
     private const string Extension = "cold";
 
     /// <summary>
-    ///     Where the tombstone for one cache generation lives: beside the lock file and the warm marker,
-    ///     under <see cref="JbSidecar" />'s one key for the generation, so all three move together if the
-    ///     scheme ever changes.
+    ///     Where the tombstone for one cache generation lives: beside the other sidecars, under
+    ///     <see cref="JbSidecar" />'s one key for the generation, so they all move together if the scheme ever
+    ///     changes.
     /// </summary>
     internal static string PathFor(string solutionPath, string cacheHome)
     {
@@ -40,9 +40,9 @@ internal static class JbColdTombstone
     }
 
     /// <summary>
-    ///     Record that this solution's cache has just been dropped on purpose. The content carries nothing;
-    ///     existence is the whole statement.
+    ///     Records that this solution's cache has just been dropped on purpose.
     /// </summary>
+    /// <remarks>The content carries nothing; existence is the whole statement.</remarks>
     internal static void Write(string solutionPath, string cacheHome, ILogger logger)
     {
         try
@@ -60,10 +60,13 @@ internal static class JbColdTombstone
     }
 
     /// <summary>
-    ///     Whether the last thing to happen to this solution's cache was a reset. Anything that goes wrong
-    ///     answers <see langword="true" />: the caller's only use for a <see langword="false" /> is to start
-    ///     copying, and it must not do that on a question this could not answer.
+    ///     Whether the last thing to happen to this solution's cache was a reset.
     /// </summary>
+    /// <remarks>
+    ///     Anything that goes wrong answers <see langword="true" />: the caller's only use for a
+    ///     <see langword="false" /> is to start copying, and it must not do that on a question this could not
+    ///     answer.
+    /// </remarks>
     internal static bool Exists(string solutionPath, string cacheHome, ILogger logger)
     {
         try
@@ -78,13 +81,15 @@ internal static class JbColdTombstone
     }
 
     /// <summary>
-    ///     Discharge the promise, for either of the two things that end it. A <c>jb</c> run has succeeded
-    ///     since the reset, so the cache it rebuilt is this solution's own and there is nothing left to
-    ///     protect; or a reset was asked to reclaim the cache of a checkout that no longer exists, where
-    ///     there is no next run to keep cold and a tombstone would only deny the seeding to whatever is
-    ///     created at that path later. Failing to clear it costs a later optimisation and nothing else, which
-    ///     is the safe direction, so it goes no louder than debug.
+    ///     Discharges the promise, for either of the two things that end it.
     /// </summary>
+    /// <remarks>
+    ///     A <c>jb</c> run has succeeded since the reset, so the cache it rebuilt is this solution's own and
+    ///     there is nothing left to protect; or a reset was asked to reclaim the cache of a checkout that no
+    ///     longer exists, where there is no next run to keep cold and a tombstone would only deny the seeding to
+    ///     whatever is created at that path later. Failing to clear it costs a later optimisation and nothing
+    ///     else, which is the safe direction, so it goes no louder than debug.
+    /// </remarks>
     internal static void Clear(string solutionPath, string cacheHome, ILogger logger)
     {
         JbSidecar.TryDelete(solutionPath, cacheHome, Extension, "cache reset record", logger);

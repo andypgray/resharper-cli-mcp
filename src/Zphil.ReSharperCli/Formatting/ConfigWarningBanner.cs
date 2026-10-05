@@ -4,9 +4,14 @@ namespace Zphil.ReSharperCli.Formatting;
 
 /// <summary>
 ///     Renders the <see cref="ConfigWarnings" /> a tool result must lead with, or <c>""</c> when there is
-///     nothing to say. Each warning describes configuration that was silently dropped rather than an error
-///     that failed the call, which is precisely why it cannot stay in the log: the call succeeds and looks
-///     authoritative while answering under configuration the caller did not choose.
+///     nothing to say.
+/// </summary>
+/// <remarks>
+///     <para>
+///         Each warning describes configuration that was silently dropped rather than an error that failed
+///         the call, which is precisely why it cannot stay in the log: the call succeeds and looks
+///         authoritative while answering under configuration the caller did not choose.
+///     </para>
 ///     <para>
 ///         The two warnings have different blast radii, so each tool gets only the ones that apply to it. A
 ///         settings file this server could not parse is still read by <c>jb</c> — discovered files are
@@ -16,7 +21,7 @@ namespace Zphil.ReSharperCli.Formatting;
 ///         a consequence that does not exist. Output uses <c>\n</c> line endings and is ASCII-only, matching
 ///         the other formatters.
 ///     </para>
-/// </summary>
+/// </remarks>
 internal static class ConfigWarningBanner
 {
     /// <summary>The banner for <c>resharper_inspect</c>: only what affects which issues are reported.</summary>
@@ -66,8 +71,7 @@ internal static class ConfigWarningBanner
 
     /// <summary>
     ///     Flattens a reason onto one line: it is an exception message, and one carrying an embedded newline
-    ///     would make the banner's tail — or the report list item <see cref="CacheResetFormatter" /> puts it
-    ///     in — read as body text.
+    ///     would make the banner's tail — or a report list item it is put in — read as body text.
     /// </summary>
     internal static string SingleLine(string reason)
     {

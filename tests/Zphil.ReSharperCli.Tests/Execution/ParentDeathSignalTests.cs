@@ -32,8 +32,8 @@ public sealed class ParentDeathSignalTests
     public void Wrap_ATargetThatCouldNotBeResolved_DeclinesToWrapIt()
     {
         // Arrange — jb is not installed, so nothing on PATH resolved. Wrapped, the spawn would succeed and
-        // exit non-zero with a setpriv exec error, where JbLocator's probe expects the Win32Exception a
-        // missing executable has always thrown.
+        // exit non-zero with a setpriv exec error, instead of throwing the Win32Exception a missing executable
+        // throws.
         SpawnCommand command = ParentDeathSignal.Wrap("/usr/bin/setpriv", null, "jb", ["inspectcode", "--version"]);
 
         // Assert

@@ -12,8 +12,8 @@ public sealed class InspectReportNoteTests
     [Fact]
     public void For_NoReportAsked_IsEmpty()
     {
-        // Arrange — the default path. An empty preamble is what keeps a response with no report
-        // byte-for-byte what it was before this parameter existed.
+        // Arrange — the default path. An empty preamble leaves a response that asked for no report exactly
+        // as it would read without this parameter.
 
         // Act
         string note = InspectReportNote.For(null, 3);

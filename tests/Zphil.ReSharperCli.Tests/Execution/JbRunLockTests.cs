@@ -9,13 +9,14 @@ using Zphil.ReSharperCli.Tests.TestSupport;
 namespace Zphil.ReSharperCli.Tests.Execution;
 
 /// <summary>
-///     <see cref="JbRunLock" /> exists so two sessions inspecting one solution queue on the warm ReSharper
-///     cache instead of forking a second, empty one. Both halves are covered: the in-process semaphore that
-///     keeps concurrent calls inside one server ordered, and the lock <em>file</em> that does the same
-///     across server processes — the case that actually bites, since two sessions are two processes. The
-///     cross-process half is stood in for by these tests opening the lock file themselves with
-///     <see cref="FileShare.None" />, which is exactly what another holder's handle looks like to the OS.
+///     Pins both halves of <see cref="JbRunLock" />: the in-process semaphore that keeps concurrent calls
+///     inside one server ordered, and the lock <em>file</em> that does the same across server processes — the
+///     case that actually bites, since two sessions are two processes.
 /// </summary>
+/// <remarks>
+///     The cross-process half is stood in for by these tests opening the lock file themselves with
+///     <see cref="FileShare.None" />, which is exactly what another holder's handle looks like to the OS.
+/// </remarks>
 public sealed class JbRunLockTests : IDisposable
 {
     private const string SolutionPath = "/repo/App.sln";
@@ -53,7 +54,7 @@ public sealed class JbRunLockTests : IDisposable
         bool completedWhileHeld = second.IsCompleted;
         first.Dispose();
 
-        // Assert — it was still queued behind the holder, and gets in once the holder releases.
+        // Assert
         completedWhileHeld.ShouldBeFalse();
         (await second.WaitAsync(Generous, Ct)).Dispose();
     }
@@ -80,7 +81,7 @@ public sealed class JbRunLockTests : IDisposable
     [Fact]
     public async Task AcquireAsync_DifferentSolutionsInOneCacheHome_DoNotBlockEachOther()
     {
-        // Arrange — the lock is per cache generation, not per server: unrelated solutions must run at once.
+        // Arrange — the lock is per cache generation, not per server: unrelated solutions pass it uncontended.
         JbRunLock runLock = JbRunners.Lock(ShortWait);
         using IDisposable first = await runLock.AcquireAsync("/repo/One.sln", _cacheHome, Ct);
         var waited = Stopwatch.StartNew();
@@ -178,8 +179,7 @@ public sealed class JbRunLockTests : IDisposable
     public async Task AcquireAsync_PreviousHolderDiedWithoutReleasing_DoesNotDeadlock()
     {
         // Arrange — a raw handle abandoned the way a crashed or tree-killed process abandons one: no orderly
-        // release, no cleanup. This is why the lock is a file rather than a named mutex, which would instead
-        // leave the next caller an AbandonedMutexException to recover from.
+        // release, no cleanup.
         JbRunLock runLock = JbRunners.Lock(ShortWait);
         SafeFileHandle crashed = File.OpenHandle(LockFilePath(), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
         crashed.Dispose();
@@ -417,7 +417,7 @@ public sealed class JbRunLockTests : IDisposable
         return JbRunLock.LockFilePathFor(_cacheHome, JbSidecar.ComputeKey(SolutionPath, _cacheHome));
     }
 
-    /// <summary>Hold the lock file the way another server process would: exclusively, until disposed.</summary>
+    /// <summary>Holds the lock file the way another server process would: exclusively, until disposed.</summary>
     private FileStream OpenLockFileExclusively()
     {
         return CacheHomes.HoldLockFile(_cacheHome, SolutionPath);

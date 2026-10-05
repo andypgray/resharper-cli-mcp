@@ -33,9 +33,8 @@ namespace Zphil.ReSharperCli.Execution;
 ///         it, so that a released lock and a free generation mean the same thing again.
 ///     </para>
 ///     <para>
-///         What it partitions is a <em>directory</em>, and <see cref="JbRunSlot" /> is the process-wide
-///         sibling that partitions the <em>machine</em>: two runs against different solutions pass this lock
-///         uncontended and still must not have two <c>jb</c> processes in flight between them.
+///         What it partitions is a <em>directory</em>, not the machine: two runs against different solutions
+///         pass this lock uncontended, which is <see cref="JbRunSlot" />'s to bound.
 ///     </para>
 ///     <para>
 ///         The lock is an optimisation, never a dependency: anything that goes wrong other than genuine
@@ -45,10 +44,8 @@ namespace Zphil.ReSharperCli.Execution;
 ///     </para>
 /// </remarks>
 /// <param name="maxWait">
-///     How long a caller queues for a run in flight before giving up. The composition root resolves
-///     <see cref="JbRunTimeout" /> once and wires the same value here and to the run cap in
-///     <see cref="Services.JbRunner" />, so a queued call is bounded by wait + run and the two caps cannot
-///     drift apart — including when <c>RESHARPER_MCP_TIMEOUT_SECS</c> moves them.
+///     How long a caller queues for a run in flight before giving up — the same value as the run cap, so a
+///     queued call is bounded by wait + run and the two caps cannot drift apart.
 /// </param>
 internal sealed class JbRunLock(TimeSpan maxWait, ILogger<JbRunLock> logger)
 {
@@ -56,15 +53,13 @@ internal sealed class JbRunLock(TimeSpan maxWait, ILogger<JbRunLock> logger)
 
     /// <summary>
     ///     How long a caller has to have queued for the wait to be worth an <c>Information</c> line rather
-    ///     than a <c>Debug</c> one. An uncontended acquire is sub-millisecond, so anything past this is
-    ///     another <c>jb</c> the caller sat behind — which is one of the three things that make a call slow,
-    ///     and the only one nothing else in the log records.
+    ///     than a <c>Debug</c> one.
     /// </summary>
     /// <remarks>
-    ///     <c>JbRunProgressSnapshot.JustArrived</c> applies it for the same judgement rather than choosing a
-    ///     threshold of its own: a progress message too has to decide whether a caller has genuinely queued
-    ///     behind someone, and the answer should not be able to differ between the log and the message
-    ///     describing the same wait.
+    ///     An uncontended acquire is sub-millisecond, so anything past this is another <c>jb</c> the caller sat
+    ///     behind, which nothing else in the log records. Shared by everything that has to judge whether a
+    ///     caller has genuinely queued behind someone, so the answer cannot differ between the log and a
+    ///     progress message describing the same wait.
     /// </remarks>
     internal static readonly TimeSpan NotableWait = TimeSpan.FromSeconds(1);
 
@@ -83,12 +78,14 @@ internal sealed class JbRunLock(TimeSpan maxWait, ILogger<JbRunLock> logger)
     internal TimeSpan MaxWait { get; } = maxWait;
 
     /// <summary>
-    ///     Wait for exclusive use of the cache generation behind <paramref name="solutionPath" /> and
-    ///     <paramref name="cacheHome" />, then return the handle whose disposal releases it. Waiting is
-    ///     capped across both layers of the lock; exceeding the cap throws a
-    ///     <see cref="UserErrorException" /> naming the contention, because running anyway is the very
-    ///     bug this exists to prevent.
+    ///     Waits for exclusive use of the cache generation behind <paramref name="solutionPath" /> and
+    ///     <paramref name="cacheHome" />, then returns the handle whose disposal releases it.
     /// </summary>
+    /// <remarks>
+    ///     Waiting is capped across both layers of the lock; exceeding the cap throws a
+    ///     <see cref="UserErrorException" /> naming the contention, because running anyway is the very bug this
+    ///     exists to prevent.
+    /// </remarks>
     public async Task<IDisposable> AcquireAsync(string solutionPath, string cacheHome, CancellationToken cancellationToken)
     {
         var waited = Stopwatch.StartNew();
@@ -128,10 +125,12 @@ internal sealed class JbRunLock(TimeSpan maxWait, ILogger<JbRunLock> logger)
     }
 
     /// <summary>
-    ///     Say how long this caller queued, and whether the lock it got is the cross-process one. The wait
-    ///     is the whole point: nothing else records that a call spent four minutes behind another session's
-    ///     <c>jb</c>, and read from the outside that call is indistinguishable from a slow one.
+    ///     Logs how long this caller queued, and whether the lock it got is the cross-process one.
     /// </summary>
+    /// <remarks>
+    ///     The wait is the whole point: nothing else records that a call spent four minutes behind another
+    ///     session's <c>jb</c>, and read from the outside that call is indistinguishable from a slow one.
+    /// </remarks>
     private void ReportAcquisition(string solutionPath, TimeSpan waited, bool crossProcess)
     {
         string scope = crossProcess ? "cross-process" : "in-process only";
@@ -155,11 +154,14 @@ internal sealed class JbRunLock(TimeSpan maxWait, ILogger<JbRunLock> logger)
     }
 
     /// <summary>
-    ///     Take exclusive use of the cache generation without waiting for it, returning the handle whose
-    ///     disposal releases it, or <see langword="null" /> when it could not be taken outright. For
-    ///     speculative work only — a caller that must run uses <see cref="AcquireAsync" />.
+    ///     Takes exclusive use of the cache generation without waiting for it, returning the handle whose
+    ///     disposal releases it.
     /// </summary>
     /// <remarks>
+    ///     <para>
+    ///         Answers <see langword="null" /> when it could not be taken outright. For speculative work only —
+    ///         a caller that must run uses <see cref="AcquireAsync" />.
+    ///     </para>
     ///     <para>
     ///         Synchronous because every step of a zero-wait acquire is: an <c>async</c> signature here would
     ///         have nothing to await, and would promise a wait that must never happen.
@@ -207,13 +209,15 @@ internal sealed class JbRunLock(TimeSpan maxWait, ILogger<JbRunLock> logger)
     }
 
     /// <summary>
-    ///     Take exclusive use of the cache generation behind a lock key, waiting no longer than
-    ///     <paramref name="patience" /> for it, or <see langword="null" /> when it could not be taken. For a
-    ///     caller holding another generation's lease already, which is why the wait is a small explicit
-    ///     budget rather than the run cap: the outer lease is held throughout, so this one must be short and
-    ///     must always end.
+    ///     Takes exclusive use of the cache generation behind a lock key, waiting no longer than
+    ///     <paramref name="patience" /> for it.
     /// </summary>
     /// <remarks>
+    ///     <para>
+    ///         Answers <see langword="null" /> when it could not be taken. For a caller holding another
+    ///         generation's lease already, which is why the wait is a small explicit budget rather than the run
+    ///         cap: the outer lease is held throughout, so this one must be short and must always end.
+    ///     </para>
     ///     <para>
     ///         Keyed rather than pathed because the caller has no solution path to key from. The keys are the
     ///         cache home's own sidecar file names, so a generation belonging to a solution this process has
@@ -268,8 +272,8 @@ internal sealed class JbRunLock(TimeSpan maxWait, ILogger<JbRunLock> logger)
     }
 
     /// <summary>
-    ///     Where the lock file for <paramref name="key" /> lives: beside the warm marker and the cold
-    ///     tombstone, under <see cref="JbSidecar" />'s one naming scheme for all three.
+    ///     Where the lock file for <paramref name="key" /> lives: beside the cache home's other sidecar files,
+    ///     under <see cref="JbSidecar" />'s one naming scheme.
     /// </summary>
     internal static string LockFilePathFor(string cacheHome, string key)
     {
@@ -278,21 +282,23 @@ internal sealed class JbRunLock(TimeSpan maxWait, ILogger<JbRunLock> logger)
 
     /// <summary>
     ///     The one definition of "the lock cannot even be derived": what <see cref="JbSidecar" />'s path
-    ///     derivations throw for an argument no path API will accept. Every entry point filters on this and
-    ///     then degrades its own way — a set edited in one prologue and not the others would silently change
-    ///     which acquisition shapes serialize.
+    ///     derivations throw for an argument no path API will accept.
     /// </summary>
+    /// <remarks>
+    ///     Every entry point filters on this and then degrades its own way — a set edited in one prologue and
+    ///     not the others would silently change which acquisition shapes serialize.
+    /// </remarks>
     private static bool CannotDeriveLock(Exception exception)
     {
         return exception is ArgumentException or NotSupportedException or PathTooLongException;
     }
 
-    /// <summary>
-    ///     The speculative acquires' shared tail. Unlike <see cref="AcquireAsync" />, "could not prove
-    ///     exclusivity" is a <em>return</em> rather than a throw, so releasing in a catch is not enough:
-    ///     leaving the gate taken on the null path would wedge every later caller of this generation —
-    ///     foreground ones included — for the life of the process.
-    /// </summary>
+    /// <summary>The speculative acquires' shared tail.</summary>
+    /// <remarks>
+    ///     Unlike <see cref="AcquireAsync" />, "could not prove exclusivity" is a <em>return</em> rather than a
+    ///     throw, so releasing in a catch is not enough: leaving the gate taken on the null path would wedge
+    ///     every later caller of this generation — foreground ones included — for the life of the process.
+    /// </remarks>
     private static IDisposable? HolderOrRelease(SemaphoreSlim gate, FileStream? file, ILogger logger)
     {
         if (file is null)
@@ -305,10 +311,13 @@ internal sealed class JbRunLock(TimeSpan maxWait, ILogger<JbRunLock> logger)
     }
 
     /// <summary>
-    ///     Open the lock file exclusively, retrying while another holder has it, or <see langword="null" />
-    ///     when the file cannot be used at all (no write permission, say) — the caller then keeps only the
-    ///     in-process half of the lock rather than failing a run over a missing optimisation.
+    ///     Opens the lock file exclusively, retrying while another holder has it.
     /// </summary>
+    /// <remarks>
+    ///     Answers <see langword="null" /> when the file cannot be used at all (no write permission, say) — the
+    ///     caller then keeps only the in-process half of the lock rather than failing a run over a missing
+    ///     optimisation.
+    /// </remarks>
     private async Task<FileStream?> OpenExclusiveAsync(
         string lockFilePath,
         string solutionPath,
@@ -336,11 +345,13 @@ internal sealed class JbRunLock(TimeSpan maxWait, ILogger<JbRunLock> logger)
     }
 
     /// <summary>
-    ///     Open the lock file exclusively, retrying while another holder has it until
-    ///     <paramref name="patience" /> is spent, then <see langword="null" />. The difference from
-    ///     <see cref="OpenExclusiveAsync" /> is what happens at the cap: this returns rather than throwing,
-    ///     because its caller has somewhere to go without the lock and a foreground run does not.
+    ///     Opens the lock file exclusively, retrying while another holder has it until
+    ///     <paramref name="patience" /> is spent, then answers <see langword="null" />.
     /// </summary>
+    /// <remarks>
+    ///     The difference from <see cref="OpenExclusiveAsync" /> is what happens at the cap: this returns rather
+    ///     than throwing, because its caller has somewhere to go without the lock and a foreground run does not.
+    /// </remarks>
     private static async Task<FileStream?> TryOpenExclusiveWithin(
         string lockFilePath,
         TimeSpan patience,
@@ -364,9 +375,11 @@ internal sealed class JbRunLock(TimeSpan maxWait, ILogger<JbRunLock> logger)
 
     /// <summary>
     ///     One attempt at the lock file and no retry: for <see cref="TryAcquire" />, contention and a
-    ///     permanently unusable path are the same answer — do not run. Nothing is logged, because a
-    ///     speculative run stepping aside is the design working, not a fault.
+    ///     permanently unusable path are the same answer — do not run.
     /// </summary>
+    /// <remarks>
+    ///     Nothing is logged, because a speculative run stepping aside is the design working, not a fault.
+    /// </remarks>
     private static FileStream? TryOpenExclusiveOnce(string lockFilePath)
     {
         try
@@ -380,17 +393,19 @@ internal sealed class JbRunLock(TimeSpan maxWait, ILogger<JbRunLock> logger)
     }
 
     /// <summary>
-    ///     The one spelling of the exclusive open. <see cref="FileShare.None" /> is the lock itself. Not
-    ///     DeleteOnClose: a zero-byte file left behind is cheaper than the delete-pending race it would
-    ///     introduce between a releasing holder and an arriving one.
+    ///     The one spelling of the exclusive open. <see cref="FileShare.None" /> is the lock itself.
     /// </summary>
+    /// <remarks>
+    ///     Not DeleteOnClose: a zero-byte file left behind is cheaper than the delete-pending race it would
+    ///     introduce between a releasing holder and an arriving one.
+    /// </remarks>
     private static FileStream OpenLockFile(string lockFilePath)
     {
         return new FileStream(lockFilePath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
     }
 
     /// <summary>
-    ///     Create the cache home so the lock file has somewhere to live (jb would create it anyway),
+    ///     Creates the cache home so the lock file has somewhere to live (jb would create it anyway),
     ///     reporting whether the file lock can be attempted at all.
     /// </summary>
     private bool TryPrepareCacheHome(string cacheHome)

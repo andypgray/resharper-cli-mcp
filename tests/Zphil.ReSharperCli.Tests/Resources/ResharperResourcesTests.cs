@@ -133,10 +133,10 @@ public sealed class ResharperResourcesTests
         text.ShouldContain(RunIdScope.OutsideARun); // the run column on a line belonging to no run
     }
 
-    // The full set the server reads, hardcoded rather than reflected so that adding a variable to the
-    // product without documenting it fails here. Matches CLAUDE.md's Identity table; MAX_MCP_OUTPUT_TOKENS
-    // is set by the MCP client rather than the user, and still needs documenting because it is what caps a
-    // truncated result.
+    // The full set the server reads, hardcoded to match CLAUDE.md's Identity table: the product spells these
+    // in several places with no single list to reflect over, so a variable added to the product needs a row
+    // here too. MAX_MCP_OUTPUT_TOKENS is set by the MCP client rather than the user, and still needs
+    // documenting because it is what caps a truncated result.
     [Theory]
     [InlineData("JB_SOLUTION_PATH")]
     [InlineData("JB_SETTINGS_PATH")]
@@ -149,7 +149,8 @@ public sealed class ResharperResourcesTests
     [InlineData("MAX_MCP_OUTPUT_TOKENS")]
     public void SetupGuide_DocumentsEveryEnvironmentVariable(string variable)
     {
-        // Assert — the instructions dropped the variable names, so an undocumented variable is unreachable.
+        // Assert — the always-resident server instructions name no variable, so the setup guide is each one's
+        // only agent-facing home, and a variable missing there is invisible to every agent.
         ResharperResources.SetupGuide().ShouldContain(variable);
     }
 

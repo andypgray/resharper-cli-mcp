@@ -19,7 +19,7 @@ public sealed class WindowsJobObjectTests
 {
     private const string NotWindows = "A job object is a Windows primitive.";
 
-    /// <summary>Read by <c>SkipUnless</c> on every method below.</summary>
+    /// <summary>Read by <c>SkipUnless</c>.</summary>
     public static bool OnWindows => OperatingSystem.IsWindows();
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;

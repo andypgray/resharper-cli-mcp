@@ -8,11 +8,8 @@ using Zphil.ReSharperCli.Services;
 namespace Zphil.ReSharperCli.Tests.Formatting;
 
 /// <summary>
-///     The string spec for the configuration-warning banner, and the budget arithmetic that keeps it alive.
-///     A banner charged to the budget before the body is rendered sits outside
-///     <see cref="ProgressiveRenderer" />'s reduction ladder, so it survives every step down to
-///     <see cref="DetailLevel.Minimal" /> while the total still fits — which is the whole point for a
-///     warning about a destructive fallback.
+///     The string spec for <see cref="ConfigWarningBanner" />, and the budget arithmetic of
+///     <see cref="ResponseTruncator.BudgetForBody" /> that keeps it alive.
 /// </summary>
 public sealed class ConfigWarningBannerTests
 {
@@ -32,8 +29,7 @@ public sealed class ConfigWarningBannerTests
     [Fact]
     public void ForInspect_NoWarningsRecordedAtAll_IsEmpty()
     {
-        // Act — ResolvedConfig can be built without warnings (the service-level tests do), so null is a
-        // shape this has to tolerate rather than throw on.
+        // Act
         string banner = ConfigWarningBanner.ForInspect(ConfigWarnings.None);
 
         // Assert

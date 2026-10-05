@@ -5,11 +5,10 @@ using Zphil.ReSharperCli.Execution;
 namespace Zphil.ReSharperCli.Tests.Execution;
 
 /// <summary>
-///     <see cref="JbSolutionCacheHash" /> reproduces a naming scheme belonging to someone else, derived by
-///     observation and documented nowhere, so these tests are pins rather than derivations: the values are
-///     frozen against directory names <c>jb</c> itself wrote, and any change to the recipe — the seed, the
-///     multiplier, or how a character is lower-cased — fails here rather than silently addressing a cache
-///     generation that does not exist.
+///     Pins rather than derivations: the values are frozen against directory names <c>jb</c> itself wrote, so
+///     any change to the <see cref="JbSolutionCacheHash" /> recipe — the seed, the multiplier, or how a
+///     character is lower-cased — fails here rather than silently addressing a cache generation that does not
+///     exist.
 /// </summary>
 /// <remarks>
 ///     The failure this guards is quiet by construction. A wrong hash never names another solution's cache;
@@ -18,6 +17,12 @@ namespace Zphil.ReSharperCli.Tests.Execution;
 /// </remarks>
 public sealed class JbSolutionCacheHashTests
 {
+    /// <summary>
+    ///     Windows accepts <c>/</c> as a separator as well as <c>\</c>, so a POSIX path is the one shape
+    ///     whose solution name comes out the same on every platform.
+    /// </summary>
+    public static bool OnWindows => OperatingSystem.IsWindows();
+
     [Theory]
     [InlineData(@"C:\repo\App.sln", "-609246064")]
     [InlineData(@"C:\other\App.sln", "-1331591606")]
@@ -52,12 +57,6 @@ public sealed class JbSolutionCacheHashTests
         // pinned: the recipe has to match jb's, not the one that looks more correct.
         JbSolutionCacheHash.Compute(@"C:\repö\App.sln").ShouldNotBe(JbSolutionCacheHash.Compute(@"C:\repÖ\App.sln"));
     }
-
-    /// <summary>
-    ///     Windows accepts <c>/</c> as a separator as well as <c>\</c>, so a POSIX path is the one shape
-    ///     whose solution name comes out the same on every platform.
-    /// </summary>
-    public static bool OnWindows => OperatingSystem.IsWindows();
 
     [Theory]
     // A negative hash is the ordinary case about half the time, and the minus sign is part of the name.

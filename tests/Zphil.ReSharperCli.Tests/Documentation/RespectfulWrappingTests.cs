@@ -9,18 +9,23 @@ namespace Zphil.ReSharperCli.Tests.Documentation;
 /// <summary>
 ///     Pins the "unofficial — not affiliated with or endorsed by JetBrains" notice to the three surfaces
 ///     CLAUDE.md's respectful-wrapping requirement names: the NuGet package <c>Description</c>, the README's
-///     opening paragraph, and <c>.mcp/server.json</c>. The name uses "ReSharper" descriptively, so these are
-///     requirements rather than decoration — and they are the reason the always-resident server instructions
-///     need not carry the notice as well (see <c>ServerInstructionsTests</c>). Also guards the MCP registry's
-///     hard 100-character, ASCII-counted cap on the <c>server.json</c> description, which today sits at 99:
-///     without this the overflow would surface at registry-publish time rather than at build time.
+///     opening paragraph, and <c>.mcp/server.json</c>.
+/// </summary>
+/// <remarks>
+///     <para>
+///         The name uses "ReSharper" descriptively, so these are requirements rather than decoration — and they
+///         are the reason the always-resident server instructions need not carry the notice as well (see
+///         <c>ServerInstructionsTests</c>). Also guards the MCP registry's hard 100-character, ASCII-counted cap
+///         on the <c>server.json</c> description: without this the overflow would surface at registry-publish
+///         time rather than at build time.
+///     </para>
 ///     <para>
 ///         The install manifests are held to the same notice, one theory over the lot of them, because a
 ///         directory renders whichever one it happens to read as the project's public copy and none of them
 ///         is the surface a reviewer would think to check. Each new client format adds another; the notice
 ///         travelling with every description is what keeps the disclaimer from depending on which file won.
 ///     </para>
-/// </summary>
+/// </remarks>
 public sealed partial class RespectfulWrappingTests
 {
     private const string Disclaimer = "not affiliated with or endorsed by JetBrains";

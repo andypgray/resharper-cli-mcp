@@ -8,10 +8,8 @@ using Zphil.ReSharperCli.Tests.TestSupport;
 namespace Zphil.ReSharperCli.Tests.Execution;
 
 /// <summary>
-///     <see cref="JbColdTombstone" /> records that a cache was dropped on purpose, so nothing later puts a
-///     copy of one back. Its invariant is the mirror image of <see cref="JbWarmMarkerTests" />': every
-///     failure mode must read as <em>reset</em>, because the only thing a "no" permits is refilling a cache
-///     the user asked to be rid of.
+///     Pins the failure direction of <see cref="JbColdTombstone" />: every failure mode must read as
+///     <em>reset</em>, because the only thing a "no" permits is refilling a cache the user asked to be rid of.
 /// </summary>
 public sealed class JbColdTombstoneTests : IDisposable
 {
@@ -33,14 +31,12 @@ public sealed class JbColdTombstoneTests : IDisposable
     [Fact]
     public void WriteThenClear_IsTheWholeLifecycle()
     {
-        // Assert — a cache home nothing has reset carries no promise...
+        // Assert
         JbColdTombstone.Exists(SolutionPath, _cacheHome, NullLogger.Instance).ShouldBeFalse();
 
-        // ...a reset makes one...
         JbColdTombstone.Write(SolutionPath, _cacheHome, NullLogger.Instance);
         JbColdTombstone.Exists(SolutionPath, _cacheHome, NullLogger.Instance).ShouldBeTrue();
 
-        // ...and the run that rebuilt the cache discharges it.
         JbColdTombstone.Clear(SolutionPath, _cacheHome, NullLogger.Instance);
         JbColdTombstone.Exists(SolutionPath, _cacheHome, NullLogger.Instance).ShouldBeFalse();
     }
@@ -59,8 +55,8 @@ public sealed class JbColdTombstoneTests : IDisposable
     [Fact]
     public void Write_OneSolution_SaysNothingAboutAnother()
     {
-        // Arrange — the tombstone is per cache generation, like the lock and the marker beside it. Resetting
-        // one checkout must not stop another being seeded.
+        // Arrange — the tombstone is per cache generation: resetting one checkout must not stop another being
+        // seeded.
         JbColdTombstone.Write(SolutionPath, _cacheHome, NullLogger.Instance);
 
         // Assert
@@ -71,8 +67,8 @@ public sealed class JbColdTombstoneTests : IDisposable
     [Fact]
     public void Exists_CacheHomeNoFileApiWillAccept_ReadsAsResetRatherThanThrowing()
     {
-        // Arrange — the cache home the lock and the marker both degrade on. Here the safe degradation is the
-        // opposite one: a question that could not be answered must not be read as permission to seed.
+        // Arrange — the safe degradation here is towards reset: a question that could not be answered must not
+        // be read as permission to seed.
         string invalid = _cacheHome + "\0invalid";
 
         // Assert — including the discharge, which runs at the end of a jb run that has already succeeded.

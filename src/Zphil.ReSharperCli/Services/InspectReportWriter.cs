@@ -5,28 +5,25 @@ namespace Zphil.ReSharperCli.Services;
 
 /// <summary>
 ///     Where the report <c>resharper_inspect</c> writes ends up: one directory this server owns, one file per
-///     call, and a prune of anything older than <see cref="RetentionPeriod" /> on the way past. The response
-///     names the file it wrote, which is the whole point — a solution-wide run's itemised findings cannot fit
-///     a tool response, and until this existed the only way to read them was to leave the server for a raw
-///     <c>jb</c>, which does not take the run queue's lock and forks a cold cache generation instead.
+///     call, and a prune of anything older than <see cref="RetentionPeriod" /> on the way past.
 /// </summary>
 /// <remarks>
 ///     <para>
+///         The response names the file it wrote, which is the whole point — a solution-wide run's itemised
+///         findings cannot fit a tool response, and the alternative is a raw <c>jb</c> outside the server,
+///         which does not take the run queue's lock and forks a cold cache generation instead.
+///     </para>
+///     <para>
 ///         <paramref name="rootDirectory" /> is injected rather than read from
-///         <see cref="Path.GetTempPath" /> in here, so a test can point it at a directory of its own. That is
-///         what keeps the parallel xUnit run off one shared location — the alternative,
-///         <see cref="Directory.CreateTempSubdirectory" />, takes only a prefix and always resolves under the
-///         process's temp path, so it cannot honour a root at all. It is not a third seam: the composition
-///         root passes the real temp path, and <see cref="Infrastructure.IEnvironment" /> stays at three
-///         members.
+///         <see cref="Path.GetTempPath" /> in here, so a test can point it at a directory of its own and the
+///         parallel xUnit run stays off one shared location — <see cref="Directory.CreateTempSubdirectory" />
+///         takes only a prefix and always resolves under the process's temp path, so it cannot honour a root
+///         at all. It is not a third seam: the composition root passes the real temp path.
 ///     </para>
 ///     <para>
 ///         A write that fails is reported, not thrown. By the time this runs, a <c>jb</c> inspection has
 ///         already cost minutes and the summary in the response is good; failing the whole call over the
-///         artifact would throw that away. So the outcome carries the reason and
-///         <see cref="Formatting.InspectReportNote" /> states it where the caller will read it — the same
-///         bargain <see cref="Formatting.ConfigWarningBanner" /> makes for configuration that was dropped
-///         rather than rejected.
+///         artifact would throw that away, so the outcome carries the reason instead.
 ///     </para>
 /// </remarks>
 internal sealed class InspectReportWriter(string rootDirectory, ILogger<InspectReportWriter> logger)
@@ -55,11 +52,14 @@ internal sealed class InspectReportWriter(string rootDirectory, ILogger<InspectR
     internal static readonly TimeSpan RetentionPeriod = TimeSpan.FromDays(7);
 
     /// <summary>
-    ///     Write <paramref name="markdown" /> to a file named after <paramref name="solutionPath" />, and
-    ///     return where it went. The name carries a random suffix rather than a timestamp: two calls against
-    ///     one solution in the same second are ordinary, and the response names the exact path, so nothing
-    ///     downstream has to sort them.
+    ///     Writes <paramref name="markdown" /> to a file named after <paramref name="solutionPath" />, and
+    ///     returns where it went.
     /// </summary>
+    /// <remarks>
+    ///     The name carries a random suffix rather than a timestamp: two calls against one solution in the
+    ///     same second are ordinary, and the response names the exact path, so nothing downstream has to sort
+    ///     them.
+    /// </remarks>
     public InspectReportOutcome WriteMarkdown(string markdown, string solutionPath)
     {
         string directory = Path.Combine(rootDirectory, ReportsDirectoryName);
@@ -114,14 +114,14 @@ internal sealed class InspectReportWriter(string rootDirectory, ILogger<InspectR
         File.SetUnixFileMode(directory, OwnerOnly);
     }
 
-    /// <summary>
-    ///     Drop reports past their retention. Housekeeping, so it is fenced off twice: each delete is
-    ///     best-effort on its own, because two servers can prune one directory at once and a file vanishing
-    ///     between the listing and the delete is ordinary; and the sweep as a whole is, because a prune that
-    ///     cannot run must never cost the caller the report it asked for. The listing is materialised for the
-    ///     same reason — deleting out from under a lazy enumerator is the one way this could take the write
-    ///     down with it.
-    /// </summary>
+    /// <summary>Drops reports past their retention.</summary>
+    /// <remarks>
+    ///     Housekeeping, so it is fenced off twice: each delete is best-effort on its own, because two servers
+    ///     can prune one directory at once and a file vanishing between the listing and the delete is ordinary;
+    ///     and the sweep as a whole is, because a prune that cannot run must never cost the caller the report
+    ///     it asked for. The listing is materialised for the same reason — deleting out from under a lazy
+    ///     enumerator is the one way this could take the write down with it.
+    /// </remarks>
     private void Prune(string directory)
     {
         try
@@ -157,8 +157,11 @@ internal sealed class InspectReportWriter(string rootDirectory, ILogger<InspectR
 }
 
 /// <summary>
-///     Where a report went, and why it did not. <see cref="Failure" /> is the exception message when the
-///     write failed and <see langword="null" /> when it succeeded; <see cref="Path" /> is the intended path
-///     either way, because a caller told the file could not be written wants to know which file.
+///     Where a report went, and why it did not.
 /// </summary>
+/// <remarks>
+///     <see cref="Failure" /> is the exception message when the write failed and <see langword="null" /> when
+///     it succeeded; <see cref="Path" /> is the intended path either way, because a caller told the file could
+///     not be written wants to know which file.
+/// </remarks>
 internal sealed record InspectReportOutcome(string Path, string? Failure);

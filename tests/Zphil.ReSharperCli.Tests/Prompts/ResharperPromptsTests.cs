@@ -25,7 +25,7 @@ public sealed class ResharperPromptsTests
         // Act
         IList<McpClientPrompt> prompts = await harness.Client.ListPromptsAsync(cancellationToken: Ct);
 
-        // Assert — registering the prompt advertises the capability and lists it by name.
+        // Assert
         prompts.Select(prompt => prompt.Name).ShouldContain(ResharperPrompts.DeriveStyleGuideName);
     }
 

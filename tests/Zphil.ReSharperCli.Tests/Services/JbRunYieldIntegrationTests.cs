@@ -11,27 +11,25 @@ namespace Zphil.ReSharperCli.Tests.Services;
 /// <summary>
 ///     <see cref="JbRunYield" /> driven through <see cref="JbRunner" /> and <see cref="CacheResetService" />
 ///     together, wired to one shared yield; <see cref="Execution.JbRunYieldTests" /> drives the yield on its own.
-///     A caller the user is waiting on always wins. Pre-warming is only ever an optimisation, so a call
-///     arriving while one is in flight must reclaim the cache generation rather than queue behind work
-///     nobody asked for — otherwise that call would pay the queue wait <em>and</em> its own full run, which
-///     is strictly worse than never pre-warming at all. The <see cref="YieldProbe" /> stands in for
-///     <c>jb</c> and makes every one of these assertions an observation rather than a timing guess: it
-///     signals when a run starts, blocks until the test releases it, and surfaces cancellation exactly as
-///     <see cref="ProcessRunner" /> does. No sleeps.
 /// </summary>
 /// <remarks>
-///     Both kinds of caller are driven here, against one <see cref="JbRunYield" />, because that sharing is
-///     the whole fix and it is invisible from either side alone: a <see cref="JbRunner" /> and a
-///     <see cref="CacheResetService" /> wired to yields of their own compile, pass every test that predates
-///     this file's second half, and arbitrate against nothing. <see cref="JbRunners" /> assembles the pair
-///     for the same reason the composition root does.
+///     <para>
+///         Both kinds of caller are driven here, against one <see cref="JbRunYield" />, because that sharing
+///         is invisible from either side alone: a <see cref="JbRunner" /> and a <see cref="CacheResetService" />
+///         wired to yields of their own compile, pass every test here that drives only one kind of caller, and
+///         arbitrate against nothing. <see cref="JbRunners" /> assembles the pair for the same reason the
+///         composition root does.
+///     </para>
+///     <para>
+///         The <see cref="YieldProbe" /> stands in for <c>jb</c> and makes every one of these assertions an
+///         observation rather than a timing guess. No sleeps.
+///     </para>
 /// </remarks>
 public sealed class JbRunYieldIntegrationTests : IDisposable
 {
     /// <summary>
     ///     A short wait cap, so a regression that stopped the pre-warm yielding fails these tests promptly
-    ///     instead of hanging them out to the production cap. Wired to the lock's queue wait, the run
-    ///     timeout, and the one place a test has to bound a wait itself.
+    ///     instead of hanging them out to the production cap.
     /// </summary>
     private static readonly TimeSpan Cap = TimeSpan.FromSeconds(10);
 
@@ -144,10 +142,9 @@ public sealed class JbRunYieldIntegrationTests : IDisposable
     [Fact]
     public async Task PreWarm_StartingAfterAForegroundRunHasFinished_RunsAgain()
     {
-        // Arrange — the same ordering a moment later, and the answer is now the opposite one. Standing down
-        // while a call is in flight is the invariant worth keeping; staying down for the rest of the process
-        // was an accident of spelling that invariant as a latch, and it switched the pre-warm off precisely
-        // when a call that had just hit the cap most needed it.
+        // Arrange — the same ordering a moment later, and the answer is the opposite one. Standing down while
+        // a call is in flight is the invariant worth keeping; staying down for the rest of the process, as a
+        // latch would, switches the pre-warm off precisely when a call that has just hit the cap most needs it.
         _probe.ReleaseAll();
         await _runner.RunAsync(_config, ForegroundArguments, Ct);
 
@@ -241,8 +238,8 @@ public sealed class JbRunYieldIntegrationTests : IDisposable
         // Act
         CacheResetOutcome outcome = await _reset.RunAsync(_config, Ct);
 
-        // Assert — a reset runs no jb of its own, which is exactly why the rule written into the class that
-        // runs jb never covered it.
+        // Assert — a reset runs no jb of its own, which is why the precedence cannot live in the class that
+        // runs jb.
         outcome.Dropped.ShouldBe([Path.GetFileName(generation)]);
         Directory.Exists(generation).ShouldBeFalse();
         (await preWarm).ShouldBe(SpeculativeRunOutcome.StoodDown);
@@ -321,7 +318,7 @@ public sealed class JbRunYieldIntegrationTests : IDisposable
         Task<SpeculativeRunOutcome> preWarm = _runner.TryRunAsync(_config, WarmUpArguments, Ct);
         await _probe.WaitForNextStartAsync(Ct);
 
-        // Act — the atomic exchange is now raced by two different *kinds* of caller. Only one can win the
+        // Act — here the atomic exchange is raced by two different *kinds* of caller. Only one can win the
         // pre-warm's claim; the loser must find nothing rather than trip over a half-cleared field.
         Task<CacheResetOutcome> reset = _reset.RunAsync(_config, Ct);
         Task<ProcessResult> foreground = _runner.RunAsync(_config, ForegroundArguments, Ct);
@@ -341,7 +338,7 @@ public sealed class JbRunYieldIntegrationTests : IDisposable
     {
         // Arrange — a pre-warm run to completion. Its source is never disposed, so a caller still holding
         // the reference could cancel it after the fact; withdrawing the claim as the pass ends is what stops
-        // that, and the invariant now has two kinds of caller able to break it.
+        // that, and the invariant has two kinds of caller able to break it.
         _probe.ReleaseAll();
         (await _runner.TryRunAsync(_config, WarmUpArguments, Ct)).ShouldBe(SpeculativeRunOutcome.Completed);
         CancellationToken preWarmToken = _probe.Tokens.ShouldHaveSingleItem();
@@ -379,9 +376,12 @@ public sealed class JbRunYieldIntegrationTests : IDisposable
     /// <summary>
     ///     An <see cref="IProcessRunner" /> that parks each run until the test releases it, counts the ones
     ///     that were cancelled instead, and keeps the token each run was handed so a test can ask whether it
-    ///     was cancelled after the fact. Cancellation is rethrown rather than swallowed, which is what
-    ///     <see cref="ProcessRunner" /> does once it has tree-killed <c>jb</c>.
+    ///     was cancelled after the fact.
     /// </summary>
+    /// <remarks>
+    ///     Cancellation is rethrown rather than swallowed, which is what <see cref="ProcessRunner" /> does once
+    ///     it has tree-killed <c>jb</c>.
+    /// </remarks>
     private sealed class YieldProbe : IProcessRunner
     {
         private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -441,13 +441,13 @@ public sealed class JbRunYieldIntegrationTests : IDisposable
             return JbStubs.Success;
         }
 
-        /// <summary>Wait until one more run has started than the last time this was awaited.</summary>
+        /// <summary>Waits until one more run has started than the last time this was awaited.</summary>
         public Task WaitForNextStartAsync(CancellationToken cancellationToken)
         {
             return _starts.WaitAsync(cancellationToken);
         }
 
-        /// <summary>Let every parked run — and every later one — complete.</summary>
+        /// <summary>Lets every parked run — and every later one — complete.</summary>
         public void ReleaseAll()
         {
             _release.TrySetResult();

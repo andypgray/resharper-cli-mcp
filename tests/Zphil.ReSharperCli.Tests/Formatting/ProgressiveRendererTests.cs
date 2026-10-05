@@ -4,13 +4,7 @@ using Zphil.ReSharperCli.Formatting;
 
 namespace Zphil.ReSharperCli.Tests.Formatting;
 
-/// <summary>
-///     Ported from roz's <c>ProgressiveRendererTests</c>: the renderer steps down through the ordered
-///     <see cref="DetailLevel" />s until the output fits, returns <see cref="DetailLevel.Full" /> verbatim
-///     when it fits, appends a <c>--- DETAIL REDUCED ---</c> note otherwise (the note counts toward the fit
-///     check), skips byte-identical levels (by content, not length), and falls back to the smallest
-///     rendering plus the note when nothing fits so the char-level truncator can finish the job.
-/// </summary>
+/// <summary>Pins how <see cref="ProgressiveRenderer" /> walks the <see cref="DetailLevel" /> ladder.</summary>
 public sealed class ProgressiveRendererTests
 {
     [Theory]
@@ -70,7 +64,7 @@ public sealed class ProgressiveRendererTests
     [Fact]
     public void Render_AllLevelsExceed_ReturnsMinimalForFailsafe()
     {
-        // Arrange — every level exceeds the limit.
+        // Arrange
         ProgressiveRendering rendering = ProgressiveRenderer.Render("input", (_, _) => new string('x', 200), 100);
 
         // Assert — the note is appended but the output still exceeds the limit; ResponseTruncator finishes.
@@ -249,7 +243,8 @@ public sealed class ProgressiveRendererTests
             400,
             startLevel: DetailLevel.Low).Text;
 
-        // Assert — below the cap the budget is what decided, and the note reads as it always has.
+        // Assert — below the cap the budget is what decided, so the note names the character limit as an
+        // uncapped render's does.
         result.ShouldContain("Output exceeded the 400 character limit. Reduced to Minimal");
         result.ShouldNotContain("requested detail level");
     }

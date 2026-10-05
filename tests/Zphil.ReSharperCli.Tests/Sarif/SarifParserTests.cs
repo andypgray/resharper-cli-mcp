@@ -144,10 +144,10 @@ public sealed class SarifParserTests
     }
 
     /// <summary>
-    ///     A property found these; each is pinned here so the regression is nailed to a named input rather
-    ///     than left to a generator redrawing it. <c>file://[zz]/</c> is the one it falsified on first — a
-    ///     malformed IPv6 literal, which <see cref="Uri" /> rejects outright. A bare <c>file://</c> is
-    ///     deliberately not among them: it parses, to a local path of <c>/</c>, so it is not this case at all.
+    ///     Counterexamples to the URI property in <see cref="SarifParserPropertyTests" />, pinned so the regression
+    ///     is nailed to a named input rather than left to a generator redrawing it. <c>file://[zz]/</c> is a
+    ///     malformed IPv6 literal, which <see cref="Uri" /> rejects outright. A bare <c>file://</c> is deliberately
+    ///     not among them: it parses, to a local path of <c>/</c>, so it is not this case at all.
     /// </summary>
     [Theory]
     [InlineData("file://[zz]/")]

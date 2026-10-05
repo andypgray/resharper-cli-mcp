@@ -5,35 +5,8 @@ namespace Zphil.ReSharperCli.Pipeline;
 
 /// <summary>
 ///     <see cref="JsonSerializerOptions" /> used by <c>AIFunctionFactory</c> when marshalling
-///     JSON-RPC tool-call arguments into typed parameters. Custom converter factories replace
-///     SDK defaults that would otherwise surface user-facing input errors as opaque
-///     deserializer messages:
-///     <list type="bullet">
-///         <item>
-///             <description>
-///                 <see cref="EnumValidationConverterFactory" /> — invalid enum names throw
-///                 <see cref="UserErrorException" /> listing every valid value, so the client
-///                 can self-correct on the next call instead of seeing a generic JSON parse error.
-///             </description>
-///         </item>
-///         <item>
-///             <description>
-///                 <see cref="StringArrayCoercerFactory" /> — silently coerces stringified arrays
-///                 (<c>"[\"A\",\"B\"]"</c>) and bare strings (<c>"A"</c>) into the
-///                 <c>string[]</c> the model intended, instead of failing with a byte-position
-///                 deserializer error that gives the model nothing actionable.
-///             </description>
-///         </item>
-///         <item>
-///             <description>
-///                 <see cref="StringCoercerFactory" /> — the symmetric counterpart: silently
-///                 unwraps a single-element array (<c>["A"]</c>) into the scalar <c>string</c>
-///                 the model intended, and coerces an empty array (<c>[]</c>) to <c>null</c>.
-///                 Multi-element arrays and non-string tokens still throw
-///                 <see cref="UserErrorException" /> naming the offending token kind.
-///             </description>
-///         </item>
-///     </list>
+///     JSON-RPC tool-call arguments into typed parameters. Its converter factories replace SDK defaults
+///     that would otherwise surface user-facing input errors as opaque deserializer messages.
 /// </summary>
 /// <remarks>
 ///     An explicit <see cref="DefaultJsonTypeInfoResolver" /> is required on .NET 10 because

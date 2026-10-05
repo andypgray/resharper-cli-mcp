@@ -28,7 +28,10 @@ namespace Zphil.ReSharperCli.Execution;
 /// </remarks>
 internal sealed class ProcessRunner(ChildProcessLifetime childLifetime, ILogger<ProcessRunner> logger) : IProcessRunner
 {
-    /// <summary>Cap captured stdout/stderr at 10&#160;MB each; past the cap we keep draining but stop appending.</summary>
+    /// <summary>
+    ///     The cap on captured stdout/stderr, 10&#160;MB each; past it the reader keeps draining but stops
+    ///     appending.
+    /// </summary>
     private const int MaxCapturedChars = 10 * 1024 * 1024;
 
     /// <summary>How much of a pipe is taken in one read.</summary>
@@ -42,12 +45,12 @@ internal sealed class ProcessRunner(ChildProcessLifetime childLifetime, ILogger<
     private const int MaxCarriedLineChars = 8192;
 
     /// <summary>
-    ///     How long a killed process tree is given to be reaped before this gives up on it and unwinds. Named
-    ///     rather than left inline because it is the width of a window the rest of the server can see: a run
-    ///     cancelled here holds its cache-generation lease until this has elapsed, so
-    ///     <c>CacheTransplanter</c> derives from it how long to wait for a donor that a caller may itself
-    ///     have just cancelled.
+    ///     How long a killed process tree is given to be reaped before this gives up on it and unwinds.
     /// </summary>
+    /// <remarks>
+    ///     Shared rather than left inline because it is the width of a window the rest of the server can see:
+    ///     a run cancelled here holds its cache-generation lease until this has elapsed.
+    /// </remarks>
     internal static readonly TimeSpan KilledTreeReapBudget = TimeSpan.FromSeconds(5);
 
     /// <inheritdoc />
@@ -203,7 +206,7 @@ internal sealed class ProcessRunner(ChildProcessLifetime childLifetime, ILogger<
         StringBuilder builder = new();
         var buffer = new char[ReadChunkChars];
 
-        // Only allocated when someone is watching, so the ordinary capture-only read is exactly what it was.
+        // Only allocated when someone is watching, so the ordinary capture-only read allocates nothing extra.
         StringBuilder? carry = onLine is null ? null : new StringBuilder();
 
         try
@@ -238,7 +241,7 @@ internal sealed class ProcessRunner(ChildProcessLifetime childLifetime, ILogger<
     }
 
     /// <summary>
-    ///     Split <paramref name="chunk" /> on newlines, emitting each complete line and leaving the remainder
+    ///     Splits <paramref name="chunk" /> on newlines, emitting each complete line and leaving the remainder
     ///     in <paramref name="carry" /> for the next chunk.
     /// </summary>
     private void EmitLines(ReadOnlySpan<char> chunk, StringBuilder carry, Action<string> onLine)
@@ -257,11 +260,13 @@ internal sealed class ProcessRunner(ChildProcessLifetime childLifetime, ILogger<
     }
 
     /// <summary>
-    ///     Hand what has been carried so far to <paramref name="onLine" /> as one line, and reset the carry.
+    ///     Hands what has been carried so far to <paramref name="onLine" /> as one line, and resets the carry.
+    /// </summary>
+    /// <remarks>
     ///     <c>jb</c> writes CRLF, so the trailing carriage return is dropped here rather than left for every
     ///     consumer to trim — off the carry before materializing, since trimming the string instead would
     ///     recopy every line on a stream where every line ends in one.
-    /// </summary>
+    /// </remarks>
     private void EmitLine(StringBuilder carry, Action<string> onLine)
     {
         if (carry.Length > 0 && carry[^1] == '\r') carry.Length--;
@@ -276,17 +281,19 @@ internal sealed class ProcessRunner(ChildProcessLifetime childLifetime, ILogger<
         catch (Exception exception)
         {
             // This runs on the loop that keeps the child from blocking on a full pipe, so a throwing observer
-            // must not be able to stop the drain. Debug because the caller in this server — JbRunProgress —
-            // is documented never to throw, which makes anything here a defect rather than an expected state.
+            // must not be able to stop the drain. Debug because an observer is required never to throw (see
+            // IProcessRunner.RunAsync), which makes anything here a defect rather than an expected state.
             logger.LogDebug(exception, "An output-line observer threw while draining a child process; the drain continues");
         }
     }
 
     /// <summary>
-    ///     Add <paramref name="text" /> to the carried line, stopping at <see cref="MaxCarriedLineChars" />.
+    ///     Adds <paramref name="text" /> to the carried line, stopping at <see cref="MaxCarriedLineChars" />.
+    /// </summary>
+    /// <remarks>
     ///     Past the bound the rest of that line is dropped and the next newline resynchronises, so a stream
     ///     with no line breaks costs a bounded buffer rather than an unbounded one.
-    /// </summary>
+    /// </remarks>
     private static void Append(StringBuilder carry, ReadOnlySpan<char> text)
     {
         int room = MaxCarriedLineChars - carry.Length;

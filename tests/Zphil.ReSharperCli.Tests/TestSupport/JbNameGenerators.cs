@@ -3,14 +3,13 @@ using FsCheck.Fluent;
 
 namespace Zphil.ReSharperCli.Tests.TestSupport;
 
-/// <summary>
-///     Generators for the names <c>jb</c>'s undocumented cache layout is built from — solution file names,
-///     the signed hash it derives from a solution's path, and generation numbers. Each one is constrained to
-///     the domain the code under test documents rather than to "any string", because a property whose
-///     generator wanders outside that domain proves nothing about the invariant and fails for the wrong
-///     reason. Where a known-hostile shape exists (a name carrying dots, a negative hash), it is unioned into
-///     the random draw so every seed hits it rather than most seeds missing it.
-/// </summary>
+/// <summary>Generators for the names <c>jb</c>'s undocumented cache layout is built from.</summary>
+/// <remarks>
+///     Each one is constrained to the domain the code under test documents rather than to "any string",
+///     because a property whose generator wanders outside that domain proves nothing about the invariant and
+///     fails for the wrong reason. Where a known-hostile shape exists (a name carrying dots, a negative hash),
+///     it is unioned into the random draw so every seed hits it rather than most seeds missing it.
+/// </remarks>
 internal static class JbNameGenerators
 {
     /// <summary>Names that have actually appeared in a cache home, hit on every seed rather than waited for.</summary>
@@ -18,10 +17,13 @@ internal static class JbNameGenerators
 
     /// <summary>
     ///     A solution file name without its extension: one to three dot-joined segments of ASCII letters,
-    ///     digits, <c>-</c> and <c>_</c>. Dots are the interesting part — they are ordinary in a solution name
-    ///     and are also the character the generation-directory scheme separates on, which is the whole reason
-    ///     the parser cannot simply split on them.
+    ///     digits, <c>-</c> and <c>_</c>.
     /// </summary>
+    /// <remarks>
+    ///     Dots are the interesting part — they are ordinary in a solution name and are also the character the
+    ///     generation-directory scheme separates on, which is the whole reason the parser cannot simply split
+    ///     on them.
+    /// </remarks>
     internal static Gen<string> SolutionName()
     {
         Gen<string> composed = Gen.Choose(1, 3)
@@ -33,9 +35,12 @@ internal static class JbNameGenerators
 
     /// <summary>
     ///     A hash as <c>jb</c> renders it into a directory name: an optionally negative run of one to ten
-    ///     ASCII digits. Negative values are about half of the real ones, so they are drawn deliberately
-    ///     rather than left to chance.
+    ///     ASCII digits.
     /// </summary>
+    /// <remarks>
+    ///     Negative values are about half of the real ones, so they are drawn deliberately rather than left to
+    ///     chance.
+    /// </remarks>
     private static Gen<string> CacheHash()
     {
         Gen<string> digits = Gen.Choose(1, 10)
@@ -47,18 +52,19 @@ internal static class JbNameGenerators
 
     /// <summary>
     ///     A generation number: <c>00</c> for the first, and the higher ones <c>jb</c> forks when it cannot
-    ///     open the generation it wanted. Non-negative and zero-padded, matching what appears on disk.
+    ///     open the generation it wanted.
     /// </summary>
+    /// <remarks>Non-negative and zero-padded, matching what appears on disk.</remarks>
     private static Gen<string> GenerationNumber()
     {
         return Gen.Choose(0, 99).Select(generation => generation.ToString("00"));
     }
 
-    /// <summary>
-    ///     A POSIX-shaped absolute path to a solution file. Forward slashes only, so the same generated path
-    ///     is a legal argument on both platforms and no property built on it can assert something that is
-    ///     only true on one of them.
-    /// </summary>
+    /// <summary>A POSIX-shaped absolute path to a solution file.</summary>
+    /// <remarks>
+    ///     Forward slashes only, so the same generated path is a legal argument on both platforms and no
+    ///     property built on it can assert something that is only true on one of them.
+    /// </remarks>
     internal static Gen<string> SolutionPath()
     {
         Gen<List<string>> directories = Gen.Choose(1, 3)
@@ -74,9 +80,12 @@ internal static class JbNameGenerators
 
     /// <summary>
     ///     The directory name <c>jb</c> gives a generation of <paramref name="solutionName" />: the
-    ///     <c>_{name}.{hash}.{generation}</c> shape, composed here so a property can hand the parser a name
-    ///     that is provably well formed rather than one hand-spelled per test.
+    ///     <c>_{name}.{hash}.{generation}</c> shape.
     /// </summary>
+    /// <remarks>
+    ///     Composed here so a property can hand the parser a name that is provably well formed rather than one
+    ///     hand-spelled per test.
+    /// </remarks>
     internal static Gen<(string DirectoryName, string Hash)> GenerationDirectoryName(string solutionName)
     {
         return CacheHash().SelectMany(
@@ -87,11 +96,14 @@ internal static class JbNameGenerators
     /// <summary>
     ///     <paramref name="name" /> respelt in another case: each <c>A</c>–<c>Z</c> or <c>a</c>–<c>z</c>
     ///     character independently kept, upper-cased or lower-cased, and every other character left exactly
-    ///     as it is — a non-ASCII letter included, because folding one is the mistake the code this feeds
-    ///     must not make. The whole-string variants are unioned in so the identity spelling and the two
-    ///     extremes are drawn on every seed rather than waited for: where a case-insensitive invariant only
-    ///     holds on one platform, identity is what still exercises the assertion on the others.
+    ///     as it is.
     /// </summary>
+    /// <remarks>
+    ///     A non-ASCII letter is left as it is too, because folding one is the mistake the code this feeds must
+    ///     not make. The whole-string variants are unioned in so the identity spelling and the two extremes are
+    ///     drawn on every seed rather than waited for: where a case-insensitive invariant only holds on one
+    ///     platform, identity is what still exercises the assertion on the others.
+    /// </remarks>
     internal static Gen<string> AsciiCaseVariant(string name)
     {
         Gen<string> perCharacter = Gen.CollectToArray(name, AsciiCaseVariantsOf)

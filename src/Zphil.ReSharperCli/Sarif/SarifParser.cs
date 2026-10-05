@@ -11,11 +11,13 @@ internal static class SarifParser
     private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web);
 
     /// <summary>
-    ///     Parse SARIF JSON from <paramref name="sarif" /> into structured issues (empty list if there are
-    ///     none). Deserializing straight off the stream matters at this input's scale: a solution-wide run's
-    ///     SARIF is multi-megabyte, and reading it into a string first would transiently hold the bytes, the
-    ///     UTF-16 copy, and the transcode back to UTF-8 all at once.
+    ///     Parses SARIF JSON from <paramref name="sarif" /> into structured issues.
     /// </summary>
+    /// <remarks>
+    ///     Deserializing straight off the stream matters at this input's scale: a solution-wide run's SARIF is
+    ///     multi-megabyte, and reading it into a string first would transiently hold the bytes, the UTF-16
+    ///     copy, and the transcode back to UTF-8 all at once.
+    /// </remarks>
     public static async Task<List<InspectIssue>> ParseAsync(Stream sarif, CancellationToken cancellationToken)
     {
         var report = await JsonSerializer.DeserializeAsync<SarifReport>(sarif, Options, cancellationToken);
@@ -23,7 +25,7 @@ internal static class SarifParser
         return ExtractIssues(report);
     }
 
-    /// <summary>Parse SARIF JSON content into structured issues (empty list if there are none).</summary>
+    /// <summary>Parses SARIF JSON content into structured issues.</summary>
     public static List<InspectIssue> Parse(string json)
     {
         var report = JsonSerializer.Deserialize<SarifReport>(json, Options);
@@ -48,7 +50,7 @@ internal static class SarifParser
         return issues;
     }
 
-    /// <summary>Map a SARIF severity level to the label surfaced to the client.</summary>
+    /// <summary>Maps a SARIF severity level to the label surfaced to the client.</summary>
     public static string MapSeverity(string? level)
     {
         return level switch

@@ -7,14 +7,12 @@ using Zphil.ReSharperCli.Tests.TestDoubles;
 namespace Zphil.ReSharperCli.Tests.Execution;
 
 /// <summary>
-///     The heartbeat: that it beats at once, keeps beating, never beats twice at once, survives a sink that
-///     throws, and — the one that matters most — stops dead at disposal.
+///     Pins the <see cref="JbRunProgress" /> heartbeat, above all that it stops dead at disposal.
 /// </summary>
 /// <remarks>
-///     The last of those is not tidiness. A beat that lands after the call it reports has been answered
-///     reaches a <c>ProgressSink</c> that has already closed, so what it costs is a message silently dropped;
-///     stopping dead at disposal is what keeps the run's last word ahead of the result rather than lost behind
-///     it.
+///     That is not tidiness. A beat that lands after the call it reports has been answered reaches a
+///     <c>ProgressSink</c> that has already closed, so what it costs is a message silently dropped; stopping
+///     dead at disposal is what keeps the run's last word ahead of the result rather than lost behind it.
 /// </remarks>
 public sealed class JbRunProgressTests
 {
@@ -76,8 +74,8 @@ public sealed class JbRunProgressTests
     public async Task Beats_TheFirstOneIsSlow_NeverOverlapTheOnesQueuedBehindIt()
     {
         // Arrange — a beat that outlasts its interval, so the timer queues more callbacks while it runs.
-        // System.Threading.Timer does not serialize them, and a starved thread pool is exactly the condition
-        // that made this reachable in the field.
+        // System.Threading.Timer does not serialize them, and a starved thread pool makes this reachable in the
+        // field.
         Sink sink = new() { Dawdle = TimeSpan.FromMilliseconds(150) };
 
         // Act — several intervals fit inside the first beat.
@@ -173,8 +171,8 @@ public sealed class JbRunProgressTests
     [Fact]
     public async Task OnOutputLine_TheSecondSweep_RestartsTheCountRatherThanCarryingIt()
     {
-        // Arrange — jb's two sweeps report different totals for the same solution (1,332 analysed against 882
-        // inspected on one measured run), so a running total would be a number matching nothing jb said.
+        // Arrange — jb's two sweeps report different totals for the same solution, so a running total would be
+        // a number matching nothing jb said.
         Sink sink = new();
         await using JbRunProgress progress = Build(sink);
 
@@ -243,9 +241,9 @@ public sealed class JbRunProgressTests
     [Fact]
     public async Task Reporting_ASink_RendersBeatsThroughTheRunProgressFormatter()
     {
-        // Arrange — the one place a snapshot becomes prose, shared by every caller that reports itself. What
-        // reaches the sink is already the line RunProgressFormatter writes, which is what keeps a run's
-        // phases from having to be understood anywhere above here.
+        // Arrange — the one place a snapshot becomes prose: what reaches the sink is already the line
+        // RunProgressFormatter writes, which is what keeps a run's phases from having to be understood anywhere
+        // above here.
         RecordingSink<string> lines = new(Generous);
 
         // Act — labelled as the cache reset, the caller that has a queue wait and no jb at all.
@@ -280,7 +278,7 @@ public sealed class JbRunProgressTests
         /// <summary>When set, every beat throws — a sink that cannot be allowed to end the run.</summary>
         public bool Throw { get; init; }
 
-        /// <summary>When set, every beat blocks for this long, so disposal overlaps one in flight.</summary>
+        /// <summary>When set, every beat blocks for this long, holding a beat in flight.</summary>
         public TimeSpan Dawdle { get; init; }
 
         /// <summary>The most beats ever inside this sink at the same moment — one, if they are serialized.</summary>

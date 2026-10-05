@@ -17,11 +17,8 @@ namespace Zphil.ReSharperCli.Tests.Infrastructure;
 ///     The two lines that bracket a server process, and the fields the first of them exists for.
 /// </summary>
 /// <remarks>
-///     Every field on the fingerprint was a question the log could not answer, and the run cap is the one that
-///     motivated it: an operator who set <c>RESHARPER_MCP_TIMEOUT_SECS</c> in a client config had no way to
-///     confirm the server ever read it, and a value the client did not pass through looked exactly like one
-///     that was ignored. So the assertion is that the cap <em>reported</em> is the cap the composition root
-///     resolved, not merely that a line was written.
+///     The assertion is that the cap <em>reported</em> is the cap the composition root resolved, not merely
+///     that a line was written.
 /// </remarks>
 public sealed class ServerLifecycleTests : IDisposable
 {
@@ -67,8 +64,8 @@ public sealed class ServerLifecycleTests : IDisposable
     {
         // Arrange — asserted against the lifetime the fingerprint was built over rather than a literal, since
         // the answer is a property of the platform. What is pinned is that the line reports the guarantee in
-        // force: a job object that failed to create leaves a server behaving exactly as it did before, and
-        // this field is the only place that difference is ever visible.
+        // force: a job object that failed to create leaves a server behaving exactly like one with no guard,
+        // and this field is the only place that difference is ever visible.
         ServerLifecycle lifecycle = Lifecycle();
 
         // Act

@@ -9,10 +9,8 @@ using Zphil.ReSharperCli.Tests.TestSupport;
 namespace Zphil.ReSharperCli.Tests.Execution;
 
 /// <summary>
-///     <see cref="JbRunSlot" /> exists so one server never has two <c>jb</c> processes in flight, whichever
-///     solutions they are against. A run is a whole-solution multi-core analysis, so two of them share the
-///     machine rather than the work: what <see cref="JbRunLock" /> cannot see, because different solutions
-///     are different cache generations and pass it uncontended, is exactly what these pin.
+///     Pins that <see cref="JbRunSlot" /> never lets one server have two <c>jb</c> processes in flight,
+///     whichever solutions they are against.
 /// </summary>
 public sealed class JbRunSlotTests
 {
@@ -141,7 +139,7 @@ public sealed class JbRunSlotTests
         JbRunSlot slot = JbRunners.Slot(Logs.Capturing(logs));
         IDisposable held = await slot.TakeAsync("cleanupcode", OtherSolutionPath, Ct);
 
-        // Act — released past JbRunLock.NotableWait, the same threshold the lock judges its own waits by.
+        // Act
         Task<IDisposable> queued = slot.TakeAsync(Subcommand, SolutionPath, Ct);
         await Task.Delay(JbRunLock.NotableWait + HeldFor, Ct);
         held.Dispose();

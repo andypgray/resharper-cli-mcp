@@ -40,7 +40,7 @@ The test project has exactly two fakeable seams, worth understanding before you 
 - `IProcessRunner` is the only process-spawning seam, faked with NSubstitute. A test that needs `jb` output has the substitute return a canned `ProcessResult`, or, for the inspect round trip, write a SARIF fixture to the `-o=` path it received. No test in the unit suite spawns a real `jb`; the contract suite below is the one that does.
 - `IEnvironment` is the only environment seam, backed by a hand-rolled `FakeEnvironment` whose current and home directories point at per-test temp dirs. Every environment variable, current directory, and home directory read in product code goes through it.
 
-No test mutates the real process environment. A `SetEnvironmentVariable` call in a test is a defect: it would break the parallel run, which depends on every environment read being routed through `IEnvironment`. Two places spawn real processes: `ProcessRunnerTests`, which uses `dotnet` and `ping`/`sleep`, and the contract suite, which uses `dotnet` and `jb`.
+No test mutates the real process environment. A `SetEnvironmentVariable` call in a test is a defect: it would break the parallel run, which depends on every environment read being routed through `IEnvironment`. Real processes are spawned in two places: the tests of the spawning layer itself (`ProcessRunnerTests`, `WindowsJobObjectTests` and `ChildProcessLifetimeTests`), which start `dotnet` and system commands such as `cmd`, `ping` and `sleep`, and the contract suite, which starts `dotnet` and `jb`.
 
 SARIF fixtures live under `tests/Zphil.ReSharperCli.Tests/Fixtures/Sarif/` and are copied to the output directory as content.
 

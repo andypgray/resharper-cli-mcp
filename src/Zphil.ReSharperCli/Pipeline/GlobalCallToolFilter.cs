@@ -115,20 +115,25 @@ internal static class GlobalCallToolFilter
 
     /// <summary>
     ///     The logger this filter writes through, or <see langword="null" /> when the host has no logging at
-    ///     all. Resolved per call from the request's own provider — the same route this filter has always used
-    ///     to reach services, and the only one available to a filter registered as a delegate.
+    ///     all.
     /// </summary>
+    /// <remarks>
+    ///     Resolved per call from the request's own provider, the only route available to a filter registered
+    ///     as a delegate.
+    /// </remarks>
     private static ILogger? LoggerFor(RequestContext<CallToolRequestParams> context)
     {
         return context.Server.Services?.GetService<ILoggerFactory>()?.CreateLogger(typeof(GlobalCallToolFilter));
     }
 
     /// <summary>
-    ///     Close the envelope: which tool, how it ended, and how long the whole call took. At <c>Debug</c>, as
-    ///     the level policy has it — the caching events inside the call are what <c>Information</c> is for. It
-    ///     nonetheless replaces something real, the SDK's own <c>request handler completed in Nms</c> line,
-    ///     which was the only timing the log carried before the frameworks were quieted.
+    ///     Closes the envelope: which tool, how it ended, and how long the whole call took.
     /// </summary>
+    /// <remarks>
+    ///     At <c>Debug</c>, as the level policy has it — the caching events inside the call are what
+    ///     <c>Information</c> is for. It stands in for the SDK's own <c>request handler completed in Nms</c>
+    ///     line, which the quieted framework categories suppress.
+    /// </remarks>
     private static void ReportCompletion(ILogger? logger, string toolName, Stopwatch elapsed, string outcome)
     {
         logger?.LogDebug(
@@ -136,10 +141,12 @@ internal static class GlobalCallToolFilter
     }
 
     /// <summary>
-    ///     Whether the last-resort truncator actually bit, and by how much. Silent when it did not: the
-    ///     rendering ladder having already fitted the response is the ordinary case, and the interesting
-    ///     event is the one where even <c>Minimal</c> overflowed.
+    ///     Logs whether the last-resort truncator actually bit, and by how much.
     /// </summary>
+    /// <remarks>
+    ///     Silent when it did not: the rendering ladder having already fitted the response is the ordinary
+    ///     case, and the interesting event is the one where even <c>Minimal</c> overflowed.
+    /// </remarks>
     private static void ReportShaping(ILogger? logger, int before, int after, int maxChars)
     {
         if (before == after) return;
@@ -153,13 +160,13 @@ internal static class GlobalCallToolFilter
 
     /// <summary>
     ///     The shape of the arguments a call arrived with, without their values: which keys, and how many
-    ///     entries in each array. String content is never printed, whatever its key — this line runs ahead of
-    ///     binding, so every value is unvalidated caller input and any of them can carry a path. Vouching for
-    ///     kinds rather than key names is what keeps "no caller path in the log" true for parameters this
-    ///     filter has never heard of. What a call resolved to is written by the frames that resolved it:
-    ///     the solution by <c>ConfigResolver</c>, the severity and profile by the <c>jb</c> command line, at
-    ///     this same level.
+    ///     entries in each array.
     /// </summary>
+    /// <remarks>
+    ///     String content is never printed, whatever its key — this line runs ahead of binding, so every value
+    ///     is unvalidated caller input and any of them can carry a path. Vouching for kinds rather than key
+    ///     names is what keeps "no caller path in the log" true for parameters this filter has never heard of.
+    /// </remarks>
     private static string Describe(IDictionary<string, JsonElement>? arguments)
     {
         if (arguments is null or { Count: 0 }) return "no arguments";

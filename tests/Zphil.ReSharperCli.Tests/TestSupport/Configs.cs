@@ -13,10 +13,10 @@ namespace Zphil.ReSharperCli.Tests.TestSupport;
 /// </remarks>
 internal static class Configs
 {
-    /// <summary>
-    ///     <paramref name="jbVersion" /> defaults to none — the off switch for everything keyed by it, so a
-    ///     test that does not care about builds reads exactly as it did before the marker recorded one.
-    /// </summary>
+    /// <param name="jbVersion">
+    ///     Defaults to none — the off switch for everything keyed by it, so a test that does not care about
+    ///     builds need not name one.
+    /// </param>
     public static ResolvedConfig Bare(string solutionPath, string cacheHome, string? jbVersion = null)
     {
         return With(solutionPath, cacheHome, jbVersion: jbVersion);

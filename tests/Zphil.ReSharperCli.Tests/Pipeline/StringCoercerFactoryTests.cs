@@ -6,10 +6,7 @@ using Zphil.ReSharperCli.Pipeline;
 namespace Zphil.ReSharperCli.Tests.Pipeline;
 
 /// <summary>
-///     Tests for <see cref="StringCoercerFactory" />: every <c>string</c>/<c>string?</c> tool
-///     parameter accepts a plain string, a single-element array (unwrapped), or an empty array
-///     (treated as <c>null</c>), and rejects everything else with a friendly
-///     <see cref="UserErrorException" />.
+///     Pins the token shapes <see cref="StringCoercerFactory" /> accepts and the errors it raises for the rest.
 /// </summary>
 public sealed class StringCoercerFactoryTests
 {

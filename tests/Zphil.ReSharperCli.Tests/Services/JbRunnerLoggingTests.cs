@@ -16,9 +16,8 @@ namespace Zphil.ReSharperCli.Tests.Services;
 /// </summary>
 /// <remarks>
 ///     <para>
-///         This is the record a week of field logs could not produce. A 552-second <c>resharper_inspect</c>
-///         appeared there with no way to say whether it had been cold, seeded, or queued behind another
-///         session, because the only timing in the file came from the MCP SDK and said nothing about the
+///         Without the pair, nothing says whether a slow call was cold, seeded, or queued behind another
+///         session, because the only other timing in the log comes from the MCP SDK and says nothing about the
 ///         cache. Both halves of the pair are pinned: the opening line, whose value is that it exists
 ///         <em>before</em> minutes of silence and carries the two facts that predict them, and the closing
 ///         one, which says how it actually ended.
@@ -26,8 +25,7 @@ namespace Zphil.ReSharperCli.Tests.Services;
 ///     <para>
 ///         Every ending is a line, including the two that are not a clean exit. A run killed at the cap and a
 ///         speculative pass stood down both leave the process without an exit code, and a log that recorded
-///         only clean exits would show those runs starting and never finishing — which is exactly the shape
-///         the pre-warm's own logging had, and the reason it was unreadable.
+///         only clean exits would show those runs starting and never finishing.
 ///     </para>
 /// </remarks>
 public sealed class JbRunnerLoggingTests : IDisposable
@@ -143,8 +141,7 @@ public sealed class JbRunnerLoggingTests : IDisposable
     {
         // Arrange — the whole plumbing in one run: the marker this generation carries names the build that
         // warmed it, the config names the build about to open it, and the two disagree. Everything on disk
-        // says warm, and jb is about to rebuild it in place — 220 seconds against the 64 its own second run
-        // took, measured across one patch bump.
+        // says warm, and jb is about to rebuild it in place, at several times the cost of a warm run.
         CacheHomes.PlantWarmDonor(_cacheHome, _solutionPath, "2026.2.0.2");
         StubExit(0);
 
@@ -189,17 +186,17 @@ public sealed class JbRunnerLoggingTests : IDisposable
     [Fact]
     public async Task RunAsync_SecondColdRunOfASolution_OpensNamingWhatTheFirstOneCost()
     {
-        // Arrange — the pair of runs the feature exists for. Neither leaves a generation behind, so both read
-        // the cache as cold and the second is genuinely comparable to the first.
+        // Arrange — the pair of runs the cost record exists for. Neither leaves a generation behind, so both
+        // read the cache as cold and the second is genuinely comparable to the first.
         StubExit(0);
 
         // Act
         await Runner().RunAsync(Config, ["inspectcode", _solutionPath], Ct);
         await Runner().RunAsync(Config, ["inspectcode", _solutionPath], Ct);
 
-        // Assert — the first run has nothing to quote and reads exactly as it did before any of this existed;
-        // the second carries the figure, keyed by the band. A stubbed run finishes in microseconds, which
-        // rounds and clamps to one second on both sides of the record.
+        // Assert — the first run has nothing to quote and reads as a plain cold line; the second carries the
+        // figure, keyed by the band. A stubbed run finishes in microseconds, which rounds and clamps to one
+        // second on both sides of the record.
         IReadOnlyList<LogEntry> opened = _logs.WithProperty("CacheState");
         opened.Count.ShouldBe(2);
         opened[0].Property("CacheState").ShouldBe("cold (none on disk)");
@@ -209,9 +206,8 @@ public sealed class JbRunnerLoggingTests : IDisposable
     [Fact]
     public async Task RunAsync_SecondWarmRunOfASolution_OpensWithoutAFigure()
     {
-        // Arrange — the same pair of runs against a warm cache instead of a cold one. Measured over 31 warm
-        // runs on two solutions, the first run's duration predicted the second's within a factor of two 9
-        // times, so the second line says what state the cache is in and stops there.
+        // Arrange — the same pair of runs against a warm cache instead of a cold one. A warm run's duration
+        // does not predict the next one's, so the second line says what state the cache is in and stops there.
         CacheHomes.PlantWarmDonor(_cacheHome, _solutionPath);
         StubExit(0);
 
@@ -219,7 +215,7 @@ public sealed class JbRunnerLoggingTests : IDisposable
         await Runner().RunAsync(Config, ["inspectcode", _solutionPath], Ct);
         await Runner().RunAsync(Config, ["inspectcode", _solutionPath], Ct);
 
-        // Assert — both lines read the way the warm arm read before any figure was ever recorded.
+        // Assert
         IReadOnlyList<LogEntry> opened = _logs.WithProperty("CacheState");
         opened.Count.ShouldBe(2);
         var second = opened[1].Property("CacheState").ShouldBeOfType<string>();
@@ -242,7 +238,8 @@ public sealed class JbRunnerLoggingTests : IDisposable
                 throw new ProcessTimeoutException("'jb' timed out.");
             });
 
-        // Act
+        // Act — with a progress callback, even one that drops every line: the runner watches jb's output only
+        // when it has somewhere to report progress, so without one there is no count to log.
         await Should.ThrowAsync<UserErrorException>(() => Runner().RunAsync(Config, ["inspectcode", _solutionPath], Ct, _ => { }));
 
         // Assert — no exit code to report, so the cap is reported instead, at the same level, and identified

@@ -30,8 +30,7 @@ internal sealed record SarifArtifactLocation(string? Uri);
 internal sealed record SarifRegion(int? StartLine, int? EndLine);
 
 /// <summary>
-///     A single inspection issue, flattened from one SARIF result's first location and ready for the
-///     markdown formatter.
+///     A single inspection issue, flattened from one SARIF result's first location.
 /// </summary>
 internal sealed record InspectIssue(
     string File,

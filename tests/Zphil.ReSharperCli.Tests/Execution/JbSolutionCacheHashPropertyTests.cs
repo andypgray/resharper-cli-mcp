@@ -11,11 +11,14 @@ namespace Zphil.ReSharperCli.Tests.Execution;
 ///     The two halves of <c>jb</c>'s undocumented naming scheme have to agree, and nothing but a test says
 ///     so: <see cref="JbSolutionCacheHash" /> writes a generation directory's name and
 ///     <see cref="JbCacheGenerations" /> reads one, in different files, against a scheme neither of them
-///     owns. Composing a name and parsing it back is the round trip that holds them together — and it also
-///     says that whatever rendering <see cref="JbSolutionCacheHash.Compute" /> produces for a path, the
-///     parser accepts it, which is where a negative hash would otherwise slip through.
+///     owns.
 /// </summary>
 /// <remarks>
+///     <para>
+///         Composing a name and parsing it back is the round trip that holds them together — and it also says
+///         that whatever rendering <see cref="JbSolutionCacheHash.Compute" /> produces for a path, the parser
+///         accepts it, which is where a negative hash would otherwise slip through.
+///     </para>
 ///     <para>
 ///         The case-folding properties assert both a collision and its absence, which for a hash would
 ///         normally take a probabilistic hedge. Here it does not, because the hash is linear and the
@@ -39,7 +42,7 @@ namespace Zphil.ReSharperCli.Tests.Execution;
 public sealed class JbSolutionCacheHashPropertyTests
 {
     /// <summary>
-    ///     Paths carrying the characters the fold has to leave alone: every ASCII letter in both cases, both
+    ///     Paths carrying the characters the fold has to get right: every ASCII letter in both cases, both
     ///     separators, and cased letters from outside ASCII — <c>ß</c> and the dotted and dotless <c>i</c>
     ///     because they are where culture-aware casing misbehaves, the Kelvin sign because
     ///     <see cref="char.ToLowerInvariant(char)" /> maps it onto plain <c>k</c>.
@@ -134,9 +137,12 @@ public sealed class JbSolutionCacheHashPropertyTests
 
     /// <summary>
     ///     Whether the fold under test maps both characters onto one: ASCII letters that agree once
-    ///     lower-cased, and nothing else. Written from the rule rather than by calling the code under test,
-    ///     so a fold that widens is a failure rather than a tautology.
+    ///     lower-cased, and nothing else.
     /// </summary>
+    /// <remarks>
+    ///     Written from the rule rather than by calling the code under test, so a fold that widens is a failure
+    ///     rather than a tautology.
+    /// </remarks>
     private static bool FoldAlike(char left, char right)
     {
         return char.IsAsciiLetter(left)
@@ -146,10 +152,13 @@ public sealed class JbSolutionCacheHashPropertyTests
 
     /// <summary>
     ///     A solution path: the POSIX shape the shared generators produce, that same shape respelt with a
-    ///     drive letter and backslashes, and the curated paths. A Windows spelling is legal input here
-    ///     because <see cref="JbSolutionCacheHash.Compute" /> is a pure string function calling no path API,
-    ///     so no property built on one can assert something true on a single platform.
+    ///     drive letter and backslashes, and the curated paths.
     /// </summary>
+    /// <remarks>
+    ///     A Windows spelling is legal input here because <see cref="JbSolutionCacheHash.Compute" /> is a pure
+    ///     string function calling no path API, so no property built on one can assert something true on a
+    ///     single platform.
+    /// </remarks>
     private static Gen<string> HashInputPath()
     {
         Gen<string> windowsShaped = JbNameGenerators.SolutionPath()
@@ -166,11 +175,13 @@ public sealed class JbSolutionCacheHashPropertyTests
     }
 
     /// <summary>
-    ///     A path, and the same path with exactly one character replaced by a different one. The replacement
-    ///     is drawn from the trap characters as often as at random, so the pairs a wider fold would conflate
-    ///     — the <c>| 0x20</c> neighbours of the bracket and separator characters, and the cased letters
-    ///     outside ASCII — are hit on every seed.
+    ///     A path, and the same path with exactly one character replaced by a different one.
     /// </summary>
+    /// <remarks>
+    ///     The replacement is drawn from the trap characters as often as at random, so the pairs a wider fold
+    ///     would conflate — the <c>| 0x20</c> neighbours of the bracket and separator characters, and the cased
+    ///     letters outside ASCII — are hit on every seed.
+    /// </remarks>
     private static Gen<SubstitutionCase> Substitution()
     {
         Gen<char> replacement = Gen.OneOf(Gen.Elements(TrapCharacters), ArbMap.Default.GeneratorFor<char>());

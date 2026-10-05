@@ -8,11 +8,14 @@ namespace Zphil.ReSharperCli.Execution;
 
 /// <summary>
 ///     A Windows job object carrying <c>JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE</c>: every process assigned to it
-///     is terminated by the kernel when the last handle to the job closes. Held for the life of the server
-///     process, so that closing — by disposal, by a crash, or by a <c>TerminateProcess</c> no in-process
-///     handler can intercept — is what kills a <c>jb</c> this server started.
+///     is terminated by the kernel when the last handle to the job closes.
 /// </summary>
 /// <remarks>
+///     <para>
+///         Held for the life of the server process, so that closing — by disposal, by a crash, or by a
+///         <c>TerminateProcess</c> no in-process handler can intercept — is what kills a <c>jb</c> this server
+///         started.
+///     </para>
 ///     <para>
 ///         Job membership is inherited, so a worker <c>jb</c> spawns of its own is covered without being
 ///         assigned. The server process itself is deliberately <em>not</em> in the job: it would then be
@@ -55,10 +58,13 @@ internal sealed class WindowsJobObject : IDisposable
     }
 
     /// <summary>
-    ///     Create the job and arm the kill-on-close limit, throwing <see cref="Win32Exception" /> naming the
-    ///     call that failed. A throw rather than a null so the caller's warning can say <em>why</em>: the
-    ///     caller degrades to today's behaviour either way, and the reason is the only part it cannot guess.
+    ///     Creates the job and arms the kill-on-close limit, throwing <see cref="Win32Exception" /> naming the
+    ///     call that failed.
     /// </summary>
+    /// <remarks>
+    ///     A throw rather than a null so the caller's warning can say <em>why</em>: the caller degrades to an
+    ///     unguarded child either way, and the reason is the only part it cannot guess.
+    /// </remarks>
     internal static WindowsJobObject Create()
     {
         if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("A job object is a Windows primitive.");
@@ -87,10 +93,13 @@ internal sealed class WindowsJobObject : IDisposable
     }
 
     /// <summary>
-    ///     Assign <paramref name="process" /> to the job, reporting whether it took. A child that has already
-    ///     exited is refused with <c>ERROR_ACCESS_DENIED</c>, which is an ordinary outcome for a spawn that
-    ///     finished before the assignment could land — hence a <see langword="false" /> rather than a throw.
+    ///     Assigns <paramref name="process" /> to the job, reporting whether it took.
     /// </summary>
+    /// <remarks>
+    ///     A child that has already exited is refused with <c>ERROR_ACCESS_DENIED</c>, which is an ordinary
+    ///     outcome for a spawn that finished before the assignment could land — hence a
+    ///     <see langword="false" /> rather than a throw.
+    /// </remarks>
     internal bool TryAssign(Process process)
     {
         if (!OperatingSystem.IsWindows()) return false;

@@ -14,12 +14,13 @@ using Zphil.ReSharperCli.Tools;
 
 namespace Zphil.ReSharperCli.Tests.Contract;
 
-/// <summary>
-///     What this server assumes about <c>jb</c>, checked against a real one. Every other test in the suite
-///     runs against a recorded SARIF fixture or an NSubstitute double, so JetBrains could change any of these
-///     and the build would stay green — and they ship roughly thirty stable releases a year.
-/// </summary>
+/// <summary>What this server assumes about <c>jb</c>, checked against a real one.</summary>
 /// <remarks>
+///     <para>
+///         Every other test in the suite runs against a recorded SARIF fixture or an NSubstitute double, so
+///         JetBrains could change any of these and the build would stay green — and they ship roughly thirty
+///         stable releases a year.
+///     </para>
 ///     <para>
 ///         Two tiers. The methods below turn the run red: they are the behaviours that stop the server
 ///         working at all. The single soft-tier method reports rather than asserts, because the surfaces it
@@ -47,15 +48,17 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
 
     private const string VersionPrefix = "Version:";
 
-    /// <summary>
-    ///     The severity labels <see cref="SarifParser.MapSeverity" /> knows how to produce — derived from
-    ///     <see cref="InspectSeverity" /> rather than re-spelled, so a tier added to the product does not
-    ///     reach this watcher as false "unmapped level" drift.
-    /// </summary>
+    /// <summary>The severity labels <see cref="SarifParser.MapSeverity" /> knows how to produce.</summary>
+    /// <remarks>
+    ///     Derived from <see cref="InspectSeverity" /> rather than re-spelled, so a tier added to the product does
+    ///     not reach this watcher as false "unmapped level" drift.
+    /// </remarks>
     private static readonly string[] MappedSeverities =
         Enum.GetValues<InspectSeverity>().Select(severity => severity.ToJbToken()).ToArray();
 
-    /// <summary>Read by <c>SkipUnless</c> on every method below.</summary>
+    /// <summary>
+    ///     <see cref="JbContractFixture.IsInstalled" />, exposed on the test class for <c>SkipUnless</c> to read.
+    /// </summary>
     public static bool JbIsInstalled => JbContractFixture.IsInstalled;
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -96,8 +99,7 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
     public void InspectArguments_AreAcceptedInFull()
     {
         // Assert — InspectService.RunAsync raises a non-zero exit through JbRunner and a missing output file
-        // itself, so a report that parsed at all is every flag in the list being accepted: -o, --severity,
-        // --swea, --no-build, --absolute-paths and --caches-home together.
+        // itself, so a report that parsed at all is every flag in the argument list being accepted together.
         fixture.Issues.ShouldNotBeEmpty();
 
         // And the settings axis that decides whether --settings rides the command line at all: the fixture
@@ -155,10 +157,9 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
     [Fact(Skip = NoJb, SkipUnless = nameof(JbIsInstalled))]
     public void CleanupWithTheSolutionsDeclaredProfile_RewritesTheFile()
     {
-        // Assert — the profile chain end to end: CleanupProfileReader lifts SilentCleanupProfile out of the
-        // fixture's .DotSettings, ConfigResolver carries it, CleanupService passes it as --profile, and jb
-        // accepts it. jb never reads that key itself, so this is the only thing making a repo's declared
-        // narrowing apply to a call that named no profile.
+        // Assert — the declared profile end to end, from the fixture's .DotSettings to a pass jb accepted. jb
+        // never reads SilentCleanupProfile itself, so this is the only thing making a repo's declared narrowing
+        // apply to a call that named no profile.
         fixture.Config.CleanupProfile.ShouldBe(JbContractFixture.DeclaredProfile);
         fixture.DeclaredProfileCleanup.Outcome.Profile.ShouldBe(JbContractFixture.DeclaredProfile);
         fixture.DeclaredProfileCleanup.ShouldHaveRewrittenTheFile();
@@ -185,9 +186,8 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
     public async Task ToolsCall_Inspect_ReturnsIssuesNamingAFixtureFile()
     {
         // Arrange — the production DI graph over the real process seam, so this is a genuine jb run reaching a
-        // real MCP client through the coercion layer, the global filter, and the reduction ladder. Declared
-        // ahead of the harness so it is disposed after it: closing the job while jb was still in it would
-        // kill the very run this is measuring.
+        // real MCP client. Declared ahead of the harness so it is disposed after it: closing the job while jb
+        // was still in it would kill the very run this is measuring.
         using ChildProcessLifetime childLifetime = new(new SystemEnvironment(), NullLogger<ChildProcessLifetime>.Instance);
         await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(
             Ct,
@@ -203,19 +203,18 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
         CallToolResult result = await harness.Client.CallToolAsync(
             ResharperTools.InspectToolName, cancellationToken: Ct);
 
-        // Assert — a client sees issues, not an error, and the rendered markdown names a file from the
-        // fixture. Everything the other checks assert one layer at a time has to hold at once for this to.
+        // Assert — everything the other checks assert one layer at a time has to hold at once for this to.
         result.IsError.ShouldNotBe(true);
         string text = result.Text();
         text.ShouldContain("Unused.cs");
         harness.Logs.Warnings.ShouldBeEmpty();
     }
 
-    /// <summary>
-    ///     The soft tier: the surfaces the server degrades safely on. Nothing here fails the run — the report
-    ///     goes to the test output and, under the scheduled workflow, to the file it turns into
-    ///     <c>::warning::</c> annotations and a job summary.
-    /// </summary>
+    /// <summary>The soft tier: the surfaces the server degrades safely on.</summary>
+    /// <remarks>
+    ///     A drifted surface is a finding in the report, never a failure. The report goes to the test output, and
+    ///     to the file <see cref="JbContractFixture.ReportVariable" /> names when that is set.
+    /// </remarks>
     [Fact(Skip = NoJb, SkipUnless = nameof(JbIsInstalled))]
     public async Task SoftContracts_AreReportedRatherThanAsserted()
     {
@@ -338,18 +337,17 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
         string report = BuildReport(findings);
         output.WriteLine(report);
 
-        // The scheduled workflow sets this and turns the file into a job summary plus one warning annotation
-        // per "- " line. Reading env is fine here; the no-env-mutation rule bars only writes.
+        // Reading env is fine here; the no-env-mutation rule bars only writes.
         string? reportPath = Environment.GetEnvironmentVariable(JbContractFixture.ReportVariable);
         if (!string.IsNullOrWhiteSpace(reportPath)) await File.WriteAllTextAsync(reportPath, report, Ct);
     }
 
-    /// <summary>
-    ///     The report the workflow publishes: what was observed, then the drift. Only the finding lines start
-    ///     with <c>- </c>, which is what the workflow turns into annotations, so the observations can stay in
-    ///     the summary of a run with nothing wrong with it. Explicit <c>'\n'</c> keeps the file
-    ///     byte-identical across OSes, so the workflow's line-by-line bash parse is deterministic.
-    /// </summary>
+    /// <summary>The report the workflow publishes: what was observed, then the drift.</summary>
+    /// <remarks>
+    ///     Only the finding lines start with <c>- </c>, which is what the workflow turns into annotations, so the
+    ///     observations can stay in the summary of a run with nothing wrong with it. Explicit <c>'\n'</c> keeps
+    ///     the file byte-identical across OSes, so the workflow's line-by-line bash parse is deterministic.
+    /// </remarks>
     private string BuildReport(IReadOnlyList<string> findings)
     {
         RawIncludeProbe raw = fixture.RawAbsoluteInclude;
@@ -430,10 +428,11 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
         return issues.Count == 0 ? "none" : string.Join(", ", distinct);
     }
 
-    /// <summary>
-    ///     The <c>YYYY.N</c> prefix of a full <c>jb</c> version. Patch releases have to pass in silence — some
-    ///     thirty a year — so only this much of the version is compared.
-    /// </summary>
+    /// <summary>The <c>YYYY.N</c> prefix of a full <c>jb</c> version.</summary>
+    /// <remarks>
+    ///     Patch releases have to pass in silence — some thirty a year — so only this much of the version is
+    ///     compared.
+    /// </remarks>
     private static string MajorLineOf(string version)
     {
         string[] parts = version.Split('.');

@@ -7,8 +7,7 @@ namespace Zphil.ReSharperCli.Tests.Formatting;
 
 /// <summary>
 ///     The single line an MCP progress notification carries, pinned per phase. These strings are the spec:
-///     they are what a caller reads while a run is in flight, and the run cap they name is how anyone ever
-///     learns the cap exists before it bites.
+///     they are what a caller reads while a run is in flight.
 /// </summary>
 public sealed class RunProgressFormatterTests
 {

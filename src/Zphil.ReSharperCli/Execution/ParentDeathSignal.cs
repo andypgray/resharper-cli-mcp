@@ -5,15 +5,14 @@ using System.Runtime.Versioning;
 namespace Zphil.ReSharperCli.Execution;
 
 /// <summary>
-///     The Linux half of "a <c>jb</c> this server started cannot outlive it":
-///     <c>
-///         setpriv --pdeathsig
-///         SIGKILL
-///     </c>
-///     , which arms <c>PR_SET_PDEATHSIG</c> and then execs the real command in place, so the pid
-///     the server holds is still <c>jb</c>'s and a tree kill still reaches it.
+///     The Linux half of "a <c>jb</c> this server started cannot outlive it": <c>setpriv --pdeathsig SIGKILL</c>,
+///     which arms <c>PR_SET_PDEATHSIG</c> and then execs the real command in place.
 /// </summary>
 /// <remarks>
+///     <para>
+///         Because it execs in place, the pid the server holds is still <c>jb</c>'s and a tree kill still
+///         reaches it.
+///     </para>
 ///     <para>
 ///         Weaker than the Windows job object, and the difference is worth stating rather than implying: the
 ///         signal covers <c>jb</c> itself and nothing it forks afterwards, because <c>PR_SET_PDEATHSIG</c> is
@@ -47,15 +46,15 @@ internal static class ParentDeathSignal
 
     /// <summary>
     ///     The command to spawn: wrapped when <paramref name="resolvedTarget" /> is in hand, and the caller's
-    ///     own command otherwise. Whether <c>setpriv</c> is available at all is
-    ///     <c>ChildProcessLifetime.Rewrite</c>'s decision, made before this is called.
+    ///     own command otherwise.
     /// </summary>
     /// <remarks>
-    ///     Declining on an unresolvable target is what keeps a missing <c>jb</c> reading the same as it always
-    ///     has. <c>JbLocator</c> probes candidates and treats both a thrown <see cref="Win32Exception" /> and a
-    ///     non-zero exit as "candidate failed"; wrapped, a candidate that is not installed would exit non-zero
-    ///     with <c>setpriv: failed to execute jb: No such file or directory</c> on the way to the user-facing
-    ///     "not found" message. Nothing here is worth changing that for.
+    ///     Whether <c>setpriv</c> is available at all is decided before this is called. Declining on an
+    ///     unresolvable target keeps a missing <c>jb</c> failing as it does unwrapped, with a
+    ///     <see cref="Win32Exception" />. Wrapped, a candidate that is not installed would instead exit
+    ///     non-zero with <c>setpriv: failed to execute jb: No such file or directory</c>, and a probe that sees
+    ///     a non-zero exit reads it as a <c>jb</c> that started — so the error would tell the user <c>jb</c> is
+    ///     installed.
     /// </remarks>
     internal static SpawnCommand Wrap(
         string setprivPath,
@@ -73,7 +72,7 @@ internal static class ParentDeathSignal
 
     /// <summary>
     ///     Where <c>setpriv</c> is, when it is installed and accepts <see cref="Option" />, and
-    ///     <see langword="null" /> otherwise — at which point the server keeps today's behaviour.
+    ///     <see langword="null" /> otherwise — which leaves every child unguarded.
     /// </summary>
     [SupportedOSPlatform("linux")]
     internal static string? TryLocate(string? pathVariable)
@@ -83,12 +82,12 @@ internal static class ParentDeathSignal
         return setpriv is not null && Accepts(setpriv) ? setpriv : null;
     }
 
-    /// <summary>
-    ///     Whether this <c>setpriv</c> accepts the option, asked by running it. The probe execs
-    ///     <c>setpriv</c> through itself, so it needs nothing on the machine that <c>setpriv</c> being there
-    ///     has not already proved — and it exercises the exact argument shape a real spawn will use rather
-    ///     than a version number standing in for it.
-    /// </summary>
+    /// <summary>Whether this <c>setpriv</c> accepts the option, asked by running it.</summary>
+    /// <remarks>
+    ///     The probe execs <c>setpriv</c> through itself, so it needs nothing on the machine that
+    ///     <c>setpriv</c> being there has not already proved — and it exercises the exact argument shape a real
+    ///     spawn will use rather than a version number standing in for it.
+    /// </remarks>
     [SupportedOSPlatform("linux")]
     private static bool Accepts(string setprivPath)
     {

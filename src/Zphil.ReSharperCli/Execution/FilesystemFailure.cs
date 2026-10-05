@@ -2,14 +2,12 @@ namespace Zphil.ReSharperCli.Execution;
 
 /// <summary>
 ///     The exception shapes an ordinary filesystem mishap takes — I/O, permissions, an unsupported or
-///     outright invalid path — as one predicate, so every cache-home side effect that swallows them, and
-///     the two <c>files</c>-entry resolutions in <see cref="Services.FilePathList" />, swallow the same set
-///     and a type added or dropped moves them all at once.
+///     outright invalid path — as one predicate, so every site that swallows them swallows the same set and a
+///     type added or dropped moves them all at once.
 /// </summary>
 /// <remarks>
-///     Deliberately broader than the filters that stay spelled out on site: <see cref="JbRunLock" />'s open
-///     paths, which separate contention from breakage, and the delete loops that want a genuinely narrower
-///     set. A filter that does not call this is narrower <em>on purpose</em>, and now reads that way.
+///     Deliberately broader than the filters spelled out on site, which separate contention from breakage
+///     or want a genuinely narrower set: a filter that does not call this is narrower <em>on purpose</em>.
 /// </remarks>
 internal static class FilesystemFailure
 {

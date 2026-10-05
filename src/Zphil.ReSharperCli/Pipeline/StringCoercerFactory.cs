@@ -5,12 +5,14 @@ namespace Zphil.ReSharperCli.Pipeline;
 
 /// <summary>
 ///     Coerces malformed scalar <c>string</c> tool inputs into the value the caller clearly
-///     intended. Models routinely wrap a single value in a one-element array (<c>["A"]</c>)
-///     where a scalar <c>string</c> is advertised; the SDK default surfaces this as a generic
-///     byte-position deserializer error that gives the model nothing actionable and burns
-///     retries. Symmetric counterpart to <see cref="StringArrayCoercerFactory" />.
+///     intended. Symmetric counterpart to <see cref="StringArrayCoercerFactory" />.
 /// </summary>
 /// <remarks>
+///     <para>
+///         Models routinely wrap a single value in a one-element array (<c>["A"]</c>) where a scalar
+///         <c>string</c> is advertised; the SDK default surfaces this as a generic byte-position
+///         deserializer error that gives the model nothing actionable and burns retries.
+///     </para>
 ///     <para>
 ///         Handled token shapes for any <c>string</c> (or <c>string?</c>) parameter:
 ///     </para>
@@ -90,9 +92,12 @@ internal sealed class StringCoercerFactory : JsonConverterFactory
 
         /// <summary>
         ///     Reads a JSON array opened by the caller and collapses it to a single string per
-        ///     the rules in the class remarks. Hand-rolled to avoid recursing through
-        ///     <see cref="StringCoercerFactory" /> via <c>JsonSerializer.Deserialize&lt;string&gt;</c>.
+        ///     the rules in the class remarks.
         /// </summary>
+        /// <remarks>
+        ///     Hand-rolled to avoid recursing through <see cref="StringCoercerFactory" /> via
+        ///     <c>JsonSerializer.Deserialize&lt;string&gt;</c>.
+        /// </remarks>
         private static string? ReadCoercedFromArray(ref Utf8JsonReader reader)
         {
             if (!reader.Read()) throw new JsonException("Unexpected end of JSON while reading array.");

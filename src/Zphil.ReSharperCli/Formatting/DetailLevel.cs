@@ -1,11 +1,13 @@
 namespace Zphil.ReSharperCli.Formatting;
 
 /// <summary>
-///     Controls how much detail a formatted response carries during progressive detail reduction. When the
-///     output at one level exceeds the character budget, <see cref="ProgressiveRenderer" /> retries at the
-///     next (lower) level until it fits. The values are ordered most-to-least detail; their exact meaning is
-///     defined per formatter (see <see cref="CleanupSummaryFormatter" />).
+///     Controls how much detail a formatted response carries during progressive detail reduction.
 /// </summary>
+/// <remarks>
+///     The values are ordered most-to-least detail, and <see cref="ProgressiveRenderer" />'s walk compares
+///     them numerically, so a new member goes in its place in that order. Their exact meaning is defined per
+///     formatter.
+/// </remarks>
 internal enum DetailLevel
 {
     /// <summary>Full detail: every item listed individually.</summary>

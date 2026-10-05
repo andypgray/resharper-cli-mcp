@@ -12,12 +12,13 @@ using Zphil.ReSharperCli.Services;
 namespace Zphil.ReSharperCli.Tools;
 
 /// <summary>
-///     The MCP tool surface: <c>resharper_inspect</c> (read-only C# inspection), <c>resharper_cleanup</c>
-///     (in-place code cleanup), and <c>resharper_reset_cache</c> (drop the solution's analysis cache). Every
-///     method validates its inputs and then delegates to a service; they never <c>try/catch</c> —
+///     The MCP tool surface.
+/// </summary>
+/// <remarks>
+///     Every method validates its inputs and then delegates to a service; they never <c>try/catch</c> —
 ///     <see cref="GlobalCallToolFilter" /> turns any thrown <see cref="UserErrorException" /> into an error
 ///     result for the client.
-/// </summary>
+/// </remarks>
 [McpServerToolType]
 internal sealed class ResharperTools(
     ConfigResolver configResolver,
@@ -47,30 +48,25 @@ internal sealed class ResharperTools(
         + "still needs. Costs the next call a full cold analysis, so it is not routine maintenance. A deleted "
         + "checkout's cache outlives it: pass its old solution path as solutionPath to reclaim it.";
 
-    // Descriptions ride the deferred tool schema, which a client fetches only when it is about to call the
-    // tool, so a gotcha costs nothing until it is needed. Prefer this over the always-resident server
-    // instructions for anything that is per-argument rather than cross-call routing.
-    //
-    // Fetched as the call is made is also the last moment the caller can still act, which is what this
-    // channel is for: a cost that decides whether to call at all, a gate on a destructive follow-up, or a
-    // revert the caller would otherwise fight by hand belongs here, with its cure stated inline. A guide
-    // resource may be cited alongside one but is never the cure — the field reads them about never.
+    // Descriptions ride the deferred tool schema, fetched as the call is made: the last moment the caller can
+    // still act, and free until then. A per-argument gotcha, a cost that decides whether to call at all, or a
+    // gate on a destructive follow-up goes here with its cure stated inline, not in the always-resident server
+    // instructions, and a guide resource cited alongside is never the cure.
     private const string SolutionPathDescription =
         "Path to the .sln/.slnx to run against. Overrides JB_SOLUTION_PATH and working-directory discovery.";
 
     private const string JoinedPathsNote =
         " An element joining several paths with ; or , is split into separate paths.";
 
-    // Both tools anchor `files` the same way, and used to say so differently: cleanup promised absolute paths
-    // worked while inspect said nothing at all. jb's --include takes relative paths only, so an absolute one
-    // is translated before it is passed; what it cannot do anything about is a file in no project.
+    // Shared by both tools, which anchor `files` the same way. jb's --include takes relative paths only, so an
+    // absolute one is translated before it is passed; what that cannot fix is a file in no project.
     private const string PathAnchorNote =
         " Each is relative to the solution root, or absolute. jb matches them against the files that belong "
         + "to a project in the solution, so one that is on disk but in no project matches nothing, which "
         + "nothing here can detect.";
 
     /// <remarks>
-    ///     Still annotated read-only with <paramref name="report" /> on the surface, and deliberately. A run
+    ///     Annotated read-only even with <paramref name="report" /> on the surface, and deliberately. A run
     ///     already creates and deletes a temp directory for <c>jb</c>'s SARIF; the delta here is that one file
     ///     survives, in a directory this server owns and names in its response. Nothing in the workspace, the
     ///     solution, or the cache is touched, and at the default <see cref="InspectReport.None" /> nothing is
@@ -167,11 +163,14 @@ internal sealed class ResharperTools(
 
     /// <summary>
     ///     The tool-facing <see cref="InspectDetail" /> as the <see cref="DetailLevel" /> the ladder starts
-    ///     from. Spelt out member by member rather than cast or round-tripped through
-    ///     <see cref="Enum.Parse{TEnum}(string)" />: either of those would keep compiling if the two enums
-    ///     diverged and quietly resolve the wrong level, which is the failure keeping them separate exists
-    ///     to prevent.
+    ///     from.
     /// </summary>
+    /// <remarks>
+    ///     Spelt out member by member rather than cast or round-tripped through
+    ///     <see cref="Enum.Parse{TEnum}(string)" />: either of those would keep compiling if the two enums
+    ///     diverged and quietly resolve the wrong level, which is the failure keeping them separate exists to
+    ///     prevent.
+    /// </remarks>
     private static DetailLevel CapFor(InspectDetail detail)
     {
         return detail switch
@@ -186,13 +185,16 @@ internal sealed class ResharperTools(
     }
 
     /// <summary>
-    ///     The report file, or <see langword="null" /> when none was asked for. Rendered here rather than in
-    ///     <see cref="InspectReportWriter" /> so that class stays about files and <c>Formatting/</c> keeps
-    ///     owning what a rendering looks like. Written even when there are no issues: "a report was asked for,
-    ///     so the response names a file that exists" is a contract a caller can script against, and one that
-    ///     sometimes yields no file is not. The body comes in as <paramref name="renderFull" /> so the same
-    ///     rendering serves the response ladder rather than being produced twice.
+    ///     The report file, or <see langword="null" /> when none was asked for.
     /// </summary>
+    /// <remarks>
+    ///     Rendered here rather than in <see cref="InspectReportWriter" /> so that class stays about files and
+    ///     <c>Formatting/</c> keeps owning what a rendering looks like. Written even when there are no issues:
+    ///     "a report was asked for, so the response names a file that exists" is a contract a caller can script
+    ///     against, and one that sometimes yields no file is not. The body comes in as
+    ///     <paramref name="renderFull" /> so the same rendering serves the response ladder rather than being
+    ///     produced twice.
+    /// </remarks>
     private InspectReportOutcome? WriteReport(
         InspectReport report,
         Func<string> renderFull,
@@ -298,16 +300,18 @@ internal sealed class ResharperTools(
     }
 
     /// <summary>
-    ///     The one response-shaping tail both analysis tools share: render <paramref name="data" /> at the highest
-    ///     <see cref="DetailLevel" /> that fits the client's output budget (the GlobalCallToolFilter's
-    ///     truncator is the final backstop), led by <paramref name="banner" />. The banner is charged to the
-    ///     budget <em>before</em> rendering, which is what puts it outside the reduction ladder: it survives
-    ///     every step down to Minimal without making truncation any likelier. Inspect must not let an empty
-    ///     result read as "nothing to report" when settings were dropped; cleanup must report the profile the
-    ///     files were <em>not</em> cleaned with once they are already rewritten.
-    ///     <paramref name="startLevel" /> is where that ladder begins — inspect's <c>detail</c> cap, and for
-    ///     cleanup the default, which is the whole ladder.
+    ///     The one response-shaping tail both analysis tools share: renders <paramref name="data" /> at the
+    ///     highest <see cref="DetailLevel" /> that fits the client's output budget, led by
+    ///     <paramref name="banner" />.
     /// </summary>
+    /// <remarks>
+    ///     The banner is charged to the budget <em>before</em> rendering, which is what puts it outside the
+    ///     reduction ladder: it survives every step down to Minimal without making truncation any likelier.
+    ///     Inspect must not let an empty result read as "nothing to report" when settings were dropped; cleanup
+    ///     must report the profile the files were <em>not</em> cleaned with once they are already rewritten.
+    ///     <paramref name="startLevel" /> is where that ladder begins — inspect's <c>detail</c> cap, and for
+    ///     cleanup the default, which is the whole ladder. The filter's truncator is the final backstop.
+    /// </remarks>
     private string RenderWithBanner<T>(
         string banner,
         T data,
@@ -339,13 +343,11 @@ internal sealed class ResharperTools(
     }
 
     /// <summary>
-    ///     The domain remedy <c>ResponseTruncator</c> closes a hard-truncated response with, keyed by tool:
-    ///     inspect points at narrowing the next scan and at the report file, cleanup at the fact that
-    ///     shrinking the report did not shrink the cleanup. Lives with the tools so the generic backstop needs
-    ///     no per-tool knowledge and a new tool contributes its hint here.
+    ///     The domain remedy <c>ResponseTruncator</c> closes a hard-truncated response with, keyed by tool.
     /// </summary>
     /// <remarks>
-    ///     Keyed by tool name and nothing else, so it cannot know a report was already written and will
+    ///     Lives with the tools so the generic backstop needs no per-tool knowledge and a new tool contributes
+    ///     its hint here. Keyed by tool name and nothing else, so it cannot know a report was already written and will
     ///     suggest one anyway. Harmless: the note naming the file is a prefix and survives the cut, so the
     ///     path is still above the footer that repeats the offer.
     /// </remarks>

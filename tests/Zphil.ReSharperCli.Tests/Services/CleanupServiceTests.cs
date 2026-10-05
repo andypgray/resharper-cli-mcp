@@ -12,11 +12,9 @@ using Zphil.ReSharperCli.Tests.TestSupport;
 namespace Zphil.ReSharperCli.Tests.Services;
 
 /// <summary>
-///     <see cref="CleanupService" /> mutates files in place, validates concrete (non-wildcard) paths before
-///     invoking jb, and hashes each concrete file before and after the run to classify it. These tests plant
-///     real files under a per-instance temp directory (so the parallel run stays race-free) and assert on the
-///     structured <see cref="CleanupOutcome" /> — a far more robust contract than the old rendered string. The
-///     fake <see cref="IProcessRunner" /> never touches files, so a test that needs a <c>Changed</c> (or a
+///     Pins <see cref="CleanupService" /> through its structured <see cref="CleanupOutcome" />, over real files
+///     planted under a per-instance temp directory so the parallel run stays race-free. The fake
+///     <see cref="IProcessRunner" /> never touches files, so a test that needs a <c>Changed</c> (or a
 ///     deleted-file <c>StatusUnknown</c>) drives the mutation from a side-effecting jb stub.
 /// </summary>
 public sealed class CleanupServiceTests : IDisposable
@@ -48,7 +46,7 @@ public sealed class CleanupServiceTests : IDisposable
     [Fact]
     public async Task RunAsync_FileRewritten_ClassifiesChanged()
     {
-        // Arrange — jb "cleans up" the file by writing different bytes during its run.
+        // Arrange
         string path = SolutionFiles.Plant(_solutionDirectory, "src/A.cs", "original");
         StubJbRunning(() => File.WriteAllText(path, "cleaned up"));
 
@@ -95,7 +93,7 @@ public sealed class CleanupServiceTests : IDisposable
     [Fact]
     public async Task RunAsync_MixedConcreteAndWildcard_ClassifiesEachInOrder()
     {
-        // Arrange — one concrete file jb rewrites, plus a wildcard that stays a Pattern (never a single file).
+        // Arrange
         string path = SolutionFiles.Plant(_solutionDirectory, "src/A.cs", "before");
         StubJbRunning(() => File.WriteAllText(path, "after"));
 
@@ -127,7 +125,7 @@ public sealed class CleanupServiceTests : IDisposable
     [Fact]
     public async Task RunAsync_AbsoluteExistingPathUntouched_ClassifiesUnchanged()
     {
-        // Arrange — an absolute path jb does not modify.
+        // Arrange
         string absolute = SolutionFiles.Plant(_solutionDirectory, "src/Real.cs", "x");
         StubExit(0);
 
@@ -143,9 +141,8 @@ public sealed class CleanupServiceTests : IDisposable
     [Fact]
     public async Task RunAsync_AbsolutePath_ReachesJbAsARelativeIncludePattern()
     {
-        // Arrange — the field failure, through the service that builds the argument. jb's --include takes
-        // relative paths only, so an absolute one is an Ant pattern matched against the solution model that
-        // can never hit.
+        // Arrange — through the service that builds the argument. jb's --include takes relative paths only,
+        // so an absolute one is an Ant pattern matched against the solution model that can never hit.
         string absolute = SolutionFiles.Plant(_solutionDirectory, "src/A.cs", "x");
         List<string>? arguments = null;
         _processRunner
@@ -183,9 +180,9 @@ public sealed class CleanupServiceTests : IDisposable
     [Fact]
     public async Task RunAsync_JbMatchedNothing_SaysTheWholePassFailedAndNamesThePatterns()
     {
-        // Arrange — jb's own signal for this reads as a success to an agent that has just made 27 edits:
-        // "No items were found to cleanup" is the whole of the stderr, and a pass got skipped in the field
-        // because of it. The framing is cleanup's to give, since only cleanup knows N files were named.
+        // Arrange — jb's own signal for this reads as a success to an agent that has just made a batch of
+        // edits: "No items were found to cleanup" is the whole of the stderr, which is enough to have the pass
+        // skipped. The framing is cleanup's to give, since only cleanup knows N files were named.
         SolutionFiles.Plant(_solutionDirectory, "src/A.cs", "x");
         SolutionFiles.Plant(_solutionDirectory, "src/B.cs", "x");
         _processRunner
@@ -279,7 +276,7 @@ public sealed class CleanupServiceTests : IDisposable
             .Returns(new ProcessResult(exitCode, string.Empty, string.Empty));
     }
 
-    /// <summary>Stub jb to run <paramref name="duringRun" /> (a filesystem side effect) then exit 0.</summary>
+    /// <summary>Stubs jb to run <paramref name="duringRun" /> (a filesystem side effect) then exit 0.</summary>
     private void StubJbRunning(Action duringRun)
     {
         _processRunner

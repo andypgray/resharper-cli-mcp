@@ -4,16 +4,19 @@ namespace Zphil.ReSharperCli.Formatting;
 
 /// <summary>
 ///     Renders one <see cref="JbRunProgressSnapshot" /> as the single line an MCP progress notification
-///     carries. Pure, like every other formatter here: <see cref="JbRunProgress" /> — the fourth of the five
-///     policies over a run — owns the state and the timer, and this owns nothing.
+///     carries.
 /// </summary>
 /// <remarks>
 ///     <para>
+///         Pure, like every other formatter here: <see cref="JbRunProgress" /> owns the state and the timer,
+///         and this owns nothing.
+///     </para>
+///     <para>
 ///         Naming the run cap is the deliberate part. A caller watching "8 minutes of a 10 minute cap" can
 ///         raise <c>RESHARPER_MCP_TIMEOUT_SECS</c> before the failure instead of learning the cap exists from
-///         the failure — which is the only way that variable has ever been discovered. The cap appears only
-///         once it is armed, because queue time is outside the run budget and a message that charged the wait
-///         against the cap would send a caller to raise the one number that was not the problem.
+///         the failure. The cap appears only once it is armed, because queue time is outside the run budget
+///         and a message that charged the wait against the cap would send a caller to raise the one number
+///         that was not the problem.
 ///     </para>
 ///     <para>
 ///         There is no <c>total</c> anywhere, and its absence is a choice rather than a gap.
@@ -68,14 +71,14 @@ internal static class RunProgressFormatter
     }
 
     /// <summary>
-    ///     How long, and — once <c>jb</c> is running — against what. <see cref="DurationFormatter" /> rather
-    ///     than a second spelling, so a cap someone set to 90 seconds reads the same here as in the message
-    ///     they get if it bites.
+    ///     How long, and — once <c>jb</c> is running — against what.
     /// </summary>
     /// <remarks>
-    ///     The cap is appended as its own clause rather than folded in as "of a 10 minute cap", because
-    ///     <see cref="DurationFormatter" /> pluralizes — a shared spelling is worth more than the
-    ///     attributive reading, and "of a 10 minutes cap" is the alternative.
+    ///     <see cref="DurationFormatter" /> rather than a second spelling, so a cap someone set to 90 seconds
+    ///     reads the same here as in the message they get if it bites. The cap is appended as its own clause
+    ///     rather than folded in as "of a 10 minute cap", because <see cref="DurationFormatter" /> pluralizes —
+    ///     a shared spelling is worth more than the attributive reading, and "of a 10 minutes cap" is the
+    ///     alternative.
     /// </remarks>
     private static string Duration(JbRunProgressSnapshot state)
     {
@@ -85,11 +88,13 @@ internal static class RunProgressFormatter
     }
 
     /// <summary>
-    ///     The file count, or the bare noun before <c>jb</c> has named one. A phase announcement arrives
-    ///     ahead of the first file line, so "analyzing 0 files" is reachable and says less than the plain
-    ///     phrase does. Internal because the timeout message restates the same count — one spelling, so a
-    ///     caller who watched "analyzing 40 files" for minutes is not told "40 file(s)" when it fails.
+    ///     The file count, or the bare noun before <c>jb</c> has named one.
     /// </summary>
+    /// <remarks>
+    ///     A phase announcement arrives ahead of the first file line, so "analyzing 0 files" is reachable and
+    ///     says less than the plain phrase does. Shared, so the count reads the same wherever it is restated —
+    ///     a caller who watched "analyzing 40 files" for minutes is not told "40 file(s)" when the run fails.
+    /// </remarks>
     internal static string Files(int count)
     {
         return count switch

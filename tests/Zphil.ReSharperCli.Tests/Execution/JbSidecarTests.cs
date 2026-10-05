@@ -6,11 +6,8 @@ using Zphil.ReSharperCli.Tests.TestDoubles;
 namespace Zphil.ReSharperCli.Tests.Execution;
 
 /// <summary>
-///     <see cref="JbSidecar" /> is the one spelling of how this server names its own files in a cache home,
-///     composing and parsing in the same class. The round trip is the invariant worth pinning: the lock, the
-///     warm marker, the cold tombstone, and donor discovery all address sidecars through this scheme, and a
-///     compose that <see cref="JbSidecar.FindAll" /> could not read back would switch donor discovery off
-///     silently.
+///     Pins the <see cref="JbSidecar" /> compose/parse round trip: a compose that
+///     <see cref="JbSidecar.FindAll" /> could not read back would switch donor discovery off silently.
 /// </summary>
 public sealed class JbSidecarTests : IDisposable
 {

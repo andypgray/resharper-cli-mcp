@@ -6,9 +6,8 @@ using Zphil.ReSharperCli.Pipeline;
 namespace Zphil.ReSharperCli.Tests.Pipeline;
 
 /// <summary>
-///     Tests for <see cref="StringArrayCoercerFactory" />: every <c>string[]</c> tool parameter
-///     accepts a plain JSON array, a stringified JSON array, or a bare string (single-coerce),
-///     and rejects everything else with a friendly <see cref="UserErrorException" />.
+///     Pins the token shapes <see cref="StringArrayCoercerFactory" /> accepts and the errors it raises for the
+///     rest.
 /// </summary>
 public sealed class StringArrayCoercerFactoryTests
 {

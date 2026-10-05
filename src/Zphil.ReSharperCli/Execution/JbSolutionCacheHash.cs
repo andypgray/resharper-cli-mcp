@@ -28,11 +28,12 @@ internal static class JbSolutionCacheHash
     private const int Multiplier = 31;
 
     /// <summary>
-    ///     The hash for <paramref name="solutionPath" />, rendered exactly as it appears in a directory
-    ///     name. Takes the absolute path as <c>ResolvedConfig</c> resolved it and hands it to <c>jb</c> —
-    ///     the same string on both sides is the point, so nothing is normalised here beyond the case fold
-    ///     below.
+    ///     The hash for <paramref name="solutionPath" />, rendered exactly as it appears in a directory name.
     /// </summary>
+    /// <remarks>
+    ///     Takes the absolute path as <c>ResolvedConfig</c> resolved it and hands it to <c>jb</c> — the same
+    ///     string on both sides is the point, so nothing is normalised here beyond the case fold below.
+    /// </remarks>
     internal static string Compute(string solutionPath)
     {
         int hash = Seed;
@@ -44,10 +45,12 @@ internal static class JbSolutionCacheHash
     /// <summary>
     ///     What the first generation directory for <paramref name="solutionPath" /> is called: the same
     ///     <c>_{solution file name}.{hash}.{generation}</c> shape <see cref="JbCacheGenerations" /> parses,
-    ///     at generation <c>00</c>. Only generation <c>00</c> is ever composed here — the higher ones are
-    ///     forks <c>jb</c> makes when it cannot open the one it wanted, which is not something to create on
-    ///     its behalf.
+    ///     at generation <c>00</c>.
     /// </summary>
+    /// <remarks>
+    ///     Only generation <c>00</c> is ever composed here — the higher ones are forks <c>jb</c> makes when it
+    ///     cannot open the one it wanted, which is not something to create on its behalf.
+    /// </remarks>
     internal static string FirstGenerationDirectoryName(string solutionPath)
     {
         string solutionName = Path.GetFileNameWithoutExtension(solutionPath);
@@ -55,12 +58,14 @@ internal static class JbSolutionCacheHash
     }
 
     /// <summary>
-    ///     Lower-cases a character the way the hash does: ASCII <c>A</c>–<c>Z</c> and nothing else. The
-    ///     restraint is load-bearing rather than an optimisation. A blanket <c>| 0x20</c> would fold the
+    ///     Lower-cases a character the way the hash does: ASCII <c>A</c>–<c>Z</c> and nothing else.
+    /// </summary>
+    /// <remarks>
+    ///     The restraint is load-bearing rather than an optimisation. A blanket <c>| 0x20</c> would fold the
     ///     path separator itself (<c>\</c> becomes <c>|</c>) and was ruled out against real directory names,
     ///     and a culture-aware <see cref="char.ToLowerInvariant" /> would fold non-ASCII letters this hash
     ///     leaves alone — either one silently produces a hash matching no directory on disk.
-    /// </summary>
+    /// </remarks>
     private static char FoldCase(char character)
     {
         return character is >= 'A' and <= 'Z' ? (char)(character + 32) : character;

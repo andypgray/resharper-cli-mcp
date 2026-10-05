@@ -11,9 +11,9 @@ namespace Zphil.ReSharperCli.Execution;
 /// <remarks>
 ///     <para>
 ///         This is the single best predictor of what a run is about to cost — a warm generation finishes in
-///         well under a minute where a cold one can pass the run cap — and until it was written down the
-///         answer was unrecoverable after the fact. A 552-second inspect in the field log could have been
-///         cold, seeded, or queued behind another session, and nothing distinguished them.
+///         well under a minute where a cold one can pass the run cap — and it is unrecoverable after the fact:
+///         without it, a long inspect in the log could have been cold, seeded, or queued behind another
+///         session, and nothing would distinguish them.
 ///     </para>
 ///     <para>
 ///         Every reading is best effort and none of them can fail the run they describe: a cache home this
@@ -52,8 +52,8 @@ namespace Zphil.ReSharperCli.Execution;
 /// <param name="CurrentJbVersion">
 ///     Which <c>jb</c> build is about to open it, or <see langword="null" /> when the caller cannot say. That
 ///     null is the feature's off switch: with no build to compare against, a marker's own build is ignored
-///     and the state reads exactly as it did before either was recorded, rather than a server that cannot
-///     name its <c>jb</c> calling every cache stale for ever.
+///     and the state reads as if no build were recorded, rather than a server that cannot name its <c>jb</c>
+///     calling every cache stale for ever.
 /// </param>
 internal sealed record JbCacheState(
     IReadOnlyList<string>? Generations,
@@ -69,10 +69,13 @@ internal sealed record JbCacheState(
 
     /// <summary>
     ///     The state as one readable clause — <c>warm (14m old marker, _App.123.00)</c> and the like, carrying
-    ///     what a run like this one last cost where that is recorded. A rendered string rather than a handful
-    ///     of separate log properties on purpose: this rides a line that already names the subcommand, the
-    ///     solution and the queue wait, and it is read by a person scanning a file rather than by a query.
+    ///     what a run like this one last cost where that is recorded.
     /// </summary>
+    /// <remarks>
+    ///     A rendered string rather than a handful of separate log properties on purpose: this rides a line
+    ///     that already names the subcommand, the solution and the queue wait, and it is read by a person
+    ///     scanning a file rather than by a query.
+    /// </remarks>
     internal string Summary
     {
         get
@@ -108,23 +111,28 @@ internal sealed record JbCacheState(
 
     /// <summary>
     ///     Which recorded figure this state may be compared against, or <see langword="null" /> when it may be
-    ///     compared against none. The arms are <see cref="Summary" />'s own, in the same order, because the
-    ///     two answer one question: a state the summary describes in its own words is a state whose duration
-    ///     only runs described the same way predict.
+    ///     compared against none.
     /// </summary>
     /// <remarks>
-    ///     Three states have no band. An unreadable cache home knows nothing, and a part-built generation is
-    ///     the remnant of a run that was killed — how much of the work survived depends on when it died, so
-    ///     two resumptions are not comparable and quoting one at the other would be a guess dressed as a
-    ///     measurement. A warm generation is the third: what its last run cost is set by how much source
-    ///     changed since, which nothing here observes, and <see cref="JbCostBand" />'s remarks carry the
-    ///     measurement. The summary still describes it as warm; it is only the figure that is withheld.
+    ///     <para>
+    ///         The arms are <see cref="Summary" />'s own, in the same order, because the two answer one
+    ///         question: a state the summary describes in its own words is a state whose duration only runs
+    ///         described the same way predict.
+    ///     </para>
+    ///     <para>
+    ///         Three states have no band. An unreadable cache home knows nothing, and a part-built generation
+    ///         is the remnant of a run that was killed — how much of the work survived depends on when it died,
+    ///         so two resumptions are not comparable and quoting one at the other would be a guess dressed as a
+    ///         measurement. A warm generation is the third: what its last run cost is set by how much source
+    ///         changed since, which nothing here observes, and <see cref="JbCostBand" />'s remarks carry the
+    ///         finding. The summary still describes it as warm; it is only the figure that is withheld.
+    ///     </para>
     ///     <para>
     ///         A stale generation bands as <see cref="JbCostBand.Cold" />, and its sitting next to the arm
     ///         that names it is the guard rather than a convenience: measured across one patch bump on a
-    ///         static tree, the first run under the new build took 220 seconds against the 64 its own second
-    ///         run took, so a stale state banding as warm would quote a minute at cold-shaped work. Whoever
-    ///         moves one has to move the other.
+    ///         static tree, the first run under the new build took over three times as long as its own second
+    ///         run, so a stale state banding as warm would quote a minute at cold-shaped work. Whoever moves one
+    ///         has to move the other.
     ///     </para>
     /// </remarks>
     internal JbCostBand? CostBand
@@ -137,7 +145,7 @@ internal sealed record JbCacheState(
             if (WarmMarkerAge is null) return null;
 
             // A stale generation bands as cold; a warm one bands as nothing, because what the last warm run
-            // cost says nothing about the next — the measurement is on JbCostBand.
+            // cost says nothing about the next — the finding is on JbCostBand.
             return WrittenByAnotherJb ? JbCostBand.Cold : null;
         }
     }
@@ -153,11 +161,13 @@ internal sealed record JbCacheState(
 
     /// <summary>
     ///     The figure this state may quote and the band that keys it, or <see langword="null" /> when it may
-    ///     quote none. Two things have to hold — a band to key by, and a figure under it — so a state handed
-    ///     a duration with no band to key it by still quotes nothing, which is the part-built rule pointed at
-    ///     a state carrying a number it should not. The one eligibility rule behind every surface that quotes:
-    ///     the summary's closing clause, and the timeout message's sentence.
+    ///     quote none.
     /// </summary>
+    /// <remarks>
+    ///     Two things have to hold — a band to key by, and a figure under it — so a state handed a duration with
+    ///     no band to key it by still quotes nothing, which is the part-built rule pointed at a state carrying a
+    ///     number it should not. The one eligibility rule behind every surface that quotes a figure.
+    /// </remarks>
     internal (JbCostBand Band, TimeSpan Cost)? QuotableCost =>
         CostBand is { } band && LastComparableCost is { } cost
             ? (band, cost)
@@ -165,10 +175,12 @@ internal sealed record JbCacheState(
 
     /// <summary>
     ///     The state of <paramref name="solutionPath" />'s cache under <paramref name="cacheHome" /> right
-    ///     now, as <paramref name="jbVersion" /> is about to open it. Cheap: a single directory enumeration
-    ///     and a handful of small file reads — the recorded cost read only where the state falls in a band —
-    ///     against a <c>jb</c> run measured in minutes.
+    ///     now, as <paramref name="jbVersion" /> is about to open it.
     /// </summary>
+    /// <remarks>
+    ///     Cheap: a single directory enumeration and a handful of small file reads — the recorded cost read
+    ///     only where the state falls in a band — against a <c>jb</c> run measured in minutes.
+    /// </remarks>
     internal static JbCacheState Read(
         string solutionPath,
         string cacheHome,
@@ -206,10 +218,13 @@ internal sealed record JbCacheState(
 
     /// <summary>
     ///     Total bytes and file count across the generations on disk, or <see langword="null" /> when there
-    ///     are none or the walk failed. Separate from <see cref="Read" /> and reached only under
-    ///     <c>Debug</c>, because unlike everything else here it is a full recursive walk of a directory tree
-    ///     that runs to hundreds of megabytes.
+    ///     are none or the walk failed.
     /// </summary>
+    /// <remarks>
+    ///     Separate from <see cref="Read" />, and meant only for a caller logging at <c>Debug</c>, because
+    ///     unlike everything else here it is a full recursive walk of a directory tree that runs to hundreds of
+    ///     megabytes.
+    /// </remarks>
     internal (long Bytes, int Files)? TryMeasure(string cacheHome)
     {
         if (Generations is null or { Count: 0 }) return null;
@@ -236,9 +251,9 @@ internal sealed record JbCacheState(
 
     /// <summary>
     ///     What a run like this one last cost, as a clause to close the parenthetical with, or the empty
-    ///     string when <see cref="QuotableCost" /> permits none — which is what keeps every arm reading byte
-    ///     for byte as it did before any figure existed.
+    ///     string when <see cref="QuotableCost" /> permits none.
     /// </summary>
+    /// <remarks>The empty string keeps every arm reading byte for byte the same when no figure is recorded.</remarks>
     private string RecordedCost()
     {
         if (QuotableCost is not { } quotable) return string.Empty;
@@ -248,10 +263,13 @@ internal sealed record JbCacheState(
 
     /// <summary>
     ///     A duration at the coarsest unit that still says something — <c>42s</c>, <c>14m</c>, <c>3.2h</c>,
-    ///     <c>6.1d</c>. A negative value is rendered as one rather than hidden: it means the marker is dated
-    ///     into the future, which is a moved clock or a cache home carried between machines, and the reader is
-    ///     better served seeing it.
+    ///     <c>6.1d</c>.
     /// </summary>
+    /// <remarks>
+    ///     A negative value is rendered as one rather than hidden: it means the marker is dated into the future,
+    ///     which is a moved clock or a cache home carried between machines, and the reader is better served
+    ///     seeing it.
+    /// </remarks>
     private static string FormatAge(TimeSpan age)
     {
         TimeSpan magnitude = age < TimeSpan.Zero ? -age : age;

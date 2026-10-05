@@ -88,7 +88,7 @@ public sealed class JbLocatorTests : IDisposable
     public async Task LocateAsync_ProbeExitsZeroWithoutAVersion_TreatsCandidateAsFailed(string? standardOutput)
     {
         // Arrange — jb that exits cleanly and reports nothing identifiable is not a jb worth running. The
-        // null row is the shape a defaulted ProcessResult carries, which is how this was found.
+        // null row is the shape a defaulted ProcessResult carries.
         _processRunner
             .AnyRun()
             .Returns(new ProcessResult(0, standardOutput!, string.Empty));
@@ -309,9 +309,9 @@ public sealed class JbLocatorTests : IDisposable
     [Fact]
     public async Task LocateAsync_FirstCandidateFailsBeforeALaterOneSucceeds_LogsTheFailedCandidateAndItsCost()
     {
-        // Arrange — the case nothing in the log could account for. A throw from the spawn escapes before
-        // ProcessRunner writes either of its own lines, and a candidate that fails before a later one
-        // succeeds never reaches the "No jb reported a version" summary, so its time was attributed to nothing.
+        // Arrange — a throw from the spawn escapes before ProcessRunner writes either of its own lines, and a
+        // candidate that fails before a later one succeeds never reaches the "No jb reported a version"
+        // summary, so without this line its time is attributed to nothing.
         Probe("jb").Throws(new Win32Exception("The system cannot find the file specified."));
         Probe(DotnetToolsCandidate).Returns(Healthy);
 

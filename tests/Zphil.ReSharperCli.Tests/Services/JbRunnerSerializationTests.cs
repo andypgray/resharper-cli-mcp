@@ -11,15 +11,14 @@ namespace Zphil.ReSharperCli.Tests.Services;
 
 /// <summary>
 ///     Asserted where a caller meets it: two calls through this server never have two <c>jb</c> processes in
-///     flight at once, whatever solutions they are against. Against <em>one</em> solution that is
-///     <see cref="JbRunLock" />'s doing — a second concurrent <c>jb</c> cannot share the warm ReSharper cache
-///     generation, so it silently forks an empty one and does the full cold analysis, and overlapping runs
-///     are slower than queued ones and leave a dead cache behind. Against two it is
-///     <see cref="JbRunSlot" />'s: different solutions are different generations and pass the lock
-///     uncontended, but a <c>jb</c> run is a whole-solution multi-core analysis, so two of them share the
-///     machine rather than the work. The <see cref="ConcurrencyProbe" /> stands in for <c>jb</c> and fails
-///     these tests by observing an overlap, not by timing.
+///     flight at once, whatever solutions they are against.
 /// </summary>
+/// <remarks>
+///     Against <em>one</em> solution that is <see cref="JbRunLock" />'s doing; against two it is
+///     <see cref="JbRunSlot" />'s, since different solutions are different generations and pass the lock
+///     uncontended. The <see cref="ConcurrencyProbe" /> stands in for <c>jb</c> and fails these tests by
+///     observing an overlap, not by timing.
+/// </remarks>
 public sealed class JbRunnerSerializationTests : IDisposable
 {
     private readonly ResolvedConfig _config;
@@ -67,9 +66,8 @@ public sealed class JbRunnerSerializationTests : IDisposable
     public async Task InspectOfOneSolutionAndCleanupOfAnother_RunOneAtATime()
     {
         // Arrange — a second solution in a directory of its own, so the two calls take different cache
-        // generations and the lock lets both straight through. Measured on one machine on 2026-09-04, four
-        // cleanups issued a second apart against four solutions ran 367-616 s where three of them take
-        // 24-50 s alone, and the slowest crossed the default cap.
+        // generations and the lock lets both straight through. Run together, jb runs against different
+        // solutions slow each other by multiples, enough to carry a one-file cleanup past the default cap.
         InspectService inspect = new(_runner);
         CleanupService cleanup = new(_runner, NullLogger<CleanupService>.Instance);
 
@@ -91,8 +89,8 @@ public sealed class JbRunnerSerializationTests : IDisposable
     [Fact]
     public async Task ConcurrencyProbe_DrivenWithNoLockInBetween_ObservesTheOverlap()
     {
-        // Arrange — the guard on the four assertions above: unless the probe can actually see two runs at
-        // once, "MaxConcurrent is 1" would mean nothing.
+        // Arrange — the guard on the MaxConcurrent assertions above: unless the probe can actually see two
+        // runs at once, "MaxConcurrent is 1" would mean nothing.
 
         // Act — straight at the process runner, with no JbRunner and so no lock between the callers.
         await Task.WhenAll(
@@ -104,7 +102,7 @@ public sealed class JbRunnerSerializationTests : IDisposable
     }
 
     /// <summary>
-    ///     A <see cref="IProcessRunner" /> that records how many runs were ever in flight together and holds
+    ///     An <see cref="IProcessRunner" /> that records how many runs were ever in flight together and holds
     ///     each one long enough that unserialized callers would demonstrably overlap.
     /// </summary>
     private sealed class ConcurrencyProbe : IProcessRunner

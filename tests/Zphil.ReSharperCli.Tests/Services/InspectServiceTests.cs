@@ -92,7 +92,7 @@ public sealed class InspectServiceTests : IDisposable
     [Fact]
     public async Task RunAsync_UnparseableSarifOutput_ThrowsUserErrorMentioningSarif()
     {
-        // Arrange — jb exits 0 and writes an output file, but its contents are not valid JSON.
+        // Arrange
         StubRun(callInfo =>
         {
             JbStubs.WriteSarifIfRequested(callInfo.Arguments(), "{ this is not valid SARIF json");

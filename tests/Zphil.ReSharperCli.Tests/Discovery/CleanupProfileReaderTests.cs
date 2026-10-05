@@ -8,10 +8,13 @@ using Zphil.ReSharperCli.Tests.TestSupport;
 namespace Zphil.ReSharperCli.Tests.Discovery;
 
 /// <summary>
-///     The settings-file reader on its own: which files it can get a declared profile out of, and what it
-///     reports when it cannot. The load-bearing case is the one it was written for — a file <c>jb</c> reads
-///     without complaint but the XML spec rejects must not turn the declared-profile feature off.
+///     <see cref="CleanupProfileReader" /> on its own: which files it can get a declared profile out of, and what
+///     it reports when it cannot.
 /// </summary>
+/// <remarks>
+///     The load-bearing case: a file <c>jb</c> reads without complaint but the XML spec rejects must not turn the
+///     declared-profile feature off.
+/// </remarks>
 public sealed class CleanupProfileReaderTests : IDisposable
 {
     private readonly FakeEnvironment _environment = new();
@@ -38,10 +41,10 @@ public sealed class CleanupProfileReaderTests : IDisposable
     [Fact]
     public void Read_IllegalDoubleHyphenInsideAComment_StillReturnsTheDeclaredName()
     {
-        // Arrange — the regression this whole change exists for. `--` inside a comment is illegal XML, .NET
-        // has no lenient mode for it (XmlReaderSettings.CheckCharacters = false does not relax the rule), and
-        // ReSharper reads such a file happily. Rejecting it here silently applied Full Cleanup instead of the
-        // profile the repo declared — the exact rewrite that profile was defined to prevent.
+        // Arrange — `--` inside a comment is illegal XML, .NET has no lenient mode for it
+        // (XmlReaderSettings.CheckCharacters = false does not relax the rule), and ReSharper reads such a file
+        // happily. Rejecting it here would silently apply Full Cleanup instead of the profile the repo
+        // declared — the exact rewrite that profile was defined to prevent.
         string path = DotSettingsFixtures.PlantBeside(_environment.CurrentDirectory, DotSettingsFixtures.DeclaringBehindIllegalComment("House: Keep Named Arguments"));
 
         // Act
@@ -153,8 +156,8 @@ public sealed class CleanupProfileReaderTests : IDisposable
     [Fact]
     public void Read_PathThatDoesNotExist_ReportsTheFailureWithoutThrowing()
     {
-        // Arrange — the resolver only hands over paths it has seen exist, but a file can be deleted between
-        // the two, and this method's contract is that it never throws.
+        // Arrange — a file seen to exist can still be deleted before it is read, and this method's contract is
+        // that it never throws.
         string path = Path.Combine(_environment.CurrentDirectory, "gone.DotSettings");
 
         // Act

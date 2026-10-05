@@ -6,14 +6,12 @@ using Zphil.ReSharperCli.Tests.TestSupport;
 
 namespace Zphil.ReSharperCli.Tests.Documentation;
 
-/// <summary>
-///     Holds every file that names the project's mark to a render committed under <c>assets/</c>. The
-///     channels are independent (NuGet packs the icon, the MCP registry links it, Cursor's manifest points
-///     a listing at it, the Claude Desktop bundle stages a copy inside itself), so none of them substitutes
-///     for another and a rename under <c>assets/</c> breaks each one silently and separately. Only the
-///     handshake is absent here: it embeds the bytes rather than naming a path, and
-///     <c>ServerIdentityTests</c> pins it against the same file.
-/// </summary>
+/// <summary>Holds every file that names the project's mark to a render committed under <c>assets/</c>.</summary>
+/// <remarks>
+///     Each of those files feeds a channel of its own, so none substitutes for another and a rename under
+///     <c>assets/</c> breaks each one silently and separately. Only the handshake is absent here: it embeds the
+///     bytes rather than naming a path, and <c>ServerIdentityTests</c> pins it against the same file.
+/// </remarks>
 public sealed partial class IconSiteTests
 {
     /// <summary>The raw host that serves this repository's committed files, and the only one an icon may cite.</summary>
@@ -28,6 +26,7 @@ public sealed partial class IconSiteTests
     [GeneratedRegex(@"<None\s+Include=""(?<include>[^""]*assets[^""]+)""\s+Pack=""true""\s+PackagePath=""(?<path>[^""]+)""")]
     private static partial Regex PackedAssetItem();
 
+    // pack.sh's copy of the icon: the quoted render under assets/, then the quoted name it is staged under.
     [GeneratedRegex(@"assets/(?<render>[^""]+\.png)""\s+""\$STAGE/(?<staged>[^""]+\.png)""")]
     private static partial Regex StagedBundleIcon();
 
@@ -77,7 +76,7 @@ public sealed partial class IconSiteTests
     ///     The bundle's icon is the one channel whose failure lands after the tag is pushed: an MCPB icon
     ///     path is relative to the bundle root, so <c>pack.sh</c> stages a copy under the name the manifest
     ///     declares, and <c>mcpb pack</c> refuses the zip when the two disagree or the render is missing.
-    ///     That is the release job failing at step 5, which is why the same fact is checked here.
+    ///     Checking the same fact here catches it before a tag exists.
     /// </summary>
     [Fact]
     public void BundlePackScript_StagesTheCommittedRenderTheManifestNames()

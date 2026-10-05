@@ -44,18 +44,17 @@ internal sealed record JbSolutionGenerations(
 internal static class JbCacheGenerations
 {
     /// <summary>
-    ///     How two cache-home directory names are compared, matching <see cref="JbRunLock" />'s treatment of
-    ///     the paths that key the same directories. Internal because a transplant that has just replaced one
-    ///     generation tells it apart from the forks it is sweeping up by name, and there is one right answer
-    ///     to how these names compare.
+    ///     How two cache-home directory names are compared, matching how <see cref="JbSidecar" /> folds the
+    ///     paths that key the same directories.
     /// </summary>
     /// <remarks>
     ///     <para>
-    ///         The operating system stands in for the cache home's filesystem, which is what actually decides
-    ///         the answer. The proxy is right on NTFS and on ext4, and wrong in both directions: macOS's
-    ///         default APFS volume is case-insensitive and gets <see cref="StringComparison.Ordinal" />, while
-    ///         a Windows directory marked with <c>setCaseSensitiveInfo</c> and a case-insensitive Linux mount
-    ///         get <see cref="StringComparison.OrdinalIgnoreCase" />.
+    ///         Shared, because there is one right answer to how these names compare. The operating system
+    ///         stands in for the cache home's filesystem, which is what actually decides the answer. The proxy
+    ///         is right on NTFS and on ext4, and wrong in both directions: macOS's default APFS volume is
+    ///         case-insensitive and gets <see cref="StringComparison.Ordinal" />, while a Windows directory marked with
+    ///         <c>setCaseSensitiveInfo</c> and a case-insensitive Linux mount get
+    ///         <see cref="StringComparison.OrdinalIgnoreCase" />.
     ///     </para>
     ///     <para>
     ///         Reaching the gap takes one solution path spelt in two cases across runs on a filesystem that
@@ -77,10 +76,7 @@ internal static class JbCacheGenerations
     ///     <para>
     ///         It stays because the only correct fix is probing the filesystem rather than picking a better
     ///         switch, and one probe would not be enough: the lock key covers paths on the <em>solution's</em>
-    ///         filesystem, not the cache home's, so the two can disagree. There is no macOS machine here to
-    ///         prove either against, and macOS is already the platform whose weaker guarantees are named
-    ///         rather than assumed — <see cref="ChildProcessLifetime" /> has no orphan primitive there.
-    ///         Revisit on a report from one.
+    ///         filesystem, not the cache home's, so the two can disagree.
     ///     </para>
     /// </remarks>
     internal static StringComparison NameComparison =>
@@ -88,10 +84,13 @@ internal static class JbCacheGenerations
 
     /// <summary>
     ///     The generations under <paramref name="cacheHome" /> built from a solution file named
-    ///     <paramref name="solutionName" /> (no extension), ordered by name. A cache home that does not exist
-    ///     yet holds nothing; any other enumeration failure is the caller's to report, because a caller that
-    ///     is about to delete these must not mistake "could not look" for "nothing there".
+    ///     <paramref name="solutionName" /> (no extension), ordered by name.
     /// </summary>
+    /// <remarks>
+    ///     A cache home that does not exist yet holds nothing; any other enumeration failure is the caller's to
+    ///     report, because a caller that is about to delete these must not mistake "could not look" for
+    ///     "nothing there".
+    /// </remarks>
     internal static List<JbCacheGeneration> Find(string cacheHome, string solutionName)
     {
         if (!Directory.Exists(cacheHome)) return [];
@@ -109,13 +108,16 @@ internal static class JbCacheGenerations
 
     /// <summary>
     ///     The generations built from a solution file named like <paramref name="solutionPath" />'s, split by
-    ///     ownership. Which of the same-named generations are the solution's own is decided by reproducing
-    ///     <c>jb</c>'s hash of the path (<see cref="JbSolutionCacheHash" />), so ownership is proved rather
-    ///     than guessed — a hash matching nothing owns nothing, and every caller treats that as "leave
-    ///     everything alone" rather than "pick the closest". This pairing of name derivation, hash, and
-    ///     comparison is the one safety-critical predicate of the cache tools, which is why it lives here
-    ///     beside the parser instead of being restated at each call site.
+    ///     ownership.
     /// </summary>
+    /// <remarks>
+    ///     Which of the same-named generations are the solution's own is decided by reproducing <c>jb</c>'s
+    ///     hash of the path (<see cref="JbSolutionCacheHash" />), so ownership is proved rather than guessed — a
+    ///     hash matching nothing owns nothing, and every caller treats that as "leave everything alone" rather
+    ///     than "pick the closest". This pairing of name derivation, hash, and comparison is the one
+    ///     safety-critical predicate of the cache tools, which is why it lives here beside the parser instead
+    ///     of being restated at each call site.
+    /// </remarks>
     internal static JbSolutionGenerations FindFor(string cacheHome, string solutionPath)
     {
         string hash = JbSolutionCacheHash.Compute(solutionPath);
@@ -129,11 +131,11 @@ internal static class JbCacheGenerations
     /// <summary>
     ///     Where the generation directory called <paramref name="generationName" /> sits under
     ///     <paramref name="cacheHome" />, with the home resolved absolute so callers all spell one path the
-    ///     same way. Lives beside the parser because the name can come from a warm marker's content —
-    ///     untrusted input to a copy.
+    ///     same way.
     /// </summary>
     /// <remarks>
-    ///     This composition constrains nothing on its own, and a caller must not read it as though it did:
+    ///     Lives beside the parser because the name can come from a warm marker's content — untrusted input to
+    ///     a copy. This composition constrains nothing on its own, and a caller must not read it as though it did:
     ///     <see cref="Path.Combine(string, string)" /> lets <c>..</c> climb out of the home and discards the
     ///     home outright for a rooted second argument. What keeps the untrusted case inside the cache home is
     ///     <c>JbWarmMarker.IsBareDirectoryName</c>, which rejects any marker content that is not a lone
@@ -148,9 +150,12 @@ internal static class JbCacheGenerations
     /// <summary>
     ///     Whether <paramref name="directoryName" /> names a generation of a solution file called like
     ///     <paramref name="solutionPath" />'s but built from a <em>different</em> path — the shape a
-    ///     transplant donor has. A generation of this very solution fails it, and so does anything else in
-    ///     the cache home, which is another solution entirely.
+    ///     transplant donor has.
     /// </summary>
+    /// <remarks>
+    ///     A generation of this very solution fails it, and so does anything else in the cache home, which is
+    ///     another solution entirely.
+    /// </remarks>
     internal static bool IsNeighbourOf(string directoryName, string solutionPath)
     {
         string? hash = MatchHash(directoryName, Path.GetFileNameWithoutExtension(solutionPath));
@@ -164,10 +169,13 @@ internal static class JbCacheGenerations
 
     /// <summary>
     ///     The hash in <paramref name="directoryName" /> when it names a cache generation of a solution file
-    ///     called <paramref name="solutionName" />, else <see langword="null" />. The remainder after the
-    ///     solution name must be exactly <c>{hash}.{generation}</c> — an optionally negative integer and a
-    ///     non-negative one — which is what stops a longer solution name's directory matching a shorter one's.
+    ///     called <paramref name="solutionName" />, else <see langword="null" />.
     /// </summary>
+    /// <remarks>
+    ///     The remainder after the solution name must be exactly <c>{hash}.{generation}</c> — an optionally
+    ///     negative integer and a non-negative one — which is what stops a longer solution name's directory
+    ///     matching a shorter one's.
+    /// </remarks>
     internal static string? MatchHash(string directoryName, string solutionName)
     {
         var prefix = $"_{solutionName}.";

@@ -12,8 +12,8 @@ using Zphil.ReSharperCli.Tests.TestSupport;
 namespace Zphil.ReSharperCli.Tests.Execution;
 
 /// <summary>
-///     The one test class that spawns real OS processes, exercising <see cref="ProcessRunner" /> against
-///     actual exit codes, output capture, timeouts, and a missing executable.
+///     Exercises <see cref="ProcessRunner" /> against real OS processes: actual exit codes, output capture,
+///     timeouts, and a missing executable.
 /// </summary>
 /// <remarks>
 ///     Every case here runs through a real <see cref="ChildProcessLifetime" /> over the real environment,
@@ -52,7 +52,7 @@ public sealed class ProcessRunnerTests : IDisposable
     /// <summary>Holds the files children print back, deleted whole with the fixture.</summary>
     private readonly DirectoryInfo _scratch = Directory.CreateTempSubdirectory("resharper-cli-lines-");
 
-    /// <summary>Read by <c>SkipUnless</c> on the case that pins the binding.</summary>
+    /// <summary>Read by <c>SkipUnless</c>.</summary>
     public static bool OnWindows => OperatingSystem.IsWindows();
 
     public void Dispose()
@@ -170,7 +170,7 @@ public sealed class ProcessRunnerTests : IDisposable
         ProcessResult result = await runner.RunAsync(
             fileName, arguments, GenerousTimeout, TestContext.Current.CancellationToken, lines.Add);
 
-        // Assert — every line arrives, in order, with no stray carriage return for a consumer to trim.
+        // Assert
         result.ExitCode.ShouldBe(0);
         lines.ShouldBe(["Analyzing files", "Analyzing A.cs", "Analyzing B.cs"]);
     }
@@ -178,8 +178,7 @@ public sealed class ProcessRunnerTests : IDisposable
     [Fact]
     public async Task RunAsync_WithALineObserver_StillCapturesTheWholeOutput()
     {
-        // Arrange — observing must not consume: inspect's SARIF comes from a file, but a failed run's message
-        // quotes the captured text, and a cleanup classifies nothing without its exit code.
+        // Arrange — observing must not consume: a failed run's message quotes the captured text.
         ProcessRunner runner = Runner();
         (string fileName, string[] arguments) = PrintLinesCommand(["first", "second"]);
 
@@ -241,8 +240,8 @@ public sealed class ProcessRunnerTests : IDisposable
         // Arrange
         ProcessRunner runner = Runner();
 
-        // Act / Assert — unchanged by the wrapper, and that is the point of decline-on-unresolvable: this is
-        // the shape JbLocator reads as "candidate failed" when jb is not installed.
+        // Act / Assert — unchanged by the wrapper, which declines a command it cannot resolve, so a missing
+        // executable still throws the way it does unwrapped.
         await Should.ThrowAsync<Win32Exception>(() => runner.RunAsync("this-executable-does-not-exist-9f3a1c", [], GenerousTimeout, TestContext.Current.CancellationToken));
     }
 

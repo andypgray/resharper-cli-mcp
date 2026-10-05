@@ -5,7 +5,7 @@ namespace Zphil.ReSharperCli.Execution;
 /// </summary>
 /// <remarks>
 ///     The first four are this server's own doing and are known without reading a line of <c>jb</c>'s
-///     output; the last two are <c>jb</c>'s, and are reached only when it says so. That split is why
+///     output; the rest are <c>jb</c>'s, and are reached only when it says so. That split is why
 ///     <see cref="Starting" /> exists as a phase of its own rather than being folded into
 ///     <see cref="Analyzing" />: <c>jb</c> spends its first half-minute loading the solution model and
 ///     saying nothing at all, and a run silently sitting in that prelude is exactly what a caller cannot
@@ -50,11 +50,13 @@ internal enum JbRunPhase
 internal readonly record struct JbProgressStep(JbRunPhase Phase, bool NamesAFile);
 
 /// <summary>
-///     Reads <c>jb</c>'s progress vocabulary off a single line of its standard output. Pure and stateless:
-///     this is the piece the <c>JbContract</c> suite drives over the output of a real run, so what it knows
-///     about someone else's tool is checked against that tool rather than assumed.
+///     Reads <c>jb</c>'s progress vocabulary off a single line of its standard output.
 /// </summary>
 /// <remarks>
+///     <para>
+///         Pure and stateless, so the <c>JbContract</c> suite can drive it over the output of a real run and
+///         what it knows about someone else's tool is checked against that tool rather than assumed.
+///     </para>
 ///     <para>
 ///         The vocabulary, measured against <c>jb</c> 2026.2.1. <c>inspectcode</c> announces
 ///         <c>Analyzing files</c> and then prints one <c>Analyzing &lt;file&gt;</c> line per file, then
@@ -66,8 +68,8 @@ internal readonly record struct JbProgressStep(JbRunPhase Phase, bool NamesAFile
 ///         <c>cleanupcode</c> shares none of it. It announces <c>Cleaning up using profile &lt;name&gt;</c>
 ///         and then prints one line per rewritten file — but those lines are bare
 ///         <c>&lt;project&gt;\&lt;path&gt;</c> strings with no prefix, which nothing here can tell from a
-///         stray banner line. So cleanup gets the phase and no file count, and
-///         <see cref="Services.JbRunner" /> never makes a count-based claim it cannot support.
+///         stray banner line. So cleanup gets the phase and no file count, and nothing downstream can make a
+///         count-based claim it cannot support.
 ///     </para>
 ///     <para>
 ///         Anything unrecognised is <see langword="null" />, which leaves the run in whatever phase it was
@@ -121,10 +123,12 @@ internal static class JbProgressLines
     }
 
     /// <summary>
-    ///     Whether <paramref name="line" /> is <paramref name="prefix" /> followed by something. The
-    ///     "followed by something" half is what stops a bare <c>Analyzing</c> — a truncated line, or a
-    ///     future announcement that drops its noun — being counted as a file.
+    ///     Whether <paramref name="line" /> is <paramref name="prefix" /> followed by something.
     /// </summary>
+    /// <remarks>
+    ///     The "followed by something" half is what stops a bare <c>Analyzing</c> — a truncated line, or a
+    ///     future announcement that drops its noun — being counted as a file.
+    /// </remarks>
     private static bool NamesAFileAfter(string line, string prefix)
     {
         return line.StartsWith(prefix, StringComparison.Ordinal) && line.Length > prefix.Length;

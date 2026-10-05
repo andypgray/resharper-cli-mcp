@@ -2,10 +2,9 @@ namespace Zphil.ReSharperCli.Services;
 
 /// <summary>
 ///     The structured result of a successful <c>jb cleanupcode</c> run: the profile applied and one
-///     <see cref="CleanupEntry" /> per requested <c>files</c> entry, in request order. Formatting lives in
-///     <c>CleanupSummaryFormatter</c>; the service returns only data so the tool can render it at whatever
-///     <c>DetailLevel</c> fits the output budget.
+///     <see cref="CleanupEntry" /> per requested <c>files</c> entry, in request order.
 /// </summary>
+/// <remarks>Data only, so it can be rendered at whatever <c>DetailLevel</c> fits the output budget.</remarks>
 internal sealed record CleanupOutcome(string Profile, IReadOnlyList<CleanupEntry> Entries);
 
 /// <summary>One requested cleanup target: the path as the caller wrote it, plus what happened to it.</summary>

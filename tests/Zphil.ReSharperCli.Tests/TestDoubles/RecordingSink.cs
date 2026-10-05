@@ -2,9 +2,12 @@ namespace Zphil.ReSharperCli.Tests.TestDoubles;
 
 /// <summary>
 ///     A thread-safe recorder for whatever a sink is handed, with a bounded wait for "at least this much
-///     has arrived". The base of every progress-shaped test double, so the poll loop and its give-up
-///     policy — the parts that drift when hand-rolled per test class — have one spelling.
+///     has arrived".
 /// </summary>
+/// <remarks>
+///     A base class, so the poll loop and its give-up policy — the parts that drift when hand-rolled per
+///     test class — have one spelling.
+/// </remarks>
 /// <param name="patience">
 ///     How long a wait may go unanswered before it fails. Long enough that only a genuine hang reaches it,
 ///     short enough to fail rather than wedge the run.
@@ -45,16 +48,17 @@ internal class RecordingSink<T>(TimeSpan patience)
         }
     }
 
-    /// <summary>Wait until at least <paramref name="count" /> items have landed.</summary>
+    /// <summary>Waits until at least <paramref name="count" /> items have landed.</summary>
     public Task WaitForAsync(int count, CancellationToken cancellationToken)
     {
         return WaitUntilAsync(() => Count >= count, $"at least {count} recorded item(s)", cancellationToken);
     }
 
-    /// <summary>
-    ///     Wait until <paramref name="condition" /> holds, failing with a message naming
-    ///     <paramref name="awaited" /> rather than with a bare cancellation when it never does.
-    /// </summary>
+    /// <summary>Waits until <paramref name="condition" /> holds.</summary>
+    /// <remarks>
+    ///     When it never does, fails with a message naming <paramref name="awaited" /> rather than with a bare
+    ///     cancellation.
+    /// </remarks>
     public async Task WaitUntilAsync(Func<bool> condition, string awaited, CancellationToken cancellationToken)
     {
         using var giveUp = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);

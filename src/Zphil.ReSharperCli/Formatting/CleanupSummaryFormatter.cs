@@ -15,9 +15,9 @@ namespace Zphil.ReSharperCli.Formatting;
 internal static class CleanupSummaryFormatter
 {
     /// <summary>
-    ///     Closes every reduction note, and the truncation footer too (via <c>ResharperTools.TruncationHintFor</c>).
-    ///     A shrinking report is the one place an agent could read "less was listed" as "less was done", and the
-    ///     whole point of this tool is that it already rewrote the files.
+    ///     Closes every reduction note, and the truncation footer too. A shrinking report is the one place an
+    ///     agent could read "less was listed" as "less was done", and the whole point of this tool is that it
+    ///     already rewrote the files.
     /// </summary>
     internal const string CleanupRanInFull = "The cleanup itself ran in full; only the report shrank.";
 
@@ -122,9 +122,10 @@ internal static class CleanupSummaryFormatter
     }
 
     /// <summary>
-    ///     Which categories stopped being listed individually at <paramref name="level" />, for
-    ///     <c>ProgressiveRenderer</c>'s reduction note. Mirrors <see cref="IsListed" /> — keep the two in step.
+    ///     Which categories stopped being listed individually at <paramref name="level" />, phrased for the
+    ///     reduction note.
     /// </summary>
+    /// <remarks>Mirrors <see cref="IsListed" /> — keep the two in step.</remarks>
     public static string DescribeReduction(DetailLevel level)
     {
         return level switch
@@ -146,10 +147,10 @@ internal static class CleanupSummaryFormatter
     {
         return status switch
         {
-            CleanupFileStatus.Changed => true, // always listed at every listing level (Minimal returns earlier)
-            CleanupFileStatus.StatusUnknown => level <= DetailLevel.Medium, // Full, High, Medium
-            CleanupFileStatus.Pattern => level <= DetailLevel.High, // Full, High
-            _ => level == DetailLevel.Full // Unchanged: only at Full
+            CleanupFileStatus.Changed => true, // Minimal returns before anything is listed
+            CleanupFileStatus.StatusUnknown => level <= DetailLevel.Medium,
+            CleanupFileStatus.Pattern => level <= DetailLevel.High,
+            _ => level == DetailLevel.Full // Unchanged
         };
     }
 

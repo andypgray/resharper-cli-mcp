@@ -25,10 +25,9 @@ namespace Zphil.ReSharperCli.Pipeline;
 ///         underlying CLR type.
 ///     </para>
 ///     <para>
-///         This is deliberately narrow: it wires only the coercers and re-injects the schema they
-///         erase, and does NOT touch tool metadata (<c>Title</c>/<c>Execution</c>) or shrink the
-///         payload — those would change this server's advertised <c>tools/list</c> output and are
-///         out of scope.
+///         It wires only the coercers and re-injects the schema they erase, and does not touch tool
+///         metadata (<c>Title</c>/<c>Execution</c>) or shrink the payload: either would change this
+///         server's advertised <c>tools/list</c> output.
 ///     </para>
 /// </remarks>
 internal static class CoercingToolRegistration
@@ -60,11 +59,10 @@ internal static class CoercingToolRegistration
                     SerializerOptions = ToolInputSerializerOptions.Instance
                 };
 
-                // ResharperTools is non-static and its ctor deps (ConfigResolver, InspectService,
-                // CleanupService) are all singletons, so the per-request activation is cheap. A null
-                // request-service-provider is an unrecoverable host misconfiguration, not a runtime
-                // input, so fail loud and clear rather than falling back to a parameterless ctor
-                // this type does not have.
+                // The tool type is activated per request, which is cheap because its constructor
+                // dependencies are singletons. A null request-service-provider is an unrecoverable host
+                // misconfiguration, not a runtime input, so fail loud and clear rather than falling back
+                // to a parameterless ctor this type does not have.
                 return McpServerTool.Create(
                     toolMethod,
                     r => ActivatorUtilities.CreateInstance(
@@ -80,13 +78,14 @@ internal static class CoercingToolRegistration
 
     /// <summary>
     ///     Re-injects the shape the custom converters erased to <c>{}</c>, reading it back from the
-    ///     underlying CLR type: array + <c>items</c> for the string array, <c>string</c> for scalars,
-    ///     and — for enum parameters — the <c>enum</c> value list. The value list is otherwise lost
-    ///     entirely (the converter hides the enum from the exporter), so restoring it here is what lets
-    ///     the allowed values travel in the schema rather than being duplicated into the description
-    ///     prose. Every branch is guarded on <c>!ContainsKey</c>, so it is a no-op whenever the exporter
-    ///     already emitted the shape.
+    ///     underlying CLR type.
     /// </summary>
+    /// <remarks>
+    ///     An enum's value list is otherwise lost entirely (the converter hides the enum from the exporter),
+    ///     so restoring it here is what lets the allowed values travel in the schema rather than being
+    ///     duplicated into the description prose. Every branch is guarded on <c>!ContainsKey</c>, so it is a
+    ///     no-op whenever the exporter already emitted the shape.
+    /// </remarks>
     private static JsonNode ReinjectErasedSchema(AIJsonSchemaCreateContext context, JsonNode node)
     {
         if (node is JsonObject obj)
@@ -105,10 +104,9 @@ internal static class CoercingToolRegistration
             }
             else if (t == typeof(string) && !obj.ContainsKey("type"))
             {
-                // Load-bearing here: verified empirically that this project's exporter erases every
-                // scalar string?/string parameter (solutionPath, profile) to {} under
-                // StringCoercerFactory. Without this repair they would advertise no type at all.
-                // (The advertised shape is a plain "string"; no ["string","null"] union appears.)
+                // Load-bearing: under StringCoercerFactory the exporter erases every scalar string?/string
+                // parameter (solutionPath, profile) to {}, and without this repair they would advertise no
+                // type at all. The advertised shape is a plain "string"; no ["string","null"] union appears.
                 obj["type"] = "string";
             }
         }

@@ -59,11 +59,11 @@ public sealed class WireLogTests
         Write(log, ProgressFrame(1));
         log.Append(Encoding.UTF8.GetBytes(ToolResultFrame));
 
-        // Assert — the half-written frame is not a frame.
+        // Assert
         log.Frames.Count.ShouldBe(1);
         log.ToolResultIndex.ShouldBe(-1);
 
-        // Act — the terminator lands, completing it.
+        // Act
         log.Append("\n"u8);
 
         // Assert

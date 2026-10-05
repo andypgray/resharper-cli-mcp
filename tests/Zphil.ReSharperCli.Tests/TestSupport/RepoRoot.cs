@@ -2,10 +2,12 @@ namespace Zphil.ReSharperCli.Tests.TestSupport;
 
 /// <summary>
 ///     Locates the repository root — the directory holding <c>Zphil.ReSharperCli.slnx</c> — by walking
-///     up from the test assembly's base directory. Lets documentation tests read the <em>source</em>
-///     markdown tree directly, both locally and in a CI checkout (the <c>.slnx</c> always sits above
-///     <c>bin/</c>), with no csproj <c>Content</c> copying. Mirrors the spirit of <see cref="Fixtures" />.
+///     up from the test assembly's base directory.
 /// </summary>
+/// <remarks>
+///     A test reads the <em>source</em> tree directly, both locally and in a CI checkout (the <c>.slnx</c>
+///     always sits above <c>bin/</c>), with no csproj <c>Content</c> copying.
+/// </remarks>
 internal static class RepoRoot
 {
     /// <summary>The server's project file, relative to the root — where its version, icon and description are declared.</summary>

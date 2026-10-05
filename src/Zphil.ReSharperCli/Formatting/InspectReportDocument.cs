@@ -4,18 +4,19 @@ namespace Zphil.ReSharperCli.Formatting;
 ///     The body of the file <c>resharper_inspect</c> writes when a caller asks for a report: a short
 ///     provenance header, then the <see cref="IssueMarkdownFormatter" /> rendering at
 ///     <see cref="DetailLevel.Full" /> — every issue on its own line with its own message, which is exactly
-///     what the response's reduction ladder gives up on a solution-wide run. The caller passes that rendering
-///     in rather than the issues, so the same string serves the response and the file instead of being
-///     rendered twice.
+///     what the response's reduction ladder gives up on a solution-wide run.
 /// </summary>
 /// <remarks>
 ///     <para>
+///         It takes that rendering rather than the issues, so the same string serves the response and the
+///         file instead of being rendered twice.
+///     </para>
+///     <para>
 ///         The header is here rather than inside <see cref="IssueMarkdownFormatter" /> because that
-///         formatter's output is pinned as this repo's spec at every level, and the response must keep
-///         rendering byte-for-byte as it does today. It is worth the separate class: a report is read minutes
-///         or days after the call, often by a different agent than the one that asked for it, and
-///         <c>Found N issue(s) across M file(s)</c> alone does not say which solution, at which severity, or
-///         over which scope.
+///         formatter's output is pinned at every level, and the response must render byte-for-byte without
+///         it. It is worth the separate class: a report is read minutes or days after the call, often by a different
+///         agent than the one that asked for it, and <c>Found N issue(s) across M file(s)</c> alone does not say which
+///         solution, at which severity, or over which scope.
 ///     </para>
 ///     <para>
 ///         The timestamp is passed in rather than read from the clock here, so this stays a pure function of

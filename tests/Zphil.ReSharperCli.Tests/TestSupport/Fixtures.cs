@@ -13,7 +13,7 @@ internal static class Fixtures
         return Path.Combine(path);
     }
 
-    /// <summary>Read the text of a SARIF fixture under <c>Fixtures/Sarif/</c>.</summary>
+    /// <summary>Reads the text of a SARIF fixture under <c>Fixtures/Sarif/</c>.</summary>
     public static string ReadSarif(string fileName)
     {
         return File.ReadAllText(PathTo("Sarif", fileName));

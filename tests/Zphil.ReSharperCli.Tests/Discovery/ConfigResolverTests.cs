@@ -33,8 +33,6 @@ public sealed class ConfigResolverTests : IDisposable
         _environment.Dispose();
     }
 
-    // ── Solution: override ────────────────────────────────────────────────────
-
     [Fact]
     public async Task ResolveAsync_SolutionOverrideExists_UsesResolvedOverride()
     {
@@ -66,8 +64,8 @@ public sealed class ConfigResolverTests : IDisposable
     {
         // Arrange — the path a worktree had before it was removed. Its cache generation is still on disk and
         // is still addressed by the hash of this string, so a reset has to be able to reach it. The relative
-        // form is resolved against the working directory exactly as it always was, so what gets hashed is
-        // what a run of that checkout would have hashed.
+        // form is resolved against the working directory as a run resolves it, so what gets hashed is what a
+        // run of that checkout would have hashed.
         string missing = Path.Combine(_environment.CurrentDirectory, "Removed.sln");
 
         // Act
@@ -81,8 +79,8 @@ public sealed class ConfigResolverTests : IDisposable
     [Fact]
     public async Task ResolveForCacheResetAsync_SolutionOverrideExists_IsUnchanged()
     {
-        // Arrange — the ordinary reset, which is most of them. Relaxing the branch must not change what it
-        // does when the file is there.
+        // Arrange — the ordinary reset, which is most of them. Accepting a missing file must not change what
+        // it does when the file is there.
         string overridePath = _environment.PlantSolution("Explicit.sln");
 
         // Act
@@ -116,8 +114,6 @@ public sealed class ConfigResolverTests : IDisposable
         await Should.ThrowAsync<UserErrorException>(() => _resolver.ResolveForCacheResetAsync(null, Ct));
     }
 
-    // ── Solution: JB_SOLUTION_PATH ────────────────────────────────────────────
-
     [Fact]
     public async Task ResolveAsync_JbSolutionPathEnvExists_UsesIt()
     {
@@ -145,8 +141,6 @@ public sealed class ConfigResolverTests : IDisposable
         // Assert
         exception.Message.ShouldBe($"JB_SOLUTION_PATH is set to \"{missing}\" but the file does not exist.");
     }
-
-    // ── Solution: current-directory scan ──────────────────────────────────────
 
     [Theory]
     [InlineData("Only.sln")]
@@ -178,7 +172,7 @@ public sealed class ConfigResolverTests : IDisposable
     [Fact]
     public async Task ResolveAsync_DirectoryNamedLikeSolutionAlongsideRealSolution_ResolvesTheRealFile()
     {
-        // Arrange — a *directory* named "Fake.sln" must not be counted as a solution file.
+        // Arrange
         _environment.PlantSolution("App.sln");
         Directory.CreateDirectory(Path.Combine(_environment.CurrentDirectory, "Fake.sln"));
 
@@ -204,7 +198,6 @@ public sealed class ConfigResolverTests : IDisposable
         exception.Message.ShouldContain("Alpha.sln");
         exception.Message.ShouldContain("Beta.slnx");
         exception.Message.ShouldContain("Set the JB_SOLUTION_PATH environment variable to specify which one to use.");
-        // Names, not full paths.
         exception.Message.ShouldNotContain(Path.Combine(_environment.CurrentDirectory, "Alpha.sln"));
     }
 
@@ -224,8 +217,6 @@ public sealed class ConfigResolverTests : IDisposable
         // Assert
         exception.Message.ShouldContain("No .sln or .slnx file found in");
     }
-
-    // ── Settings chain ────────────────────────────────────────────────────────
 
     [Fact]
     public async Task ResolveAsync_AdjacentDotSettingsExists_IsPreferred()
@@ -270,11 +261,11 @@ public sealed class ConfigResolverTests : IDisposable
         config.CleanupProfile.ShouldBeNull();
     }
 
-    // ── Settings: the custom-layer split ──────────────────────────────────────
-    // jb mounts the adjacent {solution}.DotSettings (SolutionShared) and the shared
-    // GlobalSettingsStorage.DotSettings (GlobalAll) itself, so naming either as --settings would not be a
-    // no-op: a Custom layer sits above the project layers, and every {project}.csproj.DotSettings in the
-    // solution would silently stop applying. Only a JB_SETTINGS_PATH outside those two earns the flag.
+    // The custom-layer split, for the tests that follow: jb mounts the adjacent {solution}.DotSettings
+    // (SolutionShared) and the shared GlobalSettingsStorage.DotSettings (GlobalAll) itself, so naming either as
+    // --settings would not be a no-op: a Custom layer sits above the project layers, and every
+    // {project}.csproj.DotSettings in the solution would silently stop applying. Only a JB_SETTINGS_PATH outside
+    // those two earns the flag.
 
     [Fact]
     public async Task ResolveAsync_JbSettingsPathNamesAFileJbCannotDiscover_UsesItAsACustomLayer()
@@ -358,8 +349,6 @@ public sealed class ConfigResolverTests : IDisposable
         config.SettingsPathIsCustomLayer.ShouldBeFalse();
     }
 
-    // ── Cleanup profile ───────────────────────────────────────────────────────
-
     [Fact]
     public async Task ResolveAsync_SettingsDeclareSilentCleanupProfile_ResolvesIt()
     {
@@ -377,8 +366,8 @@ public sealed class ConfigResolverTests : IDisposable
     [Fact]
     public async Task ResolveAsync_SettingsDeclareProfileBehindAnIllegalComment_StillResolvesIt()
     {
-        // Arrange — the field failure: a comment containing `--` is illegal XML but ReSharper and jb read
-        // the file happily, so rejecting it here turned the declared-profile feature off without a word.
+        // Arrange — a comment containing `--` is illegal XML but ReSharper and jb read the file happily, so
+        // rejecting it here would turn the declared-profile feature off without a word.
         _environment.PlantSolution("App.sln");
         DotSettingsFixtures.PlantBeside(_environment.CurrentDirectory, DotSettingsFixtures.DeclaringBehindIllegalComment("House: Keep Named Arguments"));
 
@@ -394,8 +383,8 @@ public sealed class ConfigResolverTests : IDisposable
     public async Task ResolveAsync_SettingsPathContainsUriMetaCharacters_StillReadsTheProfile()
     {
         // Arrange — '%' and '#' are URI metacharacters and legal in a path. Reading the settings file
-        // through a stream keeps them a non-issue; this pins that, so a future switch back to a
-        // URI-resolving overload cannot make a declared profile silently read as unset on some platform.
+        // through a stream keeps them a non-issue; this pins that, so a switch to a URI-resolving overload
+        // cannot make a declared profile silently read as unset on some platform.
         string awkwardDirectory = Path.Combine(_environment.CreateTempDirectory(), "100%#done");
         Directory.CreateDirectory(awkwardDirectory);
         _environment.CurrentDirectory = awkwardDirectory;
@@ -408,8 +397,6 @@ public sealed class ConfigResolverTests : IDisposable
         // Assert
         config.CleanupProfile.ShouldBe("House: Keep Named Arguments");
     }
-
-    // ── Warnings ──────────────────────────────────────────────────────────────
 
     [Fact]
     public async Task ResolveAsync_UnparseableSettingsFile_ResolvesNullProfileAndRecordsTheReadFailureAsAWarning()
@@ -486,8 +473,6 @@ public sealed class ConfigResolverTests : IDisposable
         config.Warnings.SettingsRead.ShouldBeNull();
     }
 
-    // ── Cache home + extensions ───────────────────────────────────────────────
-
     [Theory]
     [InlineData(null)]
     [InlineData("")] // empty is treated as unset, not as the current directory
@@ -536,14 +521,14 @@ public sealed class ConfigResolverTests : IDisposable
     [Fact]
     public async Task ResolveAsync_ProbedJbReportsAVersion_CarriesItOnTheConfig()
     {
-        // Arrange — the probe already parses it and used to log it and drop it. It is what a run stamps into
-        // the warm marker, so a cache another build wrote can be told from one this build can resume.
+        // Arrange — the probe already parses it, and a run stamps it into the warm marker, so a cache another
+        // build wrote can be told from one this build can resume.
         _environment.PlantSolution("App.sln");
 
         // Act
         ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
 
-        // Assert — the version the stubbed probe reported, verbatim.
+        // Assert
         config.JbVersion.ShouldBe(JbStubs.Version);
     }
 
@@ -576,8 +561,6 @@ public sealed class ConfigResolverTests : IDisposable
         config.Extensions.ShouldBe("Foo.Plugin;Bar.Plugin");
         config.ExtensionSource.ShouldBe("https://example.test/nuget");
     }
-
-    // ── Re-resolution ─────────────────────────────────────────────────────────
 
     [Fact]
     public async Task ResolveAsync_SettingsWrittenAfterAnEarlierResolve_AreSeenOnTheNextCall()

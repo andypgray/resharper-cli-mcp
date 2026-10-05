@@ -8,9 +8,12 @@ namespace Zphil.ReSharperCli.Execution;
 
 /// <summary>
 ///     What a spawn actually runs, and whether a platform wrapper stands between it and what the caller
-///     asked for. The flag is the wrap decision itself, carried to <see cref="ChildProcessLifetime.Start" />
-///     so the spawn path and the guarantee it reports come from the same place the command did.
+///     asked for.
 /// </summary>
+/// <remarks>
+///     The flag is the wrap decision itself, carried to <see cref="ChildProcessLifetime.Start" /> so the spawn
+///     path and the guarantee it reports come from the same place the command did.
+/// </remarks>
 internal readonly record struct SpawnCommand(string FileName, IReadOnlyList<string> Arguments, bool Wrapped)
 {
     /// <summary>The caller's command, unwrapped.</summary>
@@ -38,14 +41,14 @@ internal readonly record struct SpawnCommand(string FileName, IReadOnlyList<stri
 ///     <para>
 ///         Windows gets a job object with <c>KILL_ON_JOB_CLOSE</c>, which covers <c>jb</c> and every
 ///         descendant. Linux gets <c>setpriv --pdeathsig SIGKILL</c>, which covers <c>jb</c> itself and not
-///         what it forks. macOS gets nothing, and keeps today's behaviour. <see cref="Guarantee" /> names
-///         which is in force and rides on the startup fingerprint, because a mechanism that only shows up in
-///         its own absence is one nobody can confirm is working.
+///         what it forks. macOS gets nothing, and behaves as it would without this class.
+///         <see cref="Guarantee" /> names which is in force so it can be reported at startup, because a
+///         mechanism that only shows up in its own absence is one nobody can confirm is working.
 ///     </para>
 ///     <para>
 ///         Every failure here is silent and inert: a job that will not create, a <c>setpriv</c> that is
-///         absent or too old, an assignment the kernel refuses. Each leaves exactly today's behaviour and
-///         costs nothing, so nothing about a run depends on this having worked.
+///         absent or too old, an assignment the kernel refuses. Each leaves a child that is simply unguarded
+///         and costs nothing, so nothing about a run depends on this having worked.
 ///     </para>
 ///     <para>
 ///         A concrete singleton rather than a third seam. It sits behind <see cref="IProcessRunner" />, which
@@ -109,9 +112,7 @@ internal sealed class ChildProcessLifetime : IDisposable
     internal string Guarantee { get; }
 
     /// <summary>
-    ///     Closes the job handle, which is what terminates anything still assigned to it. Disposed by the
-    ///     container at host shutdown — after the hosted services have stopped, so an orderly drain still goes
-    ///     first and this stays the backstop rather than the mechanism.
+    ///     Closes the job handle, which is what terminates anything still assigned to it.
     /// </summary>
     public void Dispose()
     {
@@ -127,17 +128,19 @@ internal sealed class ChildProcessLifetime : IDisposable
         if (!OperatingSystem.IsLinux() || _setprivPath is null) return SpawnCommand.AsRequested(fileName, arguments);
 
         // Resolved here rather than left to setpriv, so a command that does not exist fails exactly as it
-        // does today — a Win32Exception from this process, not a setpriv exec error.
+        // does unwrapped — a Win32Exception from this process, not a setpriv exec error.
         string? target = PathSearch.Resolve(fileName, _environment.GetVariable(PathSearch.PathVariable));
 
         return ParentDeathSignal.Wrap(_setprivPath, target, fileName, arguments);
     }
 
     /// <summary>
-    ///     Start <paramref name="process" /> and bind its lifetime to this one. A missing executable throws
-    ///     <see cref="Win32Exception" /> from here exactly as <see cref="Process.Start()" /> does, wrapped or
-    ///     not.
+    ///     Starts <paramref name="process" /> and binds its lifetime to this one.
     /// </summary>
+    /// <remarks>
+    ///     A missing executable throws <see cref="Win32Exception" /> from here exactly as
+    ///     <see cref="Process.Start()" /> does, wrapped or not.
+    /// </remarks>
     /// <param name="process">The process to start, built from the command <see cref="Rewrite" /> produced.</param>
     /// <param name="wrapped">
     ///     <see cref="SpawnCommand.Wrapped" /> from that same command, rather than re-derived here: when
@@ -169,10 +172,13 @@ internal sealed class ChildProcessLifetime : IDisposable
     }
 
     /// <summary>
-    ///     The job, or <see langword="null" /> after one warning. Creating one is a handful of instructions
-    ///     against no quota and no permission, so a failure is a genuine surprise and worth saying out loud
-    ///     once — but never worth failing a server over, since the whole feature is a backstop.
+    ///     The job, or <see langword="null" /> after one warning.
     /// </summary>
+    /// <remarks>
+    ///     Creating one is a handful of instructions against no quota and no permission, so a failure is a
+    ///     genuine surprise and worth saying out loud once — but never worth failing a server over, since the
+    ///     whole feature is a backstop.
+    /// </remarks>
     private static WindowsJobObject? TryCreateJob(ILogger<ChildProcessLifetime> logger)
     {
         try
@@ -187,13 +193,14 @@ internal sealed class ChildProcessLifetime : IDisposable
         }
     }
 
-    /// <summary>
-    ///     Fork on a thread that outlives every run. <c>PR_SET_PDEATHSIG</c> fires when the <em>thread</em>
-    ///     that forked the child exits, not when the process does, and <see cref="Process.Start()" /> forks
-    ///     on the calling thread — which under <c>async</c> is a thread-pool thread free to retire mid-run
-    ///     and <c>SIGKILL</c> a perfectly healthy <c>jb</c>. One background thread, created on first use and
-    ///     never exited, is what makes the signal mean what it is meant to mean.
-    /// </summary>
+    /// <summary>Forks on a thread that outlives every run.</summary>
+    /// <remarks>
+    ///     <c>PR_SET_PDEATHSIG</c> fires when the <em>thread</em> that forked the child exits, not when the
+    ///     process does, and <see cref="Process.Start()" /> forks on the calling thread — which under
+    ///     <c>async</c> is a thread-pool thread free to retire mid-run and <c>SIGKILL</c> a perfectly healthy
+    ///     <c>jb</c>. One background thread, created on first use and never exited, is what makes the signal
+    ///     mean what it is meant to mean.
+    /// </remarks>
     private void StartOnPinnedThread(Process process)
     {
         BlockingCollection<Action> spawns = SpawnQueue();
@@ -242,11 +249,11 @@ internal sealed class ChildProcessLifetime : IDisposable
         }
     }
 
-    /// <summary>
-    ///     Say what this child actually got, not what the platform offers: an assignment the kernel refused
-    ///     leaves one unbound child in a process whose fingerprint says otherwise, and that difference is the
-    ///     only thing a log can still tell a reader afterwards.
-    /// </summary>
+    /// <summary>Logs what this child actually got, not what the platform offers.</summary>
+    /// <remarks>
+    ///     An assignment the kernel refused leaves one unbound child in a process whose fingerprint says
+    ///     otherwise, and that difference is the only thing a log can still tell a reader afterwards.
+    /// </remarks>
     private void Report(Process process, string guarantee)
     {
         _logger.LogDebug(

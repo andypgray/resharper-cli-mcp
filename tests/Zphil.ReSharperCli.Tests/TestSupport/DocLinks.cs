@@ -4,10 +4,12 @@ namespace Zphil.ReSharperCli.Tests.TestSupport;
 
 /// <summary>
 ///     Extracts the curated set of external documentation links (JetBrains + StyleCop.Analyzers) that the
-///     repo's markdown cites, so a test can assert the set is intact (offline) and, on a schedule, that
-///     each URL is still live. Pure, offline, deterministic — no network, no environment reads — so it is
-///     safe under the parallel runner.
+///     repo's markdown cites.
 /// </summary>
+/// <remarks>
+///     Pure, offline, deterministic — no network, no environment reads — so it is safe under the parallel
+///     runner.
+/// </remarks>
 internal static partial class DocLinks
 {
     // Permissive on purpose: embedded docs use autolinks <https://…> while the README uses inline
@@ -16,7 +18,6 @@ internal static partial class DocLinks
     [GeneratedRegex(@"https?://[^\s)>\]""']+")]
     private static partial Regex UrlPattern();
 
-    /// <summary>All <c>*.md</c> files under the repo root, excluding build output and VCS directories.</summary>
     private static IReadOnlyList<string> EnumerateMarkdown()
     {
         return RepoRoot.EnumerateCommitted("*.md");
@@ -24,7 +25,6 @@ internal static partial class DocLinks
 
     /// <summary>
     ///     The deduped curated external doc links, each paired with the repo-relative files that cite it.
-    ///     Applies the host/path allowlist that keeps only JetBrains help/blog pages and StyleCop docs.
     /// </summary>
     public static IReadOnlyList<ExternalDocLink> ExtractExternalDocLinks()
     {

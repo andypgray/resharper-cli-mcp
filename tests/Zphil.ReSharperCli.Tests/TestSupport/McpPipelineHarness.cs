@@ -18,20 +18,22 @@ namespace Zphil.ReSharperCli.Tests.TestSupport;
 
 /// <summary>
 ///     A real MCP client and server connected in-process over a pair of pipes — no child process, no real
-///     stdio — composed exactly as <c>Program.cs</c> composes the production server: the same DI graph, both
-///     fakeable seams faked, the global call-tool filter installed. Lets integration tests drive the
-///     <c>tools/call</c> pipeline end to end and assert both on what the client sees and on what the server
-///     logged. Per-test-instance and parallel-safe: no shared statics and no environment mutation (the
-///     <see cref="FakeEnvironment" /> stands in for the real process environment), matching the repo's
-///     zero-<c>[Collection]</c> design. Dispose closes the client, stops the host, and deletes temp dirs.
+///     stdio — composed exactly as <c>Program.cs</c> composes the production server. Lets integration tests
+///     drive the <c>tools/call</c> pipeline end to end and assert both on what the client sees and on what the
+///     server logged.
 /// </summary>
+/// <remarks>
+///     Per-test-instance and parallel-safe: no shared statics and no environment mutation (the
+///     <see cref="FakeEnvironment" /> stands in for the real process environment), matching the repo's
+///     zero-<c>[Collection]</c> design.
+/// </remarks>
 internal sealed class McpPipelineHarness : IAsyncDisposable
 {
-    /// <summary>
-    ///     How often anything in this graph that reports itself does so. One number for the runner and the
-    ///     cache reset alike: a test watching progress is watching whichever of them it called, and two
-    ///     intervals would be two ways for one to sit out a wait the other does not.
-    /// </summary>
+    /// <summary>How often anything in this graph that reports itself does so.</summary>
+    /// <remarks>
+    ///     One number for the runner and the cache reset alike: a test watching progress is watching whichever
+    ///     of them it called, and two intervals would be two ways for one to sit out a wait the other does not.
+    /// </remarks>
     private static readonly TimeSpan BriskHeartbeat = TimeSpan.FromMilliseconds(50);
 
     private readonly IHost _host;
@@ -54,7 +56,7 @@ internal sealed class McpPipelineHarness : IAsyncDisposable
         Wire = wire;
     }
 
-    /// <summary>The connected client, past the <c>initialize</c> handshake — call <c>ListTools</c>/<c>CallTool</c> on it.</summary>
+    /// <summary>The connected client, past the <c>initialize</c> handshake.</summary>
     public McpClient Client { get; }
 
     /// <summary>
@@ -70,17 +72,19 @@ internal sealed class McpPipelineHarness : IAsyncDisposable
     public CapturingLoggerProvider Logs { get; }
 
     /// <summary>
-    ///     The server's background cache pre-warm — the same instance the <c>initialized</c> notification
-    ///     triggers. Await its <c>Finished</c> to make a test that opted in deterministic.
+    ///     The server's background cache pre-warm — the same instance the client's first message triggers.
     /// </summary>
+    /// <remarks>Await its <c>Finished</c> to make a test that opted in deterministic.</remarks>
     public CacheWarmer Warmer { get; }
 
     /// <summary>
     ///     Every frame the server wrote, in the order it wrote them — the only place an ordering claim about
-    ///     notifications is a fact rather than an inference about thread-pool scheduling. Always on rather than
-    ///     opt-in: it costs one extra copy of this session's own frames, freed with the harness, and no test
-    ///     should have to opt in to have the wire it is already using be observable.
+    ///     notifications is a fact rather than an inference about thread-pool scheduling.
     /// </summary>
+    /// <remarks>
+    ///     Always on rather than opt-in: it costs one extra copy of this session's own frames, freed with the
+    ///     harness, and no test should have to opt in to have the wire it is already using be observable.
+    /// </remarks>
     public WireLog Wire { get; }
 
     public async ValueTask DisposeAsync()
@@ -98,9 +102,7 @@ internal sealed class McpPipelineHarness : IAsyncDisposable
     }
 
     /// <summary>
-    ///     Builds the host, starts it, and connects a client over the pipe pair. Mirrors the
-    ///     <c>AddMcpServer</c> + <c>WithCoercingTools</c> + <c>WithGlobalCallToolFilter</c> composition in
-    ///     <c>Program.cs</c>, swapping the stdio transport for a stream transport over in-memory pipes.
+    ///     Builds the host, starts it, and connects a client over the pipe pair.
     /// </summary>
     /// <param name="cancellationToken">The test's cancellation token.</param>
     /// <param name="preWarm">
@@ -116,10 +118,9 @@ internal sealed class McpPipelineHarness : IAsyncDisposable
     ///     its solution and stub <c>jb</c> before the client's first message reaches the server.
     /// </param>
     /// <param name="processRunner">
-    ///     The process seam, defaulting to a fresh NSubstitute double. The contract suite passes the real
-    ///     <see cref="ProcessRunner" /> instead, which is the only way to drive a genuine <c>jb</c> through the
-    ///     whole <c>tools/call</c> pipeline — every other test in the suite wants the double, and gets it by
-    ///     saying nothing.
+    ///     The process seam, defaulting to a fresh NSubstitute double. Passing the real
+    ///     <see cref="Zphil.ReSharperCli.Execution.ProcessRunner" /> is the only way to drive a genuine <c>jb</c>
+    ///     through the whole <c>tools/call</c> pipeline; a test that wants the double gets it by saying nothing.
     /// </param>
     public static async Task<McpPipelineHarness> StartAsync(
         CancellationToken cancellationToken,
@@ -133,8 +134,8 @@ internal sealed class McpPipelineHarness : IAsyncDisposable
 
         if (!preWarm) environment.SetVariable(CacheWarmer.EnableVariable, "off");
 
-        // Two unidirectional pipes: client -> server and server -> client. Created before
-        // WithStreamServerTransport, which constructs the server transport eagerly at registration.
+        // Created before WithStreamServerTransport, which constructs the server transport eagerly at
+        // registration.
         Pipe clientToServer = new();
         Pipe serverToClient = new();
         WireLog wire = new();
@@ -203,7 +204,7 @@ internal sealed class McpPipelineHarness : IAsyncDisposable
 
         IHost host = builder.Build();
 
-        // Before the host starts, and so before the client's `initialized` can reach the server: a pre-warm
+        // Before the host starts, and so before the client's first message can reach the server: a pre-warm
         // test has to have its solution planted and its jb stubbed by then.
         arrange?.Invoke(environment, processRunner);
 

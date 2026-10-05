@@ -3,9 +3,7 @@ using System.Globalization;
 namespace Zphil.ReSharperCli.Execution;
 
 /// <summary>
-///     How long one <c>jb</c> run may take, and the environment variable that moves it. Resolved once at
-///     the composition root and handed to both consumers — the run cap in <see cref="Services.JbRunner" />
-///     and the queue wait in <see cref="JbRunLock" /> — so the two can never drift apart.
+///     How long one <c>jb</c> run may take, and the environment variable that moves it.
 /// </summary>
 /// <remarks>
 ///     <para>
@@ -40,22 +38,23 @@ internal static class JbRunTimeout
     /// <summary>
     ///     A cap below this would kill runs that were never in trouble — a warm whole-solution analysis
     ///     alone costs the better part of a minute — so a smaller value is read as a mistake and raised.
-    ///     Internal so the setup guide's clamp row is pinned against the real bound.
     /// </summary>
     internal static readonly TimeSpan Floor = TimeSpan.FromSeconds(60);
 
     /// <summary>
     ///     Past a day the cap has stopped bounding anything anyone is waiting for, and bounding a hung
-    ///     <c>jb</c> is the whole reason to have one. Internal for the same reason as <see cref="Floor" />.
+    ///     <c>jb</c> is the whole reason to have one.
     /// </summary>
     internal static readonly TimeSpan Ceiling = TimeSpan.FromHours(24);
 
     /// <summary>
     ///     The cap <paramref name="envValue" /> asks for, clamped to <see cref="Floor" />..<see cref="Ceiling" />.
+    /// </summary>
+    /// <remarks>
     ///     A value that is unparseable, non-finite, or not positive falls back to <see cref="Default" /> rather
     ///     than failing anything, matching how the server's other variables read: a typo costs the shipped
     ///     behaviour, never a broken server.
-    /// </summary>
+    /// </remarks>
     public static TimeSpan Resolve(string? envValue)
     {
         bool parsed = double.TryParse(envValue, NumberStyles.Float, CultureInfo.InvariantCulture, out double seconds);

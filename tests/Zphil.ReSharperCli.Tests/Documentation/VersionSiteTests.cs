@@ -8,18 +8,13 @@ namespace Zphil.ReSharperCli.Tests.Documentation;
 
 /// <summary>
 ///     Pins every file that names the release version to the csproj <c>&lt;Version&gt;</c>, the single number
-///     behind them all. <c>release.yml</c> re-checks the same set when a tag is pushed, so a site that has
-///     drifted fails here rather than at the release.
-///     <para>
-///         A marketplace entry tracks a commit SHA, so a floating <c>dotnet dnx Zphil.ReSharperCli</c> would
-///         mean the SHA does not determine the server code a plugin user runs — two installs of one commit,
-///         weeks apart, execute different builds. Pinning the argument fixes that for a new install. It
-///         reaches an existing one only if the manifest <c>version</c> moves too, because Claude Code ships
-///         an installed plugin an update only when that field changes; frozen, it would leave every existing
-///         install on its install-time pin for good. A dnx pin and its manifest version therefore move
-///         together, with the csproj as the single number behind them.
-///     </para>
+///     behind them all.
 /// </summary>
+/// <remarks>
+///     <c>release.yml</c> re-checks the same set when a tag is pushed, so a site that has drifted fails here
+///     rather than at the release. A dnx pin and its manifest <c>version</c> move together: the pin decides what
+///     a new install runs, and only a changed manifest <c>version</c> carries the pin to an existing one.
+/// </remarks>
 public sealed partial class VersionSiteTests
 {
     private const string PackageId = "Zphil.ReSharperCli";
@@ -95,18 +90,12 @@ public sealed partial class VersionSiteTests
             + "release.yml fails the tag when it has not.");
     }
 
-    /// <summary>
-    ///     The root Agent Plugins manifest carries no <c>version</c>, and that is the point: the schema
-    ///     makes the field optional, and a manifest that declares one becomes another number to keep in
-    ///     step for nothing. What a host installs is the launcher's pin, which the theory above holds to
-    ///     the csproj. Adding the field here means adding a row there in the same edit.
-    ///     <para>
-    ///         Optional does not mean harmless everywhere, which is why <c>.cursor-plugin/plugin.json</c>
-    ///         declares one: an importer that substitutes a default publishes a wrong version rather than
-    ///         none. Nothing reads this file that way — no directory looks for a root <c>plugin.json</c>
-    ///         at all — so the field would only ever drift.
-    ///     </para>
-    /// </summary>
+    /// <summary>The root Agent Plugins manifest carries no <c>version</c>, and that is the point.</summary>
+    /// <remarks>
+    ///     The schema makes the field optional, and a manifest that declares one becomes another number to keep
+    ///     in step for nothing. Adding the field here means adding a row to
+    ///     <see cref="ManifestVersionField_MatchesTheCsprojVersion" /> in the same edit.
+    /// </remarks>
     [Fact]
     public void RootAgentPluginManifest_DeclaresNoVersion()
     {
@@ -132,10 +121,11 @@ public sealed partial class VersionSiteTests
         return declaredVersion.Groups["version"].Value;
     }
 
-    /// <summary>
-    ///     Every string in every server's <c>args</c> array. Enumerating the servers rather than naming the
-    ///     <c>resharper</c> key means renaming that key cannot make the assertions above vacuous.
-    /// </summary>
+    /// <summary>Every string in every server's <c>args</c> array.</summary>
+    /// <remarks>
+    ///     Enumerating the servers rather than naming the <c>resharper</c> key means renaming that key cannot make
+    ///     the assertions above vacuous.
+    /// </remarks>
     private static IEnumerable<string> LauncherArguments(JsonElement servers)
     {
         foreach (JsonProperty server in servers.EnumerateObject())

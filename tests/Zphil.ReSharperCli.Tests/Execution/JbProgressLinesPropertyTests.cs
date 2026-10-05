@@ -8,17 +8,22 @@ using Zphil.ReSharperCli.Tests.TestSupport;
 namespace Zphil.ReSharperCli.Tests.Execution;
 
 /// <summary>
-///     <see cref="JbProgressLines.Classify" /> is fed every line a <c>jb</c> run writes, one at a time,
-///     while a caller is waiting on that run. So what it does with a line it was not written for matters as
-///     much as what it does with the vocabulary: an exception here comes out of the reader that observes
-///     <c>jb</c>'s output in flight, which is not where a caller can act on it. These state the two halves —
-///     it survives anything, and it recognises <c>jb</c>'s own lines for any file or profile name rather
-///     than for the handful an example table can list.
+///     States the two halves of <see cref="JbProgressLines.Classify" />'s contract: it survives anything, and it
+///     recognises <c>jb</c>'s own lines for any file or profile name rather than for the handful an example
+///     table can list.
 /// </summary>
 /// <remarks>
-///     Nothing here says what <c>jb</c> emits — that is the <c>JbContract</c> suite's business, observed
-///     against a real run. These say what this reader does with a line once it has one, which is why the
-///     generators are free to draw lines <c>jb</c> would never write.
+///     <para>
+///         It is fed every line a <c>jb</c> run writes, one at a time, while a caller is waiting on that run. So
+///         what it does with a line it was not written for matters as much as what it does with the
+///         vocabulary: an exception here comes out of the reader that observes <c>jb</c>'s output in flight,
+///         which is not where a caller can act on it.
+///     </para>
+///     <para>
+///         Nothing here says what <c>jb</c> emits — that is the <c>JbContract</c> suite's business, observed
+///         against a real run. These say what this reader does with a line once it has one, which is why the
+///         generators are free to draw lines <c>jb</c> would never write.
+///     </para>
 /// </remarks>
 public sealed class JbProgressLinesPropertyTests
 {
@@ -29,11 +34,7 @@ public sealed class JbProgressLinesPropertyTests
     private const string EmSpace = "\u2003";
     private const string IdeographicSpace = "\u3000";
 
-    /// <summary>
-    ///     Lines that sit on the recogniser's edges, hit on every seed rather than waited for: the
-    ///     announcements with junk on either side, the case-shifted announcement, a prefix with nothing
-    ///     after it, a truncated cleanup banner, and the bare per-file line <c>cleanupcode</c> writes.
-    /// </summary>
+    /// <summary>Lines that sit on the recogniser's edges, hit on every seed rather than waited for.</summary>
     private static readonly string[] KnownLines =
     [
         "",
@@ -65,9 +66,8 @@ public sealed class JbProgressLinesPropertyTests
     ];
 
     /// <summary>
-    ///     File names <c>jb</c> could put after a per-file prefix: nested paths in both separators, spaces,
-    ///     dots, generated-file suffixes, non-ASCII — and names that carry the announcement words
-    ///     themselves, which is where a recogniser that searched rather than anchored would go wrong.
+    ///     File names <c>jb</c> could put after a per-file prefix, including names that carry the announcement
+    ///     words themselves, which is where a recogniser that searched rather than anchored would go wrong.
     /// </summary>
     private static readonly string[] KnownFileNames =
     [
@@ -170,12 +170,13 @@ public sealed class JbProgressLinesPropertyTests
             .SelectMany(_ => pad, (drawn, trailing) => new PaddedLineCase(drawn.Line, drawn.Leading, trailing));
     }
 
-    /// <summary>
-    ///     A name a per-file line could carry. Two shapes are excluded, and both are accepted ambiguity
-    ///     rather than a gap: a name that is nothing but whitespace leaves the prefix with nothing after it,
-    ///     and a file literally called <c>files</c> spells the analysis announcement — pinned as such by the
-    ///     example suite, because the announcement is the reading that matters.
-    /// </summary>
+    /// <summary>A name a per-file line could carry.</summary>
+    /// <remarks>
+    ///     Two shapes are excluded, and both are accepted ambiguity rather than a gap: a name that is nothing but
+    ///     whitespace leaves the prefix with nothing after it, and a file literally called <c>files</c> spells
+    ///     the analysis announcement — pinned as such by the example suite, because the announcement is the
+    ///     reading that matters.
+    /// </remarks>
     private static Gen<string> FileName()
     {
         return HostileStrings.AnyOr(KnownFileNames)

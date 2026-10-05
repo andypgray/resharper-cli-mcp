@@ -1,10 +1,10 @@
 namespace Zphil.ReSharperCli.Tests.TestSupport;
 
-/// <summary>
-///     The <c>.DotSettings</c> shapes the profile-resolution tests plant on disk. Shared so the reader,
-///     resolver, and tool-pipeline tests all exercise the same XML: the declared-profile entry is the one
-///     thing three layers agree about, and three private copies of it could drift apart silently.
-/// </summary>
+/// <summary>The <c>.DotSettings</c> shapes a test plants on disk.</summary>
+/// <remarks>
+///     Shared so every layer that reads the declared-profile entry is tested against the same XML: private
+///     copies of it could drift apart silently.
+/// </remarks>
 internal static class DotSettingsFixtures
 {
     private const string Header =
@@ -34,8 +34,9 @@ internal static class DotSettingsFixtures
 
     /// <summary>
     ///     A settings file carrying one inspection-severity override — the entry a solution or project layer
-    ///     uses to widen or narrow a rule, and so the shape of the two layers in a layer-precedence fixture.
+    ///     uses to widen or narrow a rule.
     /// </summary>
+    /// <remarks>The shape of each of the two layers in a layer-precedence fixture.</remarks>
     public static string SettingSeverity(string ruleId, string severity)
     {
         return $"""
@@ -46,11 +47,13 @@ internal static class DotSettingsFixtures
     }
 
     /// <summary>
-    ///     The real-world break this feature was found by: the same declaration behind a comment containing
-    ///     <c>--</c>, which is illegal XML and which <c>XDocument</c> rejects outright while ReSharper and
-    ///     <c>jb</c> read the file without complaint. The comment spans two lines so a parse error reported
-    ///     afterwards has a line number that can be checked against the original.
+    ///     The same declaration behind a comment containing <c>--</c>: a real-world shape, and illegal XML,
+    ///     which <c>XDocument</c> rejects outright while ReSharper and <c>jb</c> read the file without complaint.
     /// </summary>
+    /// <remarks>
+    ///     The comment spans two lines so a parse error reported afterwards has a line number that can be
+    ///     checked against the original.
+    /// </remarks>
     public static string DeclaringBehindIllegalComment(string profileName)
     {
         return $"""
@@ -62,10 +65,11 @@ internal static class DotSettingsFixtures
                 """;
     }
 
-    /// <summary>
-    ///     A settings file broken past what discarding comments can rescue — an unclosed element on line 3,
-    ///     behind an illegal comment so the lenient retry is genuinely the pass that gives up.
-    /// </summary>
+    /// <summary>A settings file broken past what discarding comments can rescue.</summary>
+    /// <remarks>
+    ///     An unclosed element on line 3, behind an illegal comment so the lenient retry is genuinely the pass
+    ///     that gives up.
+    /// </remarks>
     public static string Unparseable()
     {
         return $"""

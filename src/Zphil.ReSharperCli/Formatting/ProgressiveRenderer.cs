@@ -5,21 +5,20 @@ namespace Zphil.ReSharperCli.Formatting;
 /// </summary>
 /// <remarks>
 ///     The level is returned rather than logged here, because <c>Formatting/</c> is pure by convention and a
-///     logger threaded into it would be the first exception. It is worth returning at all because whether the
-///     ladder has <em>ever</em> stepped down in the field is not currently knowable: a reduced response says
-///     so to the agent that received it and nowhere else, so the mechanism could be dead and look identical to
-///     one that never had to fire.
+///     logger threaded into it would be the first exception. It is worth returning at all because a reduced
+///     response says so to the agent that received it and nowhere else, so without a record of the level the
+///     mechanism could be dead and look identical to one that never had to fire.
 /// </remarks>
 internal sealed record ProgressiveRendering(string Text, DetailLevel Level);
 
 /// <summary>
 ///     Renders structured data at progressively lower <see cref="DetailLevel" />s until the formatted
-///     output fits a character budget, avoiding a hard mid-response chop. Ported from roz's
-///     <c>ProgressiveRenderer</c>, with one deliberate deviation: roz reads the budget from a static
-///     <c>ResponseTruncator.MaxChars</c>, but this server routes every environment read through the
-///     <c>IEnvironment</c> seam, so the budget is threaded in as the <c>maxChars</c> parameter rather than
-///     read from a static. There is intentionally no static-budget convenience overload.
+///     output fits a character budget, avoiding a hard mid-response chop.
 /// </summary>
+/// <remarks>
+///     The budget is the <c>maxChars</c> parameter rather than read from a static, so every environment read
+///     stays behind the <c>IEnvironment</c> seam; there is deliberately no static-budget convenience overload.
+/// </remarks>
 internal static class ProgressiveRenderer
 {
     private static readonly DetailLevel[] ReductionOrder =
@@ -41,17 +40,15 @@ internal static class ProgressiveRenderer
     /// <param name="maxChars">The maximum allowed response length, in characters.</param>
     /// <param name="describeReduction">
     ///     Optional per-level description appended to the reduction note; a generic message is used when
-    ///     <see langword="null" />. Lets each domain (cleanup now, inspect later) explain its own reduction.
-    ///     Returning <c>""</c> means <em>nothing was reduced</em>, and no note is emitted at all — the answer
-    ///     has to come from the domain, because a capped walk never renders the level above the cap and so
-    ///     has nothing to compare against. A domain whose every level drops something (cleanup) never returns
-    ///     it.
+    ///     <see langword="null" />. Lets each domain explain its own reduction. Returning <c>""</c> means
+    ///     <em>nothing was reduced</em>, and no note is emitted at all — the answer has to come from the
+    ///     domain, because a capped walk never renders the level above the cap and so has nothing to compare
+    ///     against. A domain whose every level drops something never returns it.
     /// </param>
     /// <param name="startLevel">
     ///     The most detailed level to try — a cap, not a pin. Levels above it are skipped entirely, and the
     ///     walk still steps below it when the rendering does not fit. At the default
-    ///     <see cref="DetailLevel.Full" /> nothing is skipped and the ladder behaves exactly as it did before
-    ///     a caller could ask for a level.
+    ///     <see cref="DetailLevel.Full" /> nothing is skipped.
     /// </param>
     /// <returns>
     ///     The first level whose rendering fits within <paramref name="maxChars" /> —
@@ -108,11 +105,15 @@ internal static class ProgressiveRenderer
     }
 
     /// <summary>
-    ///     Appends the note, led by whichever of the two things happened. A level the caller asked for is
-    ///     not a budget failure, and saying "output exceeded the limit" there would be false; a level below
-    ///     the cap is the budget forcing the ladder down, and reads exactly as it always has. The
-    ///     <c>--- DETAIL REDUCED ---</c> marker stays the one anchor across both, because it is what an agent
-    ///     matches on to know the response is a reduction rather than a full listing.
+    ///     Appends the note, led by whichever of the two things happened.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         A level the caller asked for is not a budget failure, and saying "output exceeded the limit"
+    ///         there would be false; a level below the cap is the budget forcing the ladder down. The
+    ///         <c>--- DETAIL REDUCED ---</c> marker stays the one anchor across both, because it is what an
+    ///         agent matches on to know the response is a reduction rather than a full listing.
+    ///     </para>
     ///     <para>
     ///         Two things suppress the note entirely, and they are different claims. <see cref="DetailLevel.Full" />
     ///         is the top of the ladder, so there is no reduction to announce whether or not it was asked for.
@@ -121,7 +122,7 @@ internal static class ProgressiveRenderer
     ///         know that: below a cap the level above was never rendered, and rendering it to compare is the
     ///         work the cap exists to avoid.
     ///     </para>
-    /// </summary>
+    /// </remarks>
     private static string AppendReductionNote(
         string output, DetailLevel level, int maxChars, Func<DetailLevel, string> describe, DetailLevel startLevel)
     {

@@ -5,12 +5,14 @@ namespace Zphil.ReSharperCli.Pipeline;
 
 /// <summary>
 ///     Coerces malformed <c>string[]</c> tool inputs into the array the caller clearly intended.
-///     Models routinely send a JSON-encoded string (<c>"[\"A\",\"B\"]"</c>) where an array is
-///     advertised, and one bare string (<c>"A"</c>) where a single-element array is expected;
-///     the SDK default surfaces both as a generic byte-position deserializer error that gives
-///     the model nothing actionable and burns retries.
 /// </summary>
 /// <remarks>
+///     <para>
+///         Models routinely send a JSON-encoded string (<c>"[\"A\",\"B\"]"</c>) where an array is
+///         advertised, and one bare string (<c>"A"</c>) where a single-element array is expected; the SDK
+///         default surfaces both as a generic byte-position deserializer error that gives the model nothing
+///         actionable and burns retries.
+///     </para>
 ///     <para>
 ///         Handled token shapes for any <c>string[]</c> parameter:
 ///     </para>
@@ -81,10 +83,12 @@ internal sealed class StringArrayCoercerFactory : JsonConverterFactory
         }
 
         /// <summary>
-        ///     Reads tokens until the matching <see cref="JsonTokenType.EndArray" />. Hand-rolled
-        ///     to avoid recursing through <see cref="StringArrayCoercerFactory" /> via
-        ///     <c>JsonSerializer.Deserialize&lt;string[]&gt;</c>.
+        ///     Reads tokens until the matching <see cref="JsonTokenType.EndArray" />.
         /// </summary>
+        /// <remarks>
+        ///     Hand-rolled to avoid recursing through <see cref="StringArrayCoercerFactory" /> via
+        ///     <c>JsonSerializer.Deserialize&lt;string[]&gt;</c>.
+        /// </remarks>
         private static string[] ReadArray(ref Utf8JsonReader reader)
         {
             List<string> items = new();
@@ -106,15 +110,17 @@ internal sealed class StringArrayCoercerFactory : JsonConverterFactory
 
         /// <summary>
         ///     Returns <c>true</c> only when <paramref name="value" /> parses as a JSON array
-        ///     whose every element is a JSON string. Anything else (mixed types, nested arrays,
-        ///     malformed JSON, scalar values) returns <c>false</c> so the caller falls back to
-        ///     single-element coercion.
+        ///     whose every element is a JSON string.
         /// </summary>
+        /// <remarks>
+        ///     Anything else (mixed types, nested arrays, malformed JSON, scalar values) returns
+        ///     <c>false</c> so the caller falls back to single-element coercion.
+        /// </remarks>
         private static bool TryParseAsJsonStringArray(string value, out string[] result)
         {
             result = [];
 
-            var trimmed = value.AsSpan().Trim();
+            ReadOnlySpan<char> trimmed = value.AsSpan().Trim();
             if (trimmed.Length == 0 || trimmed[0] != '[') return false;
 
             try

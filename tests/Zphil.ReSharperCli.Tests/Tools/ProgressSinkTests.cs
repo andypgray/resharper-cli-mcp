@@ -35,7 +35,7 @@ public sealed class ProgressSinkTests
         const int lines = 200;
         Sends sends = new();
 
-        // Act — every thread the pool will give us, all pushing at once.
+        // Act
         await using (ProgressSink sink = new(sends.SendAsync, NullLogger.Instance))
         {
             await Parallel.ForAsync(0, lines, Ct, async (index, _) =>
@@ -55,7 +55,7 @@ public sealed class ProgressSinkTests
     [Fact]
     public async Task Send_OneSlowSend_DoesNotLetTheNextOneOvertakeIt()
     {
-        // Arrange — the transposition in miniature: the first send is held open while a second is queued, so
+        // Arrange — a transposition in miniature: the first send is held open while a second is queued, so
         // a sink that numbered outside the send would hand out 2 and let it reach the wire first.
         TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
         Sends sends = new() { Hold = release.Task };
@@ -89,7 +89,7 @@ public sealed class ProgressSinkTests
         sink.Send("queued");
         await sends.WaitForAsync(1, Ct);
 
-        // Act — disposal cannot complete while the send is held.
+        // Act
         ValueTask disposal = sink.DisposeAsync();
         disposal.IsCompleted.ShouldBeFalse();
 
@@ -140,17 +140,16 @@ public sealed class ProgressSinkTests
     [Fact]
     public void For_NoRequestContextAtAll_IsNull()
     {
-        // A direct call rather than one the SDK dispatched — the tool methods' own tests. Answering null
-        // leaves a call site with one nullable sink to await-using rather than a branch around the feature.
+        // A direct call rather than one the SDK dispatched. Answering null leaves a call site with one
+        // nullable sink to await-using rather than a branch around the feature.
         ProgressSink.For(null, NullLogger.Instance).ShouldBeNull();
     }
 
     [Fact]
     public async Task For_AClientThatSentNoProgressToken_IsASinkThatAcceptsAndDiscards()
     {
-        // Arrange — load-bearing, and the behaviour NullProgress.Instance had when the SDK chose between the
-        // two: the heartbeat above this still has to run, because it is what leaves JbRunProgress with a file
-        // count for the timeout message even for a client that never asked to watch.
+        // Arrange — load-bearing: the heartbeat above this still has to run, because it is what leaves
+        // JbRunProgress with a file count for the timeout message even for a client that never asked to watch.
         RequestContext<CallToolRequestParams> context =
             Dispatched(new CallToolRequestParams { Name = "resharper_inspect" });
 
@@ -191,11 +190,12 @@ public sealed class ProgressSinkTests
     /// <param name="Message">The line it was assigned to.</param>
     private sealed record Sent(int Value, string Message);
 
-    /// <summary>
-    ///     A send that records what it was given and can be made slow or failing. Recording happens on entry
-    ///     rather than on completion so a held send is observable while it is still in flight — which is also
-    ///     what makes <see cref="RecordingSink{T}.Items" /> the order the sends were started in.
-    /// </summary>
+    /// <summary>A send that records what it was given and can be made slow or failing.</summary>
+    /// <remarks>
+    ///     Recording happens on entry rather than on completion so a held send is observable while it is still
+    ///     in flight — which is also what makes <see cref="RecordingSink{T}.Items" /> the order the sends were
+    ///     started in.
+    /// </remarks>
     private sealed class Sends() : RecordingSink<Sent>(Generous)
     {
         /// <summary>When set, every send waits for this before completing.</summary>

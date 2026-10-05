@@ -12,14 +12,10 @@ using Zphil.ReSharperCli.Tests.TestSupport;
 namespace Zphil.ReSharperCli.Tests.Services;
 
 /// <summary>
-///     The pre-warm is speculative work, so the invariant under test is what it must <em>never</em> do:
-///     never run when it was turned off, never run when there is nothing to warm or the cache generation is
-///     already warm or already busy, never run a second pass alongside one already in flight, never start
-///     one after shutdown, never raise anything through the log that is not a genuine surprise, and never
-///     leave a <c>jb</c> behind when the server stops. Every one of those is an ordinary
-///     <see cref="WarmUpOutcome" />, which is why they can be asserted directly instead of sniffed out of
-///     log lines. What it <em>may</em> do is run again once a pass has settled — the recurrence a call that
-///     hit the run cap depends on.
+///     The pre-warm is speculative work, so the invariant under test is what it must <em>never</em> do. Each
+///     of those refusals is an ordinary <see cref="WarmUpOutcome" />, which is why they can be asserted
+///     directly instead of sniffed out of log lines. What it <em>may</em> do is run again once a pass has
+///     settled — the recurrence a call that hit the run cap depends on.
 /// </summary>
 public sealed class CacheWarmerTests : IDisposable
 {
@@ -324,7 +320,7 @@ public sealed class CacheWarmerTests : IDisposable
         await warmer.Finished.WaitAsync(Generous, Ct);
 
         // Assert — and it gave up rather than queueing, which is what the bounded wait above proves. This is
-        // now the whole of what Skipped claims: no jb was spawned, and the empty run list is the proof.
+        // the whole of what Skipped claims: no jb was spawned, and the empty run list is the proof.
         warmer.Outcome.ShouldBe(WarmUpOutcome.Skipped);
         _probe.Runs.ShouldBeEmpty();
     }
@@ -358,13 +354,13 @@ public sealed class CacheWarmerTests : IDisposable
         await warmer.Finished.WaitAsync(Generous, Ct);
         warmer.Outcome.ShouldBe(WarmUpOutcome.Warmed);
 
-        // Act — re-arming is allowed now. The one-shot latch this replaced forbade it for the life of the
-        // process, which switched the pre-warm off exactly when a call that had hit the cap needed it.
+        // Act — re-arming is allowed: a once-per-process latch would switch the pre-warm off exactly when a
+        // call that has hit the cap needs it.
         warmer.Start();
         await warmer.Finished.WaitAsync(Generous, Ct);
 
         // Assert — both halves in one test: the second pass really ran, and it decided for *itself* not to
-        // spend a jb. The debounce is what stops the repeat work now, not an inability to start.
+        // spend a jb. The debounce is what stops the repeat work, not an inability to start.
         warmer.Outcome.ShouldBe(WarmUpOutcome.AlreadyWarm);
         _probe.Runs.Count.ShouldBe(1);
     }
@@ -391,9 +387,8 @@ public sealed class CacheWarmerTests : IDisposable
     [Fact]
     public async Task ForegroundRunHittingTheCap_ReArmsAPassForTheSolutionThatTimedOut()
     {
-        // Arrange — the change end to end, through the two objects that have to agree. The subscription only
-        // exists once the hosted service has started, which is why this is the one test here that calls
-        // StartAsync. The cap is exactly the moment the pre-warm used to be guaranteed never to run again.
+        // Arrange — end to end, through the two objects that have to agree. The subscription only exists once
+        // the hosted service has started, which is why this is the one test here that calls StartAsync.
         WarmerGraph graph = BuildGraph();
         using CacheWarmer warmer = graph.Warmer;
         await warmer.StartAsync(Ct);
@@ -405,7 +400,7 @@ public sealed class CacheWarmerTests : IDisposable
         // Act — a call the user made, killed at the cap.
         await Should.ThrowAsync<UserErrorException>(() => graph.Runner.RunAsync(config, ["inspectcode", _solutionPath], Ct));
 
-        // Assert — a pass ran, and it warmed the solution that actually timed out.
+        // Assert
         await warmer.Finished.WaitAsync(Generous, Ct);
         warmer.Outcome.ShouldBe(WarmUpOutcome.Warmed);
         _probe.Runs.Count.ShouldBe(2);
@@ -582,10 +577,9 @@ public sealed class CacheWarmerTests : IDisposable
     ///     <c>Information</c> start it already wrote.
     /// </summary>
     /// <remarks>
-    ///     A week of field logs showed pre-warms beginning and never ending, because the outcome was a
-    ///     <c>LogDebug</c> and the deployment runs at <c>Information</c>. Two passes from two sessions started
-    ///     an hour apart and whether they contended, and which of them won, was unanswerable. Both halves of
-    ///     the pair have to be at the same level or the pair is not one.
+    ///     Both halves of the pair have to be at the same level or the pair is not one: with the outcome below
+    ///     the level the deployment runs at, the log shows pre-warms beginning and never ending, and whether two
+    ///     passes from two sessions contended, and which of them won, is unanswerable.
     /// </remarks>
     [Fact]
     public async Task Start_APassThatRanJb_RecordsTheOutcomeAtInformationWithItsTargetAndDuration()
@@ -629,8 +623,8 @@ public sealed class CacheWarmerTests : IDisposable
     public async Task Start_TurnedOff_KeepsItsOutcomeAtDebugBecauseTheStartupLineAlreadySaysSo()
     {
         // Arrange — the one outcome that is not worth an Information line: the switch's position is in the
-        // startup fingerprint already, and restating it once per session is the noise that level was cleared
-        // out to make room for real events.
+        // startup fingerprint already, and restating it once per session is the noise that level is kept
+        // clear of, to make room for real events.
         _environment.SetVariable(CacheWarmer.EnableVariable, "off");
         using CacheWarmer warmer = BuildWarmer();
 
@@ -704,9 +698,8 @@ public sealed class CacheWarmerTests : IDisposable
     private sealed record WarmerGraph(CacheWarmer Warmer, JbRunner Runner);
 
     /// <summary>
-    ///     A scriptable <c>jb</c>: it answers the version probe so discovery succeeds, records every real run,
-    ///     and can be told to report a missing toolchain, a non-zero exit, an unforeseen fault, or a run that
-    ///     never finishes on its own.
+    ///     A scriptable <c>jb</c> that answers the version probe, so discovery succeeds, and records every real
+    ///     run.
     /// </summary>
     private sealed class JbProbe : IProcessRunner
     {
@@ -779,7 +772,6 @@ public sealed class CacheWarmerTests : IDisposable
 
             JbStubs.WriteEmptySarifIfRequested(arguments);
 
-            // And a run that exits 0 has left its cache generation behind, for the same reason.
             return ExitCode == 0
                 ? JbStubs.Succeed(arguments)
                 : new ProcessResult(ExitCode, string.Empty, string.Empty);

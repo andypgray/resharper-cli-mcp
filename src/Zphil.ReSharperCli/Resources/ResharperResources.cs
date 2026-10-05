@@ -6,16 +6,7 @@ namespace Zphil.ReSharperCli.Resources;
 
 /// <summary>
 ///     The MCP resource surface: two on-demand guides, each answering a single routing condition so a pull
-///     for one never drags in the other. <c>resharper://guides/configuration</c> serves the embedded
-///     <c>configuration-guide.md</c> — the two-axes model an agent needs before changing what ReSharper
-///     enforces (inspection severities drive <c>resharper_inspect</c>; the cleanup profile drives
-///     <c>resharper_cleanup</c>, and the two never share a switch). <c>resharper://guides/setup</c> serves
-///     <c>setup-guide.md</c> — how <c>jb</c> and the solution are discovered, the cold-cache slowness, the
-///     run cap and the queue that keeps concurrent calls off each other's cache (and how far that queue
-///     reaches, since a <c>jb</c> the user starts is outside it), how output is
-///     shortened to fit the budget and how to get the full listing written to a file instead, the
-///     environment variables, and where logs go. Both bodies load on demand,
-///     keeping the always-resident server instructions short.
+///     for one never drags in the other.
 /// </summary>
 /// <remarks>
 ///     Mirrors <see cref="Prompts.ResharperPrompts" />: the class is non-static because

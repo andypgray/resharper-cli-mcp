@@ -4,10 +4,12 @@ namespace Zphil.ReSharperCli.Formatting;
 
 /// <summary>
 ///     Renders a <see cref="CacheResetOutcome" /> as a plain-text report: what was dropped, what would not
-///     go, and what the next call now costs. Output uses <c>\n</c> line endings and is ASCII-only, matching
-///     the other formatters.
+///     go, and what the next call now costs.
 /// </summary>
 /// <remarks>
+///     <para>
+///         Output uses <c>\n</c> line endings and is ASCII-only, matching the other formatters.
+///     </para>
 ///     <para>
 ///         A generation left alone carries the solution path its own last successful run recorded, which is
 ///         the only thing that can turn a directory name back into a checkout — the hash <c>jb</c> names it
@@ -16,18 +18,17 @@ namespace Zphil.ReSharperCli.Formatting;
 ///         can act on it.
 ///     </para>
 ///     <para>
-///         Alone among the tool outputs this one carries no <see cref="DetailLevel" /> ladder, because it has
-///         no axis to reduce along: a reset report is one line per cache generation for a single solution — a
-///         handful at the very most — where an inspect or cleanup report grows with the codebase. A ladder
-///         here would be pinned-by-tests ceremony over an output that cannot overflow, and
-///         <c>ResponseTruncator</c> remains the backstop if a pathological budget ever proves that wrong.
+///         It carries no <see cref="DetailLevel" /> ladder, because it has no axis to reduce along: a reset
+///         report is one line per cache generation for a single solution — a handful at the very most —
+///         where an inspect or cleanup report grows with the codebase. <c>ResponseTruncator</c> remains the
+///         backstop if a pathological budget ever proves that wrong.
 ///     </para>
 /// </remarks>
 internal static class CacheResetFormatter
 {
     /// <summary>
-    ///     Closes the truncation footer for this tool (via <c>ResharperTools.TruncationHintFor</c>). A report
-    ///     cut short must not read as fewer generations deleted — the directories are already gone.
+    ///     Closes the truncation footer for this tool. A report cut short must not read as fewer generations
+    ///     deleted — the directories are already gone.
     /// </summary>
     internal const string ResetRanInFull = "The reset itself completed; only the report was cut short.";
 
@@ -100,12 +101,12 @@ internal static class CacheResetFormatter
         return string.Join("\n", lines);
     }
 
-    /// <summary>
-    ///     One left-alone generation as its list item: the name, and whose it is. The four attributions read
-    ///     differently on purpose — a path that still exists is someone's working checkout, a path that is
-    ///     gone is reclaimable, and one that cannot be named is a fact about this server's own records rather
-    ///     than about the directory.
-    /// </summary>
+    /// <summary>One left-alone generation as its list item: the name, and whose it is.</summary>
+    /// <remarks>
+    ///     The four attributions read differently on purpose — a path that still exists is someone's working
+    ///     checkout, a path that is gone is reclaimable, and one that cannot be named is a fact about this
+    ///     server's own records rather than about the directory.
+    /// </remarks>
     private static string Describe(LeftAloneGeneration generation)
     {
         return generation.Attribution switch

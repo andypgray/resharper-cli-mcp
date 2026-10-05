@@ -4,9 +4,7 @@ namespace Zphil.ReSharperCli.Infrastructure;
 
 /// <summary>
 ///     The running server's version, read once from the assembly's
-///     <see cref="AssemblyInformationalVersionAttribute" />. <see cref="Informational" /> is the full value
-///     (including any <c>+{commit}</c> build metadata) printed by <c>--version</c>; <see cref="SemVer" /> is
-///     that value truncated at the first <c>+</c>, for the MCP <c>serverInfo</c> handshake.
+///     <see cref="AssemblyInformationalVersionAttribute" />.
 /// </summary>
 internal static class ServerVersion
 {

@@ -34,10 +34,13 @@ internal sealed class JbExitCodeException(string message, int exitCode, string s
 ///     The one path by which a <c>jb</c> subcommand is run: it takes the cross-process
 ///     <see cref="JbRunLock" /> for the solution's cache generation, spawns <c>jb</c> under the run
 ///     timeout, and turns a non-zero exit into a <see cref="JbExitCodeException" /> quoting the tail of
-///     standard error. Inspect and cleanup share one cache generation, so the lock has to be taken in one
-///     place rather than at both call sites by convention.
+///     standard error.
 /// </summary>
 /// <remarks>
+///     <para>
+///         Inspect and cleanup share one cache generation, so the lock has to be taken in one place rather
+///         than at both call sites by convention.
+///     </para>
 ///     <para>
 ///         Queue time is deliberately outside the run budget: <paramref name="runTimeout" /> is armed inside
 ///         <see cref="ProcessRunner" />, which starts only once the lock is held, so a call that waited for
@@ -46,15 +49,14 @@ internal sealed class JbExitCodeException(string message, int exitCode, string s
 ///     <para>
 ///         Two entry points, one spawn. <see cref="RunAsync" /> serves a call the user made: it takes this
 ///         server's <see cref="JbRunSlot" />, queues for the lock, and throws on failure.
-///         <see cref="TryRunAsync" /> serves speculative work — today only <see cref="CacheWarmer" /> — and
-///         does the opposite at every turn: it skips rather than queues, at the slot as much as at the lock,
-///         and reports rather than throws. What it reports is a <see cref="SpeculativeRunOutcome" /> naming
-///         <em>which</em> of those it did, so a caller summarising a pass cannot contradict the run lines
-///         underneath it. Both go through <see cref="SpawnAsync" />, which keeps this class the
-///         sole place a <c>jb</c> process starts — and so the one place the slot has to be taken. Which of
-///         the two wins when they collide is <see cref="JbRunYield" />'s to say, not this class's: the rule
-///         belongs to every caller the user is waiting on, and a cache reset is one that runs no <c>jb</c>
-///         at all.
+///         <see cref="TryRunAsync" /> serves speculative work and does the opposite at every turn: it skips
+///         rather than queues, at the slot as much as at the lock, and reports rather than throws. What it
+///         reports is a <see cref="SpeculativeRunOutcome" /> naming <em>which</em> of those it did, so a caller
+///         summarising a pass cannot contradict the run lines underneath it. Both go through
+///         <see cref="SpawnAsync" />, which keeps this class the sole place a <c>jb</c> process starts — and so
+///         the one place the slot has to be taken. Which of the two wins when they collide is
+///         <see cref="JbRunYield" />'s to say, not this class's: the rule belongs to every caller the user is
+///         waiting on, and a cache reset is one that runs no <c>jb</c> at all.
 ///     </para>
 ///     <para>
 ///         Both also give <see cref="CacheTransplanter" /> its one chance to seed the cache, in the window
@@ -65,15 +67,14 @@ internal sealed class JbExitCodeException(string message, int exitCode, string s
 ///     </para>
 /// </remarks>
 /// <param name="runTimeout">
-///     Wall-clock cap on one <c>jb</c> run, after which its process tree is killed. Resolved from
-///     <see cref="JbRunTimeout" /> at the composition root, which hands the same value to
-///     <see cref="JbRunLock" /> so wait and run stay one number.
+///     Wall-clock cap on one <c>jb</c> run, after which its process tree is killed. The same value bounds
+///     <see cref="JbRunLock" />'s wait, so wait and run stay one number.
 /// </param>
 /// <param name="heartbeatInterval">
 ///     How often a run in flight reports itself, defaulting to
 ///     <see cref="JbRunProgress.HeartbeatInterval" />. A parameter for the same reason that default's own
 ///     constructor leaves one open: an integration test driving the whole pipeline should not have to wait
-///     ten seconds to see a second beat.
+///     a production interval to see a second beat.
 /// </param>
 internal sealed class JbRunner(
     IProcessRunner processRunner,
@@ -94,16 +95,16 @@ internal sealed class JbRunner(
 
     /// <summary>
     ///     Whether this server session has already said that <c>jb</c>'s cache-generation naming no longer
-    ///     matches what <see cref="JbSolutionCacheHash" /> reproduces. One fact about this machine's
-    ///     <c>jb</c> rather than one fact per run, so repeating it on every successful run would bury a
-    ///     session's log in the same sentence.
+    ///     matches what <see cref="JbSolutionCacheHash" /> reproduces.
     /// </summary>
     /// <remarks>
-    ///     An instance field, and that is the whole reason the latch lives in this class rather than beside
-    ///     the marker it describes: this is registered once per host, so one instance is one server session
-    ///     and "once" is scoped to the same session as the <see cref="ILogger" /> the warning lands in. A
-    ///     static latch is exact only while a process holds one session, and lets the first session in a
-    ///     process that holds several absorb the warning every later one had to say for itself.
+    ///     One fact about this machine's <c>jb</c> rather than one fact per run, so repeating it on every
+    ///     successful run would bury a session's log in the same sentence. An instance field, and that is the
+    ///     whole reason the latch lives in this class rather than beside the marker it describes: this is
+    ///     registered once per host, so one instance is one server session and "once" is scoped to the same
+    ///     session as the <see cref="ILogger" /> the warning lands in. A static latch is exact only while a
+    ///     process holds one session, and lets the first session in a process that holds several absorb the
+    ///     warning every later one had to say for itself.
     /// </remarks>
     private int _driftWarned;
 
@@ -123,7 +124,7 @@ internal sealed class JbRunner(
     internal event Action<ResolvedConfig>? ForegroundRunTimedOut;
 
     /// <summary>
-    ///     Run <c>jb</c> with <paramref name="arguments" /> — whose first entry is the subcommand — against
+    ///     Runs <c>jb</c> with <paramref name="arguments" /> — whose first entry is the subcommand — against
     ///     the solution in <paramref name="config" />, returning its result for the caller's own
     ///     post-checks.
     /// </summary>
@@ -144,9 +145,9 @@ internal sealed class JbRunner(
         {
             // Armed before either queue rather than at the spawn, and that placement is the point: this
             // call waits for the slot and then for JbRunLock, whose wait is bounded by the run cap, so a
-            // caller can sit here for ten minutes with no jb in existence to stream. Streaming jb's output
-            // alone could never have covered this stretch, and it is exactly the stretch a second raw jb
-            // against the same cache creates. Its opening phase is the slot wait, which is the first thing
+            // caller can sit here for the length of a whole run with no jb in existence to stream. Streaming
+            // jb's output alone could never have covered this stretch, and it is exactly the stretch a second
+            // raw jb against the same cache creates. Its opening phase is the slot wait, which is the first thing
             // this call does.
             await using JbRunProgress? progress = JbRunProgress.Reporting(
                 arguments[0],
@@ -187,8 +188,8 @@ internal sealed class JbRunner(
             bool seeded = await transplanter.TryTransplantAsync(config, cancellationToken);
 
             // Read here rather than inside the spawn, and after the transplant decision: this is the state jb
-            // is about to open, and the two endings that quote it — the run line and the timeout message —
-            // both sit outside the frame that used to own the reading.
+            // is about to open, and it is quoted both by the run line inside the spawn and by the timeout
+            // message outside it.
             JbCacheState cache = JbCacheState.Read(
                 config.SolutionPath, config.CacheHome, seeded, config.JbVersion, logger);
 
@@ -219,13 +220,15 @@ internal sealed class JbRunner(
     }
 
     /// <summary>
-    ///     Run <c>jb</c> speculatively: only if no real call is in flight in this process, only if the cache
-    ///     generation is free right now, and only until a real call wants it. Names how the pass ended rather
-    ///     than reporting a result, because no ending here is an error and the caller's whole job is to tell
-    ///     them apart — a run given up after minutes of analysis is not the run that never started. A non-zero
-    ///     exit is one of those endings rather than a throw, since background work has no channel to raise a
-    ///     failure through and its caller decides what a failure means.
+    ///     Runs <c>jb</c> speculatively: only if no real call is in flight in this process, only if the cache
+    ///     generation is free right now, and only until a real call wants it.
     /// </summary>
+    /// <remarks>
+    ///     Names how the pass ended rather than reporting a result, because no ending here is an error and the
+    ///     caller's whole job is to tell them apart — a run given up after minutes of analysis is not the run
+    ///     that never started. A non-zero exit is one of those endings rather than a throw, since background
+    ///     work has no channel to raise a failure through and its caller decides what a failure means.
+    /// </remarks>
     public async Task<SpeculativeRunOutcome> TryRunAsync(
         ResolvedConfig config,
         IReadOnlyList<string> arguments,
@@ -303,25 +306,29 @@ internal sealed class JbRunner(
     }
 
     /// <summary>
-    ///     The single <c>jb</c> spawn. A clean exit stamps the warm marker, so the pre-warm debounce records
-    ///     every successful run — foreground tool calls included, and <c>cleanupcode</c> as much as
-    ///     <c>inspectcode</c>, since both analyse the whole solution into the same cache generation — rather
-    ///     than relying on one call site remembering to. The same exit discharges any cold tombstone a reset
-    ///     left: the cache this run rebuilt is the solution's own, so there is no longer a reset to protect.
-    ///     It also records what the run cost under the band it started in, where that band predicts the next
-    ///     run like it, which is what lets the next one say how long a run like it takes; a warm run records
-    ///     nothing, because its last duration does not predict its next. All three are the clean exit's
-    ///     alone — a run killed at the cap or one that exited non-zero reaches none of them.
+    ///     The single <c>jb</c> spawn.
     /// </summary>
     /// <remarks>
-    ///     It is also where the pair of <c>Information</c> lines a <c>jb</c> run costs the log are written,
-    ///     one before and one after, and both halves earn their place. The opening line is what makes a run
-    ///     legible <em>while</em> it is happening: a <c>jb</c> run is minutes of silence, and a run that is
-    ///     killed or never returns would otherwise leave nothing at all behind — the exact "starts, never
-    ///     ends" shape the pre-warm's own logging used to have. It also carries the two facts that predict the
-    ///     duration about to follow, the cache state and the queue wait, which are unrecoverable afterwards.
-    ///     Placed here rather than in <see cref="ProcessRunner" /> because this is the frame that knows a run
-    ///     from a version probe, and one level down they are the same spawn.
+    ///     <para>
+    ///         A clean exit stamps the warm marker, so the pre-warm debounce records every successful run —
+    ///         foreground tool calls included, and <c>cleanupcode</c> as much as <c>inspectcode</c>, since both
+    ///         analyse the whole solution into the same cache generation — rather than relying on one call site
+    ///         remembering to. The same exit discharges any cold tombstone a reset left: the cache this run
+    ///         rebuilt is the solution's own, so there is no longer a reset to protect. It also records what the
+    ///         run cost under the band it started in, where that band predicts the next run like it, which is
+    ///         what lets the next one say how long a run like it takes; a warm run records nothing, because its
+    ///         last duration does not predict its next. All three are the clean exit's alone — a run killed at
+    ///         the cap or one that exited non-zero reaches none of them.
+    ///     </para>
+    ///     <para>
+    ///         It is also where the pair of <c>Information</c> lines a <c>jb</c> run costs the log are written,
+    ///         one before and one after, and both halves earn their place. The opening line is what makes a run
+    ///         legible <em>while</em> it is happening: a <c>jb</c> run is minutes of silence, and a run that is
+    ///         killed or never returns would otherwise leave nothing at all behind. It also carries the two facts
+    ///         that predict the duration about to follow, the cache state and the queue wait, which are
+    ///         unrecoverable afterwards. Placed here rather than in <see cref="ProcessRunner" /> because this is
+    ///         the frame that knows a run from a version probe, and one level down they are the same spawn.
+    ///     </para>
     ///     <para>
     ///         The stamp is also where naming drift is met, and this class — one instance per server session —
     ///         is what owns the once-per-session latch behind
@@ -418,12 +425,14 @@ internal sealed class JbRunner(
     }
 
     /// <summary>
-    ///     A run succeeded and left no directory this server can recognise as its cache generation, so
-    ///     <c>jb</c>'s naming has moved away from what <see cref="JbSolutionCacheHash" /> reproduces. Nothing
-    ///     is broken by it — every feature reading the name simply stops finding one — but it is the single
-    ///     signal that the derivation has gone stale, so it is a warning rather than a debug line, and said
-    ///     once for as long as this session lasts.
+    ///     Warns, once per session, that a run succeeded without leaving a directory this server can recognise
+    ///     as its cache generation.
     /// </summary>
+    /// <remarks>
+    ///     That means <c>jb</c>'s naming has moved away from what <see cref="JbSolutionCacheHash" /> reproduces.
+    ///     Nothing is broken by it — every feature reading the name simply stops finding one — but it is the
+    ///     single signal that the derivation has gone stale, so it is a warning rather than a debug line.
+    /// </remarks>
     private void WarnOnceAboutUnrecognisedNaming(ResolvedConfig config)
     {
         if (Interlocked.Exchange(ref _driftWarned, 1) != 0) return;
@@ -436,19 +445,21 @@ internal sealed class JbRunner(
     }
 
     /// <summary>
-    ///     What a foreground caller is told when its run hit the cap. Three things it cannot work out for
-    ///     itself, and the reason this message is not left to <see cref="ProcessRunner" />: the cap belongs
-    ///     to this server rather than to <c>jb</c> or to the MCP client, there is an environment variable
-    ///     that moves it, and the obvious next move does not work — scoping with <c>files</c> narrows what
-    ///     <c>jb</c> reports and never what it analyses, so a retry scoped to one file is just as slow.
+    ///     What a foreground caller is told when its run hit the cap.
     /// </summary>
+    /// <remarks>
+    ///     Three things it cannot work out for itself, and the reason this message is not left to
+    ///     <see cref="ProcessRunner" />: the cap belongs to this server rather than to <c>jb</c> or to the MCP
+    ///     client, there is an environment variable that moves it, and the obvious next move does not work —
+    ///     scoping with <c>files</c> narrows what <c>jb</c> reports and never what it analyses, so a retry
+    ///     scoped to one file is just as slow.
+    /// </remarks>
     /// <param name="subcommand">The <c>jb</c> subcommand that ran out of budget.</param>
     /// <param name="filesSeen">
     ///     How many files <c>jb</c> had reported reaching, or zero when nothing said. The promise that a
-    ///     retry "resumes rather than starting over" is the one claim here this server cannot verify, and
-    ///     until there was a count it was made with confidence it had not earned. A number is offered as
-    ///     evidence for it and withheld when there is none — which is also what keeps the claim honest for
-    ///     <c>cleanupcode</c>, whose per-file output nothing here can count. Spelled by
+    ///     retry "resumes rather than starting over" is the one claim here this server cannot verify, so a
+    ///     number is offered as evidence for it and withheld when there is none — which is also what keeps
+    ///     the claim honest for <c>cleanupcode</c>, whose per-file output nothing here can count. Spelled by
     ///     <see cref="RunProgressFormatter.Files" />, so the count reads here as it read on the progress
     ///     line the caller just watched.
     /// </param>
@@ -456,8 +467,8 @@ internal sealed class JbRunner(
     ///     What the cache looked like going in, for the one figure this message cannot otherwise offer: how
     ///     long a comparable run of this solution took. It turns "the cap was ten minutes" into evidence for
     ///     or against raising it — a solution recorded at eight minutes cold will fit in twelve, and one that
-    ///     has never finished will not. Absent whenever no comparable run has, in which case the message is
-    ///     what it always was.
+    ///     has never finished will not. Absent whenever no comparable run has, in which case the message
+    ///     omits the figure.
     /// </param>
     private string TimedOutMessage(string subcommand, int filesSeen, JbCacheState cache)
     {
@@ -481,12 +492,14 @@ internal sealed class JbRunner(
     }
 
     /// <summary>
-    ///     Tell whoever is listening that a foreground run ran out of budget. Swallows anything a subscriber
-    ///     throws: this fires while the <see cref="UserErrorException" /> carrying
-    ///     <see cref="TimedOutMessage" /> is unwinding, and a throwing listener would replace the one message
-    ///     that tells the user whose cap it was with an unrelated failure. The same bargain
-    ///     <see cref="JbRunYield" /> makes on the way in — an optimisation may not fail a call.
+    ///     Tells whoever is listening that a foreground run ran out of budget.
     /// </summary>
+    /// <remarks>
+    ///     Swallows anything a subscriber throws: this fires while the <see cref="UserErrorException" />
+    ///     carrying <see cref="TimedOutMessage" /> is unwinding, and a throwing listener would replace the one
+    ///     message that tells the user whose cap it was with an unrelated failure. The same bargain
+    ///     <see cref="JbRunYield" /> makes on the way in — an optimisation may not fail a call.
+    /// </remarks>
     private void AnnounceTimeout(ResolvedConfig config)
     {
         try
@@ -500,15 +513,16 @@ internal sealed class JbRunner(
     }
 
     /// <summary>
-    ///     Append the config-derived options every <c>jb</c> subcommand takes — <c>--caches-home</c>,
-    ///     <c>--settings</c>, <c>-x</c>, <c>--source</c> — in one place. Inspect and cleanup must pass
-    ///     identical configuration to open the same cache generation, so a new axis added here reaches
-    ///     both builders at once instead of landing in one and silently missing the other. The optional
-    ///     values are null-or-meaningful by <c>ConfigResolver</c>'s contract, so presence is a null check —
-    ///     except <c>--settings</c>, which is present only for a file <c>jb</c> cannot discover itself:
-    ///     it mounts a Custom layer above the whole stack, so passing a discovered file would demote every
-    ///     project's own <c>.csproj.DotSettings</c> rather than change nothing.
+    ///     Appends the config-derived options every <c>jb</c> subcommand takes, in one place.
     /// </summary>
+    /// <remarks>
+    ///     Inspect and cleanup must pass identical configuration to open the same cache generation, so a new
+    ///     axis added here reaches both builders at once instead of landing in one and silently missing the
+    ///     other. The optional values are null-or-meaningful by <c>ConfigResolver</c>'s contract, so presence
+    ///     is a null check — except <c>--settings</c>, which is present only for a file <c>jb</c> cannot
+    ///     discover itself: it mounts a Custom layer above the whole stack, so passing a discovered file would
+    ///     demote every project's own <c>.csproj.DotSettings</c> rather than change nothing.
+    /// </remarks>
     internal static void AppendConfigArguments(List<string> arguments, ResolvedConfig config)
     {
         arguments.Add($"--caches-home={config.CacheHome}");
@@ -539,10 +553,13 @@ internal sealed class JbRunner(
     /// <summary>
     ///     The last <see cref="StandardErrorTailLength" /> characters of <paramref name="standardError" />,
     ///     trailing whitespace trimmed — enough of a failed run's output to diagnose it without flooding
-    ///     the response. A null tolerated for the same reason <see cref="JbLocator" /> tolerates a null
-    ///     standard output: a defaulted <see cref="ProcessResult" /> carries one, and the paths that quote a
-    ///     tail exist to report a failure, not to add one.
+    ///     the response.
     /// </summary>
+    /// <remarks>
+    ///     A null is tolerated for the same reason <see cref="JbLocator" /> tolerates a null standard output: a
+    ///     defaulted <see cref="ProcessResult" /> carries one, and the paths that quote a tail exist to report a
+    ///     failure, not to add one.
+    /// </remarks>
     internal static string StandardErrorTail(string? standardError)
     {
         string trimmed = standardError?.TrimEnd() ?? string.Empty;

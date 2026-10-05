@@ -9,10 +9,12 @@ namespace Zphil.ReSharperCli.Services;
 internal sealed record CacheResetFailure(string Name, string Reason);
 
 /// <summary>
-///     How much a reset can say about whose a generation it left alone is. The four answers read differently
-///     to someone deciding what to do next, so they are kept apart rather than folded into a nullable path
-///     and a flag beside it.
+///     How much a reset can say about whose a generation it left alone is.
 /// </summary>
+/// <remarks>
+///     The four answers read differently to someone deciding what to do next, so they are kept apart rather
+///     than folded into a nullable path and a flag beside it.
+/// </remarks>
 internal enum LeftAloneAttribution
 {
     /// <summary>
@@ -42,10 +44,12 @@ internal enum LeftAloneAttribution
 }
 
 /// <summary>
-///     A generation the reset left where it was, and whose checkout it belongs to. Left alone means the hash
-///     in its name is another solution path's, and the hash is one-way, so the recorded path is the whole of
-///     what turns a directory the caller can see into one they can act on.
+///     A generation the reset left where it was, and whose checkout it belongs to.
 /// </summary>
+/// <remarks>
+///     Left alone means the hash in its name is another solution path's, and the hash is one-way, so the
+///     recorded path is the whole of what turns a directory the caller can see into one they can act on.
+/// </remarks>
 /// <param name="LastWarmedFor">
 ///     The solution path its last successful run recorded, or <see langword="null" /> unless
 ///     <paramref name="Attribution" /> is <see cref="LeftAloneAttribution.CheckoutPresent" /> or
@@ -59,7 +63,7 @@ internal sealed record LeftAloneGeneration(
 /// <summary>
 ///     What a reset did: the generation directory names it dropped, the ones belonging to a different
 ///     solution it deliberately left where they were, and the ones it could not delete, under the cache home
-///     it looked in. Formatting lives in <c>CacheResetFormatter</c>.
+///     it looked in.
 /// </summary>
 /// <param name="SolutionFileExists">
 ///     Whether <paramref name="SolutionPath" /> still names a file. False is a reclaim — the cache of a
@@ -76,12 +80,14 @@ internal sealed record CacheResetOutcome(
 
 /// <summary>
 ///     Deletes the solution's ReSharper cache generations so the next <c>jb</c> run rebuilds its analysis
-///     from cold — the invalidation the ReSharper CLI itself does not expose. <c>--caches-home</c> chooses
-///     where caches live and nothing documents clearing or rebuilding one, so a stale index has no cure
-///     short of deleting the directory; this server picks that directory, so it is the only thing placed to
-///     offer the operation safely.
+///     from cold — the invalidation the ReSharper CLI itself does not expose.
 /// </summary>
 /// <remarks>
+///     <para>
+///         <c>--caches-home</c> chooses where caches live and nothing documents clearing or rebuilding one,
+///         so a stale index has no cure short of deleting the directory; this server picks that directory, so
+///         it is the only thing placed to offer the operation safely.
+///     </para>
 ///     <para>
 ///         "Safely" is the whole reason this is server-side rather than advice to delete a glob. The
 ///         <see cref="JbRunLock" /> for the (solution, cache home) pair is held across the delete, so a reset
@@ -93,7 +99,7 @@ internal sealed record CacheResetOutcome(
 ///         It waits for a run, but not for speculative work: <see cref="JbRunYield" /> is entered before the
 ///         lock, so a pre-warm holding the generation is stood down rather than waited out. Queueing behind
 ///         one would be the worst possible trade — the user is waiting on a call whose whole purpose is to
-///         delete what that pass is busy building — and taking the lock without the claim is what left this
+///         delete what that pass is busy building — and taking the lock without the claim would leave this
 ///         tool doing exactly that for up to the full run cap.
 ///     </para>
 ///     <para>
@@ -107,8 +113,7 @@ internal sealed record CacheResetOutcome(
 ///         generation's file name, which several checkouts of one repository share. A generation is deleted
 ///         only where the hash in its name is the one this solution's path produces; everything else is
 ///         reported as left alone, and a computed hash matching nothing deletes nothing at all. That is what
-///         makes a shared cache home ordinary rather than an obstacle — before, two checkouts in one cache
-///         home made the tool refuse for both.
+///         makes a shared cache home ordinary rather than an obstacle.
 ///     </para>
 ///     <para>
 ///         Each generation left alone is attributed to the solution path its own last successful run
@@ -132,15 +137,15 @@ internal sealed record CacheResetOutcome(
 ///         generation partly deleted. That is deliberate: a directory jb rebuilds is a better outcome than a
 ///         call that fails after deleting most of one, and this tool is idempotent, so re-running finishes
 ///         the job. All the report can say about <em>why</em> is what the filesystem said, which is the
-///         honest limit — the holder is usually a <c>jb</c> in another session, but since this call now
-///         cancels a speculative run rather than waiting it out, it can equally be one this server killed a
-///         moment ago and has not finished reaping.
+///         honest limit — the holder is usually a <c>jb</c> in another session, but because this call cancels
+///         a speculative run rather than waiting it out, it can equally be one this server killed a moment
+///         ago and has not finished reaping.
 ///     </para>
 /// </remarks>
 /// <param name="heartbeatInterval">
 ///     How often a queued reset reports itself, defaulting to
 ///     <see cref="JbRunProgress.HeartbeatInterval" />. A parameter for the reason <see cref="JbRunner" />'s
-///     own is: a test waiting out more than one beat should not have to pay ten seconds for it.
+///     own is: a test waiting out more than one beat should not have to pay the production interval for it.
 /// </param>
 internal sealed class CacheResetService(
     JbRunLock runLock,
@@ -149,13 +154,16 @@ internal sealed class CacheResetService(
     TimeSpan? heartbeatInterval = null)
 {
     /// <summary>
-    ///     How hard to try one generation before reporting it, and how long to leave between attempts.
-    ///     <see cref="ProcessRunner" /> waits up to five seconds for a killed <c>jb</c> tree to be reaped
-    ///     and then rethrows anyway, so cancelling a pre-warm can hand this call the lease while that tree
-    ///     is still alive holding memory-mapped cache files. Those handles go within a moment or they do not
-    ///     go at all, so a few hundred milliseconds turns the common case into a clean drop while a
-    ///     genuinely undeletable directory still reaches the report about as fast as before.
+    ///     How many times to try one generation before reporting it; <see cref="DeleteRetryDelay" /> is the
+    ///     gap between attempts.
     /// </summary>
+    /// <remarks>
+    ///     <see cref="ProcessRunner" /> waits only a bounded time for a killed <c>jb</c> tree to be reaped and
+    ///     then rethrows anyway, so cancelling a pre-warm can hand this call the lease while that tree is still
+    ///     alive holding memory-mapped cache files. Those handles go within a moment or they do not go at all,
+    ///     so a few hundred milliseconds turns the common case into a clean drop while a genuinely undeletable
+    ///     directory still reaches the report in well under a second.
+    /// </remarks>
     private const int DeleteAttempts = 3;
 
     /// <summary>
@@ -204,7 +212,7 @@ internal sealed class CacheResetService(
             .ToList();
 
         // One stat, taken here rather than carried in on the config: this is the only decision that turns on
-        // it, and asking the filesystem directly keeps every caller's config the shape it always was.
+        // it, and asking the filesystem directly keeps the config free of a field only this call reads.
         bool solutionFileExists = File.Exists(config.SolutionPath);
 
         List<string> dropped = [];
@@ -241,8 +249,8 @@ internal sealed class CacheResetService(
         else
             JbColdTombstone.Clear(config.SolutionPath, config.CacheHome, logger);
 
-        // The one tool that spawns no jb, and until now the one that left no trace: a reset is the reason the
-        // next call is slow, and read from the log afterwards that call looked cold for no reason.
+        // The one tool that spawns no jb, so without this line it leaves no trace: a reset is the reason the
+        // next call is slow, and read from the log afterwards that call would look cold for no reason.
         logger.LogInformation(
             "Reset the ReSharper cache for solution {SolutionPath} (solution file present: {SolutionFileExists}): "
             + "dropped {DroppedCount} generation(s) {Dropped}, "
@@ -263,11 +271,13 @@ internal sealed class CacheResetService(
 
     /// <summary>
     ///     Whose <paramref name="generation" /> is, as far as the markers under the cache home can say.
-    ///     Absent from <paramref name="recordedPaths" /> and present-with-null are different answers: the
-    ///     first is a generation no successful run ever stamped, the second a marker from a build that
-    ///     recorded no path. The existence check is one stat against a path a marker recorded, and is what
-    ///     separates the cache of a checkout still in use from the reclaimable cache of a deleted one.
     /// </summary>
+    /// <remarks>
+    ///     Absent from <paramref name="recordedPaths" /> and present-with-null are different answers: the first
+    ///     is a generation no successful run ever stamped, the second a marker from a build that recorded no
+    ///     path. The existence check is one stat against a path a marker recorded, and is what separates the
+    ///     cache of a checkout still in use from the reclaimable cache of a deleted one.
+    /// </remarks>
     private static LeftAloneGeneration Attribute(
         JbCacheGeneration generation,
         Dictionary<string, string?> recordedPaths)
@@ -285,15 +295,15 @@ internal sealed class CacheResetService(
     }
 
     /// <summary>
-    ///     Queue for the generation's lease, saying so while the wait lasts. This call spawns nothing, so
-    ///     the wait is the whole of the silence it has to break — and up to the lock's own cap of it.
+    ///     Queues for the generation's lease, saying so while the wait lasts.
     /// </summary>
     /// <remarks>
-    ///     The reporter is scoped to the acquisition and to nothing else, which is why the wait has a method
-    ///     of its own rather than a wider <c>await using</c> in <see cref="RunAsync" />. Two things fall out
-    ///     of it. A beat cannot land during the deletes, which take moments and would be described as a wait
-    ///     that had already ended. And on a contended acquire the reporter is disposed as the
-    ///     <see cref="UserErrorException" /> unwinds past it, so nothing reports against a call that has
+    ///     This call spawns nothing, so the wait is the whole of the silence it has to break — and up to the
+    ///     lock's own cap of it. The reporter is scoped to the acquisition and to nothing else, which is why the
+    ///     wait has a method of its own rather than a wider <c>await using</c> in <see cref="RunAsync" />. Two
+    ///     things fall out of it. A beat cannot land during the deletes, which take moments and would be
+    ///     described as a wait that had already ended. And on a contended acquire the reporter is disposed as
+    ///     the <see cref="UserErrorException" /> unwinds past it, so nothing reports against a call that has
     ///     already been answered with an error.
     /// </remarks>
     private async Task<IDisposable> AcquireReportingAsync(
@@ -312,10 +322,13 @@ internal sealed class CacheResetService(
     }
 
     /// <summary>
-    ///     Delete one generation, giving a process that is on its way out a moment to let go, and returning
-    ///     what stopped it rather than throwing. A recursive delete is idempotent after a partial failure —
-    ///     whatever came off stays off — so a retry resumes rather than starting over.
+    ///     Deletes one generation, giving a process that is on its way out a moment to let go, and returns
+    ///     what stopped it rather than throwing.
     /// </summary>
+    /// <remarks>
+    ///     A recursive delete is idempotent after a partial failure — whatever came off stays off — so a retry
+    ///     resumes rather than starting over.
+    /// </remarks>
     private static async Task<CacheResetFailure?> TryDeleteAsync(
         JbCacheGeneration generation,
         CancellationToken cancellationToken)
@@ -338,9 +351,12 @@ internal sealed class CacheResetService(
 
     /// <summary>
     ///     <see cref="JbCacheGenerations.FindFor" /> with its enumeration failures turned into a reportable
-    ///     error. A cache home this server cannot read is not "nothing to drop" — answering a delete request
-    ///     with a clean report would be the worst possible reading of it.
+    ///     error.
     /// </summary>
+    /// <remarks>
+    ///     A cache home this server cannot read is not "nothing to drop" — answering a delete request with a
+    ///     clean report would be the worst possible reading of it.
+    /// </remarks>
     private static JbSolutionGenerations Find(string cacheHome, string solutionPath)
     {
         try

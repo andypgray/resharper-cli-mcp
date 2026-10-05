@@ -11,12 +11,10 @@ namespace Zphil.ReSharperCli.Tests.TestSupport;
 /// </summary>
 /// <remarks>
 ///     <para>
-///         Written out by hand, the matcher was in some thirty places across fourteen files — and the failure
-///         mode when the seam grew is the reason to collect it. A hand-spelled matcher listing every parameter
-///         still <em>compiles</em> after a new optional one is added: it binds the newcomer to its default and
-///         then silently stops matching the moment product code passes anything else. The substitute answers
-///         <c>default(ProcessResult)</c>, and a dozen unrelated files fail with messages naming neither the
-///         seam nor the change.
+///         A hand-spelled matcher listing every parameter still <em>compiles</em> after a new optional one is
+///         added to the seam: it binds the newcomer to its default and then silently stops matching the moment
+///         product code passes anything else. The substitute answers <c>default(ProcessResult)</c>, and
+///         unrelated files fail with messages naming neither the seam nor the change.
 ///     </para>
 ///     <para>
 ///         So the rule is that no test spells the argument list itself. The next parameter added to the seam
@@ -75,10 +73,8 @@ internal static class ProcessRuns
         return call.ArgAt<CancellationToken>(3);
     }
 
-    /// <summary>
-    ///     The line observer the run was given, read off a recorded call. <see langword="null" /> for a caller
-    ///     that asked for no progress — which is what a speculative pass and a version probe both do.
-    /// </summary>
+    /// <summary>The line observer the run was given, read off a recorded call.</summary>
+    /// <remarks><see langword="null" /> for a caller that asked for no progress.</remarks>
     public static Action<string>? OutputLineObserver(this CallInfo call)
     {
         return call.ArgAt<Action<string>?>(4);

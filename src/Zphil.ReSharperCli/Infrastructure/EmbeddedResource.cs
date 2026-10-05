@@ -4,10 +4,8 @@ namespace Zphil.ReSharperCli.Infrastructure;
 
 /// <summary>
 ///     Reads a resource embedded in this assembly by its manifest (logical) name, as text or as bytes.
-///     Shared by every consumer that ships a file inside the assembly and reads it back at load time —
-///     the server instructions (<see cref="ServerInstructions" />), the MCP prompt and resource bodies,
-///     and the handshake icon (<see cref="ServerIdentity" />) — so a renamed file or drifted resource id
-///     fails loudly and identically in all of them.
+///     The one reader for every file the assembly ships, so a renamed file or drifted resource id fails
+///     loudly and identically wherever it is read.
 /// </summary>
 internal static class EmbeddedResource
 {

@@ -5,20 +5,20 @@ using Zphil.ReSharperCli.Execution;
 namespace Zphil.ReSharperCli.Tests.Execution;
 
 /// <summary>
-///     <see cref="JbCacheState.Summary" /> is one sentence read by three surfaces — the opening log line, the
-///     progress message sent while <c>jb</c> loads the solution, and, through
-///     <see cref="JbCacheState.CostBand" />, the timeout message — so its arms are pinned here rather than
-///     inferred from any one of them. Two claims carry the class. Every arm reads exactly as it always has
-///     when no figure is recorded, which is what lets a feature be added to this sentence without touching a
-///     single consumer's expectations. And a figure appears only where one predicts something: the arms with
-///     no band quote nothing however they are constructed, and so does the warm arm, whose band the record
-///     keeps no figure for.
+///     Pins every arm of <see cref="JbCacheState.Summary" /> directly, rather than through any one of the
+///     surfaces that read it.
 /// </summary>
+/// <remarks>
+///     Two claims carry the class. With no figure recorded, every arm reads exactly as its pinned string, which
+///     is what lets a figure be added to this sentence without touching a single consumer's expectations. And
+///     a figure appears only where one predicts something: the arms with no band, warm among them, quote
+///     nothing however they are constructed.
+/// </remarks>
 public sealed class JbCacheStateTests
 {
     private const string Generation = "_App.123.00";
 
-    /// <summary>The two builds of the measured patch bump: one wrote the cache, the other is about to open it.</summary>
+    /// <summary>The two builds of a patch bump: one wrote the cache, the other is about to open it.</summary>
     private const string ThisJb = "2026.2.1";
 
     private const string AnotherJb = "2026.2.0.2";
@@ -84,26 +84,24 @@ public sealed class JbCacheStateTests
     [Fact]
     public void Summary_AGenerationAnotherJbBuildWrote_ReadsAsStaleAndNamesBothBuilds()
     {
-        // Assert — the lie this arm exists to stop. Measured across one patch bump on a static tree: the run
-        // after the upgrade took 220 seconds where its own second run took 64, so a generation an earlier
-        // build left behind buys the next run nothing and the sentence has to say which build wrote it.
+        // Assert — the lie this arm exists to stop: a generation an earlier jb build left behind buys the next
+        // run nothing, so the sentence has to say which build wrote it.
         Stale().Summary.ShouldBe($"stale (cache written by jb {AnotherJb}, this is {ThisJb}, and jb rebuilds it)");
     }
 
     [Fact]
     public void Summary_AMarkerNamingNoJbBuild_ReadsAsStaleWithoutInventingOne()
     {
-        // Assert — every marker written before the build was recorded, which is every marker on disk the
-        // first time a server carrying this reads one. It cannot be vouched for, so it reads as the state
-        // that costs work rather than the one that promises none.
+        // Assert — a marker that names no build cannot be vouched for, so it reads as the state that costs work
+        // rather than the one that promises none.
         StaleWithNoRecordedBuild().Summary.ShouldBe($"stale (cache written by an earlier jb, this is {ThisJb}, and jb rebuilds it)");
     }
 
     [Fact]
     public void Summary_AGenerationThisJbBuildWrote_ReadsWarmExactlyAsItAlwaysHas()
     {
-        // Assert — the other side of the same judgement, and the one that must not have moved: a marker this
-        // build wrote is the ordinary warm cache, spelled the way every consumer already expects.
+        // Assert — the other side of the same judgement: a marker this build wrote is the ordinary warm cache,
+        // and reads exactly as the warm arm does.
         WarmUnderThisJb().Summary.ShouldBe($"warm (14m old marker, {Generation})");
     }
 
@@ -121,8 +119,8 @@ public sealed class JbCacheStateTests
     public void Summary_AStaleCacheWithARecordedCost_QuotesTheColdFigureAndNotTheWarmOne()
     {
         // Assert — the band and the arm are one decision. jb rebuilds this generation in place, so what the
-        // run is about to cost is what a cold one cost; quoting the warm figure here is exactly the minute
-        // this arm was added to stop being promised.
+        // run is about to cost is what a cold one cost; a warm figure here would promise a minute for
+        // cold-shaped work.
         JbCacheState state = Stale() with { LastComparableCost = TimeSpan.FromSeconds(116) };
 
         state.Summary.ShouldBe(
@@ -141,10 +139,8 @@ public sealed class JbCacheStateTests
     [InlineData("warm", null)]
     public void CostBand_MirrorsTheSummaryArms(string arm, string? expected)
     {
-        // Assert — one arm, one band, in the order the summary decides them. A state the summary describes in
-        // its own words is a state whose duration only runs described the same way predict, and a reset makes
-        // no difference to that: a cold cache is a cold cache however it came to be empty. Warm is the arm
-        // with no band, because the last warm run predicts nothing about the next.
+        // Assert — one arm, one band. A reset makes no difference: a cold cache is a cold cache however it came
+        // to be empty. Warm is the arm with no band, because the last warm run predicts nothing about the next.
         JbCacheState state = ArmNamed(arm);
 
         string? band = state.CostBand is { } value ? JbCostRecord.Label(value) : null;
@@ -219,7 +215,7 @@ public sealed class JbCacheStateTests
         return Warm() with { MarkerJbVersion = AnotherJb, CurrentJbVersion = ThisJb };
     }
 
-    /// <summary>A marker from a build of this server that recorded no jb version at all.</summary>
+    /// <summary>A marker that names no <c>jb</c> build at all.</summary>
     private static JbCacheState StaleWithNoRecordedBuild()
     {
         return Warm() with { CurrentJbVersion = ThisJb };

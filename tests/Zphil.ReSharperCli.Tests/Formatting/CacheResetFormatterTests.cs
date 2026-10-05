@@ -5,15 +5,7 @@ using Zphil.ReSharperCli.Services;
 
 namespace Zphil.ReSharperCli.Tests.Formatting;
 
-/// <summary>
-///     Pins <see cref="CacheResetFormatter" />'s shapes. Two lines are load-bearing: the closing one promises
-///     the next call is cold and must appear only when something was actually deleted, and the left-alone one
-///     has to say why a directory the caller can see is still there, or the report reads as a partial failure.
-///     Each left-alone item also says whose it is, in one of four shapes, and the cure for a reclaimable one
-///     appears with them rather than behind a link.
-///     The closing line has a second form, for a reclaim: with no checkout at that path there is no next call
-///     to be cold, so promising one would describe a run that cannot happen.
-/// </summary>
+/// <summary>Pins <see cref="CacheResetFormatter" />'s shapes.</summary>
 public sealed class CacheResetFormatterTests
 {
     private const string SolutionPath = "/repo/App.sln";
@@ -38,7 +30,6 @@ public sealed class CacheResetFormatterTests
         "To reclaim the cache of a checkout that has been deleted, call this tool again with solutionPath "
         + "set to the path it had.";
 
-    /// <summary>The neighbour every left-alone assertion here is about: another checkout, still in use.</summary>
     private static readonly LeftAloneGeneration LiveNeighbour = new(
         "_App.999.00", LeftAloneAttribution.CheckoutPresent, "/repo2/App.sln");
 
@@ -142,7 +133,7 @@ public sealed class CacheResetFormatterTests
     [Fact]
     public void Format_PartialSuccess_ReportsBothHalves()
     {
-        // Arrange — one generation went, the fork did not.
+        // Arrange
         CacheResetOutcome outcome = new(
             SolutionPath, CacheHome, ["_App.123.00"], [], [new CacheResetFailure("_App.123.01", "Access to the path is denied.")]);
 
@@ -202,8 +193,8 @@ public sealed class CacheResetFormatterTests
     [Fact]
     public void Format_AGenerationWarmedBeforePathsWereRecorded_SaysThatRatherThanGuessing()
     {
-        // Arrange — every marker on disk the first time a server carrying this runs. The next clean run
-        // against that generation rewrites it, so this shape is temporary and says nothing more than it can.
+        // Arrange — a marker left by a build that recorded no path. The next clean run against that
+        // generation rewrites it, so this shape is temporary and says nothing more than it can.
         CacheResetOutcome outcome = new(
             SolutionPath, CacheHome, [], [new LeftAloneGeneration("_App.999.00", LeftAloneAttribution.PathNotRecorded)], []);
 

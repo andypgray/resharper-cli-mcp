@@ -17,8 +17,8 @@ namespace Zphil.ReSharperCli.Tests.TestSupport;
 ///         <c>await Task.CompletedTask.ConfigureAwait(ConfigureAwaitOptions.ForceYielding)</c> — before running
 ///         a handler, so every notification becomes an independent thread-pool work item.
 ///         <c>CallToolAsync(progress:)</c> registers an ordinary notification handler and rides that same path.
-///         Measured on this machine (2026-08-25, both test platforms): the client-side monotonic pin this class
-///         replaced failed 2 full-suite runs in 3, seeing <c>[2,4,3,1,5,6]</c> against an expected <c>[1..6]</c>.
+///         The scrambling is routine rather than theoretical: a monotonic pin read client-side fails on ordinary
+///         full-suite runs.
 ///     </para>
 ///     <para>
 ///         The write side concedes nothing. <c>StreamServerTransport.SendMessageAsync</c> holds a single
@@ -30,19 +30,18 @@ namespace Zphil.ReSharperCli.Tests.TestSupport;
 ///     <para>
 ///         What the write side does <em>not</em> settle is which send reaches that semaphore first, and for
 ///         progress that is the whole contract. Two sends started in order race for it, so ordering has to be
-///         decided before the transport — which is what <c>ProgressSink</c> does by awaiting each send before
-///         numbering and starting the next. Reading order here is therefore reading a promise the server makes,
-///         not a coincidence of scheduling: this class is what makes the promise checkable, and the sink is
-///         what makes it true.
+///         decided before the transport, which is <c>ProgressSink</c>'s job. Reading order here is therefore
+///         reading a promise the server makes, not a coincidence of scheduling: this class is what makes the
+///         promise checkable, and the sink is what makes it true.
 ///     </para>
 /// </remarks>
 internal sealed class WireLog
 {
-    /// <summary>
-    ///     What anchors <see cref="ToolResultIndex" />. Only a <c>CallToolResult</c> carries <c>content</c>, so
-    ///     anchoring here rather than on the last response frame stops a ping or a capability response landing
-    ///     afterwards from moving the anchor.
-    /// </summary>
+    /// <summary>What anchors <see cref="ToolResultIndex" />.</summary>
+    /// <remarks>
+    ///     Only a <c>CallToolResult</c> carries <c>content</c>, so anchoring here rather than on the last
+    ///     response frame stops a ping or a capability response landing afterwards from moving the anchor.
+    /// </remarks>
     private const string ToolResultProperty = "content";
 
     private readonly MemoryStream _bytes = new();
@@ -72,19 +71,19 @@ internal sealed class WireLog
     }
 
     /// <summary>
-    ///     The <c>progress</c> value of every progress notification, in the order the server wrote them. A frame
-    ///     whose <c>progress</c> is missing or non-numeric reads as <see langword="null" /> rather than being
-    ///     dropped, so a malformed beat fails a pin instead of vanishing from it.
+    ///     The <c>progress</c> value of every progress notification, in the order the server wrote them.
     /// </summary>
+    /// <remarks>
+    ///     A frame whose <c>progress</c> is missing or non-numeric reads as <see langword="null" /> rather than
+    ///     being dropped, so a malformed beat fails a pin instead of vanishing from it.
+    /// </remarks>
     public IReadOnlyList<double?> ProgressValues => Frames
         .Where(frame => frame.IsProgressNotification)
         .Select(frame => frame.ProgressValue)
         .ToList();
 
-    /// <summary>
-    ///     Where the last progress notification sits among <see cref="Frames" />, or <c>-1</c> when the server
-    ///     wrote none.
-    /// </summary>
+    /// <summary>Where the last progress notification sits among <see cref="Frames" />.</summary>
+    /// <remarks><c>-1</c> when the server wrote none.</remarks>
     public int LastProgressIndex
     {
         get
@@ -97,10 +96,11 @@ internal sealed class WireLog
         }
     }
 
-    /// <summary>
-    ///     Where the <c>tools/call</c> result sits among <see cref="Frames" />, or <c>-1</c> when the server has
-    ///     not written one. See <see cref="ToolResultProperty" /> for what identifies it.
-    /// </summary>
+    /// <summary>Where the <c>tools/call</c> result sits among <see cref="Frames" />.</summary>
+    /// <remarks>
+    ///     <c>-1</c> when the server has not written one. See <see cref="ToolResultProperty" /> for what
+    ///     identifies it.
+    /// </remarks>
     public int ToolResultIndex
     {
         get
@@ -113,7 +113,9 @@ internal sealed class WireLog
         }
     }
 
-    /// <summary>Copy <paramref name="bytes" /> on their way past, under the lock the decode snapshots under.</summary>
+    /// <summary>
+    ///     Copies <paramref name="bytes" /> on their way past, under the lock the decode snapshots under.
+    /// </summary>
     public void Append(ReadOnlySpan<byte> bytes)
     {
         lock (_gate)

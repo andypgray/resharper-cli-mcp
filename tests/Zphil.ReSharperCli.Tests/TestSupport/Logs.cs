@@ -35,9 +35,9 @@ internal static class Logs
     }
 
     /// <summary>
-    ///     The logger a graph-assembling helper wires for one class: the factory's when the test passed one,
-    ///     and a null logger otherwise. One spelling of that default, so every helper wires the same one.
+    ///     The logger for one class: the factory's when the test passed one, and a null logger otherwise.
     /// </summary>
+    /// <remarks>One spelling of that default, so every graph-assembling helper wires the same one.</remarks>
     public static ILogger<T> For<T>(ILoggerFactory? logs)
     {
         return logs is null ? NullLogger<T>.Instance : logs.CreateLogger<T>();

@@ -2,9 +2,7 @@ namespace Zphil.ReSharperCli.Services;
 
 /// <summary>
 ///     Whether <c>resharper_inspect</c> writes the complete itemised findings to a file beside its response,
-///     and in what format. Validated at the argument-binding layer by
-///     <see cref="Pipeline.EnumValidationConverterFactory" />, which lists these names back to the caller on
-///     an unrecognised value.
+///     and in what format.
 /// </summary>
 /// <remarks>
 ///     <para>
@@ -29,7 +27,7 @@ internal enum InspectReport
     None,
 
     /// <summary>
-    ///     Write the same markdown the response uses, at <see cref="Formatting.DetailLevel.Full" /> — every
+    ///     Writes the same markdown the response uses, at <see cref="Formatting.DetailLevel.Full" /> — every
     ///     issue on its own line with its own message.
     /// </summary>
     Markdown

@@ -11,14 +11,9 @@ using Zphil.ReSharperCli.Tests.TestSupport;
 namespace Zphil.ReSharperCli.Tests.Services;
 
 /// <summary>
-///     <see cref="CacheTransplanter" /> copies one solution's ReSharper cache under another's name, which is
-///     both the only thing in this server that writes into a cache generation and an optimisation nobody
-///     asked for. These tests run against real temp cache homes because the whole behaviour is filesystem
-///     shape, and they pin it from both sides: it plants a faithful copy in the two situations it is for —
-///     no generation at all, or one no successful run ever left a warm marker beside — and declines,
-///     silently and leaving the cache home exactly as it found it, in every situation where it cannot prove
-///     one of them holds. The second situation is a delete as well as a copy, so its order is pinned too:
-///     nothing goes until the whole copy is standing beside it.
+///     Pins <see cref="CacheTransplanter" /> against real temp cache homes, because the whole behaviour is
+///     filesystem shape: where it plants a faithful copy, and that every decline leaves the cache home exactly
+///     as it found it.
 /// </summary>
 public sealed class CacheTransplanterTests : IDisposable
 {
@@ -34,10 +29,10 @@ public sealed class CacheTransplanterTests : IDisposable
 
     public CacheTransplanterTests()
     {
-        // Checkouts with a solution file on them: nothing here reads the file, but the two tests that drive
-        // a real CacheResetService do — a reset of a path with no file on it is a reclaim of a deleted
-        // checkout, which writes no cold tombstone, and both of those tests are about a live worktree whose
-        // user asked for cold.
+        // Checkouts with a solution file on them: the transplanter never reads the file, but a real
+        // CacheResetService does — a reset of a path with no file on it is a reclaim of a deleted checkout,
+        // which writes no cold tombstone, and the tests here that reset are about a live worktree whose user
+        // asked for cold.
         _cacheHome = _environment.CreateTempDirectory();
         _mainSolution = _environment.CreateCheckout("App.sln");
         _worktreeSolution = _environment.CreateCheckout("App.sln");
@@ -53,7 +48,7 @@ public sealed class CacheTransplanterTests : IDisposable
     [Fact]
     public async Task TryTransplantAsync_ColdSolutionBesideAWarmSibling_PlantsAFaithfulCopyUnderItsOwnHash()
     {
-        // Arrange — the whole point: a fresh worktree, and the main checkout's warm cache beside it.
+        // Arrange
         string donor = CacheHomes.PlantWarmDonor(_cacheHome, _mainSolution);
         File.WriteAllText(Path.Combine(donor, "Db", "000001.log"), "leveldb");
 
@@ -105,9 +100,9 @@ public sealed class CacheTransplanterTests : IDisposable
     [Fact]
     public async Task TryTransplantAsync_UnmarkedHuskFromAKilledRun_IsReplacedByACopyOfTheDonor()
     {
-        // Arrange — the situation this exists for, and the one the field found: a first run on a new checkout
-        // died at the cap, leaving a part-built generation no marker vouches for. Left alone it would decline
-        // for ever, because the remnant it was meant to be seeded over is itself what blocks the seeding.
+        // Arrange — the situation this exists for: a first run on a new checkout died at the cap, leaving a
+        // part-built generation no marker vouches for. Left alone it would decline for ever, because the
+        // remnant it was meant to be seeded over is itself what blocks the seeding.
         string donor = CacheHomes.PlantWarmDonor(_cacheHome, _mainSolution);
         File.WriteAllText(Path.Combine(donor, "Db", "000001.log"), "leveldb");
         string husk = CacheHomes.PlantGenerationFor(_cacheHome, _worktreeSolution);
@@ -116,7 +111,7 @@ public sealed class CacheTransplanterTests : IDisposable
         // Act
         bool seeded = await Transplanter().TryTransplantAsync(ConfigFor(_worktreeSolution), Ct);
 
-        // Assert — the donor's content won, all of it, and the copy left nothing of itself behind.
+        // Assert
         seeded.ShouldBeTrue();
         string target = TargetPath();
         File.ReadAllText(Path.Combine(target, "Db", "CURRENT")).ShouldBe("cache");
@@ -265,8 +260,7 @@ public sealed class CacheTransplanterTests : IDisposable
     [Fact]
     public async Task TryTransplantAsync_AnotherSolutionEntirely_IsNotADonor()
     {
-        // Arrange — a warm cache for a different solution in the same cache home. It shares nothing with this
-        // one but the directory it lives in.
+        // Arrange
         CacheHomes.PlantWarmDonor(_cacheHome, _environment.CreateSolutionPath("Other.sln"));
 
         // Act & Assert
@@ -311,13 +305,12 @@ public sealed class CacheTransplanterTests : IDisposable
     [Fact]
     public void DefaultDonorLockPatience_OutlastsTheReapOfARunTheCallerItselfKilled()
     {
-        // The case above with the holder being the caller's own doing, and the one a timing test would only
-        // catch by luck: a foreground caller cancels the pre-warm before queueing for its lease, and across
-        // two solutions that lease is uncontended and granted at once — so it can reach the donor while the
-        // pass it just killed still holds it. That lease drops only once the killed tree has been reaped, so
-        // a patience shorter than the reap budget silently declines the donor and takes the cold run the
-        // seeding exists to avoid. Pinned as the relationship between the two constants, because that is the
-        // invariant; a duration assertion would restate one of them and say nothing about why.
+        // A donor's lease can be held by a run on its way out: a pass another server process has just
+        // cancelled, which JbRunSlot cannot make this caller wait for. That lease drops only once the killed
+        // tree has been reaped, so a patience shorter than the reap budget silently declines the donor and
+        // takes the cold run the seeding exists to avoid. Pinned as the relationship between the two
+        // constants, because that is the invariant and a timing test would catch its loss only by luck; a
+        // duration assertion would restate one of them and say nothing about why.
         CacheTransplanter.DefaultDonorLockPatience.ShouldBeGreaterThanOrEqualTo(ProcessRunner.KilledTreeReapBudget);
     }
 
@@ -410,7 +403,7 @@ public sealed class CacheTransplanterTests : IDisposable
     public async Task TryTransplantAsync_HuskThatCannotBeDeleted_DeclinesAndDiscardsTheCopy()
     {
         // Arrange — a jb this server knows nothing about holds the remnant open. The copy is finished and
-        // the slot will not clear, which is the one new way this can fail.
+        // the slot will not clear, which is the one failure replacing a husk adds to a plain copy.
         CacheHomes.PlantWarmDonor(_cacheHome, _mainSolution);
         string husk = CacheHomes.PlantGenerationFor(_cacheHome, _worktreeSolution);
         await File.WriteAllTextAsync(Path.Combine(husk, "Db", "CURRENT"), "part-built", Ct);
@@ -473,7 +466,7 @@ public sealed class CacheTransplanterTests : IDisposable
     [Fact]
     public async Task TryTransplantAsync_ReplacingAHusk_DoesNotClaimTheCopyIsWarm()
     {
-        // Arrange — the marker is now also what protects a generation from being replaced, so stamping one
+        // Arrange — the marker is also what protects a generation from being replaced, so stamping one
         // for an unvalidated copy would do more than advertise a donor: this path would fire once over a
         // remnant and then be locked out of it for ever.
         CacheHomes.PlantWarmDonor(_cacheHome, _mainSolution);
@@ -505,11 +498,10 @@ public sealed class CacheTransplanterTests : IDisposable
     ///     <see cref="LogLevel.Information" />.
     /// </summary>
     /// <remarks>
-    ///     These were five silent <c>return false</c> paths, which made "declined to seed" and "never looked"
-    ///     one observation — and the difference between them is the whole diagnosis when a fresh checkout that
-    ///     should have been seeded runs cold instead, which is the shape a week of field logs showed. The
-    ///     reason text is matched rather than a property name because the reason <em>is</em> the payload here;
-    ///     the level is the part that carries policy.
+    ///     Without the line, "declined to seed" and "never looked" are one observation, and the difference
+    ///     between them is the whole diagnosis when a fresh checkout that should have been seeded runs cold
+    ///     instead. The reason text is matched rather than a property name because the reason <em>is</em> the
+    ///     payload here; the level is the part that carries policy.
     /// </remarks>
     [Fact]
     public async Task TryTransplantAsync_NoDonorAtAll_SaysSoAtInformationBecauseTheRunWillBeCold()
@@ -581,8 +573,8 @@ public sealed class CacheTransplanterTests : IDisposable
     [Fact]
     public async Task TryTransplantAsync_Seeding_ReportsWhatItCopiedAndHowLongItTook()
     {
-        // Arrange — the numbers the seeded-run premium had to be reconstructed by hand from two tool-call
-        // totals. Two files, so the count is not trivially whatever one directory holds.
+        // Arrange — without these numbers the seeded-run premium has to be reconstructed by hand from two
+        // tool-call totals. Two files, so the count is not trivially whatever one directory holds.
         CapturingLoggerProvider logs = new();
         string donor = CacheHomes.PlantWarmDonor(_cacheHome, _mainSolution);
         File.WriteAllText(Path.Combine(donor, "Db", "000001.log"), "leveldb");
@@ -609,7 +601,7 @@ public sealed class CacheTransplanterTests : IDisposable
         return new CacheTransplanter(JbRunners.Lock(TimeSpan.FromSeconds(1)), Logs.For<CacheTransplanter>(logs), ShortPatience);
     }
 
-    /// <summary>Where a seeded generation for the worktree lands, and where it is built before it lands.</summary>
+    /// <summary>Where a seeded generation for the worktree lands.</summary>
     private string TargetPath()
     {
         return CacheHomes.GenerationPathFor(_cacheHome, _worktreeSolution);
@@ -652,15 +644,15 @@ public sealed class CacheTransplanterTests : IDisposable
     }
 
     /// <summary>
-    ///     <paramref name="jbVersion" /> defaults to none, which switches the donor's own build out of the
-    ///     decision, so every test not about builds exercises what it always did.
+    ///     <paramref name="jbVersion" /> defaults to none, which takes the donor's own build out of the decision
+    ///     for every test not about builds.
     /// </summary>
     private ResolvedConfig ConfigFor(string solutionPath, string? jbVersion = null)
     {
         return Configs.Bare(solutionPath, _cacheHome, jbVersion);
     }
 
-    /// <summary>Back-date the warm marker that names <paramref name="generationPath" />.</summary>
+    /// <summary>Back-dates the warm marker that names <paramref name="generationPath" />.</summary>
     private void AgeMarker(string generationPath, TimeSpan age)
     {
         string generationName = Path.GetFileName(generationPath);

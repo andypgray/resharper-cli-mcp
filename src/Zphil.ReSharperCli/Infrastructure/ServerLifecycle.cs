@@ -13,19 +13,11 @@ namespace Zphil.ReSharperCli.Infrastructure;
 ///     Writes the two lines that bracket a server process: what it started as, and how long it ran.
 /// </summary>
 /// <remarks>
-///     <para>
-///         It replaces the Hosting lines <see cref="SerilogConfiguration.QuietedCategories" /> silences, and
-///         it is worth more than they were. <c>Application started</c> said only that a process existed; this
-///         says which configuration it is running under — and every field in it has been a question the log
-///         could not answer, the run cap above all: an operator who has set
-///         <c>RESHARPER_MCP_TIMEOUT_SECS</c> in a client config has no way to confirm the server ever read
-///         it, and a value the client did not pass through looks exactly like one that was ignored.
-///     </para>
-///     <para>
-///         Registered before <see cref="CacheWarmer" />, so the fingerprint is the session's first line and
-///         — because hosted services stop in reverse order — the uptime line is its last, written after the
-///         warmer has reported whatever it drained.
-///     </para>
+///     It stands in for the Hosting lines <see cref="SerilogConfiguration.QuietedCategories" /> silences, and
+///     says which configuration the process is running under rather than only that it exists. Each field
+///     answers a question the log otherwise cannot, the run cap above all: an operator who has set
+///     <c>RESHARPER_MCP_TIMEOUT_SECS</c> in a client config has no other way to confirm the server read it,
+///     and a value the client did not pass through looks exactly like one that was ignored.
 /// </remarks>
 /// <param name="runTimeout">
 ///     The cap this process resolved, passed from the composition root rather than re-read here: the point of

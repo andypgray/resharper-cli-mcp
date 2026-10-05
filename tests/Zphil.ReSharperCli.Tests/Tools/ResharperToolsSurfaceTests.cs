@@ -25,7 +25,7 @@ namespace Zphil.ReSharperCli.Tests.Tools;
 ///         <c>[McpServerTool(Title = …)]</c> value into <c>Tool.Annotations.Title</c> as well, so both
 ///         carry it today and asserting both would pin one fact twice.
 ///     </para>
-/// </summary>
+/// </remarks>
 public sealed class ResharperToolsSurfaceTests(AdvertisedToolsFixture advertised)
     : IClassFixture<AdvertisedToolsFixture>
 {

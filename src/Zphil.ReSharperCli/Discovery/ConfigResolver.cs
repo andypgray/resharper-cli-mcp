@@ -5,19 +5,21 @@ namespace Zphil.ReSharperCli.Discovery;
 
 /// <summary>
 ///     What went wrong while resolving configuration, in a form a tool can report rather than only log.
+/// </summary>
+/// <remarks>
 ///     Neither of these fails a call — both degrade it silently, which is exactly why they have to be said
 ///     out loud, and their blast radii differ: <see cref="MissingSettingsPath" /> means the settings file
 ///     the user named was never applied, taking inspection severities and cleanup profiles with it, while
 ///     <see cref="SettingsRead" /> means <c>jb</c> got the file and parsed it fine and only this server's
 ///     own profile lookup failed, so cleanup silently fell back to a broader profile.
-/// </summary>
+/// </remarks>
 internal sealed record ConfigWarnings(string? MissingSettingsPath, SettingsReadFailure? SettingsRead)
 {
     /// <summary>Nothing to report — the one spelling of "no warnings", so consumers never meet a null.</summary>
     public static readonly ConfigWarnings None = new(null, null);
 }
 
-/// <summary>Everything needed to shell out to <c>jb</c>: the solution, optional settings, cache home, and extensions.</summary>
+/// <summary>Everything needed to shell out to <c>jb</c>.</summary>
 /// <param name="SettingsPathIsCustomLayer">
 ///     Whether <see cref="SettingsPath" /> must ride <c>jb</c>'s command line as <c>--settings</c>: true only
 ///     when it is non-null <em>and</em> names a file outside every location <c>jb</c> mounts itself, so the
@@ -49,11 +51,10 @@ internal sealed record ResolvedConfig(
     /// </summary>
     /// <remarks>
     ///     For every config the analysis tools see, that path also names a file that exists, which is what
-    ///     makes the directory a real one. The exception is
+    ///     makes the directory a real one. The exception is a config from
     ///     <see cref="ConfigResolver.ResolveForCacheResetAsync" />: a cache reset can be asked to reclaim the
-    ///     cache of a checkout that has been deleted, so its config's solution path is a resolved string and
-    ///     nothing more. Nothing on that path reads this member — the reset addresses cache directories by the
-    ///     hash of the string.
+    ///     cache of a checkout that has been deleted, so its solution path is a resolved string and nothing
+    ///     more, and this directory need not exist.
     /// </remarks>
     public string SolutionDirectory => Path.GetDirectoryName(SolutionPath)!;
 }
@@ -81,15 +82,14 @@ internal sealed class ConfigResolver(JbLocator jbLocator, IEnvironment environme
 
     /// <summary>
     ///     The same resolution for a cache reset, which addresses cache directories by the hash of the
-    ///     solution path and so needs the path rather than the file. An explicit
-    ///     <paramref name="solutionPathOverride" /> naming no existing file resolves anyway, which is what
-    ///     lets the cache a deleted worktree or clone left behind be named and reclaimed.
+    ///     solution path and so needs the path rather than the file.
     /// </summary>
     /// <remarks>
-    ///     Only that branch is relaxed. <c>JB_SOLUTION_PATH</c> pointing at a file that is not there is a
-    ///     misconfigured server, and working-directory discovery cannot conjure a path out of nothing, so both
-    ///     still fail. <c>jb</c> is still located first: the reset already pays that probe today, and what
-    ///     this tool requires of an installation is not the place to start diverging.
+    ///     An explicit <paramref name="solutionPathOverride" /> naming no existing file resolves anyway, which
+    ///     is what lets the cache a deleted worktree or clone left behind be named and reclaimed. Only that
+    ///     branch is relaxed. <c>JB_SOLUTION_PATH</c> pointing at a file that is not there is a misconfigured
+    ///     server, and working-directory discovery cannot conjure a path out of nothing, so both still fail.
+    ///     <c>jb</c> is still located first, so every tool asks the same of an installation.
     /// </remarks>
     public Task<ResolvedConfig> ResolveForCacheResetAsync(string? solutionPathOverride, CancellationToken cancellationToken)
     {
@@ -129,10 +129,9 @@ internal sealed class ConfigResolver(JbLocator jbLocator, IEnvironment environme
     ///     <c>~/.jb-cache</c>.
     /// </summary>
     /// <remarks>
-    ///     Internal so the startup line can name it without resolving a whole config — which would mean
-    ///     probing for <c>jb</c>, thirty seconds per candidate on a machine that has none, before the server
-    ///     has said anything at all. This one axis is independent of every other and costs two environment
-    ///     reads.
+    ///     Readable without resolving a whole config, which would mean probing for <c>jb</c> — a probe timeout
+    ///     per candidate on a machine that has none. This one axis is independent of every other and costs
+    ///     two environment reads.
     /// </remarks>
     internal string ResolveCacheHome()
     {
@@ -142,12 +141,12 @@ internal sealed class ConfigResolver(JbLocator jbLocator, IEnvironment environme
             : Path.Combine(environment.HomeDirectory, ".jb-cache");
     }
 
-    /// <summary>
-    ///     Say what this call resolved and how. One line per call, at <c>Information</c>, because every axis on
-    ///     it changes what <c>jb</c> is asked to do and none of them is visible from the outside: which of the
-    ///     three solution sources won, and whether <c>--settings</c> mounts a Custom layer above the whole
-    ///     stack, are exactly the two the 1.4.0 settings-layer defect lived on.
-    /// </summary>
+    /// <summary>Logs what this call resolved and how.</summary>
+    /// <remarks>
+    ///     One line per call, at <c>Information</c>, because every axis on it changes what <c>jb</c> is asked
+    ///     to do and none of them is visible from the outside — above all which of the three solution sources
+    ///     won, and whether <c>--settings</c> mounts a Custom layer above the whole stack.
+    /// </remarks>
     private void Report(ResolvedConfig config, string solutionSource)
     {
         logger.LogInformation(
@@ -167,8 +166,8 @@ internal sealed class ConfigResolver(JbLocator jbLocator, IEnvironment environme
     {
         if (solutionPathOverride is not null)
         {
-            // Resolved against the working directory exactly as it always was, so the string a reclaim
-            // hashes is the string a run of that checkout would have hashed.
+            // Resolved against the working directory on both branches, so the string a reclaim hashes is the
+            // string a run of that checkout would have hashed.
             string resolved = Path.GetFullPath(solutionPathOverride, environment.CurrentDirectory);
             if (File.Exists(resolved)) return new SolutionResolution(resolved, "from the solutionPath argument");
 
@@ -228,11 +227,9 @@ internal sealed class ConfigResolver(JbLocator jbLocator, IEnvironment environme
             missingEnvPath = envPath;
         }
 
-        // Solution-level {solution}.DotSettings next to the solution file.
         string solutionSettings = solutionPath + ".DotSettings";
         if (File.Exists(solutionSettings)) return new SettingsResolution(solutionSettings, missingEnvPath, false);
 
-        // OS-specific JetBrains shared settings.
         string globalSettings = GlobalSettingsPath();
         if (File.Exists(globalSettings)) return new SettingsResolution(globalSettings, missingEnvPath, false);
 
@@ -241,11 +238,13 @@ internal sealed class ConfigResolver(JbLocator jbLocator, IEnvironment environme
 
     /// <summary>
     ///     Whether <c>jb</c> mounts this settings file itself — as its SolutionShared or GlobalAll layer.
+    /// </summary>
+    /// <remarks>
     ///     Naming such a file with <c>--settings</c> does not add it; it re-mounts it as a Custom layer
     ///     <em>above</em> the project layers, so a <c>{project}.csproj.DotSettings</c> the solution relies on
     ///     stops applying. Only the <c>JB_SETTINGS_PATH</c> branch can land outside these two, which is the
     ///     one case <c>--settings</c> exists for.
-    /// </summary>
+    /// </remarks>
     private bool JbMountsItself(string settingsPath, string solutionPath)
     {
         return PathsEqual(settingsPath, solutionPath + ".DotSettings")
@@ -253,10 +252,13 @@ internal sealed class ConfigResolver(JbLocator jbLocator, IEnvironment environme
     }
 
     /// <summary>
-    ///     How two settings paths are compared, matching the platform's filesystem case rules. Both operands
-    ///     are already absolute and normalized; a symlinked or 8.3-form spelling defeats equality and simply
-    ///     falls back to passing <c>--settings</c>.
+    ///     How two settings paths are compared, with the OS standing in for the filesystem's case rules.
     /// </summary>
+    /// <remarks>
+    ///     Both operands are already absolute and normalized. A symlinked or 8.3-form spelling, or a
+    ///     case-insensitive filesystem the OS key misreads, defeats equality and simply falls back to passing
+    ///     <c>--settings</c>.
+    /// </remarks>
     private static bool PathsEqual(string left, string right)
     {
         return string.Equals(left, right, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
@@ -303,10 +305,13 @@ internal sealed class ConfigResolver(JbLocator jbLocator, IEnvironment environme
 
     /// <summary>
     ///     The settings file the chain landed on, plus the <c>JB_SETTINGS_PATH</c> value that named a file
-    ///     that does not exist. Both travel together because a bad env path does not stop the chain: it can
-    ///     fall through to an adjacent or shared settings file, and the caller is owed the warning either way.
+    ///     that does not exist.
+    /// </summary>
+    /// <remarks>
+    ///     Both travel together because a bad env path does not stop the chain: it can fall through to an
+    ///     adjacent or shared settings file, and the caller is owed the warning either way.
     ///     <see cref="IsCustomLayer" /> can be true only for the env branch — the other two land on files
     ///     <c>jb</c> mounts itself.
-    /// </summary>
+    /// </remarks>
     private sealed record SettingsResolution(string? Path, string? MissingEnvPath, bool IsCustomLayer);
 }

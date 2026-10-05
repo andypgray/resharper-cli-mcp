@@ -45,7 +45,8 @@ public sealed class SerilogConfigurationTests
     [InlineData("Fatal", LogEventLevel.Fatal)]
     // Case-insensitive.
     [InlineData("eRRoR", LogEventLevel.Error)]
-    // Unrecognised input falls back to Warning.
+    // Unrecognised input falls back to Warning, including a numeric string, which would otherwise bind to an
+    // undefined enum value.
     [InlineData("99", LogEventLevel.Warning)]
     [InlineData("nonsense", LogEventLevel.Warning)]
     [InlineData("", LogEventLevel.Warning)]

@@ -5,9 +5,12 @@ namespace Zphil.ReSharperCli.Tests.TestDoubles;
 /// <summary>
 ///     A hand-rolled <see cref="IEnvironment" /> for tests: dictionary-backed variables, with
 ///     <see cref="CurrentDirectory" /> and <see cref="HomeDirectory" /> pointed at freshly created temp
-///     directories. Using this instead of mutating real process environment variables is what keeps the
-///     parallel test run free of shared-state races. Dispose deletes every temp directory it created.
+///     directories.
 /// </summary>
+/// <remarks>
+///     Using this instead of mutating real process environment variables is what keeps the parallel test
+///     run free of shared-state races. Dispose deletes every temp directory it created.
+/// </remarks>
 internal sealed class FakeEnvironment : IEnvironment, IDisposable
 {
     private readonly List<string> _tempDirectories = [];
@@ -41,7 +44,10 @@ internal sealed class FakeEnvironment : IEnvironment, IDisposable
         return _variables.GetValueOrDefault(name);
     }
 
-    /// <summary>Set (or, with a <c>null</c> value, clear) an environment variable. Returns <c>this</c> for chaining.</summary>
+    /// <summary>
+    ///     Sets (or, with a <c>null</c> value, clears) an environment variable, and returns <c>this</c> for
+    ///     chaining.
+    /// </summary>
     public FakeEnvironment SetVariable(string name, string? value)
     {
         if (value is null)
@@ -52,7 +58,7 @@ internal sealed class FakeEnvironment : IEnvironment, IDisposable
         return this;
     }
 
-    /// <summary>Create a fresh temp directory tracked for deletion on <see cref="Dispose" />.</summary>
+    /// <summary>Creates a fresh temp directory tracked for deletion on <see cref="Dispose" />.</summary>
     public string CreateTempDirectory()
     {
         string directory = Directory.CreateTempSubdirectory("rscli-test-").FullName;
@@ -62,10 +68,12 @@ internal sealed class FakeEnvironment : IEnvironment, IDisposable
 
     /// <summary>
     ///     A path for a solution file called <paramref name="solutionFileName" /> in a fresh temp directory
-    ///     of its own; nothing is written at it. Reusing another solution's file name makes the checkout
-    ///     shape <c>jb</c> hashes apart — a transplant donor, a reset's left-alone neighbour — and a
-    ///     different name makes an unrelated solution.
+    ///     of its own; nothing is written at it.
     /// </summary>
+    /// <remarks>
+    ///     Reusing another solution's file name makes the checkout shape <c>jb</c> hashes apart — a transplant
+    ///     donor, a reset's left-alone neighbour — and a different name makes an unrelated solution.
+    /// </remarks>
     public string CreateSolutionPath(string solutionFileName)
     {
         return Path.Combine(CreateTempDirectory(), solutionFileName);
@@ -83,10 +91,13 @@ internal sealed class FakeEnvironment : IEnvironment, IDisposable
     }
 
     /// <summary>
-    ///     Write an empty solution file called <paramref name="solutionFileName" /> in
-    ///     <see cref="CurrentDirectory" /> — where discovery looks first — and return its path. For the
-    ///     pipeline tests, whose server resolves its solution the way the production default does.
+    ///     Writes an empty solution file called <paramref name="solutionFileName" /> in
+    ///     <see cref="CurrentDirectory" /> — where discovery looks first — and returns its path.
     /// </summary>
+    /// <remarks>
+    ///     For a server that resolves its solution the way the production default does, by discovery rather
+    ///     than an explicit path.
+    /// </remarks>
     public string PlantSolution(string solutionFileName)
     {
         string path = Path.Combine(CurrentDirectory, solutionFileName);

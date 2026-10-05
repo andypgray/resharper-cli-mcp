@@ -15,10 +15,13 @@ namespace Zphil.ReSharperCli.Tests.Contract;
 
 /// <summary>
 ///     Everything <see cref="JbContractTests" /> asserts over, produced once by a handful of real <c>jb</c>
-///     runs against a real copy of the fixture solution. The runs live here rather than in the test methods
-///     because each costs tens of seconds and several of them answer more than one contract.
+///     runs against a real copy of the fixture solution.
 /// </summary>
 /// <remarks>
+///     <para>
+///         The runs live here rather than in the test methods because each costs tens of seconds and several
+///         of them answer more than one contract.
+///     </para>
 ///     <para>
 ///         The fixture solution is copied to a temp directory and built there, never analysed in the repo
 ///         tree: cleanup rewrites the files it is given, and <c>obj/project.assets.json</c> records absolute
@@ -33,18 +36,18 @@ namespace Zphil.ReSharperCli.Tests.Contract;
 /// </remarks>
 public sealed class JbContractFixture : IAsyncLifetime
 {
-    /// <summary>
-    ///     The <c>jb</c> major line (<c>YYYY.N</c>) these contracts were last read against by hand. JetBrains
-    ///     ships roughly two major lines and thirty patch releases a year; the patches have to pass in silence
-    ///     or the signal drowns, so only a change to this line is reported. Nothing else in the repo records
-    ///     which <c>jb</c> its assumptions were verified against.
-    /// </summary>
+    /// <summary>The <c>jb</c> major line (<c>YYYY.N</c>) these contracts were last read against by hand.</summary>
+    /// <remarks>
+    ///     JetBrains ships roughly two major lines and thirty patch releases a year; the patches have to pass in
+    ///     silence or the signal drowns, so only a change to this line is reported.
+    /// </remarks>
     internal const string LastVerifiedMajorLine = "2026.2";
 
     /// <summary>
-    ///     Where the soft-tier report is written, set by the scheduled workflow. Unset — which is every local
-    ///     run — the report reaches the test output and nothing else.
+    ///     The environment variable naming a file the soft-tier report is also written to, for a workflow to
+    ///     publish.
     /// </summary>
+    /// <remarks>Unset, the report reaches the test output and nothing else.</remarks>
     internal const string ReportVariable = "JB_CONTRACT_REPORT";
 
     /// <summary>The one fixture file inspection finds nothing in.</summary>
@@ -83,14 +86,14 @@ public sealed class JbContractFixture : IAsyncLifetime
 
     private static readonly TimeSpan BuildTimeout = TimeSpan.FromMinutes(5);
 
-    /// <summary>
-    ///     The <c>jb</c> this machine has, probed once per process. Deliberately not
-    ///     <see cref="JbLocator.LocateAsync" /> — the gate has to be synchronous (<c>SkipUnless</c> reads a
-    ///     bool property), and it keeps the raw version banner the tests assert on — but it enumerates
-    ///     <see cref="JbLocator.Candidates" /> and spawns <see cref="JbLocator.ProbeArguments" />, so a
-    ///     candidate added to the product is a candidate this gate finds. What <see cref="JbLocator" /> makes
+    /// <summary>The <c>jb</c> this machine has, probed once per process.</summary>
+    /// <remarks>
+    ///     Deliberately not <see cref="JbLocator.LocateAsync" /> — the gate has to be synchronous
+    ///     (<c>SkipUnless</c> reads a bool property), and it keeps the raw version banner the tests assert on —
+    ///     but it enumerates <see cref="JbLocator.Candidates" /> and spawns <see cref="JbLocator.ProbeArguments" />,
+    ///     so a candidate added to the product is a candidate this gate finds. What <see cref="JbLocator" /> makes
     ///     of the same candidates is a contract in its own right, asserted rather than assumed.
-    /// </summary>
+    /// </remarks>
     private static readonly Lazy<JbPresence> Presence = new(LocateJb);
 
     /// <summary>Filled as the runs below go past, keyed by subcommand.</summary>
@@ -120,12 +123,12 @@ public sealed class JbContractFixture : IAsyncLifetime
     /// <summary>Whether a <c>jb</c> was found, and so whether any of the members below were ever filled in.</summary>
     public static bool IsInstalled => Presence.Value.ExecutablePath is not null;
 
-    /// <summary>
-    ///     The banner <c>jb inspectcode --version</c> printed, captured by the gate probe. Read only from
-    ///     tests the gate has already let through, so the throw below is unreachable — and is a throw rather
-    ///     than a defaulted result because a defaulted one reads as "exit code 0, no output", which is a
-    ///     failure this suite would report as a jb that stopped printing its version.
-    /// </summary>
+    /// <summary>The banner <c>jb inspectcode --version</c> printed, captured by the gate probe.</summary>
+    /// <remarks>
+    ///     Throws when no <c>jb</c> was found, which a test the gate let through never reaches. A throw rather
+    ///     than a defaulted result, because a defaulted one reads as "exit code 0, no output", which is a failure
+    ///     this suite would report as a jb that stopped printing its version.
+    /// </remarks>
     internal static ProcessResult VersionProbe =>
         Presence.Value.Probe ?? throw new InvalidOperationException("No jb was found, so no version was captured.");
 
@@ -158,9 +161,12 @@ public sealed class JbContractFixture : IAsyncLifetime
 
     /// <summary>
     ///     What <see cref="JbProgressLines" /> made of the standard output of the real runs above, per
-    ///     subcommand. The progress heartbeat is driven entirely off that classification, and it is reading
-    ///     someone else's undocumented output — so it is watched here rather than assumed.
+    ///     subcommand.
     /// </summary>
+    /// <remarks>
+    ///     The progress heartbeat is driven entirely off that classification, and it is reading someone else's
+    ///     undocumented output — so it is watched here rather than assumed.
+    /// </remarks>
     internal IReadOnlyDictionary<string, ProgressVocabulary> ProgressVocabularies => _progressVocabularies;
 
     /// <summary>The solution the runs above analysed, and the cache home they filled.</summary>
@@ -254,7 +260,7 @@ public sealed class JbContractFixture : IAsyncLifetime
     }
 
     /// <summary>
-    ///     Copy the fixture solution into a directory of its own, and return the copied solution file's path.
+    ///     Copies the fixture solution into a directory of its own, and returns the copied solution file's path.
     /// </summary>
     private string PlantSolution(string name)
     {
@@ -264,10 +270,11 @@ public sealed class JbContractFixture : IAsyncLifetime
         return Path.Combine(destination, SolutionFileName);
     }
 
-    /// <summary>
-    ///     Build the copy. A fixture that does not compile would make every inspection result meaningless, so
-    ///     this is the one step here allowed to fail the whole suite loudly.
-    /// </summary>
+    /// <summary>Builds the copy.</summary>
+    /// <remarks>
+    ///     A fixture that does not compile would make every inspection result meaningless, so this is the one
+    ///     step here allowed to fail the whole suite loudly.
+    /// </remarks>
     private static async Task BuildAsync(
         IProcessRunner processRunner, string solutionPath, CancellationToken cancellationToken)
     {
@@ -280,11 +287,12 @@ public sealed class JbContractFixture : IAsyncLifetime
                 + $"{result.StandardOutput}\n{result.StandardError}");
     }
 
-    /// <summary>
-    ///     Resolve the broken copy against a cache home of its own. The two copies share a solution
-    ///     <em>file name</em>, which is exactly what makes one a transplant donor for the other — and a run
-    ///     seeded from a sibling is not the cold run the compilation-error check means to be making.
-    /// </summary>
+    /// <summary>Resolves the broken copy against a cache home of its own.</summary>
+    /// <remarks>
+    ///     The two copies share a solution <em>file name</em>, which is exactly what makes one a transplant donor
+    ///     for the other — and a run seeded from a sibling is not the cold run the compilation-error check means
+    ///     to be making.
+    /// </remarks>
     private async Task<ResolvedConfig> ResolveBrokenSolutionAsync(
         ConfigResolver configResolver, string brokenSolutionPath, CancellationToken cancellationToken)
     {
@@ -438,12 +446,12 @@ public sealed class JbContractFixture : IAsyncLifetime
         return $"{exception.GetType().Name}: {exception.Message.ReplaceLineEndings(" ")}";
     }
 
-    /// <summary>
-    ///     Run both subcommands with the <c>--include</c> left absolute. This is the one place the suite
-    ///     spells a <c>jb</c> argument itself, because <em>not</em> applying
-    ///     <see cref="FilePathList.ToIncludePattern" /> is the whole point of the probe — and even here only
-    ///     the include entry is swapped, so a change to how a run is configured still reaches it.
-    /// </summary>
+    /// <summary>Runs both subcommands with the <c>--include</c> left absolute.</summary>
+    /// <remarks>
+    ///     This is the one place the suite spells a <c>jb</c> argument itself, because <em>not</em> applying
+    ///     <see cref="FilePathList.ToIncludePattern" /> is the whole point of the probe — and even here only the
+    ///     include entry is swapped, so a change to how a run is configured still reaches it.
+    /// </remarks>
     private async Task<RawIncludeProbe> ProbeRawAbsoluteIncludeAsync(
         JbRunner jbRunner, string absolutePath, CancellationToken cancellationToken)
     {
@@ -474,11 +482,10 @@ public sealed class JbContractFixture : IAsyncLifetime
         return new RawIncludeProbe(cleanupExitCode, new RawIncludeInspect(inspectExitCode, issues));
     }
 
-    /// <summary>
-    ///     The exit code of one run, whichever way it ended. <see cref="JbRunner" /> raises a non-zero exit
-    ///     as an exception because every real caller treats it as a failure; here the code itself is the
-    ///     observation.
-    /// </summary>
+    /// <summary>The exit code of one run, whichever way it ended.</summary>
+    /// <remarks>
+    ///     <see cref="JbRunner" /> raises a non-zero exit as an exception; here the code itself is the observation.
+    /// </remarks>
     private async Task<int> ExitCodeOfAsync(
         JbRunner jbRunner, IReadOnlyList<string> arguments, CancellationToken cancellationToken)
     {
@@ -561,7 +568,7 @@ public sealed class JbContractFixture : IAsyncLifetime
     }
 
     /// <summary>
-    ///     File one line of a real run's standard output under the subcommand that produced it, and record
+    ///     Files one line of a real run's standard output under the subcommand that produced it, and records
     ///     what <see cref="JbProgressLines" /> made of it.
     /// </summary>
     private void RecordProgressLine(string subcommand, string line)
@@ -580,7 +587,7 @@ public sealed class JbContractFixture : IAsyncLifetime
     {
         SystemEnvironment environment = new();
 
-        // Scoped to the gate: the two probes below are the only thing it spawns, and both have ended by the
+        // Scoped to the gate: the probes below are the only thing it spawns, and all of them have ended by the
         // time this is disposed.
         using ChildProcessLifetime childLifetime = new(environment, NullLogger<ChildProcessLifetime>.Instance);
         ProcessRunner runner = new(childLifetime, NullLogger<ProcessRunner>.Instance);

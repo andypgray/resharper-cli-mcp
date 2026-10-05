@@ -5,19 +5,21 @@ using Zphil.ReSharperCli.Execution;
 namespace Zphil.ReSharperCli.Tests.Execution;
 
 /// <summary>
-///     How <c>RESHARPER_MCP_TIMEOUT_SECS</c> reads. A pure <c>(string?) → TimeSpan</c>, which is what keeps
-///     the variable out of the parallel suite's way: nothing here touches real process environment. The rule
-///     it encodes is the one the other variables follow — a value nobody can make sense of costs the shipped
-///     default, never a failed call — and the clamps exist so a plausible typo cannot turn the cap into
-///     something worse than having no lever at all.
+///     How <c>RESHARPER_MCP_TIMEOUT_SECS</c> reads: a value nobody can make sense of costs the shipped default,
+///     never a failed call, and the clamps keep a plausible typo from turning the cap into something worse than
+///     having no lever at all.
 /// </summary>
+/// <remarks>
+///     A pure <c>(string?) → TimeSpan</c>, which is what keeps the variable out of the parallel suite's way:
+///     nothing here touches real process environment.
+/// </remarks>
 public sealed class JbRunTimeoutTests
 {
     [Fact]
     public void Default_IsSixHundredSeconds()
     {
-        // The number itself is the fix, not just the lever: a cold whole-solution analysis needs more than
-        // the five minutes this server used to allow, and no MCP client imposes a shorter limit of its own.
+        // The number itself matters, not just the lever: a cold whole-solution analysis needs more than five
+        // minutes, and no MCP client imposes a shorter limit of its own.
         JbRunTimeout.Default.ShouldBe(TimeSpan.FromSeconds(600));
     }
 

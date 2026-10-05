@@ -8,12 +8,15 @@ using Zphil.ReSharperCli.Tests.TestSupport;
 namespace Zphil.ReSharperCli.Tests.Execution;
 
 /// <summary>
-///     The safety-critical predicate of the cache tools, stated over generated names rather than the handful
-///     a table can hold: a generation directory belongs to the solution whose name composed it, and to no
-///     other. The second property is the one that matters — it is the exact invariant that stops
-///     <c>resharper_reset_cache</c> deleting <c>_App.Core.*</c> when it was asked about <c>App</c>, and a
-///     table of examples can only ever demonstrate it for the pairs someone thought to write down.
+///     Generation ownership stated over generated names rather than the handful a table can hold: a generation
+///     directory belongs to the solution whose name composed it, and to no other.
 /// </summary>
+/// <remarks>
+///     <see cref="MatchHash_GenerationOfALongerSolutionSharingThisPrefix_ReturnsNull" /> is the one that
+///     matters: it is the invariant that stops <c>resharper_reset_cache</c> deleting <c>_App.Core.*</c> when it
+///     was asked about <c>App</c>, and a table of examples can only ever demonstrate it for the pairs someone
+///     thought to write down.
+/// </remarks>
 public sealed class JbCacheGenerationsPropertyTests
 {
     /// <summary>A generation directory composed from the very solution name it is then parsed against.</summary>
@@ -27,10 +30,12 @@ public sealed class JbCacheGenerationsPropertyTests
 
     /// <summary>
     ///     A directory name that shares a shorter solution's prefix but is a longer solution's generation.
+    /// </summary>
+    /// <remarks>
     ///     Both ways of being longer are drawn: a further dot-separated segment (the <c>App</c> /
     ///     <c>App.Core</c> pair that occurs in real cache homes) and more characters on the last segment
     ///     (<c>App</c> / <c>AppCore</c>), which fails the prefix test rather than the remainder parse.
-    /// </summary>
+    /// </remarks>
     private static Gen<LongerSolutionCase> LongerSolutionGeneration()
     {
         Gen<(string Shorter, string Separator)> prefix = JbNameGenerators.SolutionName()
@@ -101,18 +106,15 @@ public sealed class JbCacheGenerationsPropertyTests
     }
 
     /// <summary>
-    ///     The same ownership predicate across a respelling: a generation built from one spelling of a
-    ///     solution name is still that solution's wherever <see cref="JbCacheGenerations.NameComparison" />
-    ///     reads the two spellings as one name. Stated through that property rather than behind a platform
-    ///     skip, so it means the same thing on every operating system — on Windows every draw exercises it,
-    ///     and elsewhere the identity spellings the generator draws deliberately do.
+    ///     Stated through <see cref="JbCacheGenerations.NameComparison" /> rather than behind a platform skip,
+    ///     so it means the same thing on every operating system — on Windows every draw exercises it, and
+    ///     elsewhere the identity spellings the generator draws deliberately do.
     /// </summary>
     /// <remarks>
     ///     The converse is left unpinned on purpose. Off Windows the comparison is ordinal, which stands in
     ///     for the cache home's filesystem and is wrong on a case-insensitive one such as macOS's default
-    ///     APFS volume; that gap is argued where the switch lives, and is not a promise a test should make on
-    ///     its behalf. Asserting only the direction that holds everywhere is what keeps this from freezing
-    ///     the proxy in place.
+    ///     APFS volume, and that gap is not a promise a test should make on its behalf. Asserting only the
+    ///     direction that holds everywhere is what keeps this from freezing the proxy in place.
     /// </remarks>
     [Property]
     public Property MatchHash_ASolutionNameSpeltInAnotherCase_MatchesWhereverNameComparisonCallsItTheSameName()

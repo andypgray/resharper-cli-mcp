@@ -19,13 +19,13 @@ internal static class ToolHarness
     /// <param name="environment">The environment seam: variables, working directory, home directory.</param>
     /// <param name="logs">
     ///     Wired through the whole graph when a test means to assert on what it logged; omitted, every class
-    ///     logs into <see cref="NullLoggerFactory" />.
+    ///     logs to a <see cref="NullLogger{T}" />.
     /// </param>
     /// <param name="reportRoot">
     ///     Where <see cref="InspectReportWriter" /> puts the files it writes. Defaulting to the real temp path
-    ///     looks careless and is not: nothing is written unless a call passes <c>report</c>, and no test does
-    ///     unless it also passes a root of its own. A test that does should pass
-    ///     <c>FakeEnvironment.CreateTempDirectory()</c>, which is deleted with the environment.
+    ///     looks careless and is not: nothing is written unless a call passes <c>report</c>, and a test that
+    ///     passes <c>report</c> passes a root of its own too — <c>FakeEnvironment.CreateTempDirectory()</c>,
+    ///     which is deleted with the environment.
     /// </param>
     public static ResharperTools Build(
         IProcessRunner processRunner,

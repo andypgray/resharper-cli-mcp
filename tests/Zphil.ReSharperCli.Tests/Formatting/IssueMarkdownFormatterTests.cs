@@ -7,13 +7,8 @@ using Zphil.ReSharperCli.Sarif;
 namespace Zphil.ReSharperCli.Tests.Formatting;
 
 /// <summary>
-///     The authoritative string spec for the inspection listing. One fixture — 11 issues over 3 files,
-///     hitting every branch of the ladder — is rendered at each <see cref="DetailLevel" /> and pinned with
-///     an exact <c>ShouldBe</c>. Two properties earn their own facts because they are what makes the ladder
-///     cheap: with no rule repeating inside a file, High is byte-identical to Full, and with fewer files
-///     than the cap, Medium is byte-identical to High, so <see cref="ProgressiveRenderer" />'s
-///     content-equality skip drops through the redundant level at no cost. Output uses <c>\n</c> line
-///     endings and is ASCII-only.
+///     The authoritative string spec for the inspection listing: one fixture, hitting every branch of the
+///     ladder, rendered at each <see cref="DetailLevel" /> and pinned with an exact <c>ShouldBe</c>.
 /// </summary>
 public sealed class IssueMarkdownFormatterTests
 {
@@ -85,7 +80,7 @@ public sealed class IssueMarkdownFormatterTests
         {
             string result = IssueMarkdownFormatter.Format(Mixed(), level);
             result.ShouldNotContain("\r\n");
-            Ascii.IsValid(result).ShouldBeTrue(); // no em dash or other non-ASCII sneaking in from roz's shapes
+            Ascii.IsValid(result).ShouldBeTrue(); // no em dash or other non-ASCII sneaking in
         }
     }
 
@@ -243,7 +238,7 @@ public sealed class IssueMarkdownFormatterTests
     [Fact]
     public void Format_High_NoRuleRepeatsWithinAFile_IsByteIdenticalToFull()
     {
-        // Arrange — the scoped-scan shape: every issue a distinct rule.
+        // Arrange
         List<InspectIssue> issues = ThreeIssuesAcrossTwoFiles();
 
         // Act / Assert — nothing to collapse, so High costs nothing and ProgressiveRenderer skips it.
@@ -254,7 +249,7 @@ public sealed class IssueMarkdownFormatterTests
     [Fact]
     public void Format_LowerLevelsAreMonotonicallySmaller()
     {
-        // Arrange — the motivating solution-wide shape.
+        // Arrange
         IReadOnlyList<InspectIssue> issues = SolutionWideRepetition();
 
         // Act
@@ -269,8 +264,7 @@ public sealed class IssueMarkdownFormatterTests
     [Fact]
     public void Render_SolutionWideRepetition_SelectsHighUnderTheDefaultBudget()
     {
-        // Arrange — the run that motivated the ladder: 150 issues over 24 files, 120 of them one rule, at
-        // realistic absolute-path and message lengths, against the default 25,000-character budget.
+        // Arrange — the solution-wide shape against the default 25,000-character budget.
         IReadOnlyList<InspectIssue> issues = SolutionWideRepetition();
         const int maxChars = 25_000;
         string full = IssueMarkdownFormatter.Format(issues, DetailLevel.Full);
@@ -389,8 +383,8 @@ public sealed class IssueMarkdownFormatterTests
     [Fact]
     public void DescribeReduction_Low_IsOneSentenceWithTheNarrowingHintSpliced()
     {
-        // The pin over the restructure that made the hint suppressible: the forced-down wording is what
-        // every over-budget solution-wide response has said, and not a byte of it may move.
+        // The forced-down wording verbatim, with the narrowing hint spliced in and with it suppressed:
+        // suppressing the hint must not move a byte of the rest.
         IssueMarkdownFormatter.DescribeReduction(DetailLevel.Low, 12, false, false).ShouldBe(
             "the per-file listing is replaced by a rollup of the top rules and the top files. "
             + "Narrow the scan with the files parameter or raise severity. "
@@ -404,10 +398,10 @@ public sealed class IssueMarkdownFormatterTests
     [Fact]
     public void DescribeReduction_ANoIssueResult_SaysNothingAtAnyLevel()
     {
-        // Format returns "No issues found." at every level, so a capped render of an empty result gave up
-        // nothing — and the note claimed totals and the top rules were all that survived a listing that never
-        // existed, closing with an offer to write the findings to a file when there are none. An empty
-        // description is this directory's idiom for "nothing to say", and the renderer reads it as "no
+        // Format returns "No issues found." at every level, so a capped render of an empty result gives up
+        // nothing. A note there would claim totals and the top rules were all that survived a listing that
+        // never existed, and close with an offer to write the findings to a file when there are none. An
+        // empty description is this directory's idiom for "nothing to say", and the renderer reads it as "no
         // reduction happened".
         foreach (DetailLevel level in Enum.GetValues<DetailLevel>())
             IssueMarkdownFormatter.DescribeReduction(level, 0, false, false).ShouldBeEmpty();
@@ -473,9 +467,9 @@ public sealed class IssueMarkdownFormatterTests
     }
 
     /// <summary>
-    ///     The motivating shape: 120 issues of one rule over 4 generated DTO files (each message naming a
+    ///     A solution-wide shape: 120 issues of one rule over 4 generated DTO files (each message naming a
     ///     different property), plus 30 singletons over 20 more files, at realistic absolute-path and message
-    ///     lengths. 150 issues over 24 files — the run that overflowed a 25,000-character budget at Full.
+    ///     lengths. 150 issues over 24 files, which overflow the default 25,000-character budget at Full.
     /// </summary>
     private static List<InspectIssue> SolutionWideRepetition()
     {

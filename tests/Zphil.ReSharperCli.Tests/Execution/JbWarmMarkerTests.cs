@@ -41,7 +41,7 @@ public sealed class JbWarmMarkerTests : IDisposable
     [Fact]
     public void IsFreshWithin_NoMarkerAtAll_ReportsStale()
     {
-        // Assert — a cache home nothing has ever warmed must not read as warm.
+        // Assert
         JbWarmMarker.IsFreshWithin(SolutionPath, _cacheHome, OneHour, NullLogger.Instance).ShouldBeFalse();
     }
 
@@ -140,14 +140,14 @@ public sealed class JbWarmMarkerTests : IDisposable
     public void Stamp_RecordsTheSolutionPathOnTheThirdLine()
     {
         // Arrange — the marker's file name is a one-way key, so nothing else in the cache home can say which
-        // checkout a generation belongs to. A reset's report is the reader: it names the generations it left
-        // alone and would otherwise be listing directories nobody can act on.
+        // checkout a generation belongs to. Without the path, a generation left alone by a reset can be listed
+        // but not attributed, and nobody can act on it.
         string generation = CacheHomes.PlantGenerationFor(_cacheHome, SolutionPath);
 
         // Act
         JbWarmMarker.Stamp(SolutionPath, _cacheHome, NullLogger.Instance, "2026.2.1");
 
-        // Assert — positional, one fact per line, in the order the content grew.
+        // Assert — positional, one fact per line.
         string markerPath = JbWarmMarker.PathFor(SolutionPath, _cacheHome);
         File.ReadAllText(markerPath).ShouldBe($"{Path.GetFileName(generation)}\n2026.2.1\n{SolutionPath}");
         JbWarmMarker.TryReadMarker(markerPath, _cacheHome, NullLogger.Instance).SolutionPath.ShouldBe(SolutionPath);
@@ -156,10 +156,9 @@ public sealed class JbWarmMarkerTests : IDisposable
     [Fact]
     public void Stamp_WithNoJbBuildKnown_LeavesTheSecondLineEmptyRatherThanDroppingIt()
     {
-        // Arrange — this used to write the one-line marker every build before it wrote, byte for byte. It
-        // cannot any more: the lines are positional, so dropping the build would put the solution path on
-        // line two and have every reader of the build read a path. An empty line costs one byte and keeps
-        // one parser for every marker this build writes.
+        // Arrange — the lines are positional, so dropping the build would put the solution path on line two and
+        // have every reader of the build read a path. An empty line costs one byte and keeps one parser for
+        // every marker this build writes.
         string generation = CacheHomes.PlantGenerationFor(_cacheHome, SolutionPath);
 
         // Act
@@ -175,8 +174,8 @@ public sealed class JbWarmMarkerTests : IDisposable
     [Fact]
     public void TryReadMarker_TwoLineMarkerFromAnEarlierBuild_ReadsNoPath()
     {
-        // Arrange — every marker on disk the first time a server carrying this reads one. The name and the
-        // build still come back; only the path is missing, and the next clean run rewrites it.
+        // Arrange — the name and the build still come back from a two-line marker; only the path is missing,
+        // and the next clean run rewrites it.
         string generation = CacheHomes.PlantWarmDonorFromAnEarlierBuild(_cacheHome, SolutionPath, "2026.2.1");
         string markerPath = JbWarmMarker.PathFor(SolutionPath, _cacheHome);
 
@@ -192,8 +191,7 @@ public sealed class JbWarmMarkerTests : IDisposable
     [Fact]
     public void FindRecordedSolutionPaths_MapsEachNamedGenerationToItsPath()
     {
-        // Arrange — three checkouts sharing a cache home, which is the shape a reset report has to describe:
-        // two stamped by a build that records the path, one by a build that did not.
+        // Arrange — three checkouts sharing a cache home: two markers record the path, one does not.
         string first = _environment.CreateSolutionPath("App.sln");
         string second = _environment.CreateSolutionPath("App.sln");
         string legacy = _environment.CreateSolutionPath("App.sln");
@@ -204,8 +202,8 @@ public sealed class JbWarmMarkerTests : IDisposable
         // Act
         Dictionary<string, string?> recorded = JbWarmMarker.FindRecordedSolutionPaths(_cacheHome, NullLogger.Instance);
 
-        // Assert — the earlier build's marker is present and maps to null, which is a different answer from
-        // a generation no successful run ever stamped: that one is absent altogether.
+        // Assert — a marker with no path is present and maps to null, which is a different answer from a
+        // generation no successful run ever stamped: that one is absent altogether.
         recorded[Path.GetFileName(firstGeneration)].ShouldBe(first);
         recorded[Path.GetFileName(secondGeneration)].ShouldBe(second);
         recorded[Path.GetFileName(legacyGeneration)].ShouldBeNull();
@@ -223,8 +221,8 @@ public sealed class JbWarmMarkerTests : IDisposable
     [Fact]
     public void TryReadJbVersion_MarkerThatIsNotThere_IsNullRatherThanThrowing()
     {
-        // Assert — no marker at all reads as no build, which every caller treats as a cache written by
-        // something other than the jb about to run. That is the direction this file always fails in.
+        // Assert — no marker at all reads as no build: a cache written by something other than the jb about to
+        // run. That is the direction this file always fails in.
         JbWarmMarker.TryReadJbVersion(JbWarmMarker.PathFor(SolutionPath, _cacheHome), NullLogger.Instance).ShouldBeNull();
     }
 
@@ -291,7 +289,7 @@ public sealed class JbWarmMarkerTests : IDisposable
     [Fact]
     public void Exists_MarkerNamingAGeneration_IsTrue()
     {
-        // Arrange — the ordinary marker, written by the ordinary successful run.
+        // Arrange
         CacheHomes.PlantGenerationFor(_cacheHome, SolutionPath);
 
         // Act
@@ -304,12 +302,12 @@ public sealed class JbWarmMarkerTests : IDisposable
     [Fact]
     public void Exists_KeyThatCannotBeDerived_ReportsProtected()
     {
-        // Arrange — the cache home every other reader here degrades on.
+        // Arrange
         string invalid = _cacheHome + "\0invalid";
 
         // Assert — this one reader fails the opposite way to the rest of the class, and deliberately: a
         // caller only wants a false so it can delete a directory, so an unanswerable question has to read as
-        // a cache worth keeping. That is JbColdTombstone.Exists's direction, not IsFreshWithin's.
+        // a cache worth keeping.
         JbWarmMarker.Exists(SolutionPath, invalid, NullLogger.Instance).ShouldBeTrue();
     }
 
@@ -358,7 +356,7 @@ public sealed class JbWarmMarkerTests : IDisposable
     [Fact]
     public void IsFreshWithin_PathNoFileApiWillAccept_ReportsStaleInsteadOfThrowing()
     {
-        // Arrange — the same cache home the lock degrades on, so both layers agree about what is unusable.
+        // Arrange
         string invalid = _cacheHome + "\0invalid";
 
         // Assert — every entry point, including the one a cache reset calls once it has already deleted
@@ -371,8 +369,8 @@ public sealed class JbWarmMarkerTests : IDisposable
     [Fact]
     public void Stamp_OneGeneration_DoesNotWarmAnother()
     {
-        // Arrange — the marker is per cache generation, exactly like the lock: warming one solution says
-        // nothing about the next one in the same cache home.
+        // Arrange — the marker is per cache generation: warming one solution says nothing about the next one in
+        // the same cache home.
         JbWarmMarker.Stamp(SolutionPath, _cacheHome, NullLogger.Instance);
 
         // Assert

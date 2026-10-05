@@ -55,10 +55,9 @@ internal sealed record JbInstallation(string ExecutablePath, string Version);
 internal sealed class JbLocator(IProcessRunner processRunner, IEnvironment environment, ILogger<JbLocator> logger)
 {
     /// <summary>
-    ///     What a probe runs against a candidate. Internal, with <see cref="ProbeTimeout" /> and
-    ///     <see cref="Candidates" />, because the contract suite's skip gate spawns the same probe under a
-    ///     policy of its own — sharing the data is what keeps the gate finding every <c>jb</c> this class
-    ///     would.
+    ///     What a probe runs against a candidate. Shared, with <see cref="ProbeTimeout" /> and
+    ///     <see cref="Candidates" />, so anything else that probes for <c>jb</c> finds every <c>jb</c> this
+    ///     class would.
     /// </summary>
     internal static readonly string[] ProbeArguments = ["inspectcode", "--version"];
 
@@ -94,12 +93,11 @@ internal sealed class JbLocator(IProcessRunner processRunner, IEnvironment envir
             ProbeOutcome outcome = await ProbeAsync(candidate, cancellationToken);
 
             // Every candidate leaves a line whichever way it ended, because the case that costs the most is
-            // the one nothing else records: a candidate that spends its whole thirty-second timeout, or
-            // throws before ProcessRunner has written anything at all — the ordinary "not on PATH, fall
-            // through to ~/.dotnet/tools" shape — and is then succeeded by a working one. That is time gone
-            // before the call has done anything, and the "No jb reported a version" line below is never
-            // reached to account for it. The outcome clause is the point: ProcessRunner sees a spawn,
-            // this frame sees the decision.
+            // the one nothing else records: a candidate that spends its whole timeout, or throws before
+            // ProcessRunner has written anything at all — the ordinary "not on PATH, fall through to
+            // ~/.dotnet/tools" shape — and is then succeeded by a working one, so the failure line below is
+            // never reached to account for the time. The outcome clause is the point: ProcessRunner sees a
+            // spawn, this frame sees the decision.
             logger.LogDebug(
                 "Probed jb candidate {Candidate} in {ElapsedMs} ms — {ProbeOutcome}",
                 candidate,
@@ -132,10 +130,12 @@ internal sealed class JbLocator(IProcessRunner processRunner, IEnvironment envir
     }
 
     /// <summary>
-    ///     Run <c>jb inspectcode --version</c> against one candidate and classify how it ended. Cancellation
-    ///     by the caller's token is the one ending that is not an outcome — it means the whole call is going
-    ///     away, so it propagates rather than being recorded as a candidate that failed.
+    ///     Runs <c>jb inspectcode --version</c> against one candidate and classifies how it ended.
     /// </summary>
+    /// <remarks>
+    ///     Cancellation by the caller's token is the one ending that is not an outcome — it means the whole
+    ///     call is going away, so it propagates rather than being recorded as a candidate that failed.
+    /// </remarks>
     private async Task<ProbeOutcome> ProbeAsync(string candidate, CancellationToken cancellationToken)
     {
         ProcessResult result;
@@ -231,11 +231,12 @@ internal sealed class JbLocator(IProcessRunner processRunner, IEnvironment envir
         }
     }
 
-    /// <summary>
-    ///     The version a probe reported, or an empty string when it reported nothing usable — including the
-    ///     null a defaulted <see cref="ProcessResult" /> carries, which reaches here only through a test
-    ///     double but must read as "no version" rather than crash the whole discovery path.
-    /// </summary>
+    /// <summary>The version a probe reported.</summary>
+    /// <remarks>
+    ///     An empty string when it reported nothing usable — including the null a defaulted
+    ///     <see cref="ProcessResult" /> carries, which must read as "no version" rather than crash the whole
+    ///     discovery path.
+    /// </remarks>
     private static string ParseVersion(string? standardOutput)
     {
         if (string.IsNullOrWhiteSpace(standardOutput)) return string.Empty;

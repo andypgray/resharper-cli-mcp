@@ -108,10 +108,13 @@ internal static class JbStubs
     }
 
     /// <summary>
-    ///     Leave behind the empty SARIF report a successful <c>inspectcode</c> writes at its <c>-o=</c> path
-    ///     — when the run was asked for one. The service treats a missing report file as an error, so a stub
-    ///     answering exit 0 without this claims a success no real run produces.
+    ///     Leaves behind the empty SARIF report a successful <c>inspectcode</c> writes at its <c>-o=</c> path
+    ///     — when the run was asked for one.
     /// </summary>
+    /// <remarks>
+    ///     The service treats a missing report file as an error, so a stub answering exit 0 without this claims
+    ///     a success no real run produces.
+    /// </remarks>
     public static void WriteEmptySarifIfRequested(IReadOnlyList<string> arguments)
     {
         WriteSarifIfRequested(arguments, """{"runs":[{"results":[]}]}""");

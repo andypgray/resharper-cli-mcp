@@ -2,16 +2,20 @@ namespace Zphil.ReSharperCli.Tests.TestSupport;
 
 /// <summary>
 ///     A write-only <see cref="Stream" /> decorator that forwards to <paramref name="inner" /> and copies every
-///     byte on its way past into <paramref name="log" />. Wrapped around the server's end of the harness's pipe
-///     pair, it is what turns "what the server emitted, in what order" from an inference into a reading — see
-///     <see cref="WireLog" /> for why the client's end cannot answer that.
+///     byte on its way past into <paramref name="log" />.
 /// </summary>
 /// <remarks>
-///     Every write path is overridden rather than only the <see cref="ReadOnlyMemory{T}" /> one
-///     <c>StreamServerTransport</c> uses today, and each override forwards to the matching member on
-///     <paramref name="inner" /> rather than to a sibling override — so no write can reach the pipe unlogged,
-///     and none is logged twice. The read and seek members throw, mirroring what
-///     <see cref="System.IO.Pipelines.PipeWriter.AsStream" /> already offers.
+///     <para>
+///         On the server's end of a transport it turns "what the server emitted, in what order" from an
+///         inference into a reading — see <see cref="WireLog" /> for why the client's end cannot answer that.
+///     </para>
+///     <para>
+///         Every write path is overridden rather than only the <see cref="ReadOnlyMemory{T}" /> one
+///         <c>StreamServerTransport</c> uses today, and each override forwards to the matching member on
+///         <paramref name="inner" /> rather than to a sibling override — so no write can reach the pipe unlogged,
+///         and none is logged twice. The read and seek members throw, mirroring what
+///         <see cref="System.IO.Pipelines.PipeWriter.AsStream" /> already offers.
+///     </para>
 /// </remarks>
 internal sealed class WireTapStream(Stream inner, WireLog log) : Stream
 {

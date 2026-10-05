@@ -12,16 +12,11 @@ namespace Zphil.ReSharperCli.Tests.Services;
 
 /// <summary>
 ///     <see cref="CacheResetService" /> deletes directories a caller never named, on the strength of a
-///     derivation from <c>jb</c>'s undocumented naming, so these pin the properties that make that safe: it
-///     drops exactly the generations whose names carry this solution path's own hash, it reports rather than
-///     touches the ones that do not, it will not delete a cache generation while a <c>jb</c> run holds it,
-///     and it leaves behind the record that keeps the next run cold. The one case that turns those last two
-///     around is a reclaim, where the solution file is gone: the proof is unchanged, since it never read the
-///     file, but there is no next run to keep cold, so no record is left behind.
+///     derivation from <c>jb</c>'s undocumented naming, so these pin the properties that make that safe.
 /// </summary>
 public sealed class CacheResetServiceTests : IDisposable
 {
-    /// <summary>The one beat an uncontended reset can fit, spelled once for the tests that pin it.</summary>
+    /// <summary>The one beat an uncontended reset can fit.</summary>
     private const string Starting = "cache reset on App.sln: starting";
 
     /// <summary>Short enough that a test sees several beats, long enough not to be flaky under load.</summary>
@@ -52,8 +47,8 @@ public sealed class CacheResetServiceTests : IDisposable
     [Fact]
     public async Task RunAsync_SolutionWithAForkedGeneration_DropsBothAndLeavesNeighboursAlone()
     {
-        // Arrange — the reclaim case: the generation in use plus the cold ".01" fork a concurrent jb left
-        // behind, beside a sibling solution whose name shares the prefix and an unrelated one.
+        // Arrange — the generation in use plus the cold ".01" fork a concurrent jb left behind, beside a
+        // sibling solution whose name shares the prefix and an unrelated one.
         string ours = CacheHomes.PlantGenerationFor(_cacheHome, _config.SolutionPath);
         string fork = CacheHomes.PlantFork(_cacheHome, ours);
         CacheHomes.PlantGeneration(_cacheHome, "_App.Core.400500600.00");
@@ -76,8 +71,8 @@ public sealed class CacheResetServiceTests : IDisposable
     public async Task RunAsync_AnotherCheckoutsGenerationBesideOurs_DropsOnlyOursAndSaysSo()
     {
         // Arrange — two checkouts of one repository sharing a cache home: same solution file name, different
-        // paths, so jb hashed them apart. Reproducing that hash is what turns this from an ambiguity the tool
-        // used to refuse on into an ordinary answer.
+        // paths, so jb hashed them apart. Reproducing that hash is what makes this an ordinary answer rather
+        // than an ambiguity to refuse on.
         string ours = CacheHomes.PlantGenerationFor(_cacheHome, _config.SolutionPath);
         string theirs = CacheHomes.PlantGenerationFor(_cacheHome, _environment.CreateSolutionPath("App.sln"));
 
@@ -275,8 +270,8 @@ public sealed class CacheResetServiceTests : IDisposable
     [Fact]
     public async Task RunAsync_NeighbourStampedByAnEarlierBuild_ReportsThatNoPathWasRecorded()
     {
-        // Arrange — every marker on disk the first time a server carrying this runs. Kept apart from "no run
-        // on record" because they call for different things: this one fixes itself on the next clean run.
+        // Arrange — kept apart from "no run on record" because the two call for different things: this one
+        // fixes itself on the next clean run.
         string theirSolution = _environment.CreateSolutionPath("App.sln");
         string theirs = CacheHomes.PlantWarmDonorFromAnEarlierBuild(_cacheHome, theirSolution);
 
@@ -374,7 +369,7 @@ public sealed class CacheResetServiceTests : IDisposable
 
         CacheResetOutcome outcome = await reset;
 
-        // Assert — it named the wait while serving it out, then went through with the delete.
+        // Assert
         lines.Items[0].ShouldBe(Starting);
         lines.Items.ShouldContain(line => line.StartsWith(
             "cache reset on App.sln: waiting for another run on this solution's ReSharper cache — ",
@@ -431,13 +426,10 @@ public sealed class CacheResetServiceTests : IDisposable
     }
 
     /// <summary>
-    ///     The reset says what it did, at <see cref="LogLevel.Information" />.
+    ///     A reset spawns no <c>jb</c>, so no run line can stand in for it, and it is precisely why the
+    ///     <em>next</em> call runs cold: a log without it shows that call taking minutes against a cache home
+    ///     that a moment earlier looked populated, for no visible reason.
     /// </summary>
-    /// <remarks>
-    ///     It is the one tool that spawns no <c>jb</c>, and was the one that left no trace at all. Since a
-    ///     reset is precisely why the <em>next</em> call runs cold, a log without it shows that call taking
-    ///     minutes against a cache home that a moment earlier looked populated, for no visible reason.
-    /// </remarks>
     [Fact]
     public async Task RunAsync_WhateverItDropped_RecordsTheOutcomeAtInformation()
     {
@@ -483,7 +475,6 @@ public sealed class CacheResetServiceTests : IDisposable
             .ShouldBe("the solution file does not exist, so this reclaimed the cache of a removed checkout");
     }
 
-    /// <summary>The generation names alone, for the assertions that are about the split rather than whose.</summary>
     private static IReadOnlyList<string> Names(IEnumerable<LeftAloneGeneration> generations)
     {
         return generations.Select(generation => generation.Name).ToList();

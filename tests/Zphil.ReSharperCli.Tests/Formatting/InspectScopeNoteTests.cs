@@ -5,18 +5,14 @@ using Zphil.ReSharperCli.Formatting;
 namespace Zphil.ReSharperCli.Tests.Formatting;
 
 /// <summary>
-///     <see cref="InspectScopeNote" /> is what stops a scoped inspect answering for files it never looked
-///     at. These pin the two halves the other preambles are held to as well: it fires on entries the tool
-///     found to resolve to nothing, and it says nothing at all otherwise — a note on every scoped call
-///     would be noise charged to every response's budget. The classification itself is
-///     <c>FilePathList.FindMissing</c>'s and is pinned beside it; this class is handed its answer and reads
-///     nothing from disk.
-///     <para>
-///         The half it deliberately does <em>not</em> claim is pinned too. A path that exists but belongs to
-///         no project matches nothing in <c>jb</c> and resolves perfectly well here, so the note never
-///         vouches for the entries it leaves out.
-///     </para>
+///     Pins both halves of <see cref="InspectScopeNote" />: it fires on entries the tool found to resolve to
+///     nothing, and says nothing at all otherwise, since a note on every scoped call would be noise charged to
+///     every response's budget.
 /// </summary>
+/// <remarks>
+///     The classification is <c>FilePathList.FindMissing</c>'s and is pinned beside it, so these tests hand
+///     the note its answer and touch no disk.
+/// </remarks>
 public sealed class InspectScopeNoteTests
 {
     private const string Root = "/repo";
@@ -33,8 +29,8 @@ public sealed class InspectScopeNoteTests
     [Fact]
     public void For_AnEntryThatNamesNoFile_NamesItAndTheScopeItWasPartOf()
     {
-        // The partial case, which is the one jb never reports on either version: one entry matches, jb
-        // exits 0 with its findings, and nothing anywhere mentions the other.
+        // The partial case, which no jb release reports: one entry matches, jb exits 0 with its findings, and
+        // nothing anywhere mentions the other.
         string note = InspectScopeNote.For(["src/Typo.cs"], 2, Root);
 
         note.ShouldStartWith($"NOTE: 1 of the 2 files entry(s) named no file under the solution root \"{Root}\"");
@@ -77,7 +73,7 @@ public sealed class InspectScopeNoteTests
     [Fact]
     public void For_EndsWithABlankLine_SoItReadsAsAPreamble()
     {
-        // The same separator its three neighbours use, so the four concatenate into one preamble block.
+        // The same separator the other preambles use, so they concatenate into one preamble block.
         InspectScopeNote.For(["src/Typo.cs"], 1, Root).ShouldEndWith("\n\n");
     }
 }

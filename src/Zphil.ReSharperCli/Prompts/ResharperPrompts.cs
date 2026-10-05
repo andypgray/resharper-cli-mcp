@@ -5,11 +5,8 @@ using Zphil.ReSharperCli.Infrastructure;
 namespace Zphil.ReSharperCli.Prompts;
 
 /// <summary>
-///     The MCP prompt surface. One prompt, <c>derive_style_guide</c>, whose body is the embedded
-///     <c>derive-style-guide.md</c> recipe: an honest, tool-backed walkthrough for deriving an
-///     intentional ReSharper/editorconfig house style from an existing codebase and validating it with
-///     <c>resharper_inspect</c>. The server does not infer settings — the recipe has the executing agent
-///     derive them from evidence and use the tools to validate.
+///     The MCP prompt surface: one prompt, <c>derive_style_guide</c>, whose body is the embedded
+///     <c>derive-style-guide.md</c> recipe.
 /// </summary>
 /// <remarks>
 ///     The class is deliberately non-static: <c>WithPrompts&lt;ResharperPrompts&gt;()</c> takes it as a

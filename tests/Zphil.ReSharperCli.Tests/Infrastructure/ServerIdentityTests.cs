@@ -6,18 +6,13 @@ using Zphil.ReSharperCli.Tests.TestSupport;
 
 namespace Zphil.ReSharperCli.Tests.Infrastructure;
 
-/// <summary>
-///     Guards the <c>serverInfo</c> a client is handed on <c>initialize</c>. The name and title are what a
-///     client displays; the icon is embedded, so a rename of <c>assets/icon-128.png</c> or of its manifest
-///     resource id would otherwise surface as a client failing to start rather than as a test failure.
-///     <para>
-///         The icon travels as a <c>data:</c> URI rather than a URL because this server speaks stdio: it
-///         listens on no authority for a client to match a remote icon against, and it has no install path
-///         that survives a tool install, a <c>dnx</c> cache and a container image alike. That choice is what
-///         the decode assertion below pins — a URL creeping in here would pass "the field is populated" and
-///         still show nothing.
-///     </para>
-/// </summary>
+/// <summary>Guards the <c>serverInfo</c> a client is handed on <c>initialize</c>.</summary>
+/// <remarks>
+///     The name and title are what a client displays. The icon is embedded, so a rename of
+///     <c>assets/icon-128.png</c> or of its manifest resource id would otherwise surface as a client failing to
+///     start rather than as a test failure. The decode assertion pins that it travels as a <c>data:</c> URI: a
+///     URL creeping in here would pass "the field is populated" and still show nothing.
+/// </remarks>
 public sealed class ServerIdentityTests
 {
     private const string DataUriPrefix = "data:image/png;base64,";

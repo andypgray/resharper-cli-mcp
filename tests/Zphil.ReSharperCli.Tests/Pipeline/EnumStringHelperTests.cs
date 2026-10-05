@@ -5,9 +5,8 @@ using Zphil.ReSharperCli.Pipeline;
 namespace Zphil.ReSharperCli.Tests.Pipeline;
 
 /// <summary>
-///     Unit tests for <see cref="EnumStringHelper.LooksNumeric" /> — the guard that keeps numeric
-///     strings from binding to enum ordinals. A leading-digit check is insufficient, so these pin
-///     the trap cases a naive first fix would miss.
+///     Pins <see cref="EnumStringHelper.LooksNumeric" /> on the trap cases a naive leading-digit check would
+///     miss.
 /// </summary>
 public sealed class EnumStringHelperTests
 {

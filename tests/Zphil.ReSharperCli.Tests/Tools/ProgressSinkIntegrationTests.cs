@@ -247,8 +247,8 @@ public sealed class ProgressSinkIntegrationTests
         IList<McpClientTool> tools = await harness.Client.ListToolsAsync(cancellationToken: Ct);
         CallToolResult result = await harness.Client.CallToolAsync(ResharperTools.InspectToolName, cancellationToken: Ct);
 
-        // Assert — both spellings the parameter has had, so a rename cannot quietly start advertising it and
-        // leave a pin passing on the name it no longer uses.
+        // Assert — both names the parameter could carry, so a rename cannot quietly start advertising it and
+        // leave a pin passing on a name it no longer uses.
         result.IsError.ShouldNotBe(true);
         harness.Logs.Warnings.ShouldBeEmpty();
 
@@ -286,10 +286,7 @@ public sealed class ProgressSinkIntegrationTests
         observers.ShouldAllBe(observer => observer == null);
     }
 
-    /// <summary>
-    ///     One watched <c>resharper_inspect</c> against a named solution — the shape both halves of the
-    ///     two-solution test take, so the only difference between them is which solution and which recorder.
-    /// </summary>
+    /// <summary>One watched <c>resharper_inspect</c> against a named solution.</summary>
     private static Task<CallToolResult> Call(McpPipelineHarness harness, string solutionPath, Recorder progress)
     {
         return harness.Client

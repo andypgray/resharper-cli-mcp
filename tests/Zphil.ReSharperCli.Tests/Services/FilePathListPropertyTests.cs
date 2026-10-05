@@ -10,21 +10,29 @@ namespace Zphil.ReSharperCli.Tests.Services;
 
 /// <summary>
 ///     The two <see cref="FilePathList" /> members whose contract a table of examples cannot state.
-///     <see cref="FilePathList.Split" /> does not build a new list until it meets the first entry that needs
-///     splitting, and then has to graft the entries it already walked past onto the front — an optimisation
-///     over an obvious model (expand every entry, concatenate) which has to agree with it for any
-///     arrangement, and that is the class of bug an example test picks up only if someone guessed the right
-///     position for the first split. <see cref="FilePathList.ToIncludePattern" /> has to be total, because it
-///     runs on the way to <c>jb</c>, past the validation that would otherwise have named a bad entry: every
-///     string a path API can refuse must come back as the entry rather than as an exception, and which
-///     strings those are is what a generator finds and a reader does not.
 /// </summary>
 /// <remarks>
-///     Every fragment the splitting generators produce is relative, and the solution directory is a freshly
-///     created empty one, so nothing an entry names can exist. That keeps the existing-file guard — which
-///     correctly keeps a real <c>Foo,Bar.cs</c> verbatim — out of the comparison, because it is a fact about
-///     the disk rather than about the splitting rule under test. The totality generator is free of that
-///     constraint: it names nothing that could exist either, and what it draws is aimed at the path APIs.
+///     <para>
+///         <see cref="FilePathList.Split" /> does not build a new list until it meets the first entry that
+///         needs splitting, and then has to graft the entries it already walked past onto the front — an
+///         optimisation over an obvious model (expand every entry, concatenate) which has to agree with it for
+///         any arrangement, and that is the class of bug an example test picks up only if someone guessed the
+///         right position for the first split.
+///     </para>
+///     <para>
+///         <see cref="FilePathList.ToIncludePattern" /> has to be total, because it runs on the way to
+///         <c>jb</c>, past the validation that would otherwise have named a bad entry: every string a path API
+///         can refuse must come back as the entry rather than as an exception, and which strings those are is
+///         what a generator finds and a reader does not.
+///     </para>
+///     <para>
+///         Every fragment the splitting generators produce is relative, and the solution directory is a freshly
+///         created empty one, so nothing an entry names can exist. That keeps the existing-file guard — which
+///         correctly keeps a real <c>Foo,Bar.cs</c> verbatim — out of the comparison, because it is a fact
+///         about the disk rather than about the splitting rule under test. The totality generator is free of
+///         that constraint: it names nothing that could exist either, and what it draws is aimed at the path
+///         APIs.
+///     </para>
 /// </remarks>
 public sealed class FilePathListPropertyTests : IDisposable
 {
@@ -126,10 +134,13 @@ public sealed class FilePathListPropertyTests : IDisposable
 
     /// <summary>
     ///     A <c>files</c> argument: a short list of entries, each either a lone path or several joined the way
-    ///     the mistake this rescues actually arrives. The awkward arrangements — an entry that is nothing but
-    ///     delimiters, empty fragments between two real ones, leading and trailing delimiters — are unioned in
-    ///     rather than left for a lucky draw, because they are where the "keep it verbatim" fallbacks live.
+    ///     the mistake this rescues actually arrives.
     /// </summary>
+    /// <remarks>
+    ///     The awkward arrangements — an entry that is nothing but delimiters, empty fragments between two real
+    ///     ones, leading and trailing delimiters — are unioned in rather than left for a lucky draw, because
+    ///     they are where the "keep it verbatim" fallbacks live.
+    /// </remarks>
     private static Gen<IReadOnlyList<string>> EntryList()
     {
         return Gen.Choose(1, 5)
@@ -154,9 +165,12 @@ public sealed class FilePathListPropertyTests : IDisposable
     }
 
     /// <summary>
-    ///     A relative path naming a file that cannot exist under a fresh temp directory. No <c>..</c> segment
-    ///     is ever generated, so no entry can resolve outside that directory and accidentally find something.
+    ///     A relative path naming a file that cannot exist under a fresh temp directory.
     /// </summary>
+    /// <remarks>
+    ///     No <c>..</c> segment is ever generated, so no entry can resolve outside that directory and
+    ///     accidentally find something.
+    /// </remarks>
     private static Gen<string> Fragment()
     {
         Gen<List<string>> directories = Gen.Choose(0, 2)
@@ -180,12 +194,14 @@ public sealed class FilePathListPropertyTests : IDisposable
     }
 
     /// <summary>
-    ///     Anything a <c>files</c> entry can arrive as, aimed at the path APIs rather than at <c>jb</c>:
-    ///     arbitrary strings unioned with the shapes those APIs refuse or treat specially — an embedded null,
-    ///     a lone surrogate, a bare device or UNC prefix, a drive-relative entry, a stream-qualified name, and
-    ///     lengths on both sides of the operating system's path limit. No UNC host name is drawn: resolving
-    ///     one would put a network round trip inside a property that runs a hundred times.
+    ///     Anything a <c>files</c> entry can arrive as, aimed at the path APIs rather than at <c>jb</c>.
     /// </summary>
+    /// <remarks>
+    ///     Arbitrary strings unioned with the shapes those APIs refuse or treat specially — an embedded null, a
+    ///     lone surrogate, a bare device or UNC prefix, a drive-relative entry, a stream-qualified name, and
+    ///     lengths on both sides of the operating system's path limit. No UNC host name is drawn: resolving one
+    ///     would put a network round trip inside a property that runs a hundred times.
+    /// </remarks>
     private Gen<string> HostileEntry()
     {
         var separator = Path.DirectorySeparatorChar.ToString();

@@ -49,8 +49,8 @@ public sealed class InspectServiceArgumentTests
             ["src/A.cs", "src/B.cs"],
             InspectSeverity.Error);
 
-        // Assert — --include precedes the shared config tail (jb is flag-order-insensitive; the pin moved
-        // when the tail was extracted so inspect and cleanup append configuration through one helper).
+        // Assert — --include precedes the shared config tail, which inspect and cleanup append through one
+        // helper (jb is flag-order-insensitive, so the order is this server's choice).
         arguments.ShouldBe(
         [
             "inspectcode",

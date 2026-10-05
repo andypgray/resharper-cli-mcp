@@ -31,9 +31,8 @@ namespace Zphil.ReSharperCli.Tools;
 ///     </para>
 ///     <para>
 ///         <see cref="For" /> answers a sink that sends nothing — rather than no sink — for a client that
-///         asked for no progress, which is what <c>NullProgress.Instance</c> did when the SDK chose between
-///         them. That is load-bearing: the heartbeat behind it runs either way, and it is what leaves
-///         <c>JbRunProgress</c> with a file count for the timeout message even for a client that never asked to
+///         asked for no progress. That is load-bearing: the heartbeat writing to it runs either way, and that
+///         heartbeat is what keeps a file count for the timeout message even for a client that never asked to
 ///         watch.
 ///     </para>
 ///     <para>
@@ -41,12 +40,6 @@ namespace Zphil.ReSharperCli.Tools;
 ///         different file totals for the same solution, so a file-derived counter would fall back to zero
 ///         halfway through a run. There is deliberately no <c>total</c> — see
 ///         <see cref="Formatting.RunProgressFormatter" />.
-///     </para>
-///     <para>
-///         Here rather than in <c>Pipeline/</c>, which holds the rest of this server's SDK adaptation, because
-///         the lifetime is what decides it: everything there is per-server and composed once at startup, while
-///         this is per-call, built by the tool method and disposed by it. A tool method is the only thing that
-///         knows when its own answer is ready, and that instant is the one the drain has to land on.
 ///     </para>
 /// </remarks>
 /// <param name="send">
@@ -76,7 +69,7 @@ internal sealed class ProgressSink(Func<int, string, Task> send, ILogger logger)
     private Task _tail = Task.CompletedTask;
 
     /// <summary>
-    ///     Close the sink and wait out everything it has already accepted, so no frame can be written after
+    ///     Closes the sink and waits out everything it has already accepted, so no frame can be written after
     ///     the result of the call this sink belongs to.
     /// </summary>
     public async ValueTask DisposeAsync()
@@ -94,11 +87,14 @@ internal sealed class ProgressSink(Func<int, string, Task> send, ILogger logger)
     }
 
     /// <summary>
-    ///     The sink for one tool call, or <see langword="null" /> when there is no request context at all —
-    ///     a direct call rather than one the SDK dispatched. Answering <see langword="null" /> there mirrors
+    ///     The sink for one tool call.
+    /// </summary>
+    /// <remarks>
+    ///     <see langword="null" /> when there is no request context at all — a direct call rather than one the
+    ///     SDK dispatched. Answering <see langword="null" /> there mirrors
     ///     <see cref="Execution.JbRunProgress.Reporting" />: a caller with nowhere to report to gets nothing
     ///     to dispose rather than a reporter that drops its lines.
-    /// </summary>
+    /// </remarks>
     internal static ProgressSink? For(RequestContext<CallToolRequestParams>? context, ILogger logger)
     {
         if (context is null) return null;
@@ -122,10 +118,12 @@ internal sealed class ProgressSink(Func<int, string, Task> send, ILogger logger)
     }
 
     /// <summary>
-    ///     Queue <paramref name="message" /> as the next notification. Prompt by contract — it links the send
-    ///     on and returns — because <c>JbRunProgress</c> calls it from a timer thread whose disposal waits for
-    ///     a call in flight.
+    ///     Queues <paramref name="message" /> as the next notification.
     /// </summary>
+    /// <remarks>
+    ///     Prompt by contract — it links the send on and returns — because it is called from a timer callback,
+    ///     and disposing a timer waits for a callback in flight.
+    /// </remarks>
     internal void Send(string message)
     {
         lock (_gate)
@@ -137,10 +135,13 @@ internal sealed class ProgressSink(Func<int, string, Task> send, ILogger logger)
     }
 
     /// <summary>
-    ///     One link of the chain: wait for <paramref name="previous" />, take the next counter value, and
-    ///     write. A send that throws still consumes its value — reusing it would repeat a number on a wire
-    ///     that may already carry the frame it was spent on.
+    ///     One link of the chain: waits for <paramref name="previous" />, takes the next counter value, and
+    ///     writes.
     /// </summary>
+    /// <remarks>
+    ///     A send that throws still consumes its value — reusing it would repeat a number on a wire that may
+    ///     already carry the frame it was spent on.
+    /// </remarks>
     private async Task SendAfterAsync(Task previous, string message)
     {
         // Off the caller's thread before anything else. This is invoked under _gate, so without the yield the

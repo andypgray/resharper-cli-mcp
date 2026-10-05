@@ -9,18 +9,9 @@ namespace Zphil.ReSharperCli.Pipeline;
 ///     every valid value so the model can self-correct the next call.
 /// </summary>
 /// <remarks>
-///     <para>
-///         Registered via <see cref="CoercingToolRegistration" /> on the
-///         <c>McpServerToolCreateOptions.SerializerOptions</c>
-///         used by <c>AIFunctionFactory</c> when marshalling JSON-RPC arguments. The default
-///         <see cref="JsonStringEnumConverter" /> raises a generic <c>JsonException</c> that
-///         surfaces without the valid-value list, forcing the model to guess.
-///     </para>
-///     <para>
-///         Covers every <c>T : struct, Enum</c> in tool parameters. Today the only such parameter is
-///         <c>resharper_inspect</c>'s <c>severity</c> (<see cref="Services.InspectSeverity" />); the factory
-///         is generic so any future enum parameter is validated the same way.
-///     </para>
+///     The default <see cref="JsonStringEnumConverter" /> raises a generic <c>JsonException</c> that
+///     surfaces without the valid-value list, forcing the model to guess. This covers every <c>T : struct, Enum</c> in
+///     tool parameters, so every enum parameter is validated the same way.
 /// </remarks>
 internal sealed class EnumValidationConverterFactory : JsonConverterFactory
 {

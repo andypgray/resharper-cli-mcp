@@ -4,37 +4,43 @@ using Zphil.ReSharperCli.Execution;
 namespace Zphil.ReSharperCli.Services;
 
 /// <summary>
-///     Normalizes the <c>files</c> argument both tools take. A caller that joins several paths into one
-///     array element — <c>["a.cs, b.cs"]</c> rather than <c>["a.cs", "b.cs"]</c> — is a measured, recurring
-///     mistake that the array parameter itself invites, and it fails in two different ways: cleanup rejects
-///     the joined string as a missing file, while inspect hands it to <c>jb</c>, matches nothing, and reports
-///     "No issues found." — a false negative, which is worse. Splitting the element at the tool edge makes
-///     both work. It is also where the rules that <em>classify</em> an entry live: whether it is a wildcard
-///     for <c>jb</c> to expand (<see cref="IsPattern" />) and whether it names a file that is there
-///     (<see cref="ResolvesToExistingFile" />, and <see cref="FindMissing" /> over a whole list). Both tools
-///     ask those questions, so a second spelling of either is a way for the two to disagree about the same
-///     argument.
+///     Normalizes the <c>files</c> argument both tools take, and classifies its entries.
 /// </summary>
 /// <remarks>
-///     Two normalizations, applied at different depths on purpose. Splitting happens at the tool edge, before
-///     validation, so the error names the fragment that is wrong. Translating an entry into the spelling
-///     <c>jb</c> matches (<see cref="ToIncludePattern" />) happens at the <c>--include</c> boundary, so the
-///     caller's own path is what cleanup echoes back in its report.
+///     <para>
+///         A caller that joins several paths into one array element — <c>["a.cs, b.cs"]</c> rather than
+///         <c>["a.cs", "b.cs"]</c> — is a measured, recurring mistake that the array parameter itself invites,
+///         and it fails in two different ways: cleanup rejects the joined string as a missing file, while
+///         inspect hands it to <c>jb</c>, matches nothing, and reports "No issues found." — a false negative,
+///         which is worse. Splitting the element at the tool edge makes both work.
+///     </para>
+///     <para>
+///         It is also the one home of the rules that <em>classify</em> an entry — a wildcard for <c>jb</c>
+///         to expand or not, a file that is there or not — because both tools ask them, and a second spelling
+///         of either is a way for the two to disagree about the same argument.
+///     </para>
+///     <para>
+///         Two normalizations, applied at different depths on purpose. Splitting happens at the tool edge,
+///         before validation, so the error names the fragment that is wrong. Translating an entry into the
+///         spelling <c>jb</c> matches (<see cref="ToIncludePattern" />) happens at the <c>--include</c>
+///         boundary, so the caller's own path is what cleanup echoes back in its report.
+///     </para>
 /// </remarks>
 internal static class FilePathList
 {
     private static readonly char[] Delimiters = [';', ','];
 
     /// <summary>
-    ///     Split any entry that joins several paths into separate entries, resolving relative fragments
+    ///     Splits any entry that joins several paths into separate entries, resolving relative fragments
     ///     against <paramref name="solutionDirectory" /> only to decide whether an entry is already a real
-    ///     file. Returns <paramref name="files" /> itself when nothing needed splitting.
+    ///     file.
     /// </summary>
     /// <remarks>
-    ///     An entry that names an existing file is kept verbatim, so a legitimate <c>Foo,Bar.cs</c> on disk is
-    ///     never reinterpreted. That guard is what makes this safe for the destructive tool: a split can only
-    ///     ever turn a call that was guaranteed to fail into one that works. An entry that is nothing but
-    ///     delimiters is also kept verbatim, so the existing validation reports what the caller actually sent.
+    ///     Returns <paramref name="files" /> itself when nothing needed splitting. An entry that names an
+    ///     existing file is kept verbatim, so a legitimate <c>Foo,Bar.cs</c> on disk is never reinterpreted.
+    ///     That guard is what makes this safe for the destructive tool: a split can only ever turn a call that
+    ///     was guaranteed to fail into one that works. An entry that is nothing but delimiters is also kept
+    ///     verbatim, so the existing validation reports what the caller actually sent.
     /// </remarks>
     [return: NotNullIfNotNull(nameof(files))]
     public static IReadOnlyList<string>? Split(IReadOnlyList<string>? files, string solutionDirectory)
@@ -62,10 +68,12 @@ internal static class FilePathList
 
     /// <summary>
     ///     The absolute path <paramref name="entry" /> resolves to against
-    ///     <paramref name="solutionDirectory" /> (an absolute entry ignores it). The one spelling of the
-    ///     resolution rule — validation and cleanup's before/after hashing all resolve through here, so a
-    ///     change to how an entry maps to a file cannot leave them pointing at different paths.
+    ///     <paramref name="solutionDirectory" /> (an absolute entry ignores it).
     /// </summary>
+    /// <remarks>
+    ///     The one spelling of the resolution rule, so a change to how an entry maps to a file cannot leave its
+    ///     users pointing at different paths.
+    /// </remarks>
     public static string Resolve(string entry, string solutionDirectory)
     {
         return Path.GetFullPath(entry, solutionDirectory);
@@ -73,10 +81,13 @@ internal static class FilePathList
 
     /// <summary>
     ///     The spelling of <paramref name="entry" /> that <c>jb</c>'s <c>--include</c> can match: relative to
-    ///     <paramref name="solutionDirectory" />, forward-slashed. The one spelling of the <em>jb-pattern</em>
-    ///     rule, as <see cref="Resolve" /> is the one spelling of the <em>filesystem</em> rule.
+    ///     <paramref name="solutionDirectory" />, forward-slashed.
     /// </summary>
     /// <remarks>
+    ///     <para>
+    ///         The one spelling of the <em>jb-pattern</em> rule, as <see cref="Resolve" /> is the one spelling
+    ///         of the <em>filesystem</em> rule.
+    ///     </para>
     ///     <para>
     ///         <c>--include</c> takes "a set of relative paths" and wildcards, per <c>jb</c>'s own help text,
     ///         and it matches them against the solution model rather than against the disk. An absolute entry
@@ -85,9 +96,9 @@ internal static class FilePathList
     ///         while <c>inspectcode</c> exited 0 and reported no issues at all — a silent false negative —
     ///         through 2026.1, and exits 3 with "No files to inspect were found." in 2026.2, writing no report
     ///         file. Which of the two it does changes nothing here, so the <c>JbContract</c> suite watches only
-    ///         for the premise itself failing: an absolute pattern starting to match. Both tools have always
-    ///         documented an absolute path as accepted, so this translation is what makes that true rather
-    ///         than a new restriction.
+    ///         for the premise itself failing: an absolute pattern starting to match. Both tools document an
+    ///         absolute path as accepted, so this translation is what makes that true rather than a new
+    ///         restriction.
     ///     </para>
     ///     <para>
     ///         Fully qualified, not merely rooted: on Windows a drive-relative <c>/src/Foo.cs</c> is already
@@ -126,15 +137,14 @@ internal static class FilePathList
     }
 
     /// <summary>
-    ///     Return the entries in <paramref name="files" /> that do not resolve to an existing file. Wildcard
-    ///     patterns (see <see cref="IsPattern" />) are left for jb to expand and are never reported; other
-    ///     entries are resolved against <paramref name="solutionDirectory" /> (absolute entries ignore it).
+    ///     Returns the entries in <paramref name="files" /> that do not resolve to an existing file.
     /// </summary>
     /// <remarks>
-    ///     A blank entry is reported as missing rather than throwing:
+    ///     Wildcard patterns (see <see cref="IsPattern" />) are left for jb to expand and are never reported;
+    ///     other entries are resolved against <paramref name="solutionDirectory" /> (absolute entries ignore
+    ///     it). A blank entry is reported as missing rather than throwing:
     ///     <see cref="ResolvesToExistingFile" /> catches what <see cref="Path.GetFullPath(string,string)" />
-    ///     raises on the empty string and answers false. Cleanup rejects a blank entry before it ever gets
-    ///     here, but inspect does not and must not — a read-only tool that throws on a malformed list is
+    ///     raises on the empty string and answers false. A read-only tool that throws on a malformed list is
     ///     worse than one that names the entry it could not use.
     /// </remarks>
     public static List<string> FindMissing(IReadOnlyList<string> files, string solutionDirectory)
@@ -151,10 +161,12 @@ internal static class FilePathList
     }
 
     /// <summary>
-    ///     Whether <paramref name="entry" /> names a file that exists, per <see cref="Resolve" />. Shared with
-    ///     <see cref="FindMissing" /> so the "is this a real file" rule that decides whether to split cannot
-    ///     drift from the one that decides whether to fail the call.
+    ///     Whether <paramref name="entry" /> names a file that exists, per <see cref="Resolve" />.
     /// </summary>
+    /// <remarks>
+    ///     Shared with <see cref="FindMissing" /> so the "is this a real file" rule that decides whether to
+    ///     split cannot drift from the one that decides whether to fail the call.
+    /// </remarks>
     public static bool ResolvesToExistingFile(string entry, string solutionDirectory)
     {
         try

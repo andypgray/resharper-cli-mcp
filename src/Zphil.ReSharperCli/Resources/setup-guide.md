@@ -344,8 +344,8 @@ naming the level it landed on and what that level gave up. (`resharper_reset_cac
 degrade — its report is a line per cache generation.)
 
 **The distinction that carries the meaning: a truncated result is an incomplete list of issues; a reduced
-result is complete but less detailed.** Every issue is still counted and every file still named at every
-reduction level, so a `DETAIL REDUCED` response is safe to conclude from — unlike a truncated one.
+result is complete but less detailed.** Every issue and every file is still counted at every reduction
+level, so a `DETAIL REDUCED` response is safe to conclude from — unlike a truncated one.
 
 `resharper_inspect` steps down five levels:
 

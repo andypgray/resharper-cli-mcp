@@ -60,8 +60,25 @@ Add the server to `.mcp.json` in the project root:
 }
 ```
 
-Claude Code can also install the server as a plugin, which brings the prompt and both guide
-resources with it. See [README.md](README.md#install-as-a-claude-code-plugin).
+Claude Code can also install the server as a plugin, which starts it through `dotnet dnx` with no
+`dotnet tool install` of its own. See [README.md](README.md#install-as-a-claude-code-plugin).
+
+### Visual Studio
+
+Visual Studio 2022 17.14 and later, and Visual Studio 2026, read an `.mcp.json` beside the
+solution, so a checked-in file registers the server for everyone working on it. The top-level key
+is `servers`, not `mcpServers`, and the transport is named:
+
+```json
+{
+  "servers": {
+    "resharper": {
+      "type": "stdio",
+      "command": "resharper-cli-mcp"
+    }
+  }
+}
+```
 
 ### VS Code
 
@@ -91,6 +108,32 @@ Add it to `.cursor/mcp.json` for one project, or `~/.cursor/mcp.json` for every 
     }
   }
 }
+```
+
+### Rider and Junie
+
+Junie reads `~/.junie/mcp/mcp.json` for every project, or `.junie/mcp/mcp.json` for one. Rider's AI
+Assistant takes the same JSON under Settings | Tools | AI Assistant | MCP:
+
+```json
+{
+  "mcpServers": {
+    "resharper": {
+      "command": "resharper-cli-mcp"
+    }
+  }
+}
+```
+
+Running the server alongside a JetBrains IDE means two ReSharper engines over one solution, each
+with its own cache. Point this server's cache elsewhere with `JB_CACHE_HOME` if disk use matters.
+Inside Rider, the IDE already gives its agents the inspection results, so the server's use there is
+`resharper_cleanup`: Rider's MCP tools can reformat a file but cannot run a cleanup profile.
+
+### Codex CLI
+
+```bash
+codex mcp add resharper -- resharper-cli-mcp
 ```
 
 ### Cline

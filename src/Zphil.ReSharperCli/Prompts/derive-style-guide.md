@@ -16,9 +16,12 @@ that you inferred the style and validated it with the inspect loop; never imply 
 ## 0. Prefer the official IDE detector when an IDE is available
 
 If anyone on the team has ReSharper or Rider installed, JetBrains' first-party
-**`ReSharper | Edit → Detect Code Style Settings`** learns formatting and naming rules from a sample
-as large as the whole solution and writes them straight to `.editorconfig` (C#/C++). That is one
-click and authoritative — prefer it for the baseline. Reach for this recipe when:
+**Detect Code Style Settings** learns formatting and naming rules from a sample as large as the
+whole solution and writes them straight to `.editorconfig` (C#/C++). In ReSharper it is
+**`ReSharper | Edit → Detect Code Style Settings`**; in Rider, **Settings → Editor → Code Style →
+C# → Auto-Detect Code Style Rules** for the whole solution, or Alt+Enter on a selection →
+**Reformat and cleanup | Detect code style settings**. That is one click and authoritative — prefer
+it for the baseline. Reach for this recipe when:
 
 - no IDE or licence is available (a headless agent, CI, a new contributor), **or**
 - you need what the detector does *not* do: reconcile the style with **StyleCop** and other

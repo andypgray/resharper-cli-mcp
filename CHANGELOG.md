@@ -14,7 +14,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   header counts `hashed file(s)`, the files the server compared before and after the run, and a wildcard is
   never one of them.
 
+- The README opens with what the server adds over running `jb` from a shell, then states run times and
+  their limits, and lists the MCP clients in one table of where the entry goes. The full entry for every
+  client, now including Visual Studio, Rider and Junie, and the Codex CLI, is in `llms-install.md`. The
+  Cursor and LM Studio install buttons are now shields.io badges. nuget.org renders images only from an
+  allowlist of hosts, and it showed neither of the earlier button images on the package page.
+
 ### Fixed
+
+- `PRIVACY.md` and the README's Privacy Policy said the diagnostic log was the only thing the server
+  writes. It also writes the inspection reports that a `report` argument asks for, and deletes them after
+  seven days. It also keeps bookkeeping files in ReSharper's cache directory, which record each solution's
+  path, the `jb` build that ran it and how long its runs took. Both texts now name all three. Nothing leaves
+  the machine, as before.
+
+- The README and the setup guide said a reduced inspection result still names every file. From the
+  `Medium` level down it names only the files with the most issues. Every issue and every file is still
+  counted at every level, which is what the guide now says. The Claude Desktop bundle's description said
+  runs after the first take tens of seconds. It now says they are several times faster, as the README does,
+  because a warm run's time depends on the machine and the solution.
 
 - An argument key that differs from a parameter name only in case is refused instead of dropped. The server
   refuses a `tools/call` argument whose key matches no parameter, and names the valid ones. It compared keys

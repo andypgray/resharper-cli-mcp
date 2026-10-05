@@ -8,7 +8,7 @@ Nothing. The server has no telemetry, no analytics, no accounts, and no remote l
 
 ## How your source code is processed
 
-Everything runs on your machine. Each tool call shells out to `jb`, the JetBrains ReSharper Command Line Tools you installed, which analyzes your solution locally. The results — inspection issues and cleanup summaries derived from your code — are returned over stdio to the MCP client that launched the server, and nowhere else. This project operates no servers and never sees your code or the results.
+Everything runs on your machine. Each tool call shells out to `jb`, the JetBrains ReSharper Command Line Tools you installed, which analyzes your solution locally. The results (inspection issues and cleanup summaries derived from your code) are returned over stdio to the MCP client that launched the server, and written to a local file only when a call asks for an inspection report. This project operates no servers and never sees your code or the results.
 
 ## What your MCP client does with the results
 
@@ -20,7 +20,13 @@ Diagnostic logs roll daily under `%LOCALAPPDATA%\Zphil.ReSharperCli\logs` on Win
 
 ## Retention
 
-Those logs are the only data this project writes, and they are written on your machine. The sink keeps 7 daily files and deletes the oldest as it rolls; deleting the directory yourself at any point is safe. Nothing is retained anywhere else, because nothing is sent anywhere else.
+Everything this project writes stays on your machine, in three places:
+
+- The logs described above. The sink keeps 7 daily files and deletes the oldest as it rolls; deleting the directory yourself at any point is safe.
+- Inspection reports, written only when a `resharper_inspect` call sets `report`, to a `resharper-cli-mcp-reports` directory under the system temp directory. A report lists the issues found in your solution with their paths and messages, and the server deletes reports older than seven days.
+- Bookkeeping files in ReSharper's cache directory (`~/.jb-cache` unless `JB_CACHE_HOME` moves it), named `.resharper-cli-mcp-*`. They record when a run against a solution last succeeded, the solution's path, which `jb` build ran it, how long runs took, and whether its cache was reset. When the server seeds a new checkout's cache, it also copies ReSharper's own cache files within that directory. These are kept until you delete them; `resharper_reset_cache` removes a solution's cache along with the records of its runs.
+
+Nothing is retained anywhere else, because nothing is sent anywhere else.
 
 ## Network access
 

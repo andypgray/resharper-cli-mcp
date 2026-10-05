@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using Zphil.ReSharperCli.Services;
 
 namespace Zphil.ReSharperCli.Tests.Contract;
 
@@ -57,5 +58,57 @@ internal sealed record FileFacts(string? Text, DateTime? WrittenUtc, string Desc
         {
             return new FileFacts(null, null, $"unreadable: {JbContractFixture.DescribeFailure(exception)}");
         }
+    }
+}
+
+/// <summary>
+///     One real cleanup pass: what the product reported, and the fixture's account of the pass, which reads the
+///     file's text on either side of it.
+/// </summary>
+/// <remarks>
+///     The text as well as the product's report, because the product's own <c>Changed</c> classification is
+///     itself a hash comparison, and a check that read only that would be proving the classifier against itself.
+/// </remarks>
+internal sealed record CleanupRun(CleanupOutcome Outcome, CleanupEvidence Evidence)
+{
+    /// <summary>What each part of <see cref="Signature" /> says, in its order, for whatever labels the row.</summary>
+    internal const string SignatureColumns = "rewritten / named by jb / write time moved";
+
+    /// <summary>
+    ///     Whether the file's text changed across the pass, or <see langword="null" /> when either reading of it
+    ///     failed.
+    /// </summary>
+    public bool? FileWasRewritten =>
+        Evidence.Restored.Text is { } restored && Evidence.AfterPass.Text is { } afterPass
+            ? !string.Equals(restored, afterPass, StringComparison.Ordinal)
+            : null;
+
+    /// <summary>The pass as one row of the soft report, in <see cref="SignatureColumns" /> order.</summary>
+    public string Signature =>
+        $"{SoftReport.YesNo(FileWasRewritten)} / {SoftReport.YesNo(Evidence.JbNamedTheFile)} / "
+        + SoftReport.YesNo(Evidence.WriteTimeMoved);
+
+    /// <summary>Everything the fixture knows about the pass, as a failure message carries it.</summary>
+    public string Describe()
+    {
+        return $"The \"{Outcome.Profile}\" pass ({SignatureColumns}: {Signature})\n"
+               + $"restored:           {Evidence.Restored.Description}\n"
+               + $"after the pass:     {Evidence.AfterPass.Description}\n"
+               + Evidence.Details;
+    }
+}
+
+/// <summary>The words the soft report's observation rows share.</summary>
+internal static class SoftReport
+{
+    /// <summary>An observation that was made either way, or <c>unknown</c> when it could not be made.</summary>
+    public static string YesNo(bool? value)
+    {
+        return value switch
+        {
+            true => "yes",
+            false => "no",
+            null => "unknown"
+        };
     }
 }

@@ -7,14 +7,12 @@ using Zphil.ReSharperCli.Tests.TestSupport;
 
 namespace Zphil.ReSharperCli.Tests.Prompts;
 
-/// <summary>
-///     Pins the <c>derive_style_guide</c> MCP prompt: over the in-memory client/server harness it is
-///     advertised in <c>prompts/list</c> and <c>prompts/get</c> returns a single user message carrying the
-///     embedded recipe verbatim; the recipe itself carries its load-bearing commitments and reference links.
+/// <summary>Pins <see cref="ResharperPrompts" />' <c>derive_style_guide</c> MCP prompt.</summary>
+/// <remarks>
 ///     Assertions target a few stable anchor phrases, not the whole blob, so wording can evolve while the
 ///     honesty/editorconfig/inspect-loop spec cannot silently drift.
-/// </summary>
-public sealed class StyleGuidePromptTests
+/// </remarks>
+public sealed class ResharperPromptsTests
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 

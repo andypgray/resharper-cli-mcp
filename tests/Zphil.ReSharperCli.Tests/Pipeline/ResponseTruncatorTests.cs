@@ -2,7 +2,6 @@ using Shouldly;
 using Xunit;
 using Zphil.ReSharperCli.Formatting;
 using Zphil.ReSharperCli.Pipeline;
-using Zphil.ReSharperCli.Tools;
 
 namespace Zphil.ReSharperCli.Tests.Pipeline;
 
@@ -120,20 +119,26 @@ public sealed class ResponseTruncatorTests
     }
 
     [Fact]
-    public void TruncationHintFor_KnownTools_MapEachToItsOwnRemedy()
+    public void BudgetForBody_PrefixLargerThanTheWholeBudget_StaysPositiveAndWithinTheBudget()
     {
-        // Assert — inspect's remedy is a narrower next scan or a report file; cleanup's and reset's are the
-        // reassurance that the work was done in full, so a chopped report cannot read as chopped work.
-        ResharperTools.TruncationHintFor(ResharperTools.InspectToolName).ShouldBe(IssueMarkdownFormatter.TruncationRemedy);
-        ResharperTools.TruncationHintFor(ResharperTools.CleanupToolName).ShouldBe(CleanupSummaryFormatter.CleanupRanInFull);
-        ResharperTools.TruncationHintFor(ResharperTools.ResetCacheToolName).ShouldBe(CacheResetFormatter.ResetRanInFull);
+        // Arrange — a pathological MAX_MCP_OUTPUT_TOKENS must not drive the residual negative, which would
+        // print as a negative character limit in the reduction note, nor above the budget it came from.
+        string prefix = new('w', 50);
+
+        // Act
+        int budget = ResponseTruncator.BudgetForBody(10, prefix);
+
+        // Assert
+        budget.ShouldBe(10);
     }
 
     [Fact]
-    public void TruncationHintFor_UnknownTool_ReturnsEmpty()
+    public void BudgetForBody_NoPrefix_LeavesTheBudgetExactlyAsItWas()
     {
-        // Assert
-        ResharperTools.TruncationHintFor("some_other_tool").ShouldBe("");
-        ResharperTools.TruncationHintFor(null).ShouldBe("");
+        // A result with nothing to lead with must keep the whole budget, exactly — including under a budget
+        // smaller than the floor, where rounding up would silently un-reduce an output the client cannot
+        // afford.
+        ResponseTruncator.BudgetForBody(25_000, "").ShouldBe(25_000);
+        ResponseTruncator.BudgetForBody(100, "").ShouldBe(100);
     }
 }

@@ -148,30 +148,6 @@ public sealed class ConfigWarningBannerTests
         result.ShouldContain("Cleanup completed with profile \"Built-in: Full Cleanup\". 40 of 40 file(s)");
     }
 
-    [Fact]
-    public void BudgetForBody_BannerLargerThanTheWholeBudget_StaysPositiveAndWithinTheBudget()
-    {
-        // Arrange — a pathological MAX_MCP_OUTPUT_TOKENS must not drive the residual negative, which would
-        // print as a negative character limit in the reduction note, nor above the budget it came from.
-        string banner = ConfigWarningBanner.ForCleanup(new ConfigWarnings("C:/repo/gone.DotSettings", ReadFailure));
-
-        // Act
-        int budget = ResponseTruncator.BudgetForBody(10, banner);
-
-        // Assert
-        budget.ShouldBe(10);
-    }
-
-    [Fact]
-    public void BudgetForBody_NoBanner_LeavesTheBudgetExactlyAsItWas()
-    {
-        // A result with nothing to warn about must render byte-for-byte as it did before this banner
-        // existed — including under a budget smaller than the floor, where rounding up would silently
-        // un-reduce an output the client cannot afford.
-        ResponseTruncator.BudgetForBody(25_000, "").ShouldBe(25_000);
-        ResponseTruncator.BudgetForBody(100, "").ShouldBe(100);
-    }
-
     private static CleanupOutcome OutcomeWith(int count, CleanupFileStatus status)
     {
         List<CleanupEntry> entries = [];

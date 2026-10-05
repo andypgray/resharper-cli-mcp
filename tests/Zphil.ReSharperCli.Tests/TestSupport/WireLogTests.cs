@@ -6,9 +6,12 @@ namespace Zphil.ReSharperCli.Tests.TestSupport;
 
 /// <summary>
 ///     The negative control for <see cref="WireLog" />: proof that it reports the violation it exists to
-///     report, which no green run against a correct server can give. Synthetic frames, no transport and no
-///     timing, so this is the deterministic half of the contract <c>ProgressNotificationTests</c> asserts.
+///     report, which no green run against a correct server can give.
 /// </summary>
+/// <remarks>
+///     Synthetic frames, no transport and no timing, so this is the deterministic half of the contract
+///     <c>ProgressSinkIntegrationTests</c> asserts.
+/// </remarks>
 public sealed class WireLogTests
 {
     private const string ToolResultFrame =

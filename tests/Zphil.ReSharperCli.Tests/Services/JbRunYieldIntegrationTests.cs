@@ -9,6 +9,8 @@ using Zphil.ReSharperCli.Tests.TestSupport;
 namespace Zphil.ReSharperCli.Tests.Services;
 
 /// <summary>
+///     <see cref="JbRunYield" /> driven through <see cref="JbRunner" /> and <see cref="CacheResetService" />
+///     together, wired to one shared yield; <see cref="Execution.JbRunYieldTests" /> drives the yield on its own.
 ///     A caller the user is waiting on always wins. Pre-warming is only ever an optimisation, so a call
 ///     arriving while one is in flight must reclaim the cache generation rather than queue behind work
 ///     nobody asked for — otherwise that call would pay the queue wait <em>and</em> its own full run, which
@@ -24,7 +26,7 @@ namespace Zphil.ReSharperCli.Tests.Services;
 ///     this file's second half, and arbitrate against nothing. <see cref="JbRunners" /> assembles the pair
 ///     for the same reason the composition root does.
 /// </remarks>
-public sealed class JbRunYieldTests : IDisposable
+public sealed class JbRunYieldIntegrationTests : IDisposable
 {
     /// <summary>
     ///     A short wait cap, so a regression that stopped the pre-warm yielding fails these tests promptly
@@ -43,7 +45,7 @@ public sealed class JbRunYieldTests : IDisposable
     private readonly CacheResetService _reset;
     private readonly JbRunner _runner;
 
-    public JbRunYieldTests()
+    public JbRunYieldIntegrationTests()
     {
         _cacheHome = _environment.CreateTempDirectory();
         _config = Configs.Bare("/sln/App.sln", _cacheHome);

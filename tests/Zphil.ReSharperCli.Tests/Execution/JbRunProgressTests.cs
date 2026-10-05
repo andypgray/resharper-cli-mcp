@@ -2,7 +2,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
 using Xunit;
 using Zphil.ReSharperCli.Execution;
-using Zphil.ReSharperCli.Tests.TestSupport;
+using Zphil.ReSharperCli.Tests.TestDoubles;
 
 namespace Zphil.ReSharperCli.Tests.Execution;
 

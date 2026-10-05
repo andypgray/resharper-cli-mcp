@@ -1,4 +1,4 @@
-namespace Zphil.ReSharperCli.Tests.TestSupport;
+namespace Zphil.ReSharperCli.Tests.TestDoubles;
 
 /// <summary>
 ///     A thread-safe recorder for whatever a sink is handed, with a bounded wait for "at least this much

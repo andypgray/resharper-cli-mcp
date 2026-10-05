@@ -372,9 +372,9 @@ internal sealed class JbRunner(
         catch (ProcessTimeoutException)
         {
             // How far it had got is the fact this line exists to add, and the only place it survives: a run
-            // killed having analysed forty files and one killed at 1,200 are otherwise the same line. The
-            // properties are chosen around the two lines JbRunLoggingTests locates by name — no CacheState
-            // here, no ExitCode — so that a cap is still identifiable as neither of the other two endings.
+            // killed having analysed forty files and one killed at 1,200 are otherwise the same line. It
+            // carries neither of the properties that mark the other two lines — no CacheState, no ExitCode — so
+            // a cap is identifiable as neither of those endings.
             logger.LogInformation(
                 "jb {Subcommand} was killed at the {RunCap} cap after {ElapsedMs} ms, having reached {FilesSeen} file(s)",
                 subcommand,

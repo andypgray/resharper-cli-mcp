@@ -13,20 +13,24 @@ using Zphil.ReSharperCli.Tools;
 namespace Zphil.ReSharperCli.Tests.Resources;
 
 /// <summary>
-///     Pins the <c>resharper://guides/setup</c> MCP resource end to end over the in-memory client/server
-///     harness, mirroring <see cref="ConfigurationResourceTests" />: its URI template carries no
-///     <c>{parameter}</c>, so it must be advertised as a <em>direct</em> resource in <c>resources/list</c>,
-///     and <c>resources/read</c> must return the markdown setup guide. Assertions target stable anchor
-///     phrases rather than the whole blob. The environment-variable fact is the load-bearing one: since the
-///     always-resident server instructions no longer name any variable, this guide is their only
-///     agent-facing home, and a variable missing here is invisible to every agent.
+///     Pins <see cref="ResharperResources" />' two MCP resources, <c>resharper://guides/configuration</c> and
+///     <c>resharper://guides/setup</c>.
 /// </summary>
-public sealed class SetupResourceTests
+/// <remarks>
+///     Reading each guide back as the same text the resource method returns is also the load-time guard: a
+///     rename of an embedded <c>.md</c> or its manifest id fails the read rather than surfacing only when a
+///     client reads it. The anchors are asserted against each guide directly, on stable phrases rather than the
+///     whole blob, so wording can evolve while the two-axes/editorconfig/DotSettings spec and the setup facts
+///     cannot silently drift.
+/// </remarks>
+public sealed class ResharperResourcesTests
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-    [Fact]
-    public async Task ListResources_AdvertisesSetupGuideAsDirectResource()
+    [Theory]
+    [InlineData(ResharperResources.ConfigurationGuideUri, ResharperResources.ConfigurationGuideName)]
+    [InlineData(ResharperResources.SetupGuideUri, ResharperResources.SetupGuideName)]
+    public async Task ListResources_AdvertisesTheGuideAsADirectResource(string uri, string name)
     {
         // Arrange
         await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
@@ -35,24 +39,52 @@ public sealed class SetupResourceTests
         IList<McpClientResource> resources = await harness.Client.ListResourcesAsync(cancellationToken: Ct);
 
         // Assert
-        resources.Select(resource => resource.Uri).ShouldContain(ResharperResources.SetupGuideUri);
-        resources.Select(resource => resource.Name).ShouldContain(ResharperResources.SetupGuideName);
+        resources.Select(resource => resource.Uri).ShouldContain(uri);
+        resources.Select(resource => resource.Name).ShouldContain(name);
     }
 
-    [Fact]
-    public async Task ReadResource_ReturnsMarkdownCarryingLoadBearingAnchors()
+    [Theory]
+    [InlineData(ResharperResources.ConfigurationGuideUri)]
+    [InlineData(ResharperResources.SetupGuideUri)]
+    public async Task ReadResource_ServesTheGuideAsOneMarkdownText(string uri)
     {
         // Arrange
         await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
+        string expected = GuideAt(uri);
 
         // Act
-        ReadResourceResult result = await harness.Client.ReadResourceAsync(
-            ResharperResources.SetupGuideUri, cancellationToken: Ct);
+        ReadResourceResult result = await harness.Client.ReadResourceAsync(uri, cancellationToken: Ct);
 
         // Assert — a string-returning resource method maps to one TextResourceContents.
         var contents = result.Contents.ShouldHaveSingleItem().ShouldBeOfType<TextResourceContents>();
         contents.MimeType.ShouldBe("text/markdown");
-        string text = contents.Text;
+        contents.Text.ShouldBe(expected);
+    }
+
+    [Fact]
+    public void ConfigurationGuide_CarriesItsLoadBearingAnchors()
+    {
+        // Act
+        string text = ResharperResources.ConfigurationGuide();
+
+        // Assert
+        text.ShouldContain("DO_NOT_SHOW"); // inspect-axis suppression that does NOT stop cleanup
+        text.ShouldContain("positional"); // the binary argument-style gotcha with no leave-alone value
+        text.ShouldContain(".editorconfig"); // jb auto-honors it from the tree
+        text.ShouldContain("InspectionSeverities"); // the DotSettings severity key shape
+        text.ShouldContain("resharper_cleanup"); // the style axis
+        text.ShouldContain(ResharperResources.SetupGuideUri); // the onward cross-link to the setup guide
+        text.ShouldContain("@formatter:off"); // the only lever measured to survive a formatting revert
+        text.ShouldContain("extracting it to a local"); // the other one: change the shape, nothing to revert
+    }
+
+    [Fact]
+    public void SetupGuide_CarriesItsLoadBearingAnchors()
+    {
+        // Act
+        string text = ResharperResources.SetupGuide();
+
+        // Assert
         text.ShouldContain("JetBrains.ReSharper.GlobalTools"); // the install command for the missing jb
         text.ShouldContain("without a restart"); // a jb updated in place is picked up by the next call
         text.ShouldContain("no parent walk"); // solution discovery is top-level only
@@ -121,11 +153,14 @@ public sealed class SetupResourceTests
         ResharperResources.SetupGuide().ShouldContain(variable);
     }
 
-    [Fact]
-    public void SetupGuide_LoadsEmbeddedResource_NonTrivial()
+    /// <summary>The text the resource method behind <paramref name="uri" /> returns when called directly.</summary>
+    private static string GuideAt(string uri)
     {
-        // A rename of the .md or its manifest id (LogicalName is only checked at runtime, so the build
-        // stays green) would otherwise surface only when a client reads the resource.
-        ResharperResources.SetupGuide().Length.ShouldBeGreaterThan(500);
+        return uri switch
+        {
+            ResharperResources.ConfigurationGuideUri => ResharperResources.ConfigurationGuide(),
+            ResharperResources.SetupGuideUri => ResharperResources.SetupGuide(),
+            _ => throw new ArgumentOutOfRangeException(nameof(uri), uri, "No guide is served at this URI.")
+        };
     }
 }

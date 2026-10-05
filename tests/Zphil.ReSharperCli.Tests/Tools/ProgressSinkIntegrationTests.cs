@@ -7,25 +7,27 @@ using Shouldly;
 using Xunit;
 using Zphil.ReSharperCli.Execution;
 using Zphil.ReSharperCli.Services;
+using Zphil.ReSharperCli.Tests.TestDoubles;
 using Zphil.ReSharperCli.Tests.TestSupport;
 using Zphil.ReSharperCli.Tools;
 
-namespace Zphil.ReSharperCli.Tests.Pipeline;
+namespace Zphil.ReSharperCli.Tests.Tools;
 
 /// <summary>
 ///     A real MCP client watching a long run advance: the whole path, from <c>jb</c>'s stdout through the run
 ///     state and the formatter to <c>notifications/progress</c> on the wire.
 /// </summary>
 /// <remarks>
-///     What this exists to catch is everything a unit test cannot see — that the SDK really does bind the
-///     <c>RequestContext</c> parameter without advertising it in the schema, that the token round-trips, and
-///     that nothing reports against a request that has already been answered. That last one is read off the
-///     server's own output stream rather than off the client, and could never have been read off the client: a
-///     beat sent after the result is dropped before any handler sees it, so a correct observation and a buggy
-///     one look identical from there — and the order the client's handler runs in is not the order the server
-///     wrote in either. See <see cref="WireLog" />.
+///     <see cref="ProgressSinkTests" /> pins the sink's own ordering. What this exists to catch is everything
+///     a unit test cannot see — that the SDK really does bind the <c>RequestContext</c> parameter without
+///     advertising it in the schema, that the token round-trips, and that nothing reports against a request
+///     that has already been answered. That last one is read off the server's own output stream rather than
+///     off the client, and could never have been read off the client: a beat sent after the result is dropped
+///     before any handler sees it, so a correct observation and a buggy one look identical from there — and
+///     the order the client's handler runs in is not the order the server wrote in either. See
+///     <see cref="WireLog" />.
 /// </remarks>
-public sealed class ProgressNotificationTests
+public sealed class ProgressSinkIntegrationTests
 {
     /// <summary>Long enough that only a genuine hang reaches it, short enough to fail rather than wedge.</summary>
     private static readonly TimeSpan Generous = TimeSpan.FromSeconds(30);

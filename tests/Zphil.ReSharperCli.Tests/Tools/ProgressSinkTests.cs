@@ -4,7 +4,7 @@ using ModelContextProtocol.Server;
 using NSubstitute;
 using Shouldly;
 using Xunit;
-using Zphil.ReSharperCli.Tests.TestSupport;
+using Zphil.ReSharperCli.Tests.TestDoubles;
 using Zphil.ReSharperCli.Tools;
 
 namespace Zphil.ReSharperCli.Tests.Tools;
@@ -15,10 +15,10 @@ namespace Zphil.ReSharperCli.Tests.Tools;
 ///     complete.
 /// </summary>
 /// <remarks>
-///     This is the layer the transposition lived in. A counter taken before the send lets two callers swap
-///     between taking a value and reaching the transport, and no client-side or wire-side assertion can tell
-///     that apart from a slow send — which is why the fix is pinned here, on the values the sink itself
-///     produced, rather than only end to end in <c>ProgressNotificationTests</c>.
+///     A counter taken before the send lets two callers swap between taking a value and reaching the
+///     transport, and no client-side or wire-side assertion can tell that apart from a slow send — which is why
+///     the ordering is pinned here, on the values the sink itself produced, rather than only end to end in
+///     <see cref="ProgressSinkIntegrationTests" />.
 /// </remarks>
 public sealed class ProgressSinkTests
 {

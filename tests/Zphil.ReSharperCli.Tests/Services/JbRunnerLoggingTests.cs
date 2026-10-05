@@ -30,7 +30,7 @@ namespace Zphil.ReSharperCli.Tests.Services;
 ///         the pre-warm's own logging had, and the reason it was unreadable.
 ///     </para>
 /// </remarks>
-public sealed class JbRunLoggingTests : IDisposable
+public sealed class JbRunnerLoggingTests : IDisposable
 {
     private readonly string _cacheHome;
     private readonly FakeEnvironment _environment = new();
@@ -38,7 +38,7 @@ public sealed class JbRunLoggingTests : IDisposable
     private readonly IProcessRunner _processRunner = Substitute.For<IProcessRunner>();
     private readonly string _solutionPath;
 
-    public JbRunLoggingTests()
+    public JbRunnerLoggingTests()
     {
         _cacheHome = _environment.CreateTempDirectory();
         _solutionPath = _environment.CreateSolutionPath("App.sln");

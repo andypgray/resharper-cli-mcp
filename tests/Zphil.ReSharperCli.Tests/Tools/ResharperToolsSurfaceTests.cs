@@ -1,22 +1,32 @@
 using ModelContextProtocol.Protocol;
 using Shouldly;
 using Xunit;
+using Zphil.ReSharperCli.Formatting;
 using Zphil.ReSharperCli.Tests.TestSupport;
+using Zphil.ReSharperCli.Tools;
 
-namespace Zphil.ReSharperCli.Tests.Pipeline;
+namespace Zphil.ReSharperCli.Tests.Tools;
 
 /// <summary>
-///     The surface every MCP client and directory listing renders for this server — the tool names, their
-///     human titles, and the four behavior hints — read back off a real <c>tools/list</c> and pinned as
-///     spec, so a change to what the server advertises is a deliberate edit here rather than a side effect
-///     of one somewhere else. The name set is a ratchet: a fourth tool joins this table or it does not ship.
+///     The per-tool surface <see cref="ResharperTools" /> declares: the names, human titles and four behavior
+///     hints every MCP client and directory listing renders, and the per-tool truncation-hint map,
+///     <see cref="ResharperTools.TruncationHintFor" />.
+/// </summary>
+/// <remarks>
+///     <para>
+///         The advertised surface is read back off a real <c>tools/list</c> and pinned as spec, so a change to
+///         what the server advertises is a deliberate edit here rather than a side effect of one somewhere else.
+///         The name set is a ratchet: a new tool joins this table or it does not ship. That exact-set fact is
+///         also the coverage for <c>Pipeline/ToolAttributeDiscovery</c>, since nothing else would notice a tool
+///         it found or missed.
+///     </para>
 ///     <para>
 ///         The title is pinned on <c>Tool.Title</c> alone. MCP SDK 2.2.0 writes the
 ///         <c>[McpServerTool(Title = …)]</c> value into <c>Tool.Annotations.Title</c> as well, so both
 ///         carry it today and asserting both would pin one fact twice.
 ///     </para>
 /// </summary>
-public sealed class ToolAnnotationSurfaceTests(AdvertisedToolsFixture advertised)
+public sealed class ResharperToolsSurfaceTests(AdvertisedToolsFixture advertised)
     : IClassFixture<AdvertisedToolsFixture>
 {
     /// <summary>
@@ -73,5 +83,23 @@ public sealed class ToolAnnotationSurfaceTests(AdvertisedToolsFixture advertised
         annotations.DestructiveHint.ShouldBe(destructive);
         annotations.IdempotentHint.ShouldBe(idempotent);
         annotations.OpenWorldHint.ShouldBe(openWorld);
+    }
+
+    [Fact]
+    public void TruncationHintFor_KnownTools_MapEachToItsOwnRemedy()
+    {
+        // Assert — inspect's remedy is a narrower next scan or a report file; cleanup's and reset's are the
+        // reassurance that the work was done in full, so a chopped report cannot read as chopped work.
+        ResharperTools.TruncationHintFor(ResharperTools.InspectToolName).ShouldBe(IssueMarkdownFormatter.TruncationRemedy);
+        ResharperTools.TruncationHintFor(ResharperTools.CleanupToolName).ShouldBe(CleanupSummaryFormatter.CleanupRanInFull);
+        ResharperTools.TruncationHintFor(ResharperTools.ResetCacheToolName).ShouldBe(CacheResetFormatter.ResetRanInFull);
+    }
+
+    [Fact]
+    public void TruncationHintFor_UnknownTool_ReturnsEmpty()
+    {
+        // Assert
+        ResharperTools.TruncationHintFor("some_other_tool").ShouldBe("");
+        ResharperTools.TruncationHintFor(null).ShouldBe("");
     }
 }

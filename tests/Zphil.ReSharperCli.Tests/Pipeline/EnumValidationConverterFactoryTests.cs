@@ -10,7 +10,7 @@ namespace Zphil.ReSharperCli.Tests.Pipeline;
 ///     Pins <see cref="EnumValidationConverterFactory" /> through <see cref="InspectSeverity" />, which stands
 ///     for every enum parameter the server advertises.
 /// </summary>
-public sealed class EnumValidationConverterTests
+public sealed class EnumValidationConverterFactoryTests
 {
     private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web)
     {

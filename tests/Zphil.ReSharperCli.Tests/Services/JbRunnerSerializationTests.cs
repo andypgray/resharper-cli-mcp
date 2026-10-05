@@ -20,7 +20,7 @@ namespace Zphil.ReSharperCli.Tests.Services;
 ///     machine rather than the work. The <see cref="ConcurrencyProbe" /> stands in for <c>jb</c> and fails
 ///     these tests by observing an overlap, not by timing.
 /// </summary>
-public sealed class JbRunSerializationTests : IDisposable
+public sealed class JbRunnerSerializationTests : IDisposable
 {
     private readonly ResolvedConfig _config;
     private readonly FakeEnvironment _environment = new();
@@ -28,7 +28,7 @@ public sealed class JbRunSerializationTests : IDisposable
     private readonly JbRunner _runner;
     private readonly string _solutionDirectory;
 
-    public JbRunSerializationTests()
+    public JbRunnerSerializationTests()
     {
         _solutionDirectory = _environment.CurrentDirectory;
         string solutionPath = _environment.PlantSolution("App.sln");

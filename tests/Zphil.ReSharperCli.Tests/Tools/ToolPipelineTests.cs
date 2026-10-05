@@ -42,12 +42,14 @@ public sealed class ToolPipelineTests
         result.ShouldNotContain("--- DETAIL REDUCED ---");
     }
 
-    // The enum is used as a body literal, not a public method parameter: the internal InspectSeverity
-    // cannot appear in a public [Theory] signature (CS0051), so these are two facts. Case-insensitive
-    // string INPUT (e.g. "warning") is now coerced/validated at the binding layer — see the converter
-    // and coercion tests. These pin the enum → jb CLI-token mapping (and that a non-default value drives it).
-    [Fact]
-    public async Task InspectAsync_WarningSeverity_MapsToWarningCliToken()
+    // Only the non-default values: a Warning row would pass with the argument ignored, since Warning is the
+    // default. Rows are names because the internal enum cannot appear in a public [Theory] signature
+    // (CS0051). Case-insensitive string input is coerced at the binding layer — see the converter and
+    // coercion tests.
+    [Theory]
+    [InlineData(nameof(InspectSeverity.Suggestion), "--severity=SUGGESTION")]
+    [InlineData(nameof(InspectSeverity.Error), "--severity=ERROR")]
+    public async Task InspectAsync_NonDefaultSeverity_DrivesTheCliToken(string severityName, string expectedArgument)
     {
         // Arrange
         using FakeEnvironment environment = new();
@@ -57,33 +59,14 @@ public sealed class ToolPipelineTests
             Fixtures.ReadSarif("inspect-sample.json"),
             args => inspectArguments = [.. args]);
         ResharperTools tools = ToolHarness.Build(_processRunner, environment);
+        var severity = Enum.Parse<InspectSeverity>(severityName);
 
         // Act
-        await tools.InspectAsync(severity: InspectSeverity.Warning, cancellationToken: Ct);
+        await tools.InspectAsync(severity: severity, cancellationToken: Ct);
 
         // Assert
         inspectArguments.ShouldNotBeNull();
-        inspectArguments.ShouldContain("--severity=WARNING");
-    }
-
-    [Fact]
-    public async Task InspectAsync_ErrorSeverity_MapsToErrorCliToken()
-    {
-        // Arrange
-        using FakeEnvironment environment = new();
-        environment.PlantSolution("App.sln");
-        List<string>? inspectArguments = null;
-        StubJb(
-            Fixtures.ReadSarif("inspect-sample.json"),
-            args => inspectArguments = [.. args]);
-        ResharperTools tools = ToolHarness.Build(_processRunner, environment);
-
-        // Act — a non-default value proves the parameter, not the default, drives the CLI token.
-        await tools.InspectAsync(severity: InspectSeverity.Error, cancellationToken: Ct);
-
-        // Assert
-        inspectArguments.ShouldNotBeNull();
-        inspectArguments.ShouldContain("--severity=ERROR");
+        inspectArguments.ShouldContain(expectedArgument);
     }
 
     [Fact]

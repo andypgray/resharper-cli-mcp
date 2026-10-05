@@ -378,8 +378,7 @@ public sealed class CleanupSummaryFormatterTests
     public void DescribeReduction_EveryLevel_SaysTheCleanupItselfStillRanInFull()
     {
         // A shrinking report is the one place an agent could read "fewer files listed" as "fewer files
-        // cleaned". Looped in a [Fact] because the internal DetailLevel cannot appear in a public test
-        // method's signature (CS0051).
+        // cleaned". A loop over the enum rather than rows, so a level added later is covered without an edit.
         foreach (DetailLevel level in Enum.GetValues<DetailLevel>())
             CleanupSummaryFormatter.DescribeReduction(level)
                 .ShouldEndWith("The cleanup itself ran in full; only the report shrank.");

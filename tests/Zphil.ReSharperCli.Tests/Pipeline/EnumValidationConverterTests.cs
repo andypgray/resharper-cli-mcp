@@ -7,10 +7,8 @@ using Zphil.ReSharperCli.Services;
 namespace Zphil.ReSharperCli.Tests.Pipeline;
 
 /// <summary>
-///     Tests for <see cref="EnumValidationConverterFactory" />: every <c>T : struct, Enum</c>
-///     routes through a validating converter that throws <see cref="UserErrorException" /> with the
-///     full valid-value list on unknown input. Exercised via <see cref="InspectSeverity" />, the one
-///     enum parameter the server advertises today.
+///     Pins <see cref="EnumValidationConverterFactory" /> through <see cref="InspectSeverity" />, which stands
+///     for every enum parameter the server advertises.
 /// </summary>
 public sealed class EnumValidationConverterTests
 {

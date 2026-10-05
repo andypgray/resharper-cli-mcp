@@ -443,10 +443,6 @@ public sealed class CacheResetServiceTests : IDisposable
     }
 
     /// <summary>
-    ///     A config naming a solution in a directory of this test's own. Only the solution path and cache home
-    ///     matter here: a reset runs no <c>jb</c>, so settings, extensions, and the profile play no part.
-    /// </summary>
-    /// <summary>
     ///     The reset says what it did, at <see cref="LogLevel.Information" />.
     /// </summary>
     /// <remarks>

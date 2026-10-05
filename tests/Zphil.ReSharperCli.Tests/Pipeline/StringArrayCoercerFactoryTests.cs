@@ -124,6 +124,20 @@ public sealed class StringArrayCoercerFactoryTests
     }
 
     [Fact]
+    public void Deserialize_StringContainingArrayWithANull_CoercesToSingleElement()
+    {
+        // Arrange — the stringified twin of the literal ["A",null] that is refused below: it never reaches the
+        // element check, so it is one bare string like any other non-string-array text.
+        string json = JsonSerializer.Serialize("""["A",null]""");
+
+        // Act
+        string[] result = JsonSerializer.Deserialize<string[]>(json, Options)!;
+
+        // Assert
+        result.ShouldBe(["""["A",null]"""]);
+    }
+
+    [Fact]
     public void Deserialize_Number_ThrowsUserError()
     {
         // Act

@@ -164,12 +164,14 @@ public sealed class JbRunLockTests : IDisposable
         // Arrange — a cache home no path API will accept, so even the lock's key cannot be derived.
         JbRunLock runLock = JbRunners.Lock(ShortWait);
         string invalid = _cacheHome + "\0invalid";
+        var waited = Stopwatch.StartNew();
 
         // Act
         using IDisposable acquired = await runLock.AcquireAsync(SolutionPath, invalid, Ct);
 
-        // Assert — the whole lock is skipped; jb gets to run and decide for itself.
-        Directory.Exists(_cacheHome).ShouldBeTrue();
+        // Assert — the whole lock is skipped at once rather than retried to the cap; jb gets to run and
+        // decide for itself.
+        waited.Elapsed.ShouldBeLessThan(ShortWait);
     }
 
     [Fact]

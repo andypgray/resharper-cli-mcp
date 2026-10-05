@@ -161,9 +161,11 @@ public sealed class GlobalCallToolFilterIntegrationTests
         underTheCall.ShouldContain(typeof(ConfigResolver).FullName!);
         underTheCall.ShouldContain(typeof(JbRunner).FullName!);
 
-        // And the pre-warm pass the handshake triggered is under a *different* id, which is the whole reason
-        // for having one: the two overlap by design and their lines interleave in one file.
-        LinesFrom(harness, typeof(CacheWarmer))
+        // And the pass the handshake settled — disabled here, so its one Debug line — is under a *different*
+        // id. Non-empty first, so a pass that stopped logging cannot make the second check vacuous.
+        IReadOnlyList<LogEntry> warmerLines = LinesFrom(harness, typeof(CacheWarmer));
+        warmerLines.ShouldNotBeEmpty();
+        warmerLines
             .Select(entry => entry.ScopeValue(RunIdScope.PropertyName))
             .ShouldAllBe(runId => !Equals(runId, callRunId));
 

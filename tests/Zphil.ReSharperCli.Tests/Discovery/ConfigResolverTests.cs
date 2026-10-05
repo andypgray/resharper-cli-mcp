@@ -256,20 +256,6 @@ public sealed class ConfigResolverTests : IDisposable
     }
 
     [Fact]
-    public async Task ResolveAsync_JbSettingsPathEnvMissing_WarnsAndFallsThroughToNull()
-    {
-        // Arrange
-        CreateSolutionInCurrentDirectory("App.sln");
-        _environment.SetVariable("JB_SETTINGS_PATH", Path.Combine(_environment.CurrentDirectory, "missing.DotSettings"));
-
-        // Act
-        ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
-
-        // Assert  (a bad settings path never throws)
-        config.SettingsPath.ShouldBeNull();
-    }
-
-    [Fact]
     public async Task ResolveAsync_AdjacentDotSettingsExists_IsPreferred()
     {
         // Arrange
@@ -531,17 +517,18 @@ public sealed class ConfigResolverTests : IDisposable
     }
 
     [Fact]
-    public async Task ResolveAsync_JbSettingsPathEnvMissing_RecordsThePathAsAWarning()
+    public async Task ResolveAsync_JbSettingsPathEnvMissing_WarnsAndFallsThroughToNull()
     {
         // Arrange
         CreateSolutionInCurrentDirectory("App.sln");
         string missing = Path.Combine(_environment.CurrentDirectory, "missing.DotSettings");
         _environment.SetVariable("JB_SETTINGS_PATH", missing);
 
-        // Act
+        // Act — a bad settings path never throws.
         ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
 
         // Assert — the value as set, matching the log line and what the user has to go and fix.
+        config.SettingsPath.ShouldBeNull();
         config.Warnings.ShouldNotBeNull();
         config.Warnings.MissingSettingsPath.ShouldBe(missing);
         config.Warnings.SettingsRead.ShouldBeNull();

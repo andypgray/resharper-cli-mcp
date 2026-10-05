@@ -85,11 +85,11 @@ public sealed class JbProgressLinesTests
     }
 
     [Fact]
-    public void Classify_ALineJbWroteWithCrLf_ReadsTheSameOnceTheReaderHasTrimmedIt()
+    public void Classify_ALineStillCarryingJbsCarriageReturn_ReadsAsTheFile()
     {
-        // ProcessRunner strips the carriage return before this ever sees a line; the trim here is the
-        // belt-and-braces for indented or padded output, and this pins that the two agree.
-        JbProgressLines.Classify("  Analyzing Sample.cs  ")
+        // A line normally arrives with its carriage return already stripped; the trim here is the
+        // belt-and-braces for indented, padded or CRLF output, so the line reads the same either way.
+        JbProgressLines.Classify("  Analyzing Sample.cs\r")
             .ShouldBe(new JbProgressStep(JbRunPhase.Analyzing, true));
     }
 }

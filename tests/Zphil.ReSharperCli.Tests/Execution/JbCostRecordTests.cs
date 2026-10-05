@@ -9,15 +9,16 @@ using Zphil.ReSharperCli.Tests.TestSupport;
 namespace Zphil.ReSharperCli.Tests.Execution;
 
 /// <summary>
-///     <see cref="JbCostRecord" /> remembers what a <c>jb</c> run cost, keyed by the cache state it started
-///     from. Two invariants carry the class. The key has to hold, because the measured spread between bands
-///     on one solution is 497 seconds cold against 39 warm and a figure quoted under the wrong band is worse
-///     than no figure at all. And every failure has to read as <em>no figure</em>, which is
-///     <see cref="JbWarmMarker" />'s direction rather than <see cref="JbColdTombstone" />'s: what is lost is a
-///     hint, and it is lost at the tail of a <c>jb</c> run the user already paid minutes for. A third joins
-///     them at the door: only a band whose last run predicts its next is recorded at all, and the gate is
-///     applied on the way in and on the way out, so a warm figure cannot arrive through either.
+///     Pins the two invariants of <see cref="JbCostRecord" />: the band key holds, and every failure reads as
+///     <em>no figure</em>.
 /// </summary>
+/// <remarks>
+///     The key has to hold because the states a run starts from differ in cost by an order of magnitude, and a
+///     figure quoted under the wrong band is worse than no figure at all. A failure reads as no figure because
+///     what is lost is a hint, and it is lost at the tail of a <c>jb</c> run the user already paid minutes for.
+///     Warm is not a band at all — its last run says nothing about its next — so nothing can record or quote a
+///     warm figure, and a <c>warm</c> line already in the file is left where it is rather than read.
+/// </remarks>
 public sealed class JbCostRecordTests : IDisposable
 {
     private const string SolutionPath = "/repo/App.sln";

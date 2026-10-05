@@ -39,8 +39,8 @@ public sealed class IssueMarkdownFormatterTests
     [Fact]
     public void Format_NoIssues_ReturnsTheSameLiteralAtEveryLevel()
     {
-        // Act / Assert — looped in a [Fact] rather than a [Theory] because the internal DetailLevel cannot
-        // appear in a public test method's signature (CS0051).
+        // Act / Assert — a loop over the enum rather than rows, so a level added later is covered without an
+        // edit.
         foreach (DetailLevel level in Enum.GetValues<DetailLevel>())
             IssueMarkdownFormatter.Format([], level).ShouldBe("No issues found.");
     }

@@ -139,10 +139,11 @@ public sealed class LogPolicyTests
         string second = RunIdScope.Next();
 
         // Assert — monotonic and fixed-width, which is the whole contract: SessionId separates processes, so
-        // this only has to separate work inside one, and be readable in a column.
+        // this only has to separate work inside one, and be readable in a column. Increasing, not adjacent:
+        // every tool call in the parallel run draws from the same counter, so another can land between these.
         first.Length.ShouldBe(4);
         second.Length.ShouldBe(4);
-        int.Parse(second).ShouldBe(int.Parse(first) + 1);
+        int.Parse(second).ShouldBeGreaterThan(int.Parse(first));
     }
 
     [Fact]

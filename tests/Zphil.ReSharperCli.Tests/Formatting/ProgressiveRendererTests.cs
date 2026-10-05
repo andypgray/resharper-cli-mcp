@@ -64,14 +64,23 @@ public sealed class ProgressiveRendererTests
     [Fact]
     public void Render_FitsAtLow_NamesLowLevel()
     {
-        // Arrange — Full, High, Medium all too large; Low plus its note fits.
-        string result = ProgressiveRenderer.Render(
+        // Arrange — Full, High and Medium each render something different and each too large, so the walk
+        // genuinely tries all three before Low plus its note fits. (Identical oversized levels would be
+        // content-skipped instead, which is the byte-identical test below.)
+        ProgressiveRendering rendering = ProgressiveRenderer.Render(
             "input",
-            (_, level) => level < DetailLevel.Low ? new string('x', 1000) : new string('y', 50),
-            400).Text;
+            (_, level) => level switch
+            {
+                DetailLevel.Full => new string('f', 1000),
+                DetailLevel.High => new string('h', 900),
+                DetailLevel.Medium => new string('m', 800),
+                _ => new string('y', 50)
+            },
+            400);
 
         // Assert
-        result.ShouldContain("Reduced to Low");
+        rendering.Level.ShouldBe(DetailLevel.Low);
+        rendering.Text.ShouldContain("Reduced to Low");
     }
 
     [Fact]

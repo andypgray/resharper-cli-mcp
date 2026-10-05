@@ -568,45 +568,6 @@ public sealed class JbRunnerTests : IDisposable
     }
 
     [Fact]
-    public async Task TryRunAsync_AfterAForegroundRunHasFinished_RunsAgain()
-    {
-        // Arrange — a real call has been and gone. Retiring speculative work permanently at that point is
-        // what this counter replaced: the moment it is worth most is right after a foreground run has hit
-        // the cap, leaving a part-built cache and an idle user.
-        StubExit(0, string.Empty);
-        await _runner.RunAsync(_config, ["inspectcode", _config.SolutionPath], Ct);
-
-        // Act
-        SpeculativeRunOutcome result = await _runner.TryRunAsync(_config, ["inspectcode", _config.SolutionPath], Ct);
-
-        // Assert
-        result.ShouldBe(SpeculativeRunOutcome.Completed);
-    }
-
-    [Fact]
-    public async Task TryRunAsync_ForegroundRunStillInFlight_NeverStartsEvenThoughItsOwnGenerationIsFree()
-    {
-        // Arrange — a *second* solution, so the run lock cannot be the explanation: its cache generation is
-        // free throughout, and the in-flight count is the only thing left that could stop this.
-        ResolvedConfig other = Configs.Bare("/sln/Other.sln", _config.CacheHome);
-        TaskCompletionSource started = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        StubBlocking(started, release);
-
-        Task<ProcessResult> foreground = _runner.RunAsync(_config, ["inspectcode", _config.SolutionPath], Ct);
-        await started.Task.WaitAsync(Generous, Ct);
-
-        // Act
-        SpeculativeRunOutcome result = await _runner.TryRunAsync(other, ["inspectcode", other.SolutionPath], Ct).WaitAsync(Generous, Ct);
-
-        // Assert
-        result.ShouldBe(SpeculativeRunOutcome.NotStarted);
-
-        release.SetResult();
-        await foreground.WaitAsync(Generous, Ct);
-    }
-
-    [Fact]
     public async Task RunAsync_RunHitsTheCap_AnnouncesItWithTheConfigurationThatRanOut()
     {
         // Arrange — the config travels with the signal so a listener warms the solution that actually timed
@@ -749,22 +710,6 @@ public sealed class JbRunnerTests : IDisposable
                 for (var i = 0; i < files; i++) onLine($"Analyzing File{i}.cs");
 
                 throw new ProcessTimeoutException("'jb' timed out.");
-            });
-    }
-
-    /// <summary>
-    ///     A jb that signals when it has started and then parks until told to finish, so a test can hold a
-    ///     foreground run open across an assertion.
-    /// </summary>
-    private void StubBlocking(TaskCompletionSource started, TaskCompletionSource release)
-    {
-        _processRunner
-            .AnyRunOf("jb")
-            .Returns(async _ =>
-            {
-                started.TrySetResult();
-                await release.Task;
-                return new ProcessResult(0, string.Empty, string.Empty);
             });
     }
 

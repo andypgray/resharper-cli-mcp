@@ -186,7 +186,7 @@ public sealed class ProgressSinkTests
             Substitute.For<McpServer>(), new JsonRpcRequest { Method = "tools/call" }, parameters);
     }
 
-    /// <summary>What the sink asked for, in the order the sends completed.</summary>
+    /// <summary>What the sink asked for, in the order the sends started.</summary>
     /// <param name="Value">The <c>progress</c> counter the sink assigned.</param>
     /// <param name="Message">The line it was assigned to.</param>
     private sealed record Sent(int Value, string Message);

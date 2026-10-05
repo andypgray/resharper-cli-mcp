@@ -21,33 +21,22 @@ public sealed class ToolValidationTests
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-    [Fact]
-    public async Task CleanupAsync_EmptyFiles_ThrowsUserErrorAndDoesNotProbeJb()
+    public static TheoryData<string[]?> NoFiles => new() { Array.Empty<string>(), null! };
+
+    [Theory]
+    [MemberData(nameof(NoFiles))]
+    public async Task CleanupAsync_NoFiles_ThrowsUserErrorAndDoesNotProbeJb(string[]? files)
     {
         // Arrange
         using FakeEnvironment environment = new();
         ResharperTools tools = ToolHarness.Build(_processRunner, environment);
 
         // Act
-        var exception = await Should.ThrowAsync<UserErrorException>(() => tools.CleanupAsync([], cancellationToken: Ct));
+        var exception = await Should.ThrowAsync<UserErrorException>(() => tools.CleanupAsync(files!, cancellationToken: Ct));
 
         // Assert
         exception.Message.ShouldBe("At least one file must be specified.");
         await _processRunner.DidNotReceive().AnyRun();
-    }
-
-    [Fact]
-    public async Task CleanupAsync_NullFiles_ThrowsUserError()
-    {
-        // Arrange
-        using FakeEnvironment environment = new();
-        ResharperTools tools = ToolHarness.Build(_processRunner, environment);
-
-        // Act
-        var exception = await Should.ThrowAsync<UserErrorException>(() => tools.CleanupAsync(null!, cancellationToken: Ct));
-
-        // Assert
-        exception.Message.ShouldBe("At least one file must be specified.");
     }
 
     [Fact]

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.2] - 2026-10-21
+
 ### Changed
 
 - The `resharper_inspect` and `resharper_cleanup` descriptions name the work each tool does in the words a
@@ -886,7 +888,8 @@ Unofficial; not affiliated with or endorsed by JetBrains.
 - Ships as a .NET global tool and MCP server (`PackAsTool` + `PackageType=McpServer`), published to
   NuGet with SLSA build provenance and registered on the MCP registry.
 
-[Unreleased]: https://github.com/andypgray/resharper-cli-mcp/compare/v1.7.1...HEAD
+[Unreleased]: https://github.com/andypgray/resharper-cli-mcp/compare/v1.7.2...HEAD
+[1.7.2]: https://github.com/andypgray/resharper-cli-mcp/releases/tag/v1.7.2
 [1.7.1]: https://github.com/andypgray/resharper-cli-mcp/releases/tag/v1.7.1
 [1.7.0]: https://github.com/andypgray/resharper-cli-mcp/releases/tag/v1.7.0
 [1.6.0]: https://github.com/andypgray/resharper-cli-mcp/releases/tag/v1.6.0

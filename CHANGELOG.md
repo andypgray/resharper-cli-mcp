@@ -14,6 +14,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for cleanup. Claude Code loads tool schemas on demand and finds a tool by searching its name and
   description, so a request worded that way now reaches the right tool.
 
+### Fixed
+
+- A `resharper_cleanup` call that leaves out `files` is refused with
+  `Missing required parameter "files" on "resharper_cleanup". Valid: files, profile, solutionPath.` Such a
+  call failed with the MCP SDK's missing-parameter error, which the server logged as an unexpected failure.
+  The check reads the tool's `required` list from the same input schema the unknown-key check reads, and runs
+  after it, so a misspelt `file` is still named as the unknown key. `files: []` and `files: null` still get
+  `At least one file must be specified.`
+
 ## [1.7.1] - 2026-10-05
 
 ### Changed

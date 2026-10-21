@@ -48,12 +48,12 @@ internal static class GlobalCallToolFilter
                 CallToolResult result;
                 try
                 {
-                    // Reject unknown argument keys before binding, against the tool the SDK matched; a call
-                    // that matched none gets the SDK's protocol error, which passes through below. The guard's
-                    // message is a UserErrorException, so it flows through the silent-user-error path.
+                    // Reject unknown or missing argument keys before binding, against the tool the SDK matched;
+                    // a call that matched none gets the SDK's protocol error, which passes through below. The
+                    // guard's message is a UserErrorException, so it flows through the silent-user-error path.
                     if (context.MatchedPrimitive is McpServerTool tool
-                        && UnknownParameterGuard.Validate(tool.ProtocolTool, context.Params.Arguments) is { } unknownParameterError)
-                        throw new UserErrorException(unknownParameterError);
+                        && UnknownParameterGuard.Validate(tool.ProtocolTool, context.Params.Arguments) is { } parameterError)
+                        throw new UserErrorException(parameterError);
 
                     result = await next(context, cancellationToken);
                 }

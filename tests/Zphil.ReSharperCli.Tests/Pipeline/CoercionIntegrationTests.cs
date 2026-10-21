@@ -33,6 +33,12 @@ public sealed class CoercionIntegrationTests(AdvertisedToolsFixture advertised)
             { "detail", ["Full", "High", "Medium", "Low", "Minimal"] }
         };
 
+    /// <summary>
+    ///     Gets the argument keys of cleanup calls that leave out its required <c>files</c>: no arguments at all, an
+    ///     empty object, and only valid keys.
+    /// </summary>
+    public static TheoryData<string[]?> CleanupKeysWithoutFiles => new() { (string[]?)null, { [] }, { ["profile"] } };
+
     [Fact]
     public void ListTools_FilesParameter_AdvertisesArrayOfStringsRequiredByCleanupAndNotByInspect()
     {
@@ -206,6 +212,27 @@ public sealed class CoercionIntegrationTests(AdvertisedToolsFixture advertised)
         // Assert — the guard names the key and the spelling that binds, ahead of the binder, and logs nothing.
         result.IsError.ShouldBe(true);
         result.Text().ShouldBe($"Unknown parameter \"{key}\" on \"resharper_cleanup\". Valid: files, profile, solutionPath.");
+        harness.Logs.Warnings.ShouldBeEmpty();
+    }
+
+    [Theory]
+    [MemberData(nameof(CleanupKeysWithoutFiles))]
+    public async Task CallTool_RequiredKeyOmitted_ReturnsGuardErrorAndLogsNothing(string[]? keys)
+    {
+        // Arrange — every key is valid, so only the schema's required list catches the call before the binder,
+        // which would fail it with an ArgumentException the filter can only log as unexpected.
+        await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
+        Dictionary<string, object?>? arguments = keys?.ToDictionary(key => key, object? (_) => "x");
+
+        // Act
+        CallToolResult result = await harness.Client.CallToolAsync(
+            "resharper_cleanup",
+            arguments,
+            cancellationToken: Ct);
+
+        // Assert
+        result.IsError.ShouldBe(true);
+        result.Text().ShouldBe("Missing required parameter \"files\" on \"resharper_cleanup\". Valid: files, profile, solutionPath.");
         harness.Logs.Warnings.ShouldBeEmpty();
     }
 

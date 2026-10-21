@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The `resharper_inspect` and `resharper_cleanup` descriptions name the work each tool does in the words a
+  request uses: warnings, errors, suggestions and lint for inspect; formatting, code style and unused usings
+  for cleanup. Claude Code loads tool schemas on demand and finds a tool by searching its name and
+  description, so a request worded that way now reaches the right tool.
+
 ## [1.7.1] - 2026-10-05
 
 ### Changed

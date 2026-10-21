@@ -34,11 +34,13 @@ internal sealed class ResharperTools(
     internal const string ResetCacheToolName = "resharper_reset_cache";
 
     private const string InspectDescription =
-        "Run ReSharper static analysis on the solution and return the code issues it finds.";
+        "Run ReSharper code inspection (static analysis, lint) over a C# solution and return the warnings, "
+        + "errors and suggestions it finds.";
 
     private const string CleanupDescription =
-        "Run ReSharper code cleanup to reformat and normalize files in place. Each call analyses the whole "
-        + "solution whatever the file count, so make one call per task with every modified file in it.";
+        "Run ReSharper code cleanup to format files in place, fixing formatting, code style, unused usings, var "
+        + "usage, modifier order and braces. Each call analyses the whole solution whatever the file count, so "
+        + "make one call per task with every modified file in it.";
 
     private const string ResetCacheDescription =
         "Delete this solution's ReSharper analysis cache so the next inspect or cleanup rebuilds it from "
@@ -96,8 +98,8 @@ internal sealed class ResharperTools(
             + "and is pruned after 7 days; the response carries the summary either way.")]
         InspectReport report = InspectReport.None,
         [Description(
-            "Cap on the detail the response carries: Full, the default, lists every issue on its own line, "
-            + "and Minimal is one line of totals. Rendering starts at this level and never goes above it, "
+            "Cap on the detail the response carries: Full lists every issue on its own line, and Minimal is "
+            + "one line of totals. Rendering starts at this level and never goes above it, "
             + "but still steps below it when the result does not fit the output budget. The DETAIL REDUCED "
             + "note says which of the two happened. Response shaping only: the same analysis runs whatever "
             + "the level, so a lower level does not make a call finish sooner. Pair detail=Minimal with "

@@ -20,8 +20,9 @@ public sealed class ServerInstructionsTests
     [Fact]
     public void Text_StaysWithinTheResidentTokenBudget()
     {
-        // The design budget, well below the client's truncation cap: Claude Code silently truncates server
-        // instructions past ~2 KB, which would drop the tail, guide signposts included. Only cross-tool routing
+        // The design budget, well below the client's truncation cap: Claude Code cuts server instructions at
+        // 2,048 characters before 2.1.296 and at 4,096 from it, which would drop the tail, guide signposts
+        // included. Only cross-tool routing
         // that no single schema can state earns a place here. Anything the caller must act on at a moment goes
         // in a tool or parameter [Description] or the notes a result carries back, and depth goes in a guide
         // resource.

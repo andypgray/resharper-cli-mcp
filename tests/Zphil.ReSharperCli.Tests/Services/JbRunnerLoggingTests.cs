@@ -253,6 +253,37 @@ public sealed class JbRunnerLoggingTests : IDisposable
     }
 
     [Fact]
+    public async Task RunAsync_CancelledInFlight_SaysSoRatherThanEndingWithNoLine()
+    {
+        // Arrange — a jb that is cancelled while it runs: the token it was handed fires mid-run, the way a
+        // stood-down pre-warm or a shutdown reaches it.
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(Ct);
+        _processRunner
+            .AnyRunOf("jb")
+            .Returns(callInfo =>
+            {
+                // The run is awaited below before the using disposes, so the capture outlives nothing.
+                // ReSharper disable once AccessToDisposedClosure
+                cancellation.Cancel();
+                callInfo.Token().ThrowIfCancellationRequested();
+
+                return new ProcessResult(0, string.Empty, string.Empty);
+            });
+
+        // Act
+        await Should.ThrowAsync<OperationCanceledException>(() => Runner().RunAsync(Config, ["inspectcode", _solutionPath], cancellation.Token));
+
+        // Assert — no exit code and no cap to report, so the run's end is a line of its own, at the same level,
+        // carrying neither CacheState nor ExitCode nor RunCap, so it reads as none of the other three.
+        LogEntry cancelled = _logs.WithProperty("ElapsedMs").ShouldHaveSingleItem();
+        cancelled.Level.ShouldBe(LogLevel.Information);
+        cancelled.Property("Subcommand").ShouldBe("inspectcode");
+        cancelled.Property("CacheState").ShouldBeNull();
+        cancelled.Property("ExitCode").ShouldBeNull();
+        cancelled.Property("RunCap").ShouldBeNull();
+    }
+
+    [Fact]
     public async Task TryRunAsync_SpeculativePass_LabelsItselfSoItsLinesAreNotReadAsACall()
     {
         // Arrange — a pre-warm's run lines and a call's interleave in one file, and the reader has to be able

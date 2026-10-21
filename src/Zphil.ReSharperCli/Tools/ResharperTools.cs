@@ -12,7 +12,7 @@ using Zphil.ReSharperCli.Services;
 namespace Zphil.ReSharperCli.Tools;
 
 /// <summary>
-///     The MCP tool surface.
+///     Defines the MCP tool surface.
 /// </summary>
 /// <remarks>
 ///     Every method validates its inputs and then delegates to a service; they never <c>try/catch</c> —
@@ -48,29 +48,27 @@ internal sealed class ResharperTools(
         + "still needs. Costs the next call a full cold analysis, so it is not routine maintenance. A deleted "
         + "checkout's cache outlives it: pass its old solution path as solutionPath to reclaim it.";
 
-    // Descriptions ride the deferred tool schema, fetched as the call is made: the last moment the caller can
-    // still act, and free until then. A per-argument gotcha, a cost that decides whether to call at all, or a
-    // gate on a destructive follow-up goes here with its cure stated inline, not in the always-resident server
-    // instructions, and a guide resource cited alongside is never the cure.
+    // Descriptions ride the deferred tool schema, fetched as the call is made, so a per-argument gotcha, a cost
+    // that decides whether to call at all, or a gate on a destructive follow-up goes here with its cure stated
+    // inline, not in the always-resident server instructions.
     private const string SolutionPathDescription =
         "Path to the .sln/.slnx to run against. Overrides JB_SOLUTION_PATH and working-directory discovery.";
 
     private const string JoinedPathsNote =
         " An element joining several paths with ; or , is split into separate paths.";
 
-    // Shared by both tools, which anchor `files` the same way. jb's --include takes relative paths only, so an
-    // absolute one is translated before it is passed; what that cannot fix is a file in no project.
+    // Every tool that takes `files` anchors it the same way, so they share this text. jb's --include takes
+    // relative paths only, so an absolute one is translated before it is passed; what that cannot fix is a
+    // file in no project.
     private const string PathAnchorNote =
         " Each is relative to the solution root, or absolute. jb matches them against the files that belong "
         + "to a project in the solution, so one that is on disk but in no project matches nothing, which "
         + "nothing here can detect.";
 
     /// <remarks>
-    ///     Annotated read-only even with <paramref name="report" /> on the surface, and deliberately. A run
-    ///     already creates and deletes a temp directory for <c>jb</c>'s SARIF; the delta here is that one file
-    ///     survives, in a directory this server owns and names in its response. Nothing in the workspace, the
-    ///     solution, or the cache is touched, and at the default <see cref="InspectReport.None" /> nothing is
-    ///     written at all.
+    ///     Annotated read-only even with <paramref name="report" /> on the surface, because a report is one file
+    ///     in a directory this server owns and names in its response, and nothing in the workspace, the solution
+    ///     or the cache is touched.
     /// </remarks>
     [McpServerTool(
         Name = InspectToolName,
@@ -120,8 +118,7 @@ internal sealed class ResharperTools(
 
         ResolvedConfig config = await configResolver.ResolveAsync(solutionPath, cancellationToken);
 
-        // An entry joining several paths would reach jb as one --include pattern that matches nothing, and
-        // this tool would report "No issues found." for a scan that never looked at the files asked for.
+        // An entry joining several paths would reach jb as one --include pattern that matches nothing.
         IReadOnlyList<string>? scope = FilePathList.Split(files, config.SolutionDirectory);
 
         // Classified here, before the run and by the rule cleanup applies before its own, rather than by
@@ -142,16 +139,15 @@ internal sealed class ResharperTools(
 
         InspectReportOutcome? written = WriteReport(report, RenderFull, config, severity, scope);
 
-        // Four independent preambles, concatenated in reading order: configuration that was dropped before
-        // the run, scope entries the run never saw, how to read compilation errors in what came back, and
-        // where the full listing went. Each can be empty, and all ride outside the reduction ladder.
+        // Concatenated in reading order, from what was dropped before the run to where the full listing went.
+        // Each can be empty.
         string banner = ConfigWarningBanner.ForInspect(config.Warnings)
                         + InspectScopeNote.For(missingScope, scope?.Count ?? 0, config.SolutionDirectory)
                         + CompilationErrorNote.For(issues, config.CacheHome)
                         + InspectReportNote.For(written, issues.Count);
 
-        // The level asked for suppresses the narrowing remedy only when the rendering actually settles
-        // there: below the cap, the budget forced the step and the remedy is as useful as it ever was.
+        // The level asked for suppresses the narrowing remedy only when the rendering settles there: below
+        // the cap, the budget forced the step and the remedy is as useful as it ever was.
         return RenderWithBanner(
             banner,
             issues,
@@ -162,13 +158,13 @@ internal sealed class ResharperTools(
     }
 
     /// <summary>
-    ///     The tool-facing <see cref="InspectDetail" /> as the <see cref="DetailLevel" /> the ladder starts
+    ///     Maps the tool-facing <see cref="InspectDetail" /> to the <see cref="DetailLevel" /> the ladder starts
     ///     from.
     /// </summary>
     /// <remarks>
     ///     Spelt out member by member rather than cast or round-tripped through
     ///     <see cref="Enum.Parse{TEnum}(string)" />: either of those would keep compiling if the two enums
-    ///     diverged and quietly resolve the wrong level, which is the failure keeping them separate exists to
+    ///     diverged and silently resolve the wrong level, which is the failure keeping them separate exists to
     ///     prevent.
     /// </remarks>
     private static DetailLevel CapFor(InspectDetail detail)
@@ -185,15 +181,12 @@ internal sealed class ResharperTools(
     }
 
     /// <summary>
-    ///     The report file, or <see langword="null" /> when none was asked for.
+    ///     Writes the report file, or returns <see langword="null" /> when none was asked for.
     /// </summary>
     /// <remarks>
-    ///     Rendered here rather than in <see cref="InspectReportWriter" /> so that class stays about files and
-    ///     <c>Formatting/</c> keeps owning what a rendering looks like. Written even when there are no issues:
-    ///     "a report was asked for, so the response names a file that exists" is a contract a caller can script
-    ///     against, and one that sometimes yields no file is not. The body comes in as
-    ///     <paramref name="renderFull" /> so the same rendering serves the response ladder rather than being
-    ///     produced twice.
+    ///     Composed here rather than in <see cref="InspectReportWriter" />, so that class stays about files and
+    ///     <c>Formatting/</c> keeps owning what a rendering looks like. Written even when there are no issues, so
+    ///     a report asked for always names a file that exists.
     /// </remarks>
     private InspectReportOutcome? WriteReport(
         InspectReport report,
@@ -243,7 +236,7 @@ internal sealed class ResharperTools(
 
         // A blank entry names no file, and every downstream path resolution would throw on it. This tool
         // rewrites what it is given, so a malformed list fails naming the offending position rather than
-        // quietly cleaning up whatever the rest of the list happens to name.
+        // silently cleaning up whatever the rest of the list happens to name.
         int blankIndex = Array.FindIndex(files, string.IsNullOrWhiteSpace);
         if (blankIndex >= 0)
             throw new UserErrorException($"File paths must not be blank (files[{blankIndex}] is empty).");
@@ -294,24 +287,15 @@ internal sealed class ResharperTools(
         CacheResetOutcome outcome = await cacheResetService.RunAsync(
             config, cancellationToken, onProgress);
 
-        // No banner and no reduction ladder, unlike the two tools above. The config warnings both describe
-        // settings that shape a jb run, and this call makes none; the ladder is answered on the formatter.
+        // No banner and no reduction ladder. The config warnings describe settings that shape a jb run, and
+        // this call makes none; CacheResetFormatter says why it has no ladder.
         return CacheResetFormatter.Format(outcome);
     }
 
     /// <summary>
-    ///     The one response-shaping tail both analysis tools share: renders <paramref name="data" /> at the
-    ///     highest <see cref="DetailLevel" /> that fits the client's output budget, led by
-    ///     <paramref name="banner" />.
+    ///     Renders <paramref name="data" /> at the highest <see cref="DetailLevel" /> that fits the client's
+    ///     output budget, led by <paramref name="banner" />, which is charged to the budget first.
     /// </summary>
-    /// <remarks>
-    ///     The banner is charged to the budget <em>before</em> rendering, which is what puts it outside the
-    ///     reduction ladder: it survives every step down to Minimal without making truncation any likelier.
-    ///     Inspect must not let an empty result read as "nothing to report" when settings were dropped; cleanup
-    ///     must report the profile the files were <em>not</em> cleaned with once they are already rewritten.
-    ///     <paramref name="startLevel" /> is where that ladder begins — inspect's <c>detail</c> cap, and for
-    ///     cleanup the default, which is the whole ladder. The filter's truncator is the final backstop.
-    /// </remarks>
     private string RenderWithBanner<T>(
         string banner,
         T data,
@@ -327,10 +311,9 @@ internal sealed class ResharperTools(
             describeReduction,
             startLevel);
 
-        // Debug: the level a response settled at is shaping, not caching, and it is already stated in the
-        // response an agent received. What it buys the log is the answer to whether the ladder has ever had to
-        // step down on real results at all — which, from the outside, a mechanism that never fires and one
-        // that is broken cannot be told apart on.
+        // Debug: the level a response settled at is shaping, not caching, and the response already states it
+        // to the agent that received it. The log is the only record of whether the ladder ever steps down on
+        // real results: from outside, a ladder that never fires looks the same as a broken one.
         logger.LogDebug(
             "Rendered {ResultType} at {DetailLevel} in {BodyChars} of {MaxChars} characters, {BannerChars} of them banner",
             typeof(T).Name,
@@ -343,13 +326,13 @@ internal sealed class ResharperTools(
     }
 
     /// <summary>
-    ///     The domain remedy <c>ResponseTruncator</c> closes a hard-truncated response with, keyed by tool.
+    ///     Returns the domain hint <c>ResponseTruncator</c> closes a hard-truncated response with, keyed by tool.
     /// </summary>
     /// <remarks>
-    ///     Lives with the tools so the generic backstop needs no per-tool knowledge and a new tool contributes
-    ///     its hint here. Keyed by tool name and nothing else, so it cannot know a report was already written and will
-    ///     suggest one anyway. Harmless: the note naming the file is a prefix and survives the cut, so the
-    ///     path is still above the footer that repeats the offer.
+    ///     Lives with the tools so the generic backstop needs no per-tool knowledge, and a new tool contributes
+    ///     its hint here. Keyed by tool name alone, it cannot know a report was already written and suggests one
+    ///     anyway, which is harmless: the note naming the file is a prefix and survives the cut, so the path is
+    ///     still above the footer that repeats the offer.
     /// </remarks>
     internal static string TruncationHintFor(string? toolName)
     {

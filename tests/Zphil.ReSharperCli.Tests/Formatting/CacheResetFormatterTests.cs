@@ -5,7 +5,6 @@ using Zphil.ReSharperCli.Services;
 
 namespace Zphil.ReSharperCli.Tests.Formatting;
 
-/// <summary>Pins <see cref="CacheResetFormatter" />'s shapes.</summary>
 public sealed class CacheResetFormatterTests
 {
     private const string SolutionPath = "/repo/App.sln";
@@ -251,7 +250,7 @@ public sealed class CacheResetFormatterTests
     [Fact]
     public void Format_OnlyAnotherCheckoutsGeneration_SaysNothingOfOursWasFoundRatherThanNothingAtAll()
     {
-        // Arrange — nothing was deleted and the cache home is plainly not empty. Reporting only the first half
+        // Arrange — nothing was deleted and the cache home is not empty. Reporting only the first half
         // would read as a tool that could not see what the caller can.
         CacheResetOutcome outcome = new(SolutionPath, CacheHome, [], [LiveNeighbour], []);
 

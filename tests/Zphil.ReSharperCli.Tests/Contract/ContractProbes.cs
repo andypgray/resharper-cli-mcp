@@ -4,23 +4,23 @@ using Zphil.ReSharperCli.Sarif;
 namespace Zphil.ReSharperCli.Tests.Contract;
 
 /// <summary>
-///     What one subcommand's real standard output looked like to <see cref="JbProgressLines" />: how much of
+///     Records what one subcommand's standard output looked like to <see cref="JbProgressLines" />: how much of
 ///     it was recognised, and which phases it announced.
 /// </summary>
 internal sealed class ProgressVocabulary
 {
     private readonly HashSet<JbRunPhase> _phases = [];
 
-    /// <summary>Every non-blank line the run wrote.</summary>
+    /// <summary>Gets how many non-blank lines the run wrote.</summary>
     public int Lines { get; private set; }
 
-    /// <summary>Of those, the ones this server understood.</summary>
+    /// <summary>Gets how many of those lines this server recognised.</summary>
     public int Recognised { get; private set; }
 
-    /// <summary>Of those, the per-file lines a heartbeat's count is made of.</summary>
+    /// <summary>Gets how many of the recognised lines name a file, which is what a heartbeat counts.</summary>
     public int FileLines { get; private set; }
 
-    /// <summary>The phases the run announced.</summary>
+    /// <summary>Gets the phases the run announced.</summary>
     public IReadOnlySet<JbRunPhase> Phases => _phases;
 
     public void Add(string line)
@@ -38,26 +38,26 @@ internal sealed class ProgressVocabulary
     }
 }
 
-/// <summary>How each subcommand answered an <c>--include</c> that was left absolute.</summary>
+/// <summary>Records how each subcommand answered an <c>--include</c> that was left absolute.</summary>
 internal sealed record RawIncludeProbe(int CleanupExitCode, RawIncludeInspect Inspect);
 
-/// <summary>What <c>inspectcode</c> did with that argument.</summary>
+/// <summary>Records what <c>inspectcode</c> did with an absolute <c>--include</c>.</summary>
 /// <remarks>
-///     The two endings it has been seen to have are both refusals — exit 0 with an empty report through 2026.1,
-///     and a non-zero exit writing no report file at all in 2026.2 — so the probe records the exit code and the
-///     issue count rather than pinning either shape.
+///     It refuses the argument in a shape that varies by release: 2026.1 and earlier exit 0 with an empty
+///     report, and 2026.2 exits non-zero without writing a report file. So the probe records the exit code and
+///     the issue count rather than pinning either shape.
 /// </remarks>
 internal sealed record RawIncludeInspect(int ExitCode, int IssueCount);
 
 /// <summary>
-///     What a solution-wide inspect's report lists under SARIF's <c>run.artifacts</c>, against
+///     Records what a solution-wide inspect's report lists under SARIF's <c>run.artifacts</c>, against
 ///     <see cref="JbContractFixture.CleanFileName" />, a file the same run inspected and found nothing in.
 /// </summary>
 /// <remarks>
-///     The baseline, measured on <c>jb</c> 2026.2.3.1, is why <see cref="SarifParser" /> leaves the array
-///     unread: it holds one entry per file with a finding and leaves the clean file out. A report that lists the
-///     clean file would let the array tell a <c>files</c> entry that matched nothing from a file that came out
-///     clean, so the soft tier reports it as drift.
+///     On <c>jb</c> 2026.2.3.1 the array holds one entry per file with a finding and leaves the clean file out,
+///     so it cannot tell a <c>files</c> entry that matched nothing from a file that came out clean, and
+///     <see cref="SarifParser" /> leaves it unread. A report that lists the clean file would make that
+///     distinction possible, so the soft tier reports it as drift.
 /// </remarks>
 /// <param name="Unreadable">Why the report could not be read, or <see langword="null" /> when it was.</param>
 /// <param name="ArtifactCount">
@@ -83,7 +83,7 @@ internal sealed record SarifArtifactsProbe(
     internal const string SignatureColumns =
         "listed / files with findings; " + JbContractFixture.CleanFileName + " inspected / findings / listed";
 
-    /// <summary>The probe as one row of the soft report, in <see cref="SignatureColumns" /> order.</summary>
+    /// <summary>Gets the probe as one row of the soft report, in <see cref="SignatureColumns" /> order.</summary>
     /// <remarks>
     ///     Whether the clean file is listed answers something only when it was inspected and drew nothing.
     /// </remarks>

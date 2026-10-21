@@ -6,11 +6,14 @@ using Microsoft.Extensions.Logging;
 
 namespace Zphil.ReSharperCli.Discovery;
 
-/// <summary>Why a settings file could not be read, for reporting in the tool result rather than only the log.</summary>
+/// <summary>
+///     Represents why a settings file could not be read, for reporting in the tool result rather than only the
+///     log.
+/// </summary>
 internal sealed record SettingsReadFailure(string Path, string Reason);
 
 /// <summary>
-///     The outcome of reading a settings file's declared cleanup profile.
+///     Represents the outcome of reading a settings file's declared cleanup profile.
 /// </summary>
 /// <remarks>
 ///     <see cref="Name" /> is the profile when one is declared, and <see cref="Failure" /> says why the file
@@ -25,8 +28,8 @@ internal sealed record DeclaredCleanupProfile(string? Name, SettingsReadFailure?
 /// </summary>
 /// <remarks>
 ///     That is ReSharper's own "profile to use when nobody picks one" key, so a repo that already narrowed
-///     its cleanup for the IDE gets the same treatment from this server. <c>jb</c> itself never reads it —
-///     <c>cleanupcode</c> always falls back to Full Cleanup — so the value has to be passed on as
+///     its cleanup for the IDE gets the same treatment from this server. <c>jb</c> itself never reads it
+///     (<c>cleanupcode</c> always falls back to Full Cleanup), so the value has to be passed on as
 ///     <c>--profile</c>.
 /// </remarks>
 internal static partial class CleanupProfileReader
@@ -39,9 +42,9 @@ internal static partial class CleanupProfileReader
     /// </summary>
     /// <remarks>
     ///     The name is <see langword="null" /> when there is no settings file, no such entry, or the file
-    ///     cannot be read — the last of those carrying a <see cref="SettingsReadFailure" /> so the caller can
-    ///     say so out loud. Never throws: an unreadable settings file must degrade to the built-in default,
-    ///     not fail the tool call.
+    ///     cannot be read, the last of those carrying a <see cref="SettingsReadFailure" /> so the caller can
+    ///     report it. Never throws: an unreadable settings file must degrade to the built-in default, not fail
+    ///     the tool call.
     /// </remarks>
     public static DeclaredCleanupProfile Read(string? settingsPath, ILogger logger)
     {
@@ -84,14 +87,14 @@ internal static partial class CleanupProfileReader
     }
 
     /// <summary>
-    ///     Second pass, reached only after a strict parse failed: discards comments and parses what is left.
+    ///     Parses the file again with its comments discarded, after a strict parse failed.
     /// </summary>
     /// <remarks>
-    ///     The observed real-world break is <c>--</c> inside a comment, which is illegal XML and which .NET has
-    ///     no lenient mode for (<c>CheckCharacters=false</c> does not relax it), while ReSharper reads such a
-    ///     file without complaint. Comments never carry settings data, so dropping them is a normalization
-    ///     rather than a guess — and doing it only on the failure path means a well-formed file can never be
-    ///     mangled by it.
+    ///     The break this handles is <c>--</c> inside a comment, which is illegal XML and which .NET has no
+    ///     lenient mode for (<c>CheckCharacters=false</c> does not relax it), while ReSharper reads such a file
+    ///     without complaint. Comments never carry settings data, so dropping them is a normalization rather
+    ///     than a guess, and doing it only on the failure path means a well-formed file can never be mangled by
+    ///     it.
     /// </remarks>
     private static DeclaredCleanupProfile ReadPastIllegalComments(string settingsPath, ILogger logger)
     {
@@ -104,8 +107,8 @@ internal static partial class CleanupProfileReader
         }
         catch (Exception exception) when (exception is XmlException || IsExpectedReadFailure(exception))
         {
-            // Reported against the comment-stripped text, whose line numbers still match the file — the
-            // remaining fault is the one worth naming, not the comment we deliberately tolerated.
+            // Reported against the comment-stripped text, whose line numbers still match the file: the
+            // remaining fault is the one worth naming, not the tolerated comment.
             return Failed(settingsPath, exception, logger);
         }
     }
@@ -122,7 +125,7 @@ internal static partial class CleanupProfileReader
     }
 
     /// <summary>
-    ///     The <c>SilentCleanupProfile</c> value, matched on the <c>x:Key</c> attribute's local name.
+    ///     Finds the <c>SilentCleanupProfile</c> value, matching on the <c>x:Key</c> attribute's local name.
     /// </summary>
     /// <remarks>
     ///     .DotSettings is XAML, and the "x" prefix is bound in the file itself, so keying off the declared
@@ -152,7 +155,8 @@ internal static partial class CleanupProfileReader
     }
 
     /// <summary>
-    ///     The failures of getting at the file's bytes at all, as opposed to parsing them.
+    ///     Determines whether <paramref name="exception" /> is a failure to get at the file's bytes at all, as
+    ///     opposed to parsing them.
     /// </summary>
     /// <remarks>
     ///     Widened past the IOException family because <see cref="File.ReadAllText(string)" /> and

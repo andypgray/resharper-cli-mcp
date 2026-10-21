@@ -24,16 +24,16 @@ internal static class SerilogConfiguration
     ///     <c>SourceContext</c> prefixes.
     /// </summary>
     /// <remarks>
-    ///     Without them <c>Information</c> is roughly 95% MCP SDK and Hosting chatter, and the handful of lines
-    ///     this server writes about its own caching are unfindable inside it. Quieting them is what makes
-    ///     <c>Information</c> mean "something this server did" — which is also why the lines the SDK would
-    ///     otherwise supply, the request timing above all, have replacements of this server's own.
+    ///     Without them <c>Information</c> is mostly MCP SDK and Hosting chatter, and the lines this server writes
+    ///     about its own caching are unfindable inside it. Quieting them is what makes <c>Information</c> mean
+    ///     "something this server did", which is also why the lines the SDK would otherwise supply, the request
+    ///     timing above all, have replacements of this server's own.
     /// </remarks>
     internal static readonly string[] QuietedCategories = ["ModelContextProtocol", "Microsoft.Hosting"];
 
     /// <summary>
-    ///     Session id tagging every log line so concurrent server processes sharing the daily-rolling
-    ///     file can be told apart, and — when launched by Claude Code — correlated with that session.
+    ///     Session id tagging every log line so concurrent server processes sharing the daily-rolling file can
+    ///     be told apart and, when launched by Claude Code, correlated with that session.
     /// </summary>
     private static readonly (string Id, bool FromClient) Session = ResolveSession();
 
@@ -43,12 +43,13 @@ internal static class SerilogConfiguration
         "Zphil.ReSharperCli",
         "logs");
 
-    /// <summary>The <c>{SessionId}</c> every line carries.</summary>
+    /// <summary>Gets the <c>{SessionId}</c> every line carries.</summary>
     private static string SessionId => Session.Id;
 
     /// <summary>
-    ///     Whether <see cref="SessionId" /> came from <c>CLAUDE_CODE_SESSION_ID</c> rather than being
-    ///     invented here, which decides whether a log line can be traced back to a client transcript at all.
+    ///     Gets a value indicating whether <see cref="SessionId" /> came from <c>CLAUDE_CODE_SESSION_ID</c>
+    ///     rather than being invented here, which decides whether a log line can be traced back to a client
+    ///     transcript at all.
     /// </summary>
     internal static bool SessionIdIsClientSupplied => Session.FromClient;
 
@@ -57,8 +58,7 @@ internal static class SerilogConfiguration
     /// </summary>
     /// <remarks>Call before any host building so crash handlers can use it immediately.</remarks>
     /// <returns>
-    ///     The minimum level it resolved: the level actually in force, which a second parse elsewhere could
-    ///     contradict.
+    ///     The minimum level it resolved: the level in force, which a second parse elsewhere could contradict.
     /// </returns>
     public static LogEventLevel InitializeFileLogger()
     {
@@ -81,13 +81,13 @@ internal static class SerilogConfiguration
     }
 
     /// <summary>
-    ///     Everything about the logger that is not the sink, kept apart from the file sink so the level policy
-    ///     can be exercised against an in-memory one.
+    ///     Applies everything about the logger except the sink, kept apart from the file sink so the level
+    ///     policy can be exercised against an in-memory one.
     /// </summary>
     /// <remarks>
-    ///     Enricher order is load-bearing, because every one of these adds its property only if absent:
-    ///     <c>FromLogContext</c> comes first so a pushed <see cref="RunIdScope" /> wins, and the fixed-width
-    ///     default behind it only fills the column for lines written outside a run.
+    ///     Each of these adds its property only if absent, so the fixed-width <c>RunId</c> default fills the
+    ///     column only for lines written outside a <see cref="RunIdScope" />. The scope wins whatever the order
+    ///     here, because an open scope's properties reach an event before the root logger's enrichers run.
     /// </remarks>
     internal static LoggerConfiguration Configure(LoggerConfiguration configuration, LogEventLevel minimumLevel)
     {
@@ -123,15 +123,11 @@ internal static class SerilogConfiguration
     ///     Adds Serilog and console (stderr) logging to the host builder.
     /// </summary>
     /// <remarks>
-    ///     <para>Console goes to stderr because stdout is reserved for the MCP JSON-RPC protocol.</para>
-    ///     <para>
-    ///         The category filters here govern the <em>console</em> and nothing else, and that is not a
-    ///         redundancy with <see cref="Configure" />'s overrides — it is the other half of the same policy.
-    ///         <c>AddSerilog</c> registers a provider-scoped <c>Trace</c> rule of its own, and a rule naming a
-    ///         provider outranks one naming only a category however specific it is, so a category filter
-    ///         added here can never reach the file sink. Serilog's own overrides are what quiet the file; these
-    ///         quiet the stderr stream the MCP client captures.
-    ///     </para>
+    ///     The category filters here govern the console and nothing else; <see cref="Configure" />'s overrides
+    ///     are the other half of the same policy. <c>AddSerilog</c> registers a provider-scoped <c>Trace</c> rule
+    ///     of its own, and a rule naming a provider outranks one naming only a category however specific it is,
+    ///     so a category filter added here can never reach the file sink. Serilog's overrides quiet the file;
+    ///     these quiet the stderr stream the MCP client captures.
     /// </remarks>
     public static void AddSerilogLogging(this HostApplicationBuilder builder)
     {

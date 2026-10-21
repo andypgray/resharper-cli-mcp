@@ -6,13 +6,13 @@ using Zphil.ReSharperCli.Services;
 namespace Zphil.ReSharperCli.Tests.TestSupport;
 
 /// <summary>
-///     What a stubbed <c>jb</c> answers, for a process-runner double that routes on the argument list it was
-///     given.
+///     Provides what a stubbed <c>jb</c> answers, for a process-runner double that routes on the argument list
+///     it was given.
 /// </summary>
 /// <remarks>
 ///     One spelling each, because these are contracts with the product rather than with any one test: the
 ///     version banner has to parse as <see cref="JbLocator" /> expects, and the SARIF has to parse as
-///     <see cref="SarifParser" /> expects — re-spelled per test class, a change to either contract fans out
+///     <see cref="SarifParser" /> expects. Re-spelled per test class, a change to either contract would fan out
 ///     over every routing stub instead of costing this file alone.
 /// </remarks>
 internal static class JbStubs
@@ -20,26 +20,26 @@ internal static class JbStubs
     /// <summary>The build a healthy stubbed <c>jb</c> reports, and so the one a resolved config carries.</summary>
     public const string Version = "2026.1.2";
 
-    /// <summary>The banner a healthy <c>jb</c> answers the probe with.</summary>
+    /// <summary>Gets the banner a healthy <c>jb</c> answers the probe with.</summary>
     public static ProcessResult VersionProbeAnswer { get; } = VersionProbeAnswerFor(Version);
 
-    /// <summary>What a run that succeeded and printed nothing answers: exit 0, no output on either stream.</summary>
+    /// <summary>Gets the answer of a run that succeeded and printed nothing: exit 0, empty streams.</summary>
     public static ProcessResult Success { get; } = new(0, string.Empty, string.Empty);
 
-    /// <summary>The banner a <c>jb</c> of build <paramref name="version" /> answers the probe with.</summary>
+    /// <summary>Returns the probe banner of a <c>jb</c> at build <paramref name="version" />.</summary>
     public static ProcessResult VersionProbeAnswerFor(string version)
     {
         return new ProcessResult(0, $"Version: {version}", string.Empty);
     }
 
-    /// <summary>Whether this spawn is the <c>--version</c> probe discovery makes, rather than a run.</summary>
+    /// <summary>Determines whether this spawn is discovery's <c>--version</c> probe rather than a run.</summary>
     public static bool IsVersionProbe(IReadOnlyList<string> arguments)
     {
         return arguments.Contains("--version");
     }
 
     /// <summary>
-    ///     Whether this spawn is a <paramref name="subcommand" /> run — <c>inspectcode</c>,
+    ///     Determines whether this spawn is a <paramref name="subcommand" /> run, such as <c>inspectcode</c> or
     ///     <c>cleanupcode</c>.
     /// </summary>
     /// <remarks>
@@ -70,16 +70,14 @@ internal static class JbStubs
     /// <summary>
     ///     Leaves behind what a successful <c>jb</c> run leaves: the cache generation for the solution it was
     ///     given, under the caches-home it was told to use, both read back out of the argument list the
-    ///     server actually built.
+    ///     server built.
     /// </summary>
     /// <remarks>
-    ///     A stub that returns exit 0 and creates nothing is claiming a success no real run produces.
+    ///     A stub that returns exit 0 and creates nothing claims a success no real run produces:
     ///     <see cref="JbWarmMarker.Stamp" /> then finds no directory carrying this solution's computed hash,
-    ///     and the runner warns that <c>jb</c>'s naming has drifted — true of the double, not of <c>jb</c>.
-    ///     That warning is latched per server session, so it lands in the log of the session that ran the
-    ///     stub and it lands there every time: an unplanted exit-0 stub fails its own
-    ///     <c>Warnings.ShouldBeEmpty()</c> rather than some other test's. Planting is what keeps the double
-    ///     telling the truth, which is why it is here rather than in the assertion.
+    ///     and the runner warns that <c>jb</c>'s naming has drifted, which is true of the double rather than of
+    ///     <c>jb</c>. The warning is latched per runner, so it lands in the log of the test that ran the stub,
+    ///     every time, and fails that test's own <c>Warnings.ShouldBeEmpty()</c> rather than another's.
     /// </remarks>
     private static void PlantGenerationFromJbRun(IReadOnlyList<string> arguments)
     {
@@ -97,9 +95,8 @@ internal static class JbStubs
     }
 
     /// <summary>
-    ///     The path an <c>inspectcode</c> run was told to write its SARIF report to.
+    ///     Returns the path an <c>inspectcode</c> run was told to write its SARIF report to.
     /// </summary>
-    /// <remarks><see langword="null" /> when the arguments name none.</remarks>
     public static string? OutputPathOf(IReadOnlyList<string> arguments)
     {
         string? output = arguments.FirstOrDefault(argument => argument.StartsWith(InspectService.OutputArgumentPrefix, StringComparison.Ordinal));
@@ -108,8 +105,8 @@ internal static class JbStubs
     }
 
     /// <summary>
-    ///     Leaves behind the empty SARIF report a successful <c>inspectcode</c> writes at its <c>-o=</c> path
-    ///     — when the run was asked for one.
+    ///     Leaves behind the empty SARIF report a successful <c>inspectcode</c> writes at its <c>-o=</c> path,
+    ///     when the run was asked for one.
     /// </summary>
     /// <remarks>
     ///     The service treats a missing report file as an error, so a stub answering exit 0 without this claims

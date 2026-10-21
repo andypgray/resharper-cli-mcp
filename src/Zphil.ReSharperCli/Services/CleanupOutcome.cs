@@ -1,16 +1,16 @@
 namespace Zphil.ReSharperCli.Services;
 
 /// <summary>
-///     The structured result of a successful <c>jb cleanupcode</c> run: the profile applied and one
+///     Represents the structured result of a successful <c>jb cleanupcode</c> run: the profile applied and one
 ///     <see cref="CleanupEntry" /> per requested <c>files</c> entry, in request order.
 /// </summary>
 /// <remarks>Data only, so it can be rendered at whatever <c>DetailLevel</c> fits the output budget.</remarks>
 internal sealed record CleanupOutcome(string Profile, IReadOnlyList<CleanupEntry> Entries);
 
-/// <summary>One requested cleanup target: the path as the caller wrote it, plus what happened to it.</summary>
+/// <summary>Represents one requested cleanup target: the path as the caller wrote it, plus what happened to it.</summary>
 internal sealed record CleanupEntry(string Display, CleanupFileStatus Status);
 
-/// <summary>What cleanup did to a single requested entry, determined by hashing the file before and after.</summary>
+/// <summary>Defines what cleanup did to a single requested entry, determined by hashing the file before and after.</summary>
 internal enum CleanupFileStatus
 {
     /// <summary>A concrete file whose bytes differ after the run — cleanup rewrote it.</summary>

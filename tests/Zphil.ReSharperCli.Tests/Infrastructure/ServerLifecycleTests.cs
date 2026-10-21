@@ -14,11 +14,11 @@ using Zphil.ReSharperCli.Tests.TestSupport;
 namespace Zphil.ReSharperCli.Tests.Infrastructure;
 
 /// <summary>
-///     The two lines that bracket a server process, and the fields the first of them exists for.
+///     Pins the two lines that bracket a server process, and the fields the first of them exists for.
 /// </summary>
 /// <remarks>
-///     The assertion is that the cap <em>reported</em> is the cap the composition root resolved, not merely
-///     that a line was written.
+///     The assertion is that the cap reported is the cap the composition root resolved, not only that a line
+///     was written.
 /// </remarks>
 public sealed class ServerLifecycleTests : IDisposable
 {
@@ -39,7 +39,7 @@ public sealed class ServerLifecycleTests : IDisposable
     public async Task StartAsync_ReportsTheConfigurationTheProcessIsActuallyRunningUnder()
     {
         // Arrange — a cap that is neither the default nor a round number, and a level that is not the
-        // fallback, so a line that quietly reported either default instead would fail rather than coincide.
+        // fallback, so a line that reported either default instead would fail rather than coincide.
         string cacheHome = _environment.CreateTempDirectory();
         _environment.SetVariable("JB_CACHE_HOME", cacheHome);
         TimeSpan cap = TimeSpan.FromSeconds(937);
@@ -64,7 +64,7 @@ public sealed class ServerLifecycleTests : IDisposable
     {
         // Arrange — asserted against the lifetime the fingerprint was built over rather than a literal, since
         // the answer is a property of the platform. What is pinned is that the line reports the guarantee in
-        // force: a job object that failed to create leaves a server behaving exactly like one with no guard,
+        // force: a job object that failed to create leaves a server behaving like one with no guard,
         // and this field is the only place that difference is ever visible.
         ServerLifecycle lifecycle = Lifecycle();
 

@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 namespace Zphil.ReSharperCli.Execution;
 
 /// <summary>
-///     The naming scheme of every file this server itself writes into a cache home, and the mechanics those
+///     Defines the naming of every file this server itself writes into a cache home, and the mechanics those
 ///     files share.
 /// </summary>
 /// <remarks>
@@ -25,7 +25,7 @@ internal static class JbSidecar
     ///     cache home) pair.
     /// </summary>
     /// <remarks>
-    ///     Both paths are absolute by contract — <c>ResolvedConfig</c> resolves them — so normalising here only
+    ///     Both paths are absolute by contract (<c>ResolvedConfig</c> resolves them), so normalising here only
     ///     folds separators and Windows casing, and never consults the process working directory. The key is
     ///     one-way: nothing can invert it back into a solution path, and nothing needs to.
     /// </remarks>
@@ -37,27 +37,27 @@ internal static class JbSidecar
     }
 
     /// <summary>
-    ///     The path of the sidecar carrying <paramref name="extension" /> for one key, inside the cache home
-    ///     itself.
+    ///     Returns the path of the sidecar carrying <paramref name="extension" /> for one key, inside the cache
+    ///     home itself.
     /// </summary>
     /// <remarks>
-    ///     Deliberately not in the temp directory — the cache home <em>is</em> the shared resource, so two
-    ///     sessions sharing a cache address the same sidecars even when their temp directories differ.
+    ///     Not in the temp directory, because the cache home is the shared resource: two sessions sharing a
+    ///     cache address the same sidecars even when their temp directories differ.
     /// </remarks>
     internal static string PathForKey(string cacheHome, string key, string extension)
     {
         return Path.Combine(Path.GetFullPath(cacheHome), $"{Prefix}{key}.{extension}");
     }
 
-    /// <summary>The same path keyed from the solution, for the callers that hold a path rather than a key.</summary>
+    /// <summary>Returns the same path keyed from the solution, for a caller holding a path rather than a key.</summary>
     internal static string PathFor(string solutionPath, string cacheHome, string extension)
     {
         return PathForKey(cacheHome, ComputeKey(solutionPath, cacheHome), extension);
     }
 
     /// <summary>
-    ///     Every sidecar carrying <paramref name="extension" /> under the cache home, with the key its file
-    ///     name embeds — the inverse of <see cref="PathForKey" />, for a caller that knows only the cache
+    ///     Finds every sidecar carrying <paramref name="extension" /> under the cache home, with the key its
+    ///     file name embeds: the inverse of <see cref="PathForKey" />, for a caller that knows only the cache
     ///     home.
     /// </summary>
     /// <remarks>A cache home that does not exist yet holds nothing.</remarks>
@@ -75,8 +75,8 @@ internal static class JbSidecar
     /// </summary>
     /// <remarks>
     ///     <see cref="FileShare.ReadWrite" />: a concurrent server writing or reading the same generation's
-    ///     records must not see a sharing violation over what is only a hint or a promise. The lock file —
-    ///     which must conflict, that being the point of it — does not go through here.
+    ///     records must not see a sharing violation over what is only a hint or a promise. The lock file must
+    ///     conflict, so it does not go through here.
     /// </remarks>
     internal static FileStream OpenToWrite(string solutionPath, string cacheHome, string extension)
     {
@@ -84,17 +84,16 @@ internal static class JbSidecar
     }
 
     /// <summary>
-    ///     The lines of the sidecar at <paramref name="sidecarPath" />, in order, or none when nothing has
-    ///     been recorded yet — the read counterpart of <see cref="OpenToWrite" />, sharing its
-    ///     <see cref="FileShare.ReadWrite" /> for the same reason.
+    ///     Reads the lines of the sidecar at <paramref name="sidecarPath" />, in order, or none when nothing
+    ///     has been recorded yet.
     /// </summary>
     /// <remarks>
-    ///     An absent file and an absent cache home both answer "nothing recorded" rather than throwing: the
-    ///     first run of a solution meets one, and a caller that has never spawned <c>jb</c> meets the other,
-    ///     so left to the callers' catches they would raise, swallow and log an exception on every cold run.
-    ///     Any other failure still reaches those catches, which exist for a cache home that is genuinely
-    ///     unusable. Lines come back byte for byte; whether they may be trimmed is each artifact's own
-    ///     judgement, since a read-modify-write caller must not rewrite lines it does not recognise.
+    ///     Opens with <see cref="FileShare.ReadWrite" />, as <see cref="OpenToWrite" /> does and for the same
+    ///     reason. An absent file and an absent cache home both answer "nothing recorded" rather than throwing:
+    ///     the first run of a solution meets one, and a caller that has never spawned <c>jb</c> meets the
+    ///     other, so left to the callers' catches they would raise, swallow and log an exception on every cold
+    ///     run. Any other failure still reaches those catches, which exist for a cache home that is unusable.
+    ///     Lines come back byte for byte; whether they may be trimmed is each artifact's own judgement.
     /// </remarks>
     internal static List<string> ReadLines(string sidecarPath)
     {
@@ -115,16 +114,14 @@ internal static class JbSidecar
     }
 
     /// <summary>
-    ///     Deletes one sidecar, treating both an absent file and an ordinary filesystem failure as quiet
-    ///     outcomes.
+    ///     Deletes one sidecar. An absent file is no failure, and an ordinary filesystem failure is logged at
+    ///     <c>Debug</c> rather than thrown.
     /// </summary>
     /// <remarks>
-    ///     Each artifact's caller documents which way its failures are allowed to point, and none of them may
-    ///     fail the call it runs inside. <paramref name="artifact" /> is how the log names what would not go.
-    ///     The logger is a parameter because this class is static by design and its callers are not. Passing
-    ///     theirs in is what keeps the whole server on one logging system: a static <c>Serilog.Log</c> here
-    ///     would bypass the <c>ILogger</c> pipeline, render with no <c>SourceContext</c>, and be invisible to
-    ///     the test suite.
+    ///     No sidecar may fail the call it runs inside; which way each artifact's failures point is its own.
+    ///     <paramref name="artifact" /> is how the log names what would not go. The logger is the caller's,
+    ///     because a static <c>Serilog.Log</c> here would bypass the <c>ILogger</c> pipeline, render with no
+    ///     <c>SourceContext</c>, and be invisible to the test suite.
     /// </remarks>
     internal static void TryDelete(
         string solutionPath,
@@ -148,13 +145,9 @@ internal static class JbSidecar
     ///     lowered so two spellings of one solution share a lock.
     /// </summary>
     /// <remarks>
-    ///     The case half keys off the operating system rather than the filesystem, which is the same
-    ///     judgement <see cref="JbCacheGenerations.NameComparison" /> makes and the one place it is argued —
-    ///     what the proxy gets wrong, which scenario reaches it, and why probing instead is not a smaller
-    ///     change. This is the call site that consequence is worst at: a second spelling derives a second
-    ///     key, so two sessions can hold two locks over one cache generation and fork it. Note that the paths
-    ///     folded here live on the solution's filesystem, not the cache home's, so a probe would have to
-    ///     answer for both.
+    ///     The case fold keys off the operating system rather than the filesystem: the judgement
+    ///     <see cref="JbCacheGenerations.NameComparison" /> makes and argues, including what a misread costs
+    ///     the lock key folded here.
     /// </remarks>
     private static string Normalize(string path)
     {

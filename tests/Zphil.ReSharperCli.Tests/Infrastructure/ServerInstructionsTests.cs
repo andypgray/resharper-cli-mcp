@@ -10,8 +10,8 @@ namespace Zphil.ReSharperCli.Tests.Infrastructure;
 /// <summary>Guards the embedded <c>server-instructions.md</c> resource.</summary>
 /// <remarks>
 ///     A rename of the file or its manifest resource id would otherwise surface only as a runtime failure when
-///     a client connects; these load-time assertions turn it into a test failure instead. They also pin the
-///     resident-cost budget: instructions ride verbatim in every session's system prompt whether or not a tool
+///     a client connects; these load-time assertions turn it into a test failure instead. They also pin what
+///     the text may carry: instructions ride verbatim in every session's system prompt whether or not a tool
 ///     is ever called, while tool schemas and resources load on demand, so anything that can live in a schema
 ///     or a guide must not live here.
 /// </remarks>
@@ -21,12 +21,10 @@ public sealed class ServerInstructionsTests
     public void Text_StaysWithinTheResidentTokenBudget()
     {
         // The design budget, well below the client's truncation cap: Claude Code silently truncates server
-        // instructions past ~2 KB, which would drop the tail, guide signposts included. This text is resident
-        // in every session that connects the server, including the majority that never call a tool. New prose
-        // belongs in one of the two on-demand channels instead. Pushed — a tool or parameter
-        // [Description], and the notes a result carries back — is where anything the caller must act on
-        // at a moment goes. Pulled — a guide resource, resharper://guides/configuration or /setup — is
-        // where depth goes. Only cross-tool routing that no single schema can state earns a place here.
+        // instructions past ~2 KB, which would drop the tail, guide signposts included. Only cross-tool routing
+        // that no single schema can state earns a place here. Anything the caller must act on at a moment goes
+        // in a tool or parameter [Description] or the notes a result carries back, and depth goes in a guide
+        // resource.
         Encoding.UTF8.GetByteCount(ServerInstructions.Text).ShouldBeLessThanOrEqualTo(1200);
     }
 
@@ -42,9 +40,9 @@ public sealed class ServerInstructionsTests
     [Fact]
     public void Text_CarriesNoLegalDisclaimer()
     {
-        // The unofficial-wrapper notice is required in the NuGet description, the README's first paragraph,
-        // and .mcp/server.json (see RespectfulWrappingTests) — not in the always-resident instructions,
-        // where it costs every session tokens no agent can act on.
+        // The unofficial-wrapper notice has required homes, which RespectfulWrappingTests pins; the
+        // always-resident instructions are not one, since there it costs every session tokens no agent can act
+        // on.
         ServerInstructions.Text.ShouldNotContain("affiliated");
     }
 

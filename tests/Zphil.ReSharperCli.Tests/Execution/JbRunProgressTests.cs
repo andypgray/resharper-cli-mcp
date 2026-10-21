@@ -10,16 +10,16 @@ namespace Zphil.ReSharperCli.Tests.Execution;
 ///     Pins the <see cref="JbRunProgress" /> heartbeat, above all that it stops dead at disposal.
 /// </summary>
 /// <remarks>
-///     That is not tidiness. A beat that lands after the call it reports has been answered reaches a
-///     <c>ProgressSink</c> that has already closed, so what it costs is a message silently dropped; stopping
-///     dead at disposal is what keeps the run's last word ahead of the result rather than lost behind it.
+///     A beat that lands after the call it reports has been answered reaches a <c>ProgressSink</c> that has
+///     already closed, and is dropped silently; stopping dead at disposal is what keeps the run's last word
+///     ahead of the result rather than lost behind it.
 /// </remarks>
 public sealed class JbRunProgressTests
 {
     /// <summary>Short enough that a test sees several beats, long enough not to be flaky under load.</summary>
     private static readonly TimeSpan Brisk = TimeSpan.FromMilliseconds(40);
 
-    /// <summary>Long enough that only a genuine hang reaches it.</summary>
+    /// <summary>Long enough that only a hang reaches it.</summary>
     private static readonly TimeSpan Generous = TimeSpan.FromSeconds(10);
 
     private static readonly TimeSpan Cap = TimeSpan.FromMinutes(10);
@@ -31,18 +31,17 @@ public sealed class JbRunProgressTests
     [Fact]
     public void HeartbeatInterval_IsTheTenSecondsTheDocsPromise()
     {
-        // The README, the setup guide and the CHANGELOG all say "every ten seconds". The number carries no
-        // protocol meaning and could be moved, but it cannot be moved quietly: it is the one fact about this
-        // feature a reader can check against a stopwatch.
+        // The README and the setup guide both say "every ten seconds", so moving the number means changing
+        // them too. It carries no protocol meaning, but it is the one fact about this feature a reader can check
+        // against a stopwatch.
         JbRunProgress.HeartbeatInterval.ShouldBe(TimeSpan.FromSeconds(10));
     }
 
     [Fact]
     public async Task Constructor_BeatsImmediately_RatherThanWaitingOutTheFirstInterval()
     {
-        // Arrange — the silence this exists to break starts the moment the call arrives, so the first beat
-        // cannot wait an interval. With a ten-second interval in production, one that did would leave the
-        // caller with exactly the dark stretch the feature is for.
+        // Arrange — the silence starts the moment the call arrives, so the first beat cannot wait an interval:
+        // with the production interval, one that did would leave the caller ten seconds in the dark.
         Sink sink = new();
 
         // Act
@@ -133,8 +132,8 @@ public sealed class JbRunProgressTests
     [Fact]
     public async Task OnOutputLine_AfterDisposal_IsIgnored()
     {
-        // Arrange — ProcessRunner can abandon a live reader at the cap, so a line genuinely arrives after the
-        // run it describes has thrown. It has to be harmless rather than merely unlikely.
+        // Arrange — ProcessRunner can abandon a live reader at the cap, so a line can arrive after the run it
+        // describes has thrown. It has to be harmless, not only unlikely.
         Sink sink = new();
         JbRunProgress progress = Build(sink);
         await progress.DisposeAsync();
@@ -275,13 +274,13 @@ public sealed class JbRunProgressTests
         private int _inside;
         private int _maxInside;
 
-        /// <summary>When set, every beat throws — a sink that cannot be allowed to end the run.</summary>
+        /// <summary>Gets a value indicating whether every beat throws.</summary>
         public bool Throw { get; init; }
 
-        /// <summary>When set, every beat blocks for this long, holding a beat in flight.</summary>
+        /// <summary>Gets how long every beat blocks, holding a beat in flight.</summary>
         public TimeSpan Dawdle { get; init; }
 
-        /// <summary>The most beats ever inside this sink at the same moment — one, if they are serialized.</summary>
+        /// <summary>Gets the most beats ever inside this sink at once: one, if they are serialized.</summary>
         public int MaxConcurrentBeats
         {
             get
@@ -318,7 +317,7 @@ public sealed class JbRunProgressTests
             }
         }
 
-        /// <summary>The first beat that lands after <paramref name="alreadySeen" /> of them have.</summary>
+        /// <summary>Returns the first beat that lands after <paramref name="alreadySeen" /> of them have.</summary>
         public async Task<JbRunProgressSnapshot> NextAfterAsync(int alreadySeen, CancellationToken cancellationToken)
         {
             await WaitForAsync(alreadySeen + 1, cancellationToken);

@@ -18,7 +18,7 @@ namespace Zphil.ReSharperCli.Tests.Pipeline;
 /// </summary>
 public sealed class GlobalCallToolFilterIntegrationTests
 {
-    /// <summary>Long enough that only a genuine hang reaches it, short enough to fail rather than wedge.</summary>
+    /// <summary>Long enough that only a hang reaches it, short enough to fail rather than wedge.</summary>
     private static readonly TimeSpan Generous = TimeSpan.FromSeconds(30);
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -65,10 +65,9 @@ public sealed class GlobalCallToolFilterIntegrationTests
     public async Task CallTool_SuccessOverBudget_TruncatesWithInspectHintAndLogsNothing()
     {
         // Arrange — a 40-token budget (100-char cap) against the 3-issue fixture forces truncation even
-        // after progressive reduction. It cannot be reduced into that budget by construction: the reduction
-        // note alone runs to roughly 215 characters and counts toward the fit check, so no reduced level can
-        // ever fit 100. The renderer therefore bottoms out at Minimal — a single line with no newline before
-        // the cap — and the truncator cuts at the cap itself.
+        // after progressive reduction: the reduction note alone is longer than 100 characters and counts
+        // toward the fit check, so no reduced level can fit. The renderer therefore bottoms out at Minimal, a
+        // single line with no newline before the cap, and the truncator cuts at the cap itself.
         await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
         harness.Environment.SetVariable("MAX_MCP_OUTPUT_TOKENS", "40");
         harness.Environment.PlantSolution("App.sln");
@@ -91,9 +90,9 @@ public sealed class GlobalCallToolFilterIntegrationTests
     public async Task CallTool_InspectOverBudget_ReducesDetailInsteadOfTruncating()
     {
         // Arrange — a 600-token budget (1,500-char cap) against a fixture shaped like a solution-wide run:
-        // 24 issues of one rule with distinct messages across 2 files, plus 2 others. Listed in full that is
-        // ~3,000 characters; collapsing the repeated rule to one line per file brings it inside the budget.
-        // This is the only end-to-end proof of the tool -> renderer -> filter wiring.
+        // 24 issues of one rule with distinct messages across 2 files, plus 2 others. Listed in full it
+        // overflows the budget; collapsing the repeated rule to one line per file brings it inside. This
+        // proves the tool -> renderer -> filter wiring end to end.
         await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
         harness.Environment.SetVariable("MAX_MCP_OUTPUT_TOKENS", "600");
         harness.Environment.PlantSolution("App.sln");
@@ -144,8 +143,8 @@ public sealed class GlobalCallToolFilterIntegrationTests
         underTheCall.ShouldContain(typeof(ConfigResolver).FullName!);
         underTheCall.ShouldContain(typeof(JbRunner).FullName!);
 
-        // And the pass the handshake settled — disabled here, so its one Debug line — is under a *different*
-        // id. Non-empty first, so a pass that stopped logging cannot make the second check vacuous.
+        // And the pass the handshake settled (disabled here, so only its Debug outcome line) is under a
+        // different id. Non-empty first, so a pass that stopped logging cannot make the second check vacuous.
         IReadOnlyList<LogEntry> warmerLines = LinesFrom(harness, typeof(CacheWarmer));
         warmerLines.ShouldNotBeEmpty();
         warmerLines
@@ -187,9 +186,9 @@ public sealed class GlobalCallToolFilterIntegrationTests
     [Fact]
     public async Task CallTool_CancelledMidRun_StopsJbAndIsLoggedOnlyByTheSdk()
     {
-        // Arrange — a jb run parked mid-analysis, so cancellation lands while the call is genuinely in
-        // flight. The request carries an id of the test's own choosing, because cancelling a call the way a
-        // real client does means naming the request to cancel.
+        // Arrange — a jb run parked mid-analysis, so cancellation lands while the call is in flight. The
+        // request carries an id of the test's own choosing, because cancelling a call the way a real client
+        // does means naming the request to cancel.
         await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
         harness.Environment.PlantSolution("App.sln");
         TaskCompletionSource started = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -220,8 +219,8 @@ public sealed class GlobalCallToolFilterIntegrationTests
 
         // And the one warning it costs is the SDK's own — it wraps every request handler in a catch that
         // logs before rethrowing, with no exception for cancellation. GlobalCallToolFilter excludes
-        // OperationCanceledException from its logging catch on purpose and is not the source here; it runs
-        // inside that handler, so there is nothing it can do about a warning logged outside it. Answering a
+        // OperationCanceledException from its logging catch and is not the source here; it runs inside that
+        // handler, so there is nothing it can do about a warning logged outside it. Answering a
         // cancelled request with a CallToolResult would silence it and is not worth the lie.
         LogEntry warning = await harness.Logs.FirstWarning.WaitAsync(Generous, Ct);
         harness.Logs.Warnings.ShouldHaveSingleItem();
@@ -229,10 +228,10 @@ public sealed class GlobalCallToolFilterIntegrationTests
     }
 
     /// <summary>
-    ///     An <c>inspectcode</c> that parks until its token is cancelled, exactly as a long run looks. It
-    ///     reports through <paramref name="started" /> that it began, and completes <paramref name="stopped" />
-    ///     with <c>true</c> only once cancellation actually reached it, throwing as <see cref="ProcessRunner" />
-    ///     does after tree-killing <c>jb</c>.
+    ///     Routes the substitute to an <c>inspectcode</c> that parks until its token is cancelled, standing in
+    ///     for a long run. It reports through <paramref name="started" /> that it began, and completes
+    ///     <paramref name="stopped" /> with <c>true</c> only once cancellation reached it, throwing as
+    ///     <see cref="ProcessRunner" /> does after tree-killing <c>jb</c>.
     /// </summary>
     private static void RouteParkingJb(
         IProcessRunner processRunner,

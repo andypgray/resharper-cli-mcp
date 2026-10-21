@@ -20,8 +20,8 @@ public sealed class CompilationErrorNoteTests
     public void For_CompilationErrors_LeadsWithTheBuildAndGatesTheResetOnIt()
     {
         // Arrange — the symptom as it arrives: a resolution failure and its knock-on ambiguity, in a file the
-        // author never touched, beside an ordinary warning. The rule id carries jb's leading dot, as taken
-        // from a real 2026.1.2 SARIF document rather than assumed.
+        // author never touched, beside an ordinary warning. The rule id carries the leading dot jb's SARIF
+        // gives it.
         List<InspectIssue> issues = Issues(
             (".CSharpErrors", "Cannot resolve symbol 'DllPath'"),
             (".CSharpErrors", "Ambiguous invocation: Path.GetFileName"),
@@ -30,8 +30,8 @@ public sealed class CompilationErrorNoteTests
         // Act
         string note = CompilationErrorNote.For(issues, CacheHome);
 
-        // Assert — the exact text, because this is the whole feature. The cure's tool name and the guide's
-        // URI are interpolated from their owners, pinning that the note routes to names that really exist.
+        // Assert — the exact text, because the text is the feature. The cure's tool name and the guide's URI
+        // are interpolated from their owners, pinning that the note routes to names that exist.
         note.ShouldBe(
             "NOTE: 2 of these issue(s) are compilation errors (`.CSharpErrors`). Build the solution first: on "
             + "a checkout that was never built or never restored, every unrestored package reference reports "
@@ -73,7 +73,9 @@ public sealed class CompilationErrorNoteTests
         (note.Length - CacheHome.Length).ShouldBeLessThanOrEqualTo(500);
     }
 
-    /// <summary>The note for a result carrying one compilation error, which is all its text turns on.</summary>
+    /// <summary>
+    ///     Returns the note for a result carrying one compilation error, which is all its text turns on.
+    /// </summary>
     private static string NoteForOneError()
     {
         List<InspectIssue> issues = Issues((".CSharpErrors", "Cannot resolve symbol 'JsonSerializer'"));
@@ -81,7 +83,7 @@ public sealed class CompilationErrorNoteTests
     }
 
     [Theory]
-    // The overwhelmingly common result: ordinary rules.
+    // The common result: ordinary rules.
     [InlineData("RedundantUsingDirective")]
     [InlineData("UnusedMember.Global")]
     // Near misses. Matching is exact and ordinal beyond the one optional dot, and a near miss firing the note

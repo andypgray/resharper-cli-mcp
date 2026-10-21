@@ -5,8 +5,9 @@ using System.Runtime.Versioning;
 namespace Zphil.ReSharperCli.Execution;
 
 /// <summary>
-///     The Linux half of "a <c>jb</c> this server started cannot outlive it": <c>setpriv --pdeathsig SIGKILL</c>,
-///     which arms <c>PR_SET_PDEATHSIG</c> and then execs the real command in place.
+///     Provides the Linux half of keeping a <c>jb</c> from outliving its server:
+///     <c>setpriv --pdeathsig SIGKILL</c>, which arms <c>PR_SET_PDEATHSIG</c> and then execs the real command in
+///     place.
 /// </summary>
 /// <remarks>
 ///     <para>
@@ -14,10 +15,9 @@ namespace Zphil.ReSharperCli.Execution;
 ///         reaches it.
 ///     </para>
 ///     <para>
-///         Weaker than the Windows job object, and the difference is worth stating rather than implying: the
-///         signal covers <c>jb</c> itself and nothing it forks afterwards, because <c>PR_SET_PDEATHSIG</c> is
-///         not inherited across a fork. A worker <c>jb</c> starts can still be stranded by a hard kill of this
-///         server.
+///         Weaker than the Windows job object: the signal covers <c>jb</c> itself and nothing it forks, because
+///         <c>PR_SET_PDEATHSIG</c> is not inherited across a fork, so a worker <c>jb</c> starts can still be
+///         stranded by a hard kill of this server.
 ///     </para>
 ///     <para>
 ///         <see cref="Wrap" /> is pure, and separate from the probe beside it, so the argument vector this
@@ -45,16 +45,15 @@ internal static class ParentDeathSignal
     private static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(5);
 
     /// <summary>
-    ///     The command to spawn: wrapped when <paramref name="resolvedTarget" /> is in hand, and the caller's
-    ///     own command otherwise.
+    ///     Returns the command to spawn: wrapped when <paramref name="resolvedTarget" /> is in hand, and the
+    ///     caller's own command otherwise.
     /// </summary>
     /// <remarks>
     ///     Whether <c>setpriv</c> is available at all is decided before this is called. Declining on an
     ///     unresolvable target keeps a missing <c>jb</c> failing as it does unwrapped, with a
-    ///     <see cref="Win32Exception" />. Wrapped, a candidate that is not installed would instead exit
-    ///     non-zero with <c>setpriv: failed to execute jb: No such file or directory</c>, and a probe that sees
-    ///     a non-zero exit reads it as a <c>jb</c> that started — so the error would tell the user <c>jb</c> is
-    ///     installed.
+    ///     <see cref="Win32Exception" />. Wrapped, a candidate that is not installed would instead exit non-zero
+    ///     with <c>setpriv: failed to execute jb: No such file or directory</c>, and a probe that sees a non-zero
+    ///     exit reads it as a <c>jb</c> that started, so the error would tell the user <c>jb</c> is installed.
     /// </remarks>
     internal static SpawnCommand Wrap(
         string setprivPath,
@@ -64,15 +63,15 @@ internal static class ParentDeathSignal
     {
         if (resolvedTarget is null) return SpawnCommand.AsRequested(fileName, arguments);
 
-        // The `--` is load-bearing: without it setpriv reads the target's own leading `--` arguments as its own.
+        // Without the `--`, setpriv would take the target's own `--` options for its own.
         List<string> wrapped = [Option, Signal, "--", resolvedTarget, .. arguments];
 
         return new SpawnCommand(setprivPath, wrapped, true);
     }
 
     /// <summary>
-    ///     Where <c>setpriv</c> is, when it is installed and accepts <see cref="Option" />, and
-    ///     <see langword="null" /> otherwise — which leaves every child unguarded.
+    ///     Returns the path of <c>setpriv</c> when it is installed and accepts <see cref="Option" />, or
+    ///     <see langword="null" /> otherwise, which leaves every child unguarded.
     /// </summary>
     [SupportedOSPlatform("linux")]
     internal static string? TryLocate(string? pathVariable)
@@ -82,11 +81,11 @@ internal static class ParentDeathSignal
         return setpriv is not null && Accepts(setpriv) ? setpriv : null;
     }
 
-    /// <summary>Whether this <c>setpriv</c> accepts the option, asked by running it.</summary>
+    /// <summary>Determines whether this <c>setpriv</c> accepts the option, by running it.</summary>
     /// <remarks>
-    ///     The probe execs <c>setpriv</c> through itself, so it needs nothing on the machine that
-    ///     <c>setpriv</c> being there has not already proved — and it exercises the exact argument shape a real
-    ///     spawn will use rather than a version number standing in for it.
+    ///     The probe execs <c>setpriv</c> through itself, so it needs nothing on the machine that <c>setpriv</c>
+    ///     being there has not already proved, and it exercises the argument shape a real spawn will use rather
+    ///     than a version number standing in for it.
     /// </remarks>
     [SupportedOSPlatform("linux")]
     private static bool Accepts(string setprivPath)

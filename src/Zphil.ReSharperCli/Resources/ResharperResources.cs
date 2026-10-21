@@ -5,17 +5,15 @@ using Zphil.ReSharperCli.Infrastructure;
 namespace Zphil.ReSharperCli.Resources;
 
 /// <summary>
-///     The MCP resource surface: two on-demand guides, each answering a single routing condition so a pull
-///     for one never drags in the other.
+///     Defines the MCP resource surface: on-demand guides, each answering a single routing condition so a pull
+///     for one never drags in another.
 /// </summary>
 /// <remarks>
-///     Mirrors <see cref="Prompts.ResharperPrompts" />: the class is non-static because
-///     <c>WithResources&lt;ResharperResources&gt;()</c> takes it as a type argument, while the resource
-///     methods are <c>static</c>, so no instance is ever constructed. Both live on this one class so that
-///     registration call site stays a single type argument. Neither URI template carries a
-///     <c>{parameter}</c>, so the SDK registers both as <em>direct</em> resources (surfaced by
-///     <c>resources/list</c>), not templates. A <c>string</c> return maps to a single
-///     <c>TextResourceContents</c>.
+///     Non-static with <c>static</c> resource methods, for the reason given on
+///     <see cref="Prompts.ResharperPrompts" />. The guides live on this one class so the registration stays a
+///     single type argument. No URI template carries a <c>{parameter}</c>, so the SDK registers each as a
+///     direct resource (surfaced by <c>resources/list</c>), not a template. A <c>string</c> return maps to a
+///     single <c>TextResourceContents</c>.
 /// </remarks>
 [McpServerResourceType]
 internal sealed class ResharperResources

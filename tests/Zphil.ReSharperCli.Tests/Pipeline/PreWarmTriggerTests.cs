@@ -9,8 +9,8 @@ using Zphil.ReSharperCli.Tests.TestSupport;
 namespace Zphil.ReSharperCli.Tests.Pipeline;
 
 /// <summary>
-///     The trigger, through the registration path the server really uses: connecting a client is what starts
-///     the pre-warm, and nothing in a tool call is.
+///     Pins the trigger through the registration path the server uses: connecting a client is what starts the
+///     pre-warm, and nothing in a tool call is.
 /// </summary>
 /// <remarks>
 ///     Driven over the in-process client/server harness, which composes the DI graph the way <c>Program.cs</c>
@@ -43,11 +43,11 @@ public sealed class PreWarmTriggerTests
     public async Task LaterMessages_DoNotStartFurtherPasses()
     {
         // Arrange — the warmer is re-armable, so the one-shot lives in the trigger. Without it every
-        // message would reach Start, and Start would keep saying yes: config resolution is deliberately
-        // uncached (a directory enumeration plus a full settings parse each time) and jb discovery caches
-        // successes only, so a server sitting in a repo with no solution would re-probe two jb candidates at
-        // thirty seconds each, per message, silently. That cost is invisible from a tool result, which is
-        // exactly why it needs a test rather than a comment.
+        // message would reach Start, and Start would keep saying yes: config resolution is uncached (a
+        // directory enumeration plus a full settings parse each time) and jb discovery caches successes only,
+        // so a server sitting in a repo with no solution would re-probe every jb candidate, each up to its
+        // probe timeout, per message, silently. That cost is invisible from a tool result, which is why it
+        // needs a test rather than a comment.
         await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(
             Ct, true, ArrangeWarmableSolution);
         await harness.Warmer.Finished.WaitAsync(Generous, Ct);
@@ -71,8 +71,8 @@ public sealed class PreWarmTriggerTests
     [Fact]
     public async Task ConnectingAClient_WithPreWarmTurnedOff_SettlesWithoutSpawningAnything()
     {
-        // Arrange & Act — the harness's default, which every other test in this suite relies on: a session
-        // that connects must not start speculative work behind whatever the test is about to arrange.
+        // Arrange & Act — the harness's default: a session that connects must not start speculative work
+        // behind whatever a test is about to arrange.
         await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(
             Ct, arrange: ArrangeWarmableSolution);
 
@@ -100,12 +100,14 @@ public sealed class PreWarmTriggerTests
         // and the hosted services drain.
         await harness.DisposeAsync().AsTask().WaitAsync(Generous, Ct);
 
-        // Assert — waited for, not merely signalled: StopAsync returning is the promise that jb has gone.
+        // Assert — waited for, not only signalled: StopAsync returning is the promise that jb has gone.
         warmer.Finished.IsCompleted.ShouldBeTrue();
         warmer.Outcome.ShouldBe(WarmUpOutcome.Cancelled);
     }
 
-    /// <summary>A solution to find, a cache home to warm, and a <c>jb</c> that succeeds at everything.</summary>
+    /// <summary>
+    ///     Arranges a solution to find, a cache home to warm, and a <c>jb</c> that succeeds at everything.
+    /// </summary>
     private static void ArrangeWarmableSolution(FakeEnvironment environment, IProcessRunner processRunner)
     {
         PlantSolution(environment);
@@ -122,7 +124,10 @@ public sealed class PreWarmTriggerTests
             });
     }
 
-    /// <summary>The same, but the inspection parks until its token is cancelled, standing in for a cold run.</summary>
+    /// <summary>
+    ///     Arranges a solution to find and a cache home to warm, with an inspection that parks until its token is
+    ///     cancelled, standing in for a cold run.
+    /// </summary>
     private static void ArrangeJbThatNeverFinishes(
         FakeEnvironment environment,
         IProcessRunner processRunner,
@@ -143,7 +148,7 @@ public sealed class PreWarmTriggerTests
                 // Bounded so a regression that stopped cancelling fails this test instead of wedging the run.
                 cancellationToken.WaitHandle.WaitOne(Generous);
 
-                // Exactly what ProcessRunner surfaces once it has tree-killed the process on that token.
+                // What ProcessRunner surfaces once it has tree-killed the process on that token.
                 cancellationToken.ThrowIfCancellationRequested();
                 return JbStubs.Success;
             });

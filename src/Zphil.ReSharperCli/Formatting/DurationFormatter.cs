@@ -1,14 +1,14 @@
 namespace Zphil.ReSharperCli.Formatting;
 
 /// <summary>
-///     Human-readable, correctly-pluralized durations: "30 seconds", "5 minutes", "1 minute 30 seconds".
-///     The one spelling for every surface that names a span of time, so the same value cannot read
-///     differently in two places.
+///     Formats a duration as human-readable, correctly pluralized text, such as "30 seconds", "5 minutes" or
+///     "1 minute 30 seconds".
 /// </summary>
 /// <remarks>
-///     The leftover seconds are spelled out rather than rounded into the minute count because the run cap
-///     is configured <em>in</em> seconds — a cap someone set to 90 must not report itself as two minutes,
-///     or the message contradicts the value they chose.
+///     The one spelling for every surface that names a span of time, so the same value cannot read differently
+///     in two places. The leftover seconds are spelled out rather than rounded into the minute count because the
+///     run cap is configured in seconds: a cap someone set to 90 must not report itself as two minutes, or the
+///     message contradicts the value they chose.
 /// </remarks>
 internal static class DurationFormatter
 {

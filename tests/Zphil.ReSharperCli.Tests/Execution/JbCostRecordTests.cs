@@ -9,15 +9,15 @@ using Zphil.ReSharperCli.Tests.TestSupport;
 namespace Zphil.ReSharperCli.Tests.Execution;
 
 /// <summary>
-///     Pins the two invariants of <see cref="JbCostRecord" />: the band key holds, and every failure reads as
-///     <em>no figure</em>.
+///     Pins the invariants of <see cref="JbCostRecord" />: the band key holds, and every failure reads as
+///     "no figure".
 /// </summary>
 /// <remarks>
 ///     The key has to hold because the states a run starts from differ in cost by an order of magnitude, and a
 ///     figure quoted under the wrong band is worse than no figure at all. A failure reads as no figure because
 ///     what is lost is a hint, and it is lost at the tail of a <c>jb</c> run the user already paid minutes for.
-///     Warm is not a band at all — its last run says nothing about its next — so nothing can record or quote a
-///     warm figure, and a <c>warm</c> line already in the file is left where it is rather than read.
+///     Warm is not a band, because its last run says nothing about its next: nothing can record or quote a warm
+///     figure, and a <c>warm</c> line already in the file is left where it is rather than read.
 /// </remarks>
 public sealed class JbCostRecordTests : IDisposable
 {
@@ -49,8 +49,8 @@ public sealed class JbCostRecordTests : IDisposable
     [Fact]
     public void Stamp_ASecondBand_LeavesTheFirstStanding()
     {
-        // Arrange — the whole reason there is a file rather than a single number. A checkout analysed cold
-        // once and seeded once has two figures worth keeping, and a run in either band has to find its own.
+        // Arrange — a checkout analysed cold once and seeded once has two figures worth keeping, and a run in
+        // either band has to find its own, which is why the record is a file rather than a single number.
         JbCostRecord.Stamp(SolutionPath, _cacheHome, JbCostBand.Cold, TimeSpan.FromSeconds(497), NullLogger.Instance);
 
         // Act
@@ -88,8 +88,8 @@ public sealed class JbCostRecordTests : IDisposable
     public void TryRead_ABandNothingHasStamped_SaysNothingAboutTheOnesThatHave()
     {
         // Arrange — a checkout seeded from a sibling has a seeded figure and has never been analysed cold.
-        // Answering the cold question with the seeded number would promise a run that has to build the cache
-        // from nothing the premium paid by one that started from a copy of a finished one.
+        // Answering the cold question with the seeded number would quote a run that builds the cache from
+        // nothing the cost of one that started from a copy of a finished cache.
         JbCostRecord.Stamp(SolutionPath, _cacheHome, JbCostBand.Seeded, TimeSpan.FromSeconds(456), NullLogger.Instance);
 
         // Assert
@@ -147,9 +147,8 @@ public sealed class JbCostRecordTests : IDisposable
     [Fact]
     public void Stamp_CacheHomeThatCannotHoldTheRecord_DegradesQuietlyRatherThanThrowing()
     {
-        // Arrange — this runs at the tail of a jb run the user already waited minutes for, so throwing would
-        // fail a call whose work is done. What is lost here is a hint, never a promise, so it goes no louder
-        // than debug.
+        // Arrange — throwing would fail a call whose work is done, and what is lost is a hint, never a promise,
+        // so it goes no louder than debug.
         CapturingLoggerProvider logs = new();
         ILogger logger = Logs.For<JbCostRecordTests>(logs);
         string blocked = CacheHomes.BlockedCacheHome(_environment);

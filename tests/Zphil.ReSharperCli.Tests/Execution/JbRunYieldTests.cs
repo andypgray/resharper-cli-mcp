@@ -5,12 +5,12 @@ using Zphil.ReSharperCli.Tests.TestSupport;
 
 namespace Zphil.ReSharperCli.Tests.Execution;
 
-/// <summary>
-///     <see cref="JbRunYield" /> driven directly, with no runner, slot or lock around it. Through the runner a
-///     foreground caller that has counted itself in also holds the run slot, so a refused pre-warm there is
-///     explained twice over and would still be refused with this type deleted; only here is the count the one
-///     thing that can say no.
-/// </summary>
+/// <summary>Drives <see cref="JbRunYield" /> directly, with no runner, slot or lock around it.</summary>
+/// <remarks>
+///     Through the runner a foreground caller that has counted itself in also holds the run slot, so a refused
+///     pre-warm there is explained twice over and would still be refused with this type deleted; only here is
+///     the count the one thing that can say no.
+/// </remarks>
 public sealed class JbRunYieldTests
 {
     private readonly JbRunYield _yield = JbRunners.Yield();
@@ -45,7 +45,7 @@ public sealed class JbRunYieldTests
     public void TryEnterSpeculative_AfterTheForegroundCallerStoodDown_ClaimsAgain()
     {
         // Arrange — a count, not a latch: a latch never cleared would retire speculative work for the life of
-        // the process at exactly the moment it is worth most, right after a call hit the cap.
+        // the process at the moment it is worth most, right after a call hit the cap.
         _yield.EnterForeground().Dispose();
 
         // Act

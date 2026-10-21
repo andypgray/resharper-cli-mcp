@@ -9,32 +9,34 @@ namespace Zphil.ReSharperCli.Formatting;
 /// <remarks>
 ///     <para>
 ///         Each warning describes configuration that was silently dropped rather than an error that failed
-///         the call, which is precisely why it cannot stay in the log: the call succeeds and looks
-///         authoritative while answering under configuration the caller did not choose.
+///         the call, which is why it cannot stay in the log: the call succeeds and looks authoritative while
+///         answering under configuration the caller did not choose.
 ///     </para>
 ///     <para>
-///         The two warnings have different blast radii, so each tool gets only the ones that apply to it. A
-///         settings file this server could not parse is still read by <c>jb</c> — discovered files are
-///         layers it mounts itself, and a custom <c>JB_SETTINGS_PATH</c> rides its command line — and it
-///         parses them perfectly well, so inspection severities are unaffected and only the cleanup profile
-///         lookup was lost. <see cref="ForInspect" /> therefore stays silent about it rather than reporting
-///         a consequence that does not exist. Output uses <c>\n</c> line endings and is ASCII-only, matching
-///         the other formatters.
+///         Each tool gets only the warnings that apply to it. A settings file this server could not parse is
+///         still read by <c>jb</c>, which mounts discovered files as layers itself and takes a custom
+///         <c>JB_SETTINGS_PATH</c> on its command line, so inspection severities are unaffected and only the
+///         cleanup profile lookup was lost. <see cref="ForInspect" /> therefore says nothing about it.
 ///     </para>
 /// </remarks>
 internal static class ConfigWarningBanner
 {
-    /// <summary>The banner for <c>resharper_inspect</c>: only what affects which issues are reported.</summary>
+    /// <summary>
+    ///     Returns the banner for <c>resharper_inspect</c>: only what affects which issues are reported.
+    /// </summary>
     public static string ForInspect(ConfigWarnings warnings)
     {
         return Build(MissingSettingsWarning(warnings));
     }
 
     /// <summary>
-    ///     The banner for <c>resharper_cleanup</c>: everything inspect reports, plus the settings file this
-    ///     server could not read — the caller has to know the declared profile was not the one applied,
-    ///     because the fallback has already rewritten the code that profile existed to protect.
+    ///     Returns the banner for <c>resharper_cleanup</c>: everything inspect reports, plus the settings file
+    ///     this server could not read.
     /// </summary>
+    /// <remarks>
+    ///     The caller has to know the declared profile was not the one applied, because the fallback has already
+    ///     rewritten the code that profile existed to protect.
+    /// </remarks>
     public static string ForCleanup(ConfigWarnings warnings)
     {
         return Build(MissingSettingsWarning(warnings), UnreadableSettingsWarning(warnings));
@@ -70,8 +72,8 @@ internal static class ConfigWarningBanner
     }
 
     /// <summary>
-    ///     Flattens a reason onto one line: it is an exception message, and one carrying an embedded newline
-    ///     would make the banner's tail — or a report list item it is put in — read as body text.
+    ///     Flattens a reason onto one line: it is an exception message, and an embedded newline would make the
+    ///     rest of it read as body text.
     /// </summary>
     internal static string SingleLine(string reason)
     {

@@ -11,8 +11,8 @@ using Zphil.ReSharperCli.Tools;
 namespace Zphil.ReSharperCli.Pipeline;
 
 /// <summary>
-///     The single point where tool-call exceptions become error results and successful responses are
-///     truncated. Tool methods never <c>try/catch</c>: they throw, and this filter shapes the outcome.
+///     Turns tool-call exceptions into error results and truncates successful responses, so tool methods never
+///     <c>try/catch</c>: they throw, and this filter shapes the outcome.
 /// </summary>
 internal static class GlobalCallToolFilter
 {
@@ -25,9 +25,7 @@ internal static class GlobalCallToolFilter
     /// </summary>
     /// <remarks>
     ///     It is also where a call's <see cref="RunIdScope" /> opens, because this is the outermost frame that
-    ///     knows a call has begun. Everything the call goes on to cause — the config resolution, the queue
-    ///     wait, the cache state, the <c>jb</c> run — is tagged with that id, which is what separates a call's
-    ///     lines from a concurrent pre-warm's in one shared log file.
+    ///     knows a call has begun.
     /// </remarks>
     public static IMcpServerBuilder WithGlobalCallToolFilter(this IMcpServerBuilder builder)
     {
@@ -62,7 +60,7 @@ internal static class GlobalCallToolFilter
                 catch (UserErrorException ex)
                 {
                     // Expected user-facing error (bad input, missing solution, a failed jb run): surface
-                    // the message, don't log it — the file log is reserved for unexpected crashes.
+                    // the message, don't log it; a warning in the log is reserved for unexpected failures.
                     ReportCompletion(logger, context.Params.Name, elapsed, "a reported error");
                     return ErrorResult(ex.Message);
                 }
@@ -70,7 +68,7 @@ internal static class GlobalCallToolFilter
                 {
                     // The SDK's own answer to a request it cannot serve, an unknown tool name among them. Its
                     // composed handler rethrows this type as a JSON-RPC error, so it passes through unshaped and
-                    // unlogged here, as cancellation does; the SDK's session handler writes its own line for it.
+                    // with no warning here, as cancellation does; the SDK's session handler writes its own line.
                     // No UserErrorException hides inside one: the SDK builds every protocol error it throws
                     // without an inner exception.
                     ReportCompletion(logger, context.Params.Name, elapsed, "a protocol error");
@@ -78,9 +76,8 @@ internal static class GlobalCallToolFilter
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
-                    // The SDK's argument binder wraps a coercer-thrown UserErrorException in
-                    // JsonException(s). Walk the chain so the friendly valid-values message surfaces
-                    // silently, exactly as a directly-thrown UserErrorException would.
+                    // Unwrapped so a coercer's message surfaces silently, as a directly thrown
+                    // UserErrorException's would.
                     if (FindUserError(ex) is { } wrapped)
                     {
                         ReportCompletion(logger, context.Params.Name, elapsed, "a reported error");
@@ -114,8 +111,8 @@ internal static class GlobalCallToolFilter
     }
 
     /// <summary>
-    ///     The logger this filter writes through, or <see langword="null" /> when the host has no logging at
-    ///     all.
+    ///     Returns the logger this filter writes through, or <see langword="null" /> when the host has no
+    ///     logging at all.
     /// </summary>
     /// <remarks>
     ///     Resolved per call from the request's own provider, the only route available to a filter registered
@@ -127,7 +124,7 @@ internal static class GlobalCallToolFilter
     }
 
     /// <summary>
-    ///     Closes the envelope: which tool, how it ended, and how long the whole call took.
+    ///     Logs the envelope's closing line: which tool, how it ended, and how long the whole call took.
     /// </summary>
     /// <remarks>
     ///     At <c>Debug</c>, as the level policy has it — the caching events inside the call are what
@@ -141,7 +138,7 @@ internal static class GlobalCallToolFilter
     }
 
     /// <summary>
-    ///     Logs whether the last-resort truncator actually bit, and by how much.
+    ///     Logs whether the last-resort truncator bit, and by how much.
     /// </summary>
     /// <remarks>
     ///     Silent when it did not: the rendering ladder having already fitted the response is the ordinary
@@ -159,8 +156,8 @@ internal static class GlobalCallToolFilter
     }
 
     /// <summary>
-    ///     The shape of the arguments a call arrived with, without their values: which keys, and how many
-    ///     entries in each array.
+    ///     Describes the shape of the arguments a call arrived with, without their values: which keys, and how
+    ///     many entries in each array.
     /// </summary>
     /// <remarks>
     ///     String content is never printed, whatever its key — this line runs ahead of binding, so every value
@@ -180,7 +177,7 @@ internal static class GlobalCallToolFilter
         return string.Join(", ", parts);
     }
 
-    /// <summary>One scalar argument as the envelope reports it: its presence, or its non-string kind.</summary>
+    /// <summary>Formats one scalar argument as the envelope reports it: its presence, or its non-string kind.</summary>
     private static string Scalar(JsonElement value)
     {
         if (value.ValueKind == JsonValueKind.String) return "given";
@@ -198,10 +195,8 @@ internal static class GlobalCallToolFilter
     }
 
     /// <summary>
-    ///     Walks up to <see cref="MaxExceptionChainDepth" /> inner exceptions looking for a
-    ///     <see cref="UserErrorException" /> the SDK's argument binder buried inside
-    ///     <c>JsonException</c>(s), returning it (so its friendly message can surface) or
-    ///     <see langword="null" /> when the failure is a genuine unexpected error.
+    ///     Finds the <see cref="UserErrorException" /> the SDK's argument binder buried inside
+    ///     <c>JsonException</c>(s), searching up to <see cref="MaxExceptionChainDepth" /> inner exceptions deep.
     /// </summary>
     private static UserErrorException? FindUserError(Exception? ex)
     {

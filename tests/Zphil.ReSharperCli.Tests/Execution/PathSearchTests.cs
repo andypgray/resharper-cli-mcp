@@ -39,7 +39,7 @@ public sealed class PathSearchTests : IDisposable
     [Fact]
     public void Resolve_AFileTheSpawnCouldNotStart_IsPassedOverForTheNextEntry()
     {
-        // Arrange — a bare file called jb, which no platform starts for its own reason: Windows looks for
+        // Arrange — a bare file called jb, which each platform refuses for its own reason: Windows looks for
         // jb.exe, and elsewhere a file with no execute bit cannot be exec'd.
         string unstartable = _environment.CreateTempDirectory();
         File.WriteAllText(Path.Combine(unstartable, "jb"), "jb");

@@ -8,12 +8,12 @@ using Zphil.ReSharperCli.Tests.TestSupport;
 namespace Zphil.ReSharperCli.Tests.Discovery;
 
 /// <summary>
-///     <see cref="CleanupProfileReader" /> on its own: which files it can get a declared profile out of, and what
-///     it reports when it cannot.
+///     Pins, on its own, which files <see cref="CleanupProfileReader" /> can get a declared profile out of, and
+///     what it reports when it cannot.
 /// </summary>
 /// <remarks>
-///     The load-bearing case: a file <c>jb</c> reads without complaint but the XML spec rejects must not turn the
-///     declared-profile feature off.
+///     A file <c>jb</c> reads without complaint but the XML spec rejects must not turn the declared-profile
+///     feature off.
 /// </remarks>
 public sealed class CleanupProfileReaderTests : IDisposable
 {
@@ -44,7 +44,7 @@ public sealed class CleanupProfileReaderTests : IDisposable
         // Arrange — `--` inside a comment is illegal XML, .NET has no lenient mode for it
         // (XmlReaderSettings.CheckCharacters = false does not relax the rule), and ReSharper reads such a file
         // happily. Rejecting it here would silently apply Full Cleanup instead of the profile the repo
-        // declared — the exact rewrite that profile was defined to prevent.
+        // declared, which is the rewrite that profile was defined to prevent.
         string path = DotSettingsFixtures.PlantBeside(_environment.CurrentDirectory, DotSettingsFixtures.DeclaringBehindIllegalComment("House: Keep Named Arguments"));
 
         // Act
@@ -96,9 +96,9 @@ public sealed class CleanupProfileReaderTests : IDisposable
     [Fact]
     public void Read_BrokenBeyondCommentStripping_ReasonNamesTheRealFaultAtItsRealLineNumber()
     {
-        // Arrange — the reported reason comes from the lenient pass, so it names what is genuinely still
-        // wrong rather than the comment we deliberately tolerated. Comments are replaced by the newlines they
-        // spanned, which is what keeps that line number pointing at the real file.
+        // Arrange — the reported reason comes from the lenient pass, so it names what is still wrong rather
+        // than the comment that pass tolerates. Comments are replaced by the newlines they spanned, which is
+        // what keeps that line number pointing at the real file.
         string path = DotSettingsFixtures.PlantBeside(_environment.CurrentDirectory, DotSettingsFixtures.Unparseable());
 
         // Act
@@ -106,7 +106,7 @@ public sealed class CleanupProfileReaderTests : IDisposable
 
         // Assert
         declared.Failure.ShouldNotBeNull();
-        declared.Failure.Reason.ShouldNotContain("comment"); // not the fault we tolerated
+        declared.Failure.Reason.ShouldNotContain("comment"); // not the tolerated fault
         declared.Failure.Reason.ShouldContain("s:String");
         declared.Failure.Reason.ShouldContain("line 3"); // the unclosed element's line in the original file
     }

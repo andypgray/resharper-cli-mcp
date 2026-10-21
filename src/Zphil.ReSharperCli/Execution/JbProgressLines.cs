@@ -1,15 +1,14 @@
 namespace Zphil.ReSharperCli.Execution;
 
 /// <summary>
-///     Where a <c>jb</c> run has got to, in the order a run passes through them.
+///     Defines where a <c>jb</c> run has got to, in the order a run passes through the phases.
 /// </summary>
 /// <remarks>
-///     The first four are this server's own doing and are known without reading a line of <c>jb</c>'s
-///     output; the rest are <c>jb</c>'s, and are reached only when it says so. That split is why
-///     <see cref="Starting" /> exists as a phase of its own rather than being folded into
-///     <see cref="Analyzing" />: <c>jb</c> spends its first half-minute loading the solution model and
-///     saying nothing at all, and a run silently sitting in that prelude is exactly what a caller cannot
-///     otherwise tell from a hang.
+///     <see cref="Turn" />, <see cref="Queued" />, <see cref="Seeding" /> and <see cref="Starting" /> are this
+///     server's own doing, known without reading a line of <c>jb</c>'s output; the rest are reached only when
+///     <c>jb</c> says so. <see cref="Starting" /> is a phase of its own rather than part of
+///     <see cref="Analyzing" /> because <c>jb</c> loads the solution model in silence before its first progress
+///     line, and a run sitting in that prelude is otherwise indistinguishable from a hang.
 /// </remarks>
 internal enum JbRunPhase
 {
@@ -39,14 +38,9 @@ internal enum JbRunPhase
 }
 
 /// <summary>
-///     What one line of <c>jb</c>'s standard output said about where the run has got to: the phase it puts
-///     the run in, and whether the line named a file rather than announcing the phase.
+///     Represents what one line of <c>jb</c>'s standard output said about where the run has got to: the phase it
+///     puts the run in, and whether the line named a file rather than announcing the phase.
 /// </summary>
-/// <param name="Phase">The phase the line places the run in.</param>
-/// <param name="NamesAFile">
-///     Whether this is one of the per-file lines, and so counts towards the "N files so far" a heartbeat
-///     reports. False for a phase announcement, which resets that count instead.
-/// </param>
 internal readonly record struct JbProgressStep(JbRunPhase Phase, bool NamesAFile);
 
 /// <summary>
@@ -54,27 +48,25 @@ internal readonly record struct JbProgressStep(JbRunPhase Phase, bool NamesAFile
 /// </summary>
 /// <remarks>
 ///     <para>
-///         Pure and stateless, so the <c>JbContract</c> suite can drive it over the output of a real run and
-///         what it knows about someone else's tool is checked against that tool rather than assumed.
+///         Pure and stateless, so what it assumes about <c>jb</c>'s output can be checked against the output
+///         of a real run.
 ///     </para>
 ///     <para>
-///         The vocabulary, measured against <c>jb</c> 2026.2.1. <c>inspectcode</c> announces
+///         The vocabulary, as observed on <c>jb</c> 2026.2.1. <c>inspectcode</c> announces
 ///         <c>Analyzing files</c> and then prints one <c>Analyzing &lt;file&gt;</c> line per file, then
 ///         announces <c>Running inspections</c> and prints one <c>Inspecting &lt;file&gt;</c> line per file.
-///         Cold on a large solution the analysis phase is over 90% of the run and the inspection phase is
+///         Cold on a large solution the analysis phase is nearly the whole run and the inspection phase takes
 ///         seconds, which is why both are recognised but the analysis one is the one that matters.
 ///     </para>
 ///     <para>
-///         <c>cleanupcode</c> shares none of it. It announces <c>Cleaning up using profile &lt;name&gt;</c>
-///         and then prints one line per rewritten file — but those lines are bare
-///         <c>&lt;project&gt;\&lt;path&gt;</c> strings with no prefix, which nothing here can tell from a
-///         stray banner line. So cleanup gets the phase and no file count, and nothing downstream can make a
-///         count-based claim it cannot support.
+///         <c>cleanupcode</c> shares none of it. It announces <c>Cleaning up using profile &lt;name&gt;</c> and
+///         then prints one line per rewritten file, but those lines are bare <c>&lt;project&gt;\&lt;path&gt;</c>
+///         strings with no prefix, which nothing here can tell from a stray banner line. So cleanup gets the
+///         phase and no file count.
 ///     </para>
 ///     <para>
-///         Anything unrecognised is <see langword="null" />, which leaves the run in whatever phase it was
-///         already in. A vocabulary change therefore costs a quieter notification and nothing else — the
-///         reason this is watched by a soft-tier contract rather than pinned by a hard one.
+///         Anything unrecognised is <see langword="null" />, so a change in <c>jb</c>'s vocabulary costs quieter
+///         progress and nothing else.
 ///     </para>
 /// </remarks>
 internal static class JbProgressLines
@@ -95,8 +87,8 @@ internal static class JbProgressLines
     internal const string InspectingFilePrefix = "Inspecting ";
 
     /// <summary>
-    ///     What <paramref name="line" /> says about the run, or <see langword="null" /> when it says nothing
-    ///     this server understands.
+    ///     Returns what <paramref name="line" /> says about the run, or <see langword="null" /> when it says
+    ///     nothing this server understands.
     /// </summary>
     /// <remarks>
     ///     The phase announcements are matched before the per-file prefixes they share an opening word with,
@@ -123,11 +115,11 @@ internal static class JbProgressLines
     }
 
     /// <summary>
-    ///     Whether <paramref name="line" /> is <paramref name="prefix" /> followed by something.
+    ///     Determines whether <paramref name="line" /> is <paramref name="prefix" /> followed by something.
     /// </summary>
     /// <remarks>
-    ///     The "followed by something" half is what stops a bare <c>Analyzing</c> — a truncated line, or a
-    ///     future announcement that drops its noun — being counted as a file.
+    ///     The "followed by something" half stops a bare <c>Analyzing</c>, such as a truncated line or a future
+    ///     announcement that drops its noun, being counted as a file.
     /// </remarks>
     private static bool NamesAFileAfter(string line, string prefix)
     {

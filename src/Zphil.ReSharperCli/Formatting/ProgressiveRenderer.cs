@@ -1,13 +1,11 @@
 namespace Zphil.ReSharperCli.Formatting;
 
 /// <summary>
-///     A rendering and the <see cref="DetailLevel" /> it settled at.
+///     Represents a rendering and the <see cref="DetailLevel" /> it settled at.
 /// </summary>
 /// <remarks>
-///     The level is returned rather than logged here, because <c>Formatting/</c> is pure by convention and a
-///     logger threaded into it would be the first exception. It is worth returning at all because a reduced
-///     response says so to the agent that received it and nowhere else, so without a record of the level the
-///     mechanism could be dead and look identical to one that never had to fire.
+///     The level is returned for the caller to log rather than logged here, because <c>Formatting/</c> stays
+///     pure.
 /// </remarks>
 internal sealed record ProgressiveRendering(string Text, DetailLevel Level);
 
@@ -16,8 +14,8 @@ internal sealed record ProgressiveRendering(string Text, DetailLevel Level);
 ///     output fits a character budget, avoiding a hard mid-response chop.
 /// </summary>
 /// <remarks>
-///     The budget is the <c>maxChars</c> parameter rather than read from a static, so every environment read
-///     stays behind the <c>IEnvironment</c> seam; there is deliberately no static-budget convenience overload.
+///     The budget is always a parameter, never read from a static, so every environment read stays behind the
+///     <c>IEnvironment</c> seam.
 /// </remarks>
 internal static class ProgressiveRenderer
 {
@@ -32,30 +30,18 @@ internal static class ProgressiveRenderer
 
     /// <summary>
     ///     Renders <paramref name="data" /> at progressively lower detail levels until the output fits
-    ///     within <paramref name="maxChars" />.
+    ///     within <paramref name="maxChars" /> characters.
     /// </summary>
-    /// <typeparam name="T">The structured result type to format.</typeparam>
-    /// <param name="data">The structured result to format.</param>
-    /// <param name="format">Renders <paramref name="data" /> at a given <see cref="DetailLevel" />.</param>
-    /// <param name="maxChars">The maximum allowed response length, in characters.</param>
-    /// <param name="describeReduction">
-    ///     Optional per-level description appended to the reduction note; a generic message is used when
-    ///     <see langword="null" />. Lets each domain explain its own reduction. Returning <c>""</c> means
-    ///     <em>nothing was reduced</em>, and no note is emitted at all — the answer has to come from the
-    ///     domain, because a capped walk never renders the level above the cap and so has nothing to compare
-    ///     against. A domain whose every level drops something never returns it.
-    /// </param>
-    /// <param name="startLevel">
-    ///     The most detailed level to try — a cap, not a pin. Levels above it are skipped entirely, and the
-    ///     walk still steps below it when the rendering does not fit. At the default
-    ///     <see cref="DetailLevel.Full" /> nothing is skipped.
-    /// </param>
+    /// <remarks>
+    ///     <paramref name="startLevel" /> is a cap, not a pin: levels above it are skipped, and the walk still
+    ///     steps below it when a rendering does not fit. <paramref name="describeReduction" /> words each
+    ///     domain's reduction note, a generic message standing in when it is <see langword="null" />, and an
+    ///     empty string from it means nothing was reduced at that level, so no note is emitted.
+    /// </remarks>
     /// <returns>
-    ///     The first level whose rendering fits within <paramref name="maxChars" /> —
-    ///     <see cref="DetailLevel.Full" /> verbatim, lower levels including their appended
-    ///     <c>--- DETAIL REDUCED ---</c> note in the fit check — paired with the level it settled at. If
-    ///     nothing fits, the smallest rendering plus the note — the char-level truncation failsafe
-    ///     (<c>ResponseTruncator</c>) handles the rest.
+    ///     The first rendering that fits, with the level it settled at. A reduced level's
+    ///     <c>--- DETAIL REDUCED ---</c> note counts toward the fit. When nothing fits, the smallest rendering
+    ///     and its note, which <c>ResponseTruncator</c> then cuts to the budget.
     /// </returns>
     public static ProgressiveRendering Render<T>(
         T data,
@@ -86,8 +72,8 @@ internal static class ProgressiveRenderer
             if (output == previousOutput) continue;
 
             // The reduction note counts toward the budget: a rendering that fits only without its note
-            // would be pushed over maxChars by appending it, handing the downstream truncator exactly the
-            // mid-chop this renderer exists to prevent.
+            // would be pushed over maxChars by appending it, handing the downstream truncator the mid-chop
+            // this renderer exists to prevent.
             string candidate = AppendReductionNote(output, level, maxChars, describe, startLevel);
             if (candidate.Length <= maxChars) return new ProgressiveRendering(candidate, level);
 
@@ -105,22 +91,20 @@ internal static class ProgressiveRenderer
     }
 
     /// <summary>
-    ///     Appends the note, led by whichever of the two things happened.
+    ///     Appends the reduction note, led by whether the caller asked for this level or the budget forced it.
     /// </summary>
     /// <remarks>
     ///     <para>
-    ///         A level the caller asked for is not a budget failure, and saying "output exceeded the limit"
-    ///         there would be false; a level below the cap is the budget forcing the ladder down. The
-    ///         <c>--- DETAIL REDUCED ---</c> marker stays the one anchor across both, because it is what an
-    ///         agent matches on to know the response is a reduction rather than a full listing.
+    ///         A level the caller asked for is not a budget failure, so "output exceeded the limit" would be
+    ///         false there. Both forms carry the <c>--- DETAIL REDUCED ---</c> marker, because it is what an
+    ///         agent matches on to tell a reduction from a full listing.
     ///     </para>
     ///     <para>
-    ///         Two things suppress the note entirely, and they are different claims. <see cref="DetailLevel.Full" />
-    ///         is the top of the ladder, so there is no reduction to announce whether or not it was asked for.
-    ///         An empty <paramref name="describe" /> is the domain saying this particular result lost nothing
-    ///         at this level — a zero-issue inspect renders identically at all five — and only the domain can
-    ///         know that: below a cap the level above was never rendered, and rendering it to compare is the
-    ///         work the cap exists to avoid.
+    ///         <see cref="DetailLevel.Full" /> gets no note, asked for or not, since nothing above it exists to
+    ///         reduce from. An empty <paramref name="describe" /> is the domain saying this result lost nothing at
+    ///         this level (a zero-issue inspect renders the same at every level), and only the domain can know
+    ///         that: below a cap the level above was never rendered, and rendering it to compare is the work the
+    ///         cap exists to avoid.
     ///     </para>
     /// </remarks>
     private static string AppendReductionNote(

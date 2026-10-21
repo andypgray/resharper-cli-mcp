@@ -6,7 +6,7 @@ using Zphil.ReSharperCli.Infrastructure;
 
 namespace Zphil.ReSharperCli.Discovery;
 
-/// <summary>A located <c>jb</c> executable and the version it reported.</summary>
+/// <summary>Represents a located <c>jb</c> executable and the version it reported.</summary>
 internal sealed record JbInstallation(string ExecutablePath, string Version);
 
 /// <summary>
@@ -18,38 +18,31 @@ internal sealed record JbInstallation(string ExecutablePath, string Version);
 ///     <para>
 ///         The first success is cached for as long as the files the candidates name are unchanged. If every
 ///         candidate fails, it throws a <see cref="UserErrorException" /> whose remedy is chosen from what the
-///         probes proved — install guidance only when no candidate could be started at all.
+///         probes proved.
 ///     </para>
 ///     <para>
-///         The answer is re-checked by a stat on every call because the version outlives the build that
+///         The answer is re-checked by a stat on every call, because the version outlives the build that
 ///         reported it. On a standard install both candidates reach the <c>dotnet tool</c> shim, which starts
-///         whichever build is installed; the first candidate is whatever <c>jb</c> comes first on PATH,
-///         usually but not always that shim. So after an in-place update every spawn runs the new build,
-///         while a cached version would go on labelling its runs with the old one, and everything that records
-///         which build warmed a cache reads that label. An in-place update rewrites the shim on Windows, so a
-///         change in the write time or size of either candidate's file is what sends the next call to probe
-///         again.
+///         whichever build is installed (the first candidate is whatever <c>jb</c> comes first on PATH, usually
+///         but not always that shim). So after an in-place update every spawn runs the new build, while a
+///         cached version would go on labelling its runs, and the caches they warm, with the old one. An
+///         in-place update rewrites the shim on Windows, so a change in the write time or size of either
+///         candidate's file sends the next call to probe again. A stat rather than a probe per call, because a
+///         probe costs seconds, more with several servers starting together.
 ///     </para>
 ///     <para>
-///         Not a probe per call: a probe costs seconds, and several times that with several servers starting
-///         together, against a PATH lookup and a stat of one or two files.
+///         The check runs when a call resolves its configuration, so a call that resolved before <c>jb</c> was
+///         replaced and spawns it after, such as one queued behind another run or the pre-warm a timed-out call
+///         re-arms, labels the new build's run with the old version. The next call reads the marker that run
+///         stamped as another build's, so it reports the cache as stale and records its warm run under the cold
+///         band, once.
 ///     </para>
 ///     <para>
-///         Two gaps are accepted. The check runs when a call resolves its configuration, so a call that
-///         resolved before <c>jb</c> was replaced and spawns it after, while queued behind another run say,
-///         labels the new build's run with the old version. So does the pre-warm a timed-out call re-arms
-///         with its own configuration. The next call sees the change, but reads the marker that run stamped
-///         as another build's, so it reports the cache as stale and records its warm run under the cold band,
-///         once. A second check once the run lock is held would close it.
-///     </para>
-///     <para>
-///         The second gap is that the file stated is not always the file run. The stat covers what
-///         <see cref="PathSearch" /> resolves, while the probe, and every spawn of
-///         <see cref="JbInstallation.ExecutablePath" />, hand the bare name to the runtime's own lookup, and on
-///         Windows that searches the application, working and system directories before PATH. A <c>jb</c>
-///         found only there has nothing to compare and keeps its first answer. Probing and spawning the
-///         resolved path instead would close the gap, but would stop finding a <c>jb</c> reachable only from
-///         the working directory.
+///         The file stated is not always the file run either. The stat covers what <see cref="PathSearch" />
+///         resolves, while the probe, and every spawn of <see cref="JbInstallation.ExecutablePath" />, hand the
+///         bare name to the runtime's own lookup, which on Windows searches the application, working and system
+///         directories before PATH. A <c>jb</c> found only there has nothing to compare and keeps its first
+///         answer.
 ///     </para>
 /// </remarks>
 internal sealed class JbLocator(IProcessRunner processRunner, IEnvironment environment, ILogger<JbLocator> logger)
@@ -92,12 +85,10 @@ internal sealed class JbLocator(IProcessRunner processRunner, IEnvironment envir
             var elapsed = Stopwatch.StartNew();
             ProbeOutcome outcome = await ProbeAsync(candidate, cancellationToken);
 
-            // Every candidate leaves a line whichever way it ended, because the case that costs the most is
-            // the one nothing else records: a candidate that spends its whole timeout, or throws before
-            // ProcessRunner has written anything at all — the ordinary "not on PATH, fall through to
-            // ~/.dotnet/tools" shape — and is then succeeded by a working one, so the failure line below is
-            // never reached to account for the time. The outcome clause is the point: ProcessRunner sees a
-            // spawn, this frame sees the decision.
+            // Every candidate leaves a line whichever way it ended, because a candidate that spends its whole
+            // timeout, or throws before ProcessRunner has written anything, and is then succeeded by a working
+            // one is otherwise recorded nowhere: the failure line below is never reached. ProcessRunner sees a
+            // spawn; only this frame sees the decision.
             logger.LogDebug(
                 "Probed jb candidate {Candidate} in {ElapsedMs} ms — {ProbeOutcome}",
                 candidate,
@@ -155,8 +146,7 @@ internal sealed class JbLocator(IProcessRunner processRunner, IEnvironment envir
         {
             // Its own ending, because it is the one failure that proves the candidate is there: a process
             // has to start before it can be killed at the cap. The clause is written here rather than taken
-            // from the exception, whose message names the executable a second time — redundant once it
-            // follows the candidate.
+            // from the exception, whose message names the executable a second time.
             return new ProbeOutcome(
                 null,
                 $"timed out after {DurationFormatter.Format(ProbeTimeout)}",
@@ -194,7 +184,7 @@ internal sealed class JbLocator(IProcessRunner processRunner, IEnvironment envir
     }
 
     /// <summary>
-    ///     The write time and size of the file each candidate names right now, in candidate order.
+    ///     Reads the write time and size of the file each candidate names right now, in candidate order.
     /// </summary>
     /// <remarks>
     ///     A candidate that names no file, or one that vanishes between the lookup and the stat, is left out,
@@ -231,9 +221,9 @@ internal sealed class JbLocator(IProcessRunner processRunner, IEnvironment envir
         }
     }
 
-    /// <summary>The version a probe reported.</summary>
+    /// <summary>Parses the version a probe reported.</summary>
     /// <remarks>
-    ///     An empty string when it reported nothing usable — including the null a defaulted
+    ///     Returns the empty string when it reported nothing usable, including the null a defaulted
     ///     <see cref="ProcessResult" /> carries, which must read as "no version" rather than crash the whole
     ///     discovery path.
     /// </remarks>
@@ -250,16 +240,15 @@ internal sealed class JbLocator(IProcessRunner processRunner, IEnvironment envir
     }
 
     /// <summary>
-    ///     The message for a call where no candidate reported a version, with the remedy chosen from what the
-    ///     probes proved rather than from the bare fact that they all failed.
+    ///     Builds the message for a call where no candidate reported a version, with the remedy chosen from what
+    ///     the probes proved rather than from the bare fact that they all failed.
     /// </summary>
     /// <remarks>
     ///     Telling someone to install a tool they already have is worse than telling them nothing: it names a
-    ///     remedy that cannot work, and it sends them to fix the wrong thing while the real cause — a machine
-    ///     too busy to answer in half a minute — goes unnamed. Any candidate that <em>started</em> proves a
-    ///     <c>jb</c> exists, so only <see cref="ProbeEvidence.NotStarted" /> keeps the install guidance. An
-    ///     unrecognised value falls there too: the guidance that was always given is the safe thing to say
-    ///     about a probe nothing has classified.
+    ///     remedy that cannot work and leaves the cause, such as a machine too busy to answer within
+    ///     <see cref="ProbeTimeout" />, unnamed. Any candidate that started proves a <c>jb</c> exists, so
+    ///     only <see cref="ProbeEvidence.NotStarted" /> keeps the install guidance. An unrecognised value falls
+    ///     there too, the safe thing to say about a probe nothing has classified.
     /// </remarks>
     private static string FailureMessage(IEnumerable<string> failures, ProbeEvidence evidence)
     {
@@ -295,8 +284,8 @@ internal sealed class JbLocator(IProcessRunner processRunner, IEnvironment envir
     }
 
     /// <summary>
-    ///     How one candidate's probe ended — the version it reported, or <see langword="null" /> with a clause
-    ///     naming why it is not the <c>jb</c> to run.
+    ///     Represents how one candidate's probe ended: the version it reported, or <see langword="null" /> with
+    ///     a clause naming why it is not the <c>jb</c> to run.
     /// </summary>
     /// <remarks>
     ///     One clause serves both the per-candidate log line and the "Tried:" list in the user-facing error, so
@@ -305,23 +294,25 @@ internal sealed class JbLocator(IProcessRunner processRunner, IEnvironment envir
     /// <param name="Version">The version parsed from the probe's output, or <see langword="null" /> on any failure.</param>
     /// <param name="Detail">What happened, phrased to follow the candidate's name.</param>
     /// <param name="Evidence">
-    ///     What this probe proved about the candidate — which is what picks the remedy once every candidate
-    ///     has failed. It defaults to <see cref="ProbeEvidence.NotStarted" /> so that a new failure path
-    ///     added here claims nothing it has not shown.
+    ///     What this probe proved about the candidate. It defaults to <see cref="ProbeEvidence.NotStarted" /> so
+    ///     that a new failure path claims nothing it has not shown.
     /// </param>
     private sealed record ProbeOutcome(string? Version, string Detail, ProbeEvidence Evidence = ProbeEvidence.NotStarted);
 
-    /// <summary>A successful probe and the candidate files as they stood when it began.</summary>
+    /// <summary>Represents a successful probe and the candidate files as they stood when it began.</summary>
     private sealed record Located(JbInstallation Installation, IReadOnlyList<JbFileState> Files);
 
     /// <summary>
-    ///     One candidate's file as a stat sees it. The size alone would not do, because an in-place update
-    ///     can leave it as it was: the shim is an apphost whose size does not depend on the build it starts.
+    ///     Represents one candidate's file as a stat sees it.
     /// </summary>
+    /// <remarks>
+    ///     The write time as well as the size, because an in-place update can leave the size as it was: the
+    ///     shim is an apphost whose size does not depend on the build it starts.
+    /// </remarks>
     private readonly record struct JbFileState(string FilePath, DateTime LastWriteTimeUtc, long Length);
 
     /// <summary>
-    ///     What a probe proved about a candidate, ordered by how much of it: nothing, that it runs, that it
+    ///     Represents what a probe proved about a candidate, ordered by how much: nothing, that it runs, that it
     ///     runs and had not finished at the cap.
     /// </summary>
     /// <remarks>

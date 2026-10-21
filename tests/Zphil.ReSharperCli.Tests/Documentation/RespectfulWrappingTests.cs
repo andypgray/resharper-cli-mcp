@@ -7,9 +7,9 @@ using Zphil.ReSharperCli.Tests.TestSupport;
 namespace Zphil.ReSharperCli.Tests.Documentation;
 
 /// <summary>
-///     Pins the "unofficial — not affiliated with or endorsed by JetBrains" notice to the three surfaces
-///     CLAUDE.md's respectful-wrapping requirement names: the NuGet package <c>Description</c>, the README's
-///     opening paragraph, and <c>.mcp/server.json</c>.
+///     Pins the "unofficial — not affiliated with or endorsed by JetBrains" notice to the surfaces it is
+///     required on: the NuGet package <c>Description</c>, the README's opening paragraph, and
+///     <c>.mcp/server.json</c>.
 /// </summary>
 /// <remarks>
 ///     <para>
@@ -67,8 +67,8 @@ public sealed partial class RespectfulWrappingTests
     /// <summary>
     ///     Every install manifest's <c>description</c>, which is the string a directory imports and renders
     ///     as this project's public copy. <c>.mcp/server.json</c> is absent on purpose: the fact below holds
-    ///     it to the same notice <em>and</em> to the registry's cap, and splitting that pair would leave the
-    ///     cap asserted somewhere the notice is not.
+    ///     it to the same notice and to the registry's cap, and splitting that pair would leave the cap
+    ///     asserted somewhere the notice is not.
     /// </summary>
     [Theory]
     [InlineData("plugin.json", "/description")]

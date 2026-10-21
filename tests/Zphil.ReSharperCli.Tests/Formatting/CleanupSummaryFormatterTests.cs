@@ -6,13 +6,12 @@ using Zphil.ReSharperCli.Services;
 namespace Zphil.ReSharperCli.Tests.Formatting;
 
 /// <summary>
-///     The authoritative string spec for the cleanup summary: a fixed <see cref="CleanupOutcome" /> mixing all
-///     four <see cref="CleanupFileStatus" /> values, in a deliberately interleaved order, rendered at each
-///     <see cref="DetailLevel" /> and pinned with an exact <c>ShouldBe</c>.
+///     Pins the cleanup summary's exact text at each <see cref="DetailLevel" />, rendered from a fixed
+///     <see cref="CleanupOutcome" /> that mixes every <see cref="CleanupFileStatus" /> value in an interleaved order.
 /// </summary>
 /// <remarks>
-///     That fixture carries a wildcard and an unreadable file, so every level pins the
-///     <em>partial</em>-measurement header; the other header forms have pins of their own.
+///     That fixture carries a wildcard and an unreadable file, so every level pins the partial-measurement
+///     header; the other header forms have pins of their own.
 /// </remarks>
 public sealed class CleanupSummaryFormatterTests
 {
@@ -109,7 +108,7 @@ public sealed class CleanupSummaryFormatterTests
     [Fact]
     public void Format_SingleChangedFileAtFull_IsPlainPerFileList()
     {
-        // The normal small-batch case, and exactly what an agent sees after a one-file cleanup.
+        // The ordinary small-batch case: what an agent sees after a one-file cleanup.
         CleanupOutcome outcome = new(
             "Built-in: Full Cleanup", [new CleanupEntry("src/Probe.cs", CleanupFileStatus.Changed)]);
 
@@ -199,7 +198,7 @@ public sealed class CleanupSummaryFormatterTests
             + "  - src/C.cs (status unknown)");
     }
 
-    /// <summary>A batch of nothing but wildcards, so nothing is measured.</summary>
+    /// <summary>Returns a batch of nothing but wildcards, so nothing is measured.</summary>
     /// <remarks>
     ///     The header states that instead of a ratio over an empty set: "0 of 0 file(s) changed on disk" reads
     ///     as "nothing changed" after a run that rewrote every file the globs matched.
@@ -268,9 +267,8 @@ public sealed class CleanupSummaryFormatterTests
     [Fact]
     public void Format_EveryLevel_NeverClaimsAZeroOfZeroRatio()
     {
-        // The defect in one assertion, across the whole ladder: an all-wildcard run has no denominator, so
-        // no level may print one. A later header change that reintroduces the ratio fails here whichever
-        // level it reintroduces it at.
+        // Across the whole ladder: an all-wildcard run has no denominator, so no level may print one. A
+        // header change that reintroduces the ratio fails here whichever level it reintroduces it at.
         CleanupOutcome outcome = AllWildcards();
 
         // Act / Assert
@@ -279,8 +277,8 @@ public sealed class CleanupSummaryFormatterTests
     }
 
     /// <summary>
-    ///     Three named files, none of which could be read before or after the run, for instance because another
-    ///     process held them locked.
+    ///     Returns three named files, none of which could be read before or after the run, for instance because
+    ///     another process held them locked.
     /// </summary>
     /// <remarks>
     ///     Counting them would report "0 of 3 file(s) changed on disk" about files this server never compared,
@@ -340,7 +338,7 @@ public sealed class CleanupSummaryFormatterTests
     public void Render_ManyEntriesSmallBudget_DegradesGracefullyInsteadOfMidListChop()
     {
         // Arrange — a solution-wide outcome too large to list in full, against a budget one character short
-        // of the Medium rendering: Medium provably cannot fit, and Low plus its reduction note does. That
+        // of the Medium rendering: Medium cannot fit, and Low plus its reduction note does. That
         // proves ProgressiveRenderer walks Full -> High -> Medium (each too large) down to Low (fits) with
         // the real formatter, appending the DETAIL REDUCED note rather than hard-chopping a listing mid-line.
         // The budget is sized from the renderings rather than a fixed headroom because the note counts
@@ -361,8 +359,8 @@ public sealed class CleanupSummaryFormatterTests
             outcome, CleanupSummaryFormatter.Format, maxChars, CleanupSummaryFormatter.DescribeReduction).Text;
 
         // Assert
-        full.Length.ShouldBeGreaterThan(maxChars); // precondition: Full genuinely did not fit
-        result.Length.ShouldBeLessThanOrEqualTo(maxChars); // note included, so the budget genuinely holds
+        full.Length.ShouldBeGreaterThan(maxChars); // precondition: Full did not fit
+        result.Length.ShouldBeLessThanOrEqualTo(maxChars); // note included, so the budget holds
         result.ShouldStartWith("Cleanup completed with profile \"Built-in: Full Cleanup\"."); // header intact, no mid-line chop
         result.ShouldContain("--- DETAIL REDUCED ---");
         result.ShouldContain("Reduced to Low");

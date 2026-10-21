@@ -14,30 +14,28 @@ using Zphil.ReSharperCli.Tools;
 namespace Zphil.ReSharperCli.Tests.Tools;
 
 /// <summary>
-///     A real MCP client watching a long run advance: the whole path, from <c>jb</c>'s stdout through the run
-///     state and the formatter to <c>notifications/progress</c> on the wire.
+///     Drives a real MCP client watching a long run advance: the whole path, from <c>jb</c>'s stdout through
+///     the run state and the formatter to <c>notifications/progress</c> on the wire.
 /// </summary>
 /// <remarks>
-///     <see cref="ProgressSinkTests" /> pins the sink's own ordering. What this exists to catch is everything
-///     a unit test cannot see — that the SDK really does bind the <c>RequestContext</c> parameter without
-///     advertising it in the schema, that the token round-trips, and that nothing reports against a request
-///     that has already been answered. That last one is read off the server's own output stream rather than
-///     off the client, and could never have been read off the client: a beat sent after the result is dropped
-///     before any handler sees it, so a correct observation and a buggy one look identical from there — and
-///     the order the client's handler runs in is not the order the server wrote in either. See
-///     <see cref="WireLog" />.
+///     <see cref="ProgressSinkTests" /> pins the sink's own ordering. This class catches what a unit test
+///     cannot see: that the SDK binds the <c>RequestContext</c> parameter without advertising it in the
+///     schema, that the token round-trips, and that nothing reports against a request already answered.
+///     Ordering and nothing-after-the-result are read off the server's own output stream, never off the
+///     client: a beat sent after the result is dropped before any client handler sees it, and the order the
+///     client's handlers run in is not the order the server wrote in. See <see cref="WireLog" />.
 /// </remarks>
 public sealed class ProgressSinkIntegrationTests
 {
-    /// <summary>Long enough that only a genuine hang reaches it, short enough to fail rather than wedge.</summary>
+    /// <summary>Long enough that only a hang reaches it, short enough to fail rather than wedge.</summary>
     private static readonly TimeSpan Generous = TimeSpan.FromSeconds(30);
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     /// <summary>
     ///     One long run, and everything the wire has to get right about it. Deliberately one test rather
-    ///     than four: every assertion is about one conversation's ordering — notifications before the
-    ///     result, nothing after it — so four tests would re-arrange the same parked run four times.
+    ///     than one per assertion: every assertion is about one conversation's ordering, notifications before
+    ///     the result and nothing after it, so splitting it would re-arrange the same parked run for each.
     /// </summary>
     [Fact]
     public async Task CallTool_AClientThatAsksForProgress_HearsTheRunAdvanceAndNothingAfterItEnds()
@@ -67,8 +65,8 @@ public sealed class ProgressSinkIntegrationTests
         CallToolResult result = await call.WaitAsync(Generous, Ct);
         IReadOnlyList<ProgressNotificationValue> atCompletion = recorder.Items;
 
-        // Assert — the run advanced more than once, so a heartbeat is genuinely repeating rather than the
-        // client having heard a single opening message.
+        // Assert — the run advanced more than once, so the heartbeat is repeating rather than the client
+        // having heard a single opening message.
         result.IsError.ShouldNotBe(true);
         atCompletion.Count.ShouldBeGreaterThanOrEqualTo(2);
 
@@ -76,13 +74,11 @@ public sealed class ProgressSinkIntegrationTests
         recorder.Messages.ShouldAllBe(message => message.Contains("inspectcode on App.slnx: "));
         recorder.Messages.ShouldContain(message => message.Contains("analyzing 2 files"));
 
-        // Monotonic, which is the one thing the protocol asks of `progress` — read off the wire, because what
-        // the client's list records is the order thread-pool callbacks ran in, not the order the server wrote
-        // in. This is a promise rather than a hope: ProgressSink numbers a notification inside a chain where
-        // each send awaits the one before it, so the wire can be held to more than "sorted" — contiguous, and
-        // based at one. The lower bound goes first so a tap that captured nothing fails there rather than
-        // satisfying the pin with an empty list, and it is `>=` rather than `==` because a frame written but
-        // never delivered is the bug the window below exists to catch.
+        // Monotonic, the one thing the protocol asks of `progress`, and read off the wire. ProgressSink numbers
+        // a notification inside a chain where each send awaits the one before it, so the wire can be held to
+        // more than sorted: contiguous, and based at one. The lower bound goes first so a tap that captured
+        // nothing fails there rather than satisfying the pin with an empty list, and it is `>=` rather than
+        // `==` because a frame written but never delivered is the bug the window below exists to catch.
         IReadOnlyList<double?> written = harness.Wire.ProgressValues;
         written.Count.ShouldBeGreaterThanOrEqualTo(atCompletion.Count);
         written.ShouldBe(Enumerable.Range(1, written.Count).Select(counter => (double?)counter));
@@ -94,13 +90,10 @@ public sealed class ProgressSinkIntegrationTests
         // Order-free, and about the client rather than the server: nothing was delivered twice.
         atCompletion.Select(value => value.Progress).Distinct().Count().ShouldBe(atCompletion.Count);
 
-        // And nothing reported after the result went out — also off the wire, where a frame's position is the
-        // order the server wrote it in. A late report goes against a request that has already been answered, so
-        // the client has torn down its handler registration by then and no client-side count can ever see one.
-        // What puts the last frame ahead of the result is the sink's drain, which the tool method awaits before
-        // its answer is serialized. The window can be generous precisely because it is the wire: a correct run
-        // writes no frame into it however loaded the machine is. Ten would-be beats fit in it at the harness's
-        // interval.
+        // And nothing reported after the result went out, also off the wire. What puts the last frame ahead of
+        // the result is the sink's drain, which the tool method awaits before its answer is serialized. The
+        // window can be generous because it is the wire: a correct run writes no frame into it however loaded
+        // the machine is, and several would-be beats fit in it at the harness's interval.
         await Task.Delay(TimeSpan.FromMilliseconds(500), Ct);
         harness.Wire.LastProgressIndex.ShouldBeLessThan(harness.Wire.ToolResultIndex);
     }
@@ -108,9 +101,9 @@ public sealed class ProgressSinkIntegrationTests
     [Fact]
     public async Task CallTool_AResetQueuedBehindAnotherRun_HearsItsWaitAndNothingAfterTheResult()
     {
-        // Arrange — the other caller on the run lock, and the one with nothing to stream: a reset spawns no
-        // jb, so the stub answers the version probe discovery makes and nothing else. The held lock file is
-        // another session's live jb as far as this server can tell.
+        // Arrange — a caller on the run lock with nothing to stream: a reset spawns no jb, so the stub answers
+        // the version probe discovery makes and nothing else. The held lock file is another session's live jb
+        // as far as this server can tell.
         await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
         string cacheHome = harness.Environment.CreateTempDirectory();
         harness.Environment.SetVariable("JB_CACHE_HOME", cacheHome);
@@ -122,7 +115,7 @@ public sealed class ProgressSinkIntegrationTests
         Recorder recorder = new();
 
         // Act — the wait has to outlast JbRunLock.NotableWait before a beat names another run, so this waits
-        // the second out rather than settling for the immediate "starting".
+        // it out rather than settling for the immediate "starting".
         Task<CallToolResult> call = harness.Client
             .CallToolAsync(ResharperTools.ResetCacheToolName, progress: recorder, cancellationToken: Ct)
             .AsTask();
@@ -136,8 +129,9 @@ public sealed class ProgressSinkIntegrationTests
         }
         finally
         {
-            // Released on every path rather than at scope exit: the reset is queued on this very lock, so a
-            // failed wait would otherwise leave the call parked behind a file nothing was going to let go of.
+            // Released before the call is awaited, because the reset is queued on this lock and cannot finish
+            // until the file is let go; and in a finally, so a failed wait does not leave the call parked
+            // behind a handle nothing releases.
             await held.DisposeAsync();
         }
 
@@ -199,7 +193,7 @@ public sealed class ProgressSinkIntegrationTests
         try
         {
             // The wait has to outlast JbRunLock.NotableWait before a beat names the run ahead, so this waits
-            // the second out rather than settling for the immediate "starting".
+            // it out rather than settling for the immediate "starting".
             await waiting.WaitUntilAsync(
                 () => waiting.Messages.Any(message => message.Contains("waiting for this server's other jb run")),
                 "a beat naming the wait for this server's other run",
@@ -207,8 +201,8 @@ public sealed class ProgressSinkIntegrationTests
         }
         finally
         {
-            // Released on every path rather than at scope exit: the queued call is behind the held one, so a
-            // failed wait would otherwise leave both parked on a source nothing was going to complete.
+            // Released in a finally: the queued call is behind the held one, so a failed wait would otherwise
+            // leave both parked on a source nothing completes.
             release.SetResult();
         }
 
@@ -247,7 +241,7 @@ public sealed class ProgressSinkIntegrationTests
         IList<McpClientTool> tools = await harness.Client.ListToolsAsync(cancellationToken: Ct);
         CallToolResult result = await harness.Client.CallToolAsync(ResharperTools.InspectToolName, cancellationToken: Ct);
 
-        // Assert — both names the parameter could carry, so a rename cannot quietly start advertising it and
+        // Assert — both names the parameter could carry, so a rename cannot silently start advertising it and
         // leave a pin passing on a name it no longer uses.
         result.IsError.ShouldNotBe(true);
         harness.Logs.Warnings.ShouldBeEmpty();
@@ -286,7 +280,7 @@ public sealed class ProgressSinkIntegrationTests
         observers.ShouldAllBe(observer => observer == null);
     }
 
-    /// <summary>One watched <c>resharper_inspect</c> against a named solution.</summary>
+    /// <summary>Starts one watched <c>resharper_inspect</c> call against a named solution.</summary>
     private static Task<CallToolResult> Call(McpPipelineHarness harness, string solutionPath, Recorder progress)
     {
         return harness.Client
@@ -299,8 +293,8 @@ public sealed class ProgressSinkIntegrationTests
     }
 
     /// <summary>
-    ///     The routing every stubbed <c>jb</c> here shares — probe answered, SARIF written, generation
-    ///     planted — around <paramref name="duringRun" />, where each test does its streaming or watching.
+    ///     Routes every stubbed <c>jb</c> here the same way (probe answered, SARIF written, generation
+    ///     planted) around <paramref name="duringRun" />, where each test does its streaming or watching.
     /// </summary>
     private static void RouteJb(IProcessRunner processRunner, Func<CallInfo, Task> duringRun)
     {
@@ -319,8 +313,8 @@ public sealed class ProgressSinkIntegrationTests
     }
 
     /// <summary>
-    ///     A <c>jb</c> that streams the analysis vocabulary a real one does, then parks until
-    ///     <paramref name="release" /> completes — so a test controls when the run ends and can assert on what
+    ///     Routes a <c>jb</c> that streams the analysis vocabulary a real one does, then parks until
+    ///     <paramref name="release" /> completes, so a test controls when the run ends and can assert on what
     ///     the client heard before that.
     /// </summary>
     private static void RouteStreamingJb(IProcessRunner processRunner, Task release)
@@ -339,7 +333,7 @@ public sealed class ProgressSinkIntegrationTests
         });
     }
 
-    /// <summary>A <c>jb</c> that records the line observer each run was handed, and otherwise succeeds.</summary>
+    /// <summary>Routes a <c>jb</c> that records each run's line observer, and otherwise succeeds.</summary>
     private static void RouteRecordingJb(IProcessRunner processRunner, List<Action<string>?> observers)
     {
         RouteJb(processRunner, callInfo =>
@@ -353,7 +347,7 @@ public sealed class ProgressSinkIntegrationTests
         });
     }
 
-    /// <summary>The client end of the channel: everything the server sent, in the order it arrived.</summary>
+    /// <summary>Records the client end of the channel: everything the server sent, in arrival order.</summary>
     private sealed class Recorder() : RecordingSink<ProgressNotificationValue>(Generous), IProgress<ProgressNotificationValue>
     {
         public IReadOnlyList<string> Messages => Items.Select(value => value.Message ?? "").ToList();

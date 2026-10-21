@@ -1,6 +1,6 @@
 namespace Zphil.ReSharperCli.Tests.TestSupport;
 
-/// <summary>The <c>.DotSettings</c> shapes a test plants on disk.</summary>
+/// <summary>Provides the <c>.DotSettings</c> shapes a test plants on disk.</summary>
 /// <remarks>
 ///     Shared so every layer that reads the declared-profile entry is tested against the same XML: private
 ///     copies of it could drift apart silently.
@@ -12,8 +12,8 @@ internal static class DotSettingsFixtures
 
     /// <summary>
     ///     Writes <paramref name="content" /> as the settings file beside the solution called
-    ///     <paramref name="solutionFileName" /> in <paramref name="directory" /> — the
-    ///     <c>{solution}.DotSettings</c> layer <c>jb</c> and the resolver both find by name — and returns its path.
+    ///     <paramref name="solutionFileName" /> in <paramref name="directory" /> (the
+    ///     <c>{solution}.DotSettings</c> layer <c>jb</c> and the resolver both find by name) and returns its path.
     /// </summary>
     public static string PlantBeside(string directory, string content, string solutionFileName = "App.sln")
     {
@@ -22,7 +22,7 @@ internal static class DotSettingsFixtures
         return path;
     }
 
-    /// <summary>An ordinary IDE-generated settings file declaring <paramref name="profileName" />.</summary>
+    /// <summary>Returns a plain IDE-generated settings file declaring <paramref name="profileName" />.</summary>
     public static string Declaring(string profileName)
     {
         return $"""
@@ -33,10 +33,9 @@ internal static class DotSettingsFixtures
     }
 
     /// <summary>
-    ///     A settings file carrying one inspection-severity override — the entry a solution or project layer
-    ///     uses to widen or narrow a rule.
+    ///     Returns a settings file carrying one inspection-severity override, the entry a solution or project
+    ///     layer uses to widen or narrow a rule.
     /// </summary>
-    /// <remarks>The shape of each of the two layers in a layer-precedence fixture.</remarks>
     public static string SettingSeverity(string ruleId, string severity)
     {
         return $"""
@@ -47,8 +46,9 @@ internal static class DotSettingsFixtures
     }
 
     /// <summary>
-    ///     The same declaration behind a comment containing <c>--</c>: a real-world shape, and illegal XML,
-    ///     which <c>XDocument</c> rejects outright while ReSharper and <c>jb</c> read the file without complaint.
+    ///     Returns the same declaration behind a comment containing <c>--</c>: a real-world shape, and illegal
+    ///     XML, which <c>XDocument</c> rejects outright while ReSharper and <c>jb</c> read the file without
+    ///     complaint.
     /// </summary>
     /// <remarks>
     ///     The comment spans two lines so a parse error reported afterwards has a line number that can be
@@ -65,10 +65,10 @@ internal static class DotSettingsFixtures
                 """;
     }
 
-    /// <summary>A settings file broken past what discarding comments can rescue.</summary>
+    /// <summary>Returns a settings file broken past what discarding comments can rescue.</summary>
     /// <remarks>
-    ///     An unclosed element on line 3, behind an illegal comment so the lenient retry is genuinely the pass
-    ///     that gives up.
+    ///     An unclosed element on line 3, behind an illegal comment so the lenient retry is the pass that
+    ///     gives up.
     /// </remarks>
     public static string Unparseable()
     {

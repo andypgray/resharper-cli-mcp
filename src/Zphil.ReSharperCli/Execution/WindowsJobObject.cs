@@ -7,33 +7,31 @@ using Microsoft.Win32.SafeHandles;
 namespace Zphil.ReSharperCli.Execution;
 
 /// <summary>
-///     A Windows job object carrying <c>JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE</c>: every process assigned to it
-///     is terminated by the kernel when the last handle to the job closes.
+///     Represents a Windows job object carrying <c>JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE</c>: every process
+///     assigned to it is terminated by the kernel when the last handle to the job closes.
 /// </summary>
 /// <remarks>
 ///     <para>
-///         Held for the life of the server process, so that closing — by disposal, by a crash, or by a
-///         <c>TerminateProcess</c> no in-process handler can intercept — is what kills a <c>jb</c> this server
+///         Held for the life of the server process, so that its closing, whether by disposal, by a crash, or by
+///         a <c>TerminateProcess</c> no in-process handler can intercept, is what kills a <c>jb</c> this server
 ///         started.
 ///     </para>
 ///     <para>
 ///         Job membership is inherited, so a worker <c>jb</c> spawns of its own is covered without being
-///         assigned. The server process itself is deliberately <em>not</em> in the job: it would then be
-///         terminated by its own <see cref="Dispose" /> during an orderly shutdown, before the logs were
-///         flushed.
+///         assigned. The server process itself is deliberately not in the job: it would then be terminated by
+///         its own <see cref="Dispose" /> during an orderly shutdown, before the logs were flushed.
 ///     </para>
 ///     <para>
 ///         There is a window of a few microseconds between <c>CreateProcess</c> returning and the assignment
-///         landing, in which a kill of this server would still strand the child. Closing it needs
+///         landing, in which a kill of this server would still strand the child. Closing it would need
 ///         <c>PROC_THREAD_ATTRIBUTE_JOB_LIST</c> at creation time, which means re-implementing
-///         <see cref="Process.Start()" /> over <c>CreateProcess</c> — a great deal of interop to narrow a
-///         window measured against a human deciding to kill a process.
+///         <see cref="Process.Start()" /> over <c>CreateProcess</c>.
 ///     </para>
 ///     <para>
-///         <c>DllImport</c> rather than <c>LibraryImport</c>: the source generator emits
-///         <c>unsafe</c> stubs, so four calls would cost <c>AllowUnsafeBlocks</c> across the whole assembly.
-///         The platform attributes sit on the interop declarations rather than on this type, so a field of
-///         this type can live in a class that compiles for every platform.
+///         <c>DllImport</c> rather than <c>LibraryImport</c>: the source generator emits <c>unsafe</c> stubs, so
+///         these calls would cost <c>AllowUnsafeBlocks</c> across the whole assembly. The platform attributes
+///         sit on the interop declarations rather than on this type, so a field of this type can live in a
+///         class that compiles for every platform.
 ///     </para>
 /// </remarks>
 internal sealed class WindowsJobObject : IDisposable
@@ -62,8 +60,8 @@ internal sealed class WindowsJobObject : IDisposable
     ///     call that failed.
     /// </summary>
     /// <remarks>
-    ///     A throw rather than a null so the caller's warning can say <em>why</em>: the caller degrades to an
-    ///     unguarded child either way, and the reason is the only part it cannot guess.
+    ///     A throw rather than a null so the caller's warning can say why: the caller degrades to an unguarded
+    ///     child either way, and the reason is the only part it cannot guess.
     /// </remarks>
     internal static WindowsJobObject Create()
     {
@@ -84,7 +82,7 @@ internal sealed class WindowsJobObject : IDisposable
         }
         catch
         {
-            // An armed-less job would silently guarantee nothing, so a half-built one is not worth keeping.
+            // A job without the limit armed would silently guarantee nothing, so a half-built one is not kept.
             handle.Dispose();
             throw;
         }
@@ -181,8 +179,8 @@ internal sealed class WindowsJobObject : IDisposable
     }
 
     /// <summary>
-    ///     The job handle, released through <c>CloseHandle</c>. A <see cref="SafeHandle" /> rather than a raw
-    ///     <see cref="nint" /> because closing it is not a tidy-up — it is the kill.
+    ///     Represents the job handle, released through <c>CloseHandle</c>. A <see cref="SafeHandle" /> rather
+    ///     than a raw <see cref="nint" />, because closing it is the kill rather than a tidy-up.
     /// </summary>
     private sealed class SafeJobHandle : SafeHandleZeroOrMinusOneIsInvalid
     {

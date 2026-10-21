@@ -10,8 +10,8 @@ using Zphil.ReSharperCli.Tools;
 namespace Zphil.ReSharperCli.Tests.Tools;
 
 /// <summary>
-///     <see cref="ResharperTools.CleanupAsync" /> end to end over the two faked seams, with the config and
-///     service graph real.
+///     Drives <see cref="ResharperTools.CleanupAsync" /> end to end over the faked process and environment
+///     seams, with the config and service graph real.
 /// </summary>
 /// <remarks>
 ///     The <c>files</c> validation the tool method performs itself is pinned here. An invalid enum argument is
@@ -31,19 +31,19 @@ public sealed class ResharperToolsCleanupTests : IDisposable
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     /// <summary>
-    ///     The <c>profile</c> argument a caller passes against a solution declaring
+    ///     Gets the <c>profile</c> argument a caller passes against a solution declaring
     ///     <c>House: Keep Named Arguments</c>, and the profile the cleanup runs with.
     /// </summary>
     public static TheoryData<string?, string> ProfileArgumentsAgainstADeclaredProfile =>
         new()
         {
-            // Omitted: the whole point of the declared profile — a caller that does not know it exists still
-            // gets it. Without this, a repo that narrowed its cleanup silently gets Full Cleanup instead.
+            // Omitted: the declared profile applies, so a caller that does not know it exists still gets it.
+            // Without this, a repo that narrowed its cleanup silently gets Full Cleanup instead.
             { null, "House: Keep Named Arguments" },
             // Passed: the caller's profile overrides the declared one.
             { "Built-in: Reformat Code", "Built-in: Reformat Code" },
             // Blank: it would reach jb as --profile= and fail the run, so it reads as "unspecified" and falls
-            // through, exactly as a blank declared profile does.
+            // through, as a blank declared profile does.
             { "   ", "House: Keep Named Arguments" },
             // Padded with whitespace: trimmed before it is used.
             { "  Built-in: Reformat Code  ", "Built-in: Reformat Code" }
@@ -88,7 +88,7 @@ public sealed class ResharperToolsCleanupTests : IDisposable
         // Act
         string result = await tools.CleanupAsync(["src/**/*.cs", "tests/**/*.cs"], cancellationToken: Ct);
 
-        // Assert — and the run is affirmed rather than merely not denied.
+        // Assert — and the run is affirmed, not only left undenied.
         result.ShouldNotContain("0 of 0");
         result.ShouldContain("Every entry was a wildcard pattern: jb cleaned what they matched");
         result.ShouldContain("  - src/**/*.cs (pattern, not hashed)");
@@ -97,8 +97,8 @@ public sealed class ResharperToolsCleanupTests : IDisposable
     [Fact]
     public async Task CleanupAsync_EntryJoiningSeveralPaths_IsSplitIntoSeparatePaths()
     {
-        // Arrange — the measured caller mistake: several paths joined into one array element. Without the split
-        // this fails the whole call as a missing file, wasting a round trip on a list every path of which is real.
+        // Arrange — several paths joined into one array element. Without the split this fails the whole call
+        // as a missing file, wasting a round trip on a list every path of which is real.
         SolutionFiles.Plant(_environment.CurrentDirectory, "src/A.cs");
         SolutionFiles.Plant(_environment.CurrentDirectory, "src/B.cs");
         List<string>? cleanupArguments = null;
@@ -220,8 +220,8 @@ public sealed class ResharperToolsCleanupTests : IDisposable
     [Fact]
     public async Task CleanupAsync_SettingsDeclareProfileBehindAnIllegalComment_AppliesItAndSaysNothing()
     {
-        // Arrange — end to end over the field failure: `--` inside a comment is illegal XML, so without the
-        // lenient retry this file resolves no profile at all and silently cleans up with Full Cleanup instead.
+        // Arrange — end to end: `--` inside a comment is illegal XML, so without the lenient retry this file
+        // resolves no profile at all and silently cleans up with Full Cleanup instead.
         DotSettingsFixtures.PlantBeside(_environment.CurrentDirectory, DotSettingsFixtures.DeclaringBehindIllegalComment("House: Keep Named Arguments"));
         SolutionFiles.Plant(_environment.CurrentDirectory, "src/A.cs");
         StubJb();
@@ -259,7 +259,7 @@ public sealed class ResharperToolsCleanupTests : IDisposable
     public async Task CleanupAsync_JbSettingsPathNamesAMissingFile_LeadsWithTheSameWarning()
     {
         // Arrange — unlike an unreadable settings file, which costs only the cleanup profile, this failure drops
-        // both configuration axes, so both tools report it.
+        // both configuration axes, so inspect reports it too.
         string missing = Path.Combine(_environment.CurrentDirectory, "missing.DotSettings");
         _environment.SetVariable("JB_SETTINGS_PATH", missing);
         SolutionFiles.Plant(_environment.CurrentDirectory, "src/A.cs");
@@ -293,7 +293,7 @@ public sealed class ResharperToolsCleanupTests : IDisposable
 
         // Assert
         result.ShouldStartWith("WARNING: could not read ReSharper settings ");
-        result.ShouldContain("--- DETAIL REDUCED ---"); // the body genuinely had to reduce
+        result.ShouldContain("--- DETAIL REDUCED ---"); // the body had to reduce
         result.Length.ShouldBeLessThanOrEqualTo(1_000); // banner included, so the truncator never bites
     }
 
@@ -327,7 +327,7 @@ public sealed class ResharperToolsCleanupTests : IDisposable
         await _processRunner.DidNotReceive().AnyRun();
     }
 
-    /// <summary>The tool methods over this class's environment and process runner.</summary>
+    /// <summary>Builds the tool methods over this class's environment and process runner.</summary>
     private ResharperTools Tools()
     {
         return ToolHarness.Build(_processRunner, _environment);
@@ -359,9 +359,9 @@ public sealed class ResharperToolsCleanupTests : IDisposable
     }
 
     /// <summary>
-    ///     As <see cref="StubJb" />, but a <c>cleanupcode</c> run exits with <paramref name="exitCode" /> and
-    ///     <paramref name="standardError" />. The version probe still succeeds, or discovery would fail before
-    ///     cleanup ever ran.
+    ///     Stubs jb as <see cref="StubJb" /> does, except that a <c>cleanupcode</c> run exits with
+    ///     <paramref name="exitCode" /> and <paramref name="standardError" />. The version probe still succeeds,
+    ///     or discovery would fail before cleanup ever ran.
     /// </summary>
     private void StubJbCleanupFailing(int exitCode, string standardError)
     {

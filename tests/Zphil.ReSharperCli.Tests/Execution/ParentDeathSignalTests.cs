@@ -4,12 +4,12 @@ using Zphil.ReSharperCli.Execution;
 
 namespace Zphil.ReSharperCli.Tests.Execution;
 
-/// <summary>
-///     The Linux wrapper's argument vector, pinned on every platform. Locating <c>setpriv</c> and probing it
-///     need a Linux machine; composing the command it will be spawned with does not, and that composition is
-///     where the two things worth getting wrong live — the shape <c>setpriv</c> expects, and whether the wrap
-///     happens at all.
-/// </summary>
+/// <summary>Pins the Linux wrapper's argument vector on every platform.</summary>
+/// <remarks>
+///     Locating <c>setpriv</c> and probing it need a Linux machine; composing the command it will be spawned
+///     with does not, and the composition is where the wrapper can go wrong: the shape <c>setpriv</c> expects,
+///     and whether the wrap happens at all.
+/// </remarks>
 public sealed class ParentDeathSignalTests
 {
     [Fact]
@@ -19,12 +19,11 @@ public sealed class ParentDeathSignalTests
         SpawnCommand command = ParentDeathSignal.Wrap("/usr/bin/setpriv", "/home/u/.dotnet/tools/jb", "jb", ["inspectcode", "App.sln"]);
 
         // Assert — the `--` separates setpriv's own options from the target's, which matters the moment a
-        // target argument starts with a dash, and every jb argument does.
+        // target argument starts with a dash, and every jb option does.
         command.FileName.ShouldBe("/usr/bin/setpriv");
         command.Arguments.ShouldBe(["--pdeathsig", "SIGKILL", "--", "/home/u/.dotnet/tools/jb", "inspectcode", "App.sln"]);
 
-        // And the flag says so: a spawn reported as parent-death-signalled must be one this method actually
-        // wrapped.
+        // And the flag says so: a spawn reported as parent-death-signalled must be one this method wrapped.
         command.Wrapped.ShouldBeTrue();
     }
 
@@ -45,8 +44,8 @@ public sealed class ParentDeathSignalTests
     [Fact]
     public void Wrap_NoArguments_StillWraps()
     {
-        // Assert — the vector is well-formed with an empty tail, so the wrap does not quietly depend on the
-        // caller having passed something.
+        // Assert — the vector is well-formed with an empty tail, so the wrap does not depend on the caller
+        // having passed something.
         ParentDeathSignal.Wrap("/usr/bin/setpriv", "/usr/bin/jb", "jb", [])
             .Arguments.ShouldBe(["--pdeathsig", "SIGKILL", "--", "/usr/bin/jb"]);
     }

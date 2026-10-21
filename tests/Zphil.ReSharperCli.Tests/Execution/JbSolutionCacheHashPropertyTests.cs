@@ -8,28 +8,27 @@ using Zphil.ReSharperCli.Tests.TestSupport;
 namespace Zphil.ReSharperCli.Tests.Execution;
 
 /// <summary>
-///     The two halves of <c>jb</c>'s undocumented naming scheme have to agree, and nothing but a test says
-///     so: <see cref="JbSolutionCacheHash" /> writes a generation directory's name and
-///     <see cref="JbCacheGenerations" /> reads one, in different files, against a scheme neither of them
-///     owns.
+///     Pins that the two halves of <c>jb</c>'s undocumented naming scheme agree, which only a test can enforce:
+///     <see cref="JbSolutionCacheHash" /> writes a generation directory's name and
+///     <see cref="JbCacheGenerations" /> reads one, in different files, against a scheme neither of them owns.
 /// </summary>
 /// <remarks>
 ///     <para>
-///         Composing a name and parsing it back is the round trip that holds them together — and it also says
-///         that whatever rendering <see cref="JbSolutionCacheHash.Compute" /> produces for a path, the parser
-///         accepts it, which is where a negative hash would otherwise slip through.
+///         Composing a name and parsing it back is the round trip that holds them together. It also says that
+///         whatever rendering <see cref="JbSolutionCacheHash.Compute" /> produces for a path, the parser accepts
+///         it, which is where a negative hash would otherwise slip through.
 ///     </para>
 ///     <para>
 ///         The case-folding properties assert both a collision and its absence, which for a hash would
 ///         normally take a probabilistic hedge. Here it does not, because the hash is linear and the
 ///         substitution is a single character. Folding <c>c</c> to <c>f(c)</c> and accumulating
 ///         <c>hash = hash * 31 + f(c)</c> from a seed of 19 leaves
-///         <c>19 * 31^n + Σ f(cᵢ) * 31^(n − 1 − i)</c> in <c>unchecked</c> 32-bit arithmetic, so two strings
-///         of equal length differing only at index <c>k</c> differ by <c>(f(a) − f(b)) * 31^(n − 1 − k)</c>
-///         modulo 2³². A power of 31 is odd and so invertible modulo 2³², and the difference of two folded
-///         UTF-16 code units is smaller than 2³² in absolute value, so that product vanishes exactly when
+///         <c>19 * 31^n + sum(f(c_i) * 31^(n - 1 - i))</c> in <c>unchecked</c> 32-bit arithmetic, so two strings
+///         of equal length differing only at index <c>k</c> differ by <c>(f(a) - f(b)) * 31^(n - 1 - k)</c>
+///         modulo 2^32. A power of 31 is odd and so invertible modulo 2^32, and the difference of two folded
+///         UTF-16 code units is smaller than 2^32 in absolute value, so that product vanishes exactly when
 ///         <c>f(a) = f(b)</c>. A one-character substitution therefore collides if and only if the two
-///         characters fold alike — which is what licenses asserting that two hashes <em>differ</em>.
+///         characters fold alike, which is what licenses asserting that two hashes differ.
 ///     </para>
 ///     <para>
 ///         What folds alike is the second half, and it is the invariant worth guarding: <c>f</c> lower-cases
@@ -136,7 +135,7 @@ public sealed class JbSolutionCacheHashPropertyTests
     }
 
     /// <summary>
-    ///     Whether the fold under test maps both characters onto one: ASCII letters that agree once
+    ///     Determines whether the fold under test maps both characters onto one: ASCII letters that agree once
     ///     lower-cased, and nothing else.
     /// </summary>
     /// <remarks>
@@ -151,13 +150,13 @@ public sealed class JbSolutionCacheHashPropertyTests
     }
 
     /// <summary>
-    ///     A solution path: the POSIX shape the shared generators produce, that same shape respelt with a
+    ///     Draws a solution path: the POSIX shape the shared generators produce, that same shape respelt with a
     ///     drive letter and backslashes, and the curated paths.
     /// </summary>
     /// <remarks>
     ///     A Windows spelling is legal input here because <see cref="JbSolutionCacheHash.Compute" /> is a pure
-    ///     string function calling no path API, so no property built on one can assert something true on a
-    ///     single platform.
+    ///     string function calling no path API, so no property built on one can assert something that holds on
+    ///     only one platform.
     /// </remarks>
     private static Gen<string> HashInputPath()
     {
@@ -175,12 +174,12 @@ public sealed class JbSolutionCacheHashPropertyTests
     }
 
     /// <summary>
-    ///     A path, and the same path with exactly one character replaced by a different one.
+    ///     Draws a path, and the same path with exactly one character replaced by a different one.
     /// </summary>
     /// <remarks>
     ///     The replacement is drawn from the trap characters as often as at random, so the pairs a wider fold
-    ///     would conflate — the <c>| 0x20</c> neighbours of the bracket and separator characters, and the cased
-    ///     letters outside ASCII — are hit on every seed.
+    ///     would conflate are hit on every seed: the <c>| 0x20</c> neighbours of the bracket and separator
+    ///     characters, and the cased letters outside ASCII.
     /// </remarks>
     private static Gen<SubstitutionCase> Substitution()
     {
@@ -193,16 +192,16 @@ public sealed class JbSolutionCacheHashPropertyTests
             .Select(drawn => new SubstitutionCase(drawn.Path, drawn.Index, drawn.Character));
     }
 
-    /// <summary>A path and another ASCII-case spelling of it.</summary>
+    /// <summary>Holds a path and another ASCII-case spelling of it.</summary>
     private sealed record CaseVariantCase(string Path, string Variant);
 
-    /// <summary>A path and the one-character substitution made in it.</summary>
+    /// <summary>Holds a path and the one-character substitution made in it.</summary>
     private sealed record SubstitutionCase(string Path, int Index, char Replacement)
     {
-        /// <summary>The character the substitution replaced.</summary>
+        /// <summary>Gets the character the substitution replaced.</summary>
         internal char Original => Path[Index];
 
-        /// <summary>The path the substitution produced.</summary>
+        /// <summary>Gets the path the substitution produced.</summary>
         internal string Mutated => Path[..Index] + Replacement + Path[(Index + 1)..];
     }
 }

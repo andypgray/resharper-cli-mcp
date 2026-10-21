@@ -4,14 +4,12 @@ using System.Text.Json.Serialization;
 namespace Zphil.ReSharperCli.Pipeline;
 
 /// <summary>
-///     Deserializes enum-typed tool parameters from JSON strings. On an unrecognised name
-///     (e.g. <c>severity: "HIGH"</c>) throws a <see cref="UserErrorException" /> that lists
-///     every valid value so the model can self-correct the next call.
+///     Deserializes enum-typed tool parameters from JSON strings.
 /// </summary>
 /// <remarks>
-///     The default <see cref="JsonStringEnumConverter" /> raises a generic <c>JsonException</c> that
-///     surfaces without the valid-value list, forcing the model to guess. This covers every <c>T : struct, Enum</c> in
-///     tool parameters, so every enum parameter is validated the same way.
+///     An unrecognised name (e.g. <c>severity: "HIGH"</c>) throws a <see cref="UserErrorException" /> listing
+///     every valid value, so the model can self-correct the next call; the default
+///     <see cref="JsonStringEnumConverter" /> raises a generic <c>JsonException</c> without that list.
 /// </remarks>
 internal sealed class EnumValidationConverterFactory : JsonConverterFactory
 {
@@ -37,8 +35,7 @@ internal sealed class EnumValidationConverterFactory : JsonConverterFactory
 
             string? name = reader.GetString();
 
-            // A numeric string ("5", "+5", " 5 ") would bind to an ordinal via Enum.TryParse,
-            // violating the "integers not admitted" contract — reject before parsing.
+            // Rejected before parsing, because Enum.TryParse would bind a numeric string to an ordinal.
             if (name is not null && EnumStringHelper.LooksNumeric(name)) throw new UserErrorException(BuildMessage(name));
 
             if (name is not null && Enum.TryParse(name, true, out T parsed) && Enum.IsDefined(typeof(T), parsed)) return parsed;

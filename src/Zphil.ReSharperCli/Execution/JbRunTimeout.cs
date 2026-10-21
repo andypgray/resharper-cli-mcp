@@ -3,52 +3,50 @@ using System.Globalization;
 namespace Zphil.ReSharperCli.Execution;
 
 /// <summary>
-///     How long one <c>jb</c> run may take, and the environment variable that moves it.
+///     Defines how long one <c>jb</c> run may take, and the environment variable that moves it.
 /// </summary>
 /// <remarks>
 ///     <para>
-///         The cap exists so a hung <c>jb</c> cannot occupy an agent indefinitely; it is not a statement
-///         about how long analysis ought to take. Nothing outside this server imposes it — an MCP client
-///         allows a tool call far longer, Claude Code's own limit being measured in hours — so this
-///         number is the only thing that turns a slow call into a failed one, and every timeout a user
-///         meets is one this server chose.
+///         The cap exists so a hung <c>jb</c> cannot occupy an agent indefinitely, not as a statement about how
+///         long analysis ought to take. MCP clients allow a tool call far longer (Claude Code's limit runs to
+///         hours), so every timeout a user meets is one this server chose.
 ///     </para>
 ///     <para>
-///         The default is sized for the run that actually approaches it: a cold whole-solution analysis.
-///         A warm one finishes in well under a minute, and <c>--include</c> does not make a cold one any
-///         cheaper — <c>jb</c> analyses the whole solution and narrows only what it inspects — so there
-///         is no scoping lever to reach for instead of this one.
+///         The default is sized for the run that approaches it, a cold whole-solution analysis.
+///         <c>--include</c> does not make a cold run cheaper, because <c>jb</c> analyses the whole solution and
+///         narrows only what it inspects, so there is no scoping lever to reach for instead of this one.
 ///     </para>
 /// </remarks>
 internal static class JbRunTimeout
 {
     /// <summary>
-    ///     Environment variable overriding <see cref="Default" />, read as a number of seconds. Named for
-    ///     this server rather than for <c>jb</c> because that is whose cap it is: every <c>JB_</c> variable
-    ///     the server reads becomes an argument <c>jb</c> itself sees, and this one becomes a kill timer
-    ///     <c>jb</c> never learns about. Seconds rather than minutes because the interesting range is
-    ///     narrow — the runs at issue take one to ten minutes — and whole minutes cannot express a cap
-    ///     pitched just above a measured cold run.
+    ///     The environment variable overriding <see cref="Default" />, read as a number of seconds.
     /// </summary>
+    /// <remarks>
+    ///     Named for this server rather than for <c>jb</c>: the <c>JB_</c> variables configure <c>jb</c> itself,
+    ///     while this one is a kill timer <c>jb</c> never learns about. Seconds rather than minutes, so a cap can
+    ///     be pitched just above a measured cold run.
+    /// </remarks>
     internal const string Variable = "RESHARPER_MCP_TIMEOUT_SECS";
 
     /// <summary>The cap when <see cref="Variable" /> is unset, blank, or unreadable.</summary>
     public static readonly TimeSpan Default = TimeSpan.FromSeconds(600);
 
     /// <summary>
-    ///     A cap below this would kill runs that were never in trouble — a warm whole-solution analysis
-    ///     alone costs the better part of a minute — so a smaller value is read as a mistake and raised.
+    ///     The smallest cap accepted. A smaller value is read as a mistake and raised, because a warm
+    ///     whole-solution analysis alone costs the better part of a minute.
     /// </summary>
     internal static readonly TimeSpan Floor = TimeSpan.FromSeconds(60);
 
     /// <summary>
-    ///     Past a day the cap has stopped bounding anything anyone is waiting for, and bounding a hung
-    ///     <c>jb</c> is the whole reason to have one.
+    ///     The largest cap accepted: past a day the cap no longer bounds anything anyone is waiting for, and
+    ///     bounding a hung <c>jb</c> is the reason to have one.
     /// </summary>
     internal static readonly TimeSpan Ceiling = TimeSpan.FromHours(24);
 
     /// <summary>
-    ///     The cap <paramref name="envValue" /> asks for, clamped to <see cref="Floor" />..<see cref="Ceiling" />.
+    ///     Returns the cap <paramref name="envValue" /> asks for, clamped between <see cref="Floor" /> and
+    ///     <see cref="Ceiling" />.
     /// </summary>
     /// <remarks>
     ///     A value that is unparseable, non-finite, or not positive falls back to <see cref="Default" /> rather

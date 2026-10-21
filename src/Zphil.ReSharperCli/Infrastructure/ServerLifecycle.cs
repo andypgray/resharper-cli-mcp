@@ -13,26 +13,22 @@ namespace Zphil.ReSharperCli.Infrastructure;
 ///     Writes the two lines that bracket a server process: what it started as, and how long it ran.
 /// </summary>
 /// <remarks>
-///     It stands in for the Hosting lines <see cref="SerilogConfiguration.QuietedCategories" /> silences, and
-///     says which configuration the process is running under rather than only that it exists. Each field
-///     answers a question the log otherwise cannot, the run cap above all: an operator who has set
-///     <c>RESHARPER_MCP_TIMEOUT_SECS</c> in a client config has no other way to confirm the server read it,
-///     and a value the client did not pass through looks exactly like one that was ignored.
+///     <para>
+///         It stands in for the Hosting lines <see cref="SerilogConfiguration.QuietedCategories" /> silences,
+///         and says which configuration the process is running under rather than only that it exists. Each
+///         field answers a question the log otherwise cannot, the run cap above all: an operator who has set
+///         <c>RESHARPER_MCP_TIMEOUT_SECS</c> in a client config has no other way to confirm the server read it,
+///         and a value the client did not pass through looks the same as one that was ignored.
+///     </para>
+///     <para>
+///         <paramref name="runTimeout" /> and <paramref name="logLevel" /> come from the composition root
+///         rather than being re-read here, because the line exists to report the values in force, and a
+///         re-parse could disagree with what <see cref="SerilogConfiguration.InitializeFileLogger" /> resolved.
+///         <paramref name="childLifetime" /> is read for its guarantee alone: the OS primitive that stops a
+///         <c>jb</c> outliving a hard-killed server shows up only in its absence, as a forked cache generation,
+///         so this line is where a reader learns whether the platform offered one.
+///     </para>
 /// </remarks>
-/// <param name="runTimeout">
-///     The cap this process resolved, passed from the composition root rather than re-read here: the point of
-///     naming it is to report the value actually in force.
-/// </param>
-/// <param name="logLevel">
-///     The file sink's minimum level, passed from the composition root for the same reason as
-///     <paramref name="runTimeout" />: <see cref="SerilogConfiguration.InitializeFileLogger" /> resolved it
-///     once, and a re-parse here could disagree with the sink it claims to describe.
-/// </param>
-/// <param name="childLifetime">
-///     Read for its guarantee alone. What stops a <c>jb</c> outliving a hard-killed server is an OS primitive
-///     that shows up nowhere in a working session — only in its absence, weeks later, as a forked cache
-///     generation — so the fingerprint is where a reader finds out whether the platform offered one at all.
-/// </param>
 internal sealed class ServerLifecycle(
     ConfigResolver configResolver,
     IEnvironment environment,

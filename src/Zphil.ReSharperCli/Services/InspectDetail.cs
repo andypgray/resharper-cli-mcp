@@ -1,15 +1,15 @@
 namespace Zphil.ReSharperCli.Services;
 
 /// <summary>
-///     How much detail <c>resharper_inspect</c>'s response carries, as a <em>cap</em> on the reduction ladder
+///     Defines how much detail <c>resharper_inspect</c>'s response carries, as a cap on the reduction ladder
 ///     rather than a level it is pinned to.
 /// </summary>
 /// <remarks>
 ///     <para>
-///         A cap, not a pin: <c>Formatting.ProgressiveRenderer</c> begins at the requested level and may
-///         still step below it when the rendering does not fit the output budget. Pinning would hand the
-///         downstream truncator an over-budget string, which is the mid-list chop the ladder exists to
-///         prevent. The <c>--- DETAIL REDUCED ---</c> note says which of the two happened.
+///         <c>Formatting.ProgressiveRenderer</c> begins at the requested level and may still step below it when
+///         the rendering does not fit the output budget. Pinning would hand the downstream truncator an
+///         over-budget string, which is the mid-list chop the ladder exists to prevent. The
+///         <c>--- DETAIL REDUCED ---</c> note says which of the two happened.
 ///     </para>
 ///     <para>
 ///         Response shaping only. Unlike <c>files</c> and <see cref="InspectSeverity" />, no <c>jb</c>
@@ -17,11 +17,10 @@ namespace Zphil.ReSharperCli.Services;
 ///         many of them the response spells out. So it costs nothing and saves nothing in run time.
 ///     </para>
 ///     <para>
-///         Its own enum rather than <see cref="Formatting.DetailLevel" /> directly, which
-///         <c>ResharperTools</c> could bind — both are internal. Keeping them apart is what stops a rename
-///         inside the formatting ladder from silently changing the published MCP schema;
-///         <c>ResharperTools.CapFor</c> maps between them member by member so a divergence is a compile
-///         error rather than a wrong level.
+///         Its own enum rather than <see cref="Formatting.DetailLevel" />, so a rename inside the formatting
+///         ladder cannot change the published MCP schema. <c>ResharperTools.CapFor</c> maps between them member
+///         by member, so a renamed member fails to compile and an unmapped one throws rather than landing on a
+///         wrong level.
 ///     </para>
 /// </remarks>
 internal enum InspectDetail
@@ -34,7 +33,7 @@ internal enum InspectDetail
 
     /// <summary>
     ///     Issues repeating a rule within a file collapse to one line carrying their line numbers and one
-    ///     example message. Where a solution-wide run lands by construction.
+    ///     example message.
     /// </summary>
     High,
 

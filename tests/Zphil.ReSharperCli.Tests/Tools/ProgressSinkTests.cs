@@ -10,19 +10,18 @@ using Zphil.ReSharperCli.Tools;
 namespace Zphil.ReSharperCli.Tests.Tools;
 
 /// <summary>
-///     The ordering the wire pin can only observe: that the number on a notification is the number the one
-///     before it was followed by, however many threads are handing lines in and however unevenly the sends
-///     complete.
+///     Pins the ordering the wire pin can only observe: that each notification's number follows the one
+///     before it, however many threads are handing lines in and however unevenly the sends complete.
 /// </summary>
 /// <remarks>
 ///     A counter taken before the send lets two callers swap between taking a value and reaching the
-///     transport, and no client-side or wire-side assertion can tell that apart from a slow send — which is why
-///     the ordering is pinned here, on the values the sink itself produced, rather than only end to end in
+///     transport, and an end-to-end run sees that only when the race fires. So the ordering is pinned here,
+///     on the values the sink itself produced, and not only end to end in
 ///     <see cref="ProgressSinkIntegrationTests" />.
 /// </remarks>
 public sealed class ProgressSinkTests
 {
-    /// <summary>Long enough that only a genuine hang reaches it.</summary>
+    /// <summary>Long enough that only a hang reaches it.</summary>
     private static readonly TimeSpan Generous = TimeSpan.FromSeconds(10);
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -45,8 +44,9 @@ public sealed class ProgressSinkTests
             });
         }
 
-        // Assert — contiguous from one and in that order, which is the one thing MCP asks of `progress`. The
-        // values are read in the order the sends started, so this fails if a later number reached one first.
+        // Assert — contiguous from one and in that order: MCP asks only that `progress` increase, and the sink
+        // promises more. The values are read in the order the sends started, so this fails if a later number
+        // reached one first.
         IReadOnlyList<int> written = sends.Items.Select(sent => sent.Value).ToList();
         written.Count.ShouldBe(lines);
         written.ShouldBe(Enumerable.Range(1, lines));
@@ -104,7 +104,7 @@ public sealed class ProgressSinkTests
     public async Task Send_AfterDisposal_WritesNothing()
     {
         // Arrange — the run's heartbeat is stopped before this point, but a line arriving late has to be
-        // harmless rather than merely unlikely: written now it would land after the result.
+        // harmless, not only unlikely: written now it would land after the result.
         Sends sends = new();
         ProgressSink sink = new(sends.SendAsync, NullLogger.Instance);
         await sink.DisposeAsync();
@@ -148,8 +148,8 @@ public sealed class ProgressSinkTests
     [Fact]
     public async Task For_AClientThatSentNoProgressToken_IsASinkThatAcceptsAndDiscards()
     {
-        // Arrange — load-bearing: the heartbeat above this still has to run, because it is what leaves
-        // JbRunProgress with a file count for the timeout message even for a client that never asked to watch.
+        // Arrange — the heartbeat above the sink still has to run, because it is what leaves JbRunProgress with
+        // a file count for the timeout message even for a client that never asked to watch.
         RequestContext<CallToolRequestParams> context =
             Dispatched(new CallToolRequestParams { Name = "resharper_inspect" });
 
@@ -178,19 +178,20 @@ public sealed class ProgressSinkTests
         await sink.DisposeAsync();
     }
 
-    /// <summary>A request context of the shape the SDK binds into a tool method, carrying <paramref name="parameters" />.</summary>
+    /// <summary>
+    ///     Builds a request context of the shape the SDK binds into a tool method, carrying
+    ///     <paramref name="parameters" />.
+    /// </summary>
     private static RequestContext<CallToolRequestParams> Dispatched(CallToolRequestParams parameters)
     {
         return new RequestContext<CallToolRequestParams>(
             Substitute.For<McpServer>(), new JsonRpcRequest { Method = "tools/call" }, parameters);
     }
 
-    /// <summary>What the sink asked for, in the order the sends started.</summary>
-    /// <param name="Value">The <c>progress</c> counter the sink assigned.</param>
-    /// <param name="Message">The line it was assigned to.</param>
+    /// <summary>Represents one send; <paramref name="Value" /> is the <c>progress</c> counter the sink assigned.</summary>
     private sealed record Sent(int Value, string Message);
 
-    /// <summary>A send that records what it was given and can be made slow or failing.</summary>
+    /// <summary>Provides a send that records what it was given and can be made slow or failing.</summary>
     /// <remarks>
     ///     Recording happens on entry rather than on completion so a held send is observable while it is still
     ///     in flight — which is also what makes <see cref="RecordingSink{T}.Items" /> the order the sends were
@@ -198,10 +199,10 @@ public sealed class ProgressSinkTests
     /// </remarks>
     private sealed class Sends() : RecordingSink<Sent>(Generous)
     {
-        /// <summary>When set, every send waits for this before completing.</summary>
+        /// <summary>Gets the task every send waits for before completing, when set.</summary>
         public Task? Hold { get; init; }
 
-        /// <summary>The counter value whose send throws, standing in for a client that went away.</summary>
+        /// <summary>Gets the counter value whose send throws, standing in for a client that went away.</summary>
         public int ThrowOn { get; init; }
 
         public async Task SendAsync(int value, string message)

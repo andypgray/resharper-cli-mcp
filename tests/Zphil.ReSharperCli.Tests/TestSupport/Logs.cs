@@ -5,7 +5,7 @@ using Zphil.ReSharperCli.Tests.TestDoubles;
 namespace Zphil.ReSharperCli.Tests.TestSupport;
 
 /// <summary>
-///     The logging factory a test hands to a service graph when it means to assert on what that graph logged.
+///     Builds the logger factory or loggers a test hands to a service graph to assert on what that graph logged.
 /// </summary>
 /// <remarks>
 ///     <see cref="LogLevel.Trace" /> rather than the factory default of <see cref="LogLevel.Information" />,
@@ -35,7 +35,7 @@ internal static class Logs
     }
 
     /// <summary>
-    ///     The logger for one class: the factory's when the test passed one, and a null logger otherwise.
+    ///     Returns the logger for one class: the factory's when the test passed one, and a null logger otherwise.
     /// </summary>
     /// <remarks>One spelling of that default, so every graph-assembling helper wires the same one.</remarks>
     public static ILogger<T> For<T>(ILoggerFactory? logs)
@@ -43,7 +43,7 @@ internal static class Logs
         return logs is null ? NullLogger<T>.Instance : logs.CreateLogger<T>();
     }
 
-    /// <summary>The same default for a test that holds the capturing provider rather than a factory.</summary>
+    /// <summary>Returns the same default for a test that holds the provider rather than a factory.</summary>
     public static ILogger<T> For<T>(CapturingLoggerProvider? logs)
     {
         return logs is null ? NullLogger<T>.Instance : Capturing(logs).CreateLogger<T>();

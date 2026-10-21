@@ -18,31 +18,31 @@ namespace Zphil.ReSharperCli.Tests.TestSupport;
 ///         invariants to assemble in one place rather than re-establish in every test constructor.
 ///     </para>
 ///     <para>
-///         It is also the one place the graph's loggers are wired, which is why every overload takes an
-///         optional <see cref="ILoggerFactory" />: the runner, its lock and its transplanter all write lines a
-///         test may want to assert on, and handing one factory to the whole graph is what lets a single
-///         <c>CapturingLoggerProvider</c> see all of them. Omitted, everything logs to a
-///         <see cref="NullLogger{T}" /> — the right default for the tests that are about behaviour rather than
-///         about what got recorded.
+///         It is also the one place the graph's loggers are wired, which is why every helper here takes an
+///         optional <see cref="ILoggerFactory" />: handing one factory to the whole graph is what lets a single
+///         <c>CapturingLoggerProvider</c> see every line the graph writes. Omitted, everything logs to a
+///         <see cref="NullLogger{T}" />, the right default for a test about behaviour rather than about what got
+///         recorded. A helper taking a <c>heartbeat</c> shortens the progress interval to it, for a test that
+///         waits out more than one beat; omitted, beats come at the production interval.
 ///     </para>
 /// </remarks>
 internal static class JbRunners
 {
-    /// <summary>The lock, built with a logger, for a test that has to hold or contend it itself.</summary>
+    /// <summary>Builds the lock with a logger, for a test that has to hold or contend it itself.</summary>
     /// <remarks>Spelled here rather than at each call site so the cap and the logger stay one decision.</remarks>
     public static JbRunLock Lock(TimeSpan? cap = null, ILoggerFactory? logs = null)
     {
         return new JbRunLock(cap ?? JbRunTimeout.Default, Logs.For<JbRunLock>(logs));
     }
 
-    /// <summary>The yield, built with a logger, for a test driving two callers against the same precedence.</summary>
+    /// <summary>Builds the yield with a logger, for a test driving two callers against one precedence.</summary>
     public static JbRunYield Yield(ILoggerFactory? logs = null)
     {
         return new JbRunYield(Logs.For<JbRunYield>(logs));
     }
 
     /// <summary>
-    ///     The slot, built with a logger, for a test driving two runs at this server's one-at-a-time bound.
+    ///     Builds the slot with a logger, for a test driving two runs against this server's one-at-a-time bound.
     /// </summary>
     public static JbRunSlot Slot(ILoggerFactory? logs = null)
     {
@@ -50,12 +50,9 @@ internal static class JbRunners
     }
 
     /// <summary>
-    ///     A cache reset wired to the same lock and yield a runner is, as the composition root wires it.
+    ///     Builds a cache reset on the caller's lock and yield, sharing them with a runner as the composition
+    ///     root does.
     /// </summary>
-    /// <param name="heartbeat">
-    ///     Shortens the progress interval for a test that waits out more than one beat of the queue wait;
-    ///     omitted, beats come at the production interval.
-    /// </param>
     public static CacheResetService Reset(
         JbRunLock runLock,
         JbRunYield runYield,
@@ -66,14 +63,13 @@ internal static class JbRunners
     }
 
     /// <summary>
-    ///     A cache reset with a lock and a yield of its own, for a test about the reset alone.
+    ///     Builds a cache reset with a lock and a yield of its own, for a test about the reset alone.
     /// </summary>
     /// <remarks>
     ///     It arbitrates against nothing: no runner shares its yield, so it can never stand a pre-warm down, and
-    ///     only a holder of the lock <em>file</em> can make it queue — which is what such a test wants, and why
-    ///     this is not <see cref="Reset" />.
+    ///     only a holder of the lock file can make it queue, which is what such a test wants and why this is not
+    ///     <see cref="Reset" />. <paramref name="cap" /> bounds its queue wait.
     /// </remarks>
-    /// <param name="cap">Bounds its queue wait.</param>
     public static CacheResetService StandaloneReset(
         TimeSpan cap,
         ILoggerFactory? logs = null,
@@ -87,7 +83,9 @@ internal static class JbRunners
         return Create(processRunner, Lock(cap, logs), cap, logs);
     }
 
-    /// <summary>For tests that hold or contend the lock themselves, so the lock has to be theirs.</summary>
+    /// <summary>
+    ///     Builds a runner on the caller's <paramref name="runLock" />, for a test holding or contending it.
+    /// </summary>
     public static JbRunner Create(
         IProcessRunner processRunner,
         JbRunLock runLock,
@@ -98,17 +96,13 @@ internal static class JbRunners
     }
 
     /// <summary>
-    ///     For tests that drive a second caller — a cache reset — against the same precedence, so the yield
-    ///     has to be theirs too.
+    ///     Builds a runner on the caller's lock and yield, for a test that drives a second caller, such as a
+    ///     cache reset, against the same precedence.
     /// </summary>
     /// <remarks>
-    ///     The server-wide <c>jb</c> bound is the runner's own: nothing but the runner takes it, so no test has
-    ///     a second holder to share it with.
+    ///     Builds its own run slot. Anything else that takes the slot would have to share this one, as the lock
+    ///     and the yield are shared.
     /// </remarks>
-    /// <param name="heartbeat">
-    ///     Shortens the progress interval for a test that waits out more than one beat; omitted, beats come at
-    ///     the production interval.
-    /// </param>
     public static JbRunner Create(
         IProcessRunner processRunner,
         JbRunLock runLock,

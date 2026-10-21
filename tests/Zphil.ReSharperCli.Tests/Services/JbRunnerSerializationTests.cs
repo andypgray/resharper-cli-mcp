@@ -10,11 +10,11 @@ using Zphil.ReSharperCli.Tests.TestSupport;
 namespace Zphil.ReSharperCli.Tests.Services;
 
 /// <summary>
-///     Asserted where a caller meets it: two calls through this server never have two <c>jb</c> processes in
+///     Pins, where a caller meets it, that two calls through this server never have two <c>jb</c> processes in
 ///     flight at once, whatever solutions they are against.
 /// </summary>
 /// <remarks>
-///     Against <em>one</em> solution that is <see cref="JbRunLock" />'s doing; against two it is
+///     Against one solution that is <see cref="JbRunLock" />'s doing; against two it is
 ///     <see cref="JbRunSlot" />'s, since different solutions are different generations and pass the lock
 ///     uncontended. The <see cref="ConcurrencyProbe" /> stands in for <c>jb</c> and fails these tests by
 ///     observing an overlap, not by timing.
@@ -89,8 +89,8 @@ public sealed class JbRunnerSerializationTests : IDisposable
     [Fact]
     public async Task ConcurrencyProbe_DrivenWithNoLockInBetween_ObservesTheOverlap()
     {
-        // Arrange — the guard on the MaxConcurrent assertions above: unless the probe can actually see two
-        // runs at once, "MaxConcurrent is 1" would mean nothing.
+        // Arrange — the guard on the MaxConcurrent assertions above: unless the probe can see two runs at
+        // once, "MaxConcurrent is 1" would mean nothing.
 
         // Act — straight at the process runner, with no JbRunner and so no lock between the callers.
         await Task.WhenAll(
@@ -102,8 +102,8 @@ public sealed class JbRunnerSerializationTests : IDisposable
     }
 
     /// <summary>
-    ///     An <see cref="IProcessRunner" /> that records how many runs were ever in flight together and holds
-    ///     each one long enough that unserialized callers would demonstrably overlap.
+    ///     Stands in for <c>jb</c> as an <see cref="IProcessRunner" /> that records how many runs were ever in
+    ///     flight together, and holds each one long enough that unserialized callers would overlap.
     /// </summary>
     private sealed class ConcurrencyProbe : IProcessRunner
     {

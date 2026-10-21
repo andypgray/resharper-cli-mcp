@@ -67,9 +67,9 @@ public sealed class JbSidecarTests : IDisposable
     [Fact]
     public void PathFor_EverySidecarSharesOneDirectoryWithoutColliding()
     {
-        // Assert — one directory, one key, four extensions: the scheme that keeps a change to any of them from
-        // silently addressing another's file, and the structural proof that a marker, tombstone or cost-record
-        // bug cannot clobber the lock it sits beside.
+        // Assert — one directory, one key, an extension per sidecar: the scheme that keeps a change to any of
+        // them from silently addressing another's file, so a marker, tombstone or cost-record bug cannot clobber
+        // the lock it sits beside.
         string[] sidecars =
         [
             JbRunLock.LockFilePathFor(_cacheHome, JbSidecar.ComputeKey(SolutionPath, _cacheHome)),

@@ -14,10 +14,9 @@ namespace Zphil.ReSharperCli.Tests.Execution;
 /// </summary>
 /// <remarks>
 ///     <para>
-///         It is fed every line a <c>jb</c> run writes, one at a time, while a caller is waiting on that run. So
-///         what it does with a line it was not written for matters as much as what it does with the
-///         vocabulary: an exception here comes out of the reader that observes <c>jb</c>'s output in flight,
-///         which is not where a caller can act on it.
+///         It is fed every line a <c>jb</c> run writes, one at a time, while a caller is waiting on that run, so
+///         what it does with a line it was not written for matters as much as what it does with the vocabulary.
+///         A throw would come out of the reader that drains <c>jb</c>'s output, where no caller can act on it.
 ///     </para>
 ///     <para>
 ///         Nothing here says what <c>jb</c> emits — that is the <c>JbContract</c> suite's business, observed
@@ -155,7 +154,7 @@ public sealed class JbProgressLinesPropertyTests
             });
     }
 
-    /// <summary>Any line at all: arbitrary strings unioned with the ones that sit on the recogniser's edges.</summary>
+    /// <summary>Draws any line: arbitrary strings unioned with the ones on the recogniser's edges.</summary>
     private static Gen<string> AnyLine()
     {
         return HostileStrings.AnyOr(KnownLines);
@@ -170,7 +169,7 @@ public sealed class JbProgressLinesPropertyTests
             .SelectMany(_ => pad, (drawn, trailing) => new PaddedLineCase(drawn.Line, drawn.Leading, trailing));
     }
 
-    /// <summary>A name a per-file line could carry.</summary>
+    /// <summary>Draws a name a per-file line could carry.</summary>
     /// <remarks>
     ///     Two shapes are excluded, and both are accepted ambiguity rather than a gap: a name that is nothing but
     ///     whitespace leaves the prefix with nothing after it, and a file literally called <c>files</c> spells
@@ -189,10 +188,10 @@ public sealed class JbProgressLinesPropertyTests
         return HostileStrings.AnyOr(KnownProfileNames);
     }
 
-    /// <summary>A line and the whitespace put either side of it.</summary>
+    /// <summary>Holds a line and the whitespace put either side of it.</summary>
     private sealed record PaddedLineCase(string Line, string Leading, string Trailing)
     {
-        /// <summary>The padded line, which is what gets classified.</summary>
+        /// <summary>Gets the padded line, which is what gets classified.</summary>
         internal string Padded => Leading + Line + Trailing;
     }
 }

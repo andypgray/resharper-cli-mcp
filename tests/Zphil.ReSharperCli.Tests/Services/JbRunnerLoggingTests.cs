@@ -12,20 +12,19 @@ using Zphil.ReSharperCli.Tests.TestSupport;
 namespace Zphil.ReSharperCli.Tests.Services;
 
 /// <summary>
-///     The pair of <c>Information</c> lines a <c>jb</c> run costs the log, and what they have to carry.
+///     Pins the pair of <c>Information</c> lines a <c>jb</c> run costs the log, and what they have to carry.
 /// </summary>
 /// <remarks>
 ///     <para>
 ///         Without the pair, nothing says whether a slow call was cold, seeded, or queued behind another
 ///         session, because the only other timing in the log comes from the MCP SDK and says nothing about the
-///         cache. Both halves of the pair are pinned: the opening line, whose value is that it exists
-///         <em>before</em> minutes of silence and carries the two facts that predict them, and the closing
-///         one, which says how it actually ended.
+///         cache. The opening line is written before minutes of silence and carries the cache state and queue
+///         wait that predict them; the closing one says how the run ended.
 ///     </para>
 ///     <para>
-///         Every ending is a line, including the two that are not a clean exit. A run killed at the cap and a
-///         speculative pass stood down both leave the process without an exit code, and a log that recorded
-///         only clean exits would show those runs starting and never finishing.
+///         Every ending is a line. A run killed at the cap and a speculative pass stood down leave the process
+///         without an exit code, and a log that recorded only clean exits would show those runs starting and
+///         never finishing.
 ///     </para>
 /// </remarks>
 public sealed class JbRunnerLoggingTests : IDisposable
@@ -68,7 +67,7 @@ public sealed class JbRunnerLoggingTests : IDisposable
         starting.Property("RunKind").ShouldBe("for a call");
         starting.Property("QueueWaitMs").ShouldNotBeNull();
 
-        // ...and the closing line the outcome and the wall clock, which is the whole diagnosis of a slow call.
+        // ...and the closing line the outcome and the wall clock.
         LogEntry exited = ExitLine();
         exited.Level.ShouldBe(LogLevel.Information);
         exited.Property("Subcommand").ShouldBe("inspectcode");
@@ -80,7 +79,7 @@ public sealed class JbRunnerLoggingTests : IDisposable
     public async Task RunAsync_NonZeroExit_StillReportsTheCodeRatherThanOnlyThrowing()
     {
         // Arrange — the caller is told through an exception, and the log has to keep the fact independently:
-        // a UserErrorException is deliberately never logged, so without this the failure leaves no trace.
+        // a UserErrorException is never logged, so without this the failure leaves no trace.
         StubExit(3);
 
         // Act
@@ -131,17 +130,18 @@ public sealed class JbRunnerLoggingTests : IDisposable
         // Act
         await Runner().RunAsync(Config, ["inspectcode", _solutionPath], Ct);
 
-        // Assert — read from disk alone this is indistinguishable from the killed-run remnant below, because a
-        // seed deliberately stamps no marker. Only the transplant knows, so only it can say.
+        // Assert — read from disk alone this is indistinguishable from the remnant a killed run leaves, because
+        // a seed stamps no marker; only a run that succeeds stamps one. Only the transplant knows, so only it
+        // can say.
         StartingLine().Property("CacheState").ShouldBeOfType<string>().ShouldStartWith("seeded from a sibling checkout (");
     }
 
     [Fact]
     public async Task RunAsync_GenerationWarmedByAnotherJbBuild_ReadsTheCacheAsStale()
     {
-        // Arrange — the whole plumbing in one run: the marker this generation carries names the build that
-        // warmed it, the config names the build about to open it, and the two disagree. Everything on disk
-        // says warm, and jb is about to rebuild it in place, at several times the cost of a warm run.
+        // Arrange — end to end in one run: the marker this generation carries names the build that warmed it,
+        // the config names the build about to open it, and the two disagree. Everything on disk says warm, and
+        // jb is about to rebuild it in place, at several times the cost of a warm run.
         CacheHomes.PlantWarmDonor(_cacheHome, _solutionPath, "2026.2.0.2");
         StubExit(0);
 
@@ -187,7 +187,7 @@ public sealed class JbRunnerLoggingTests : IDisposable
     public async Task RunAsync_SecondColdRunOfASolution_OpensNamingWhatTheFirstOneCost()
     {
         // Arrange — the pair of runs the cost record exists for. Neither leaves a generation behind, so both
-        // read the cache as cold and the second is genuinely comparable to the first.
+        // read the cache as cold and the second is comparable to the first.
         StubExit(0);
 
         // Act
@@ -238,14 +238,12 @@ public sealed class JbRunnerLoggingTests : IDisposable
                 throw new ProcessTimeoutException("'jb' timed out.");
             });
 
-        // Act — with a progress callback, even one that drops every line: the runner watches jb's output only
-        // when it has somewhere to report progress, so without one there is no count to log.
+        // Act — with a progress callback that drops every line, since without one the runner counts nothing.
         await Should.ThrowAsync<UserErrorException>(() => Runner().RunAsync(Config, ["inspectcode", _solutionPath], Ct, _ => { }));
 
         // Assert — no exit code to report, so the cap is reported instead, at the same level, and identified
-        // by RunCap alone. It carries the count as well as the message does: a UserErrorException is
-        // deliberately never logged, so without it the only record of how far a killed run got dies with the
-        // response.
+        // by RunCap alone. It carries the count as well as the message does: a UserErrorException is never
+        // logged, so without it the only record of how far a killed run got dies with the response.
         LogEntry killed = _logs.WithProperty("RunCap").ShouldHaveSingleItem();
         killed.Level.ShouldBe(LogLevel.Information);
         killed.Property("Subcommand").ShouldBe("inspectcode");
@@ -268,7 +266,7 @@ public sealed class JbRunnerLoggingTests : IDisposable
         StartingLine().Property("RunKind").ShouldBe("speculative");
     }
 
-    /// <summary>The opening line, identified by the property only it carries.</summary>
+    /// <summary>Returns the opening line, identified by the property only it carries.</summary>
     private LogEntry StartingLine()
     {
         return _logs.WithProperty("CacheState").ShouldHaveSingleItem();

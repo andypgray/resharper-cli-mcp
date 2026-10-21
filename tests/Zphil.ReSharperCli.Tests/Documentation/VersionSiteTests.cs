@@ -90,7 +90,7 @@ public sealed partial class VersionSiteTests
             + "release.yml fails the tag when it has not.");
     }
 
-    /// <summary>The root Agent Plugins manifest carries no <c>version</c>, and that is the point.</summary>
+    /// <summary>The root Agent Plugins manifest carries no <c>version</c>, so it is not a version site.</summary>
     /// <remarks>
     ///     The schema makes the field optional, and a manifest that declares one becomes another number to keep
     ///     in step for nothing. Adding the field here means adding a row to
@@ -109,7 +109,7 @@ public sealed partial class VersionSiteTests
     }
 
     /// <summary>
-    ///     The <c>&lt;Version&gt;</c> the csproj declares — the one number every site here is measured against.
+    ///     Reads the <c>&lt;Version&gt;</c> the csproj declares, the one number every site here is measured against.
     /// </summary>
     private static string DeclaredCsprojVersion()
     {
@@ -121,7 +121,7 @@ public sealed partial class VersionSiteTests
         return declaredVersion.Groups["version"].Value;
     }
 
-    /// <summary>Every string in every server's <c>args</c> array.</summary>
+    /// <summary>Returns every string in every server's <c>args</c> array.</summary>
     /// <remarks>
     ///     Enumerating the servers rather than naming the <c>resharper</c> key means renaming that key cannot make
     ///     the assertions above vacuous.

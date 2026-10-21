@@ -6,27 +6,27 @@ namespace Zphil.ReSharperCli.Formatting;
 ///     Renders inspection issues as a markdown summary at a given <see cref="DetailLevel" />.
 /// </summary>
 /// <remarks>
-///     The header <c>Found {N} issue(s) across {M} file(s)</c> is invariant at every level, and every level
-///     counts every issue — a reduced result is complete but less detailed, unlike a truncated one. Output
-///     uses <c>\n</c> line endings exclusively (never <see cref="Environment.NewLine" />) and is ASCII-only,
-///     so it is byte-for-byte stable across platforms.
+///     The header <c>Found {N} issue(s) across {M} file(s)</c> is invariant at every level, so a caller can
+///     anchor on it whichever level fired, and every level counts every issue: a reduced result is complete
+///     but less detailed, unlike a truncated one. Output uses <c>\n</c> line endings, never
+///     <see cref="Environment.NewLine" />, and the formatter's own text is ASCII, so it is byte-for-byte
+///     stable across platforms.
 /// </remarks>
 internal static class IssueMarkdownFormatter
 {
     /// <summary>How to make the next scan return less.</summary>
     internal const string NarrowingHint = "Narrow the scan with the files parameter or raise severity.";
 
-    /// <summary>
-    ///     How to get everything out instead of asking for less — the other direction, and the better answer
-    ///     for a caller reading a reduction note because it wanted the detail that was reduced. It costs no
-    ///     extra <c>jb</c> work: the issues are already parsed by the time the ladder runs.
-    /// </summary>
+    /// <summary>How to get every finding out instead of asking for less.</summary>
+    /// <remarks>
+    ///     It costs no extra <c>jb</c> work: the issues are already parsed by the time the ladder runs.
+    /// </remarks>
     internal const string FullReportHint =
         "Set report to Markdown to have every finding written to a file with its own message.";
 
     /// <summary>
-    ///     Both remedies, in the order a caller should consider them — also the truncation footer's hint, so an
-    ///     agent meets one remedy rather than two spellings of it.
+    ///     Both remedies, in the order a caller should consider them, so any surface offering both spells each
+    ///     as the reduction note does.
     /// </summary>
     internal const string TruncationRemedy = NarrowingHint + " " + FullReportHint;
 
@@ -53,35 +53,30 @@ internal static class IssueMarkdownFormatter
     }
 
     /// <summary>
-    ///     What was given up at <paramref name="level" />, and what to do about it.
+    ///     Describes what was given up at <paramref name="level" />, and what to do about it.
     /// </summary>
     /// <remarks>
-    ///     <see cref="DetailLevel.High" /> carries no <see cref="NarrowingHint" />: re-running scoped is a
-    ///     whole solution's analysis over again, and it would be noise on the level that fires for essentially
-    ///     every solution-wide run. It does carry <see cref="FullReportHint" />, because the per-issue messages
-    ///     High collapses to one example are exactly what a report recovers, for no extra <c>jb</c> work at all.
+    ///     <see cref="DetailLevel.High" /> carries no <see cref="NarrowingHint" />: re-running scoped repeats a
+    ///     whole solution's analysis, and High fires on most solution-wide runs, so the hint there would be
+    ///     noise. It does carry <see cref="FullReportHint" />, because the per-issue messages High collapses to
+    ///     one example are what a report recovers.
     /// </remarks>
     /// <param name="level">The level the rendering settled at.</param>
     /// <param name="issueCount">
-    ///     How many issues the rendering covers. At zero this returns <c>""</c>, which is this directory's
-    ///     idiom for "nothing to say" and which <c>ProgressiveRenderer</c> reads as "no reduction happened,
-    ///     so emit no note". <see cref="Format" /> returns <c>No issues found.</c> at every level, so a caller that
-    ///     passed <c>detail</c> would otherwise be told that totals and the top rules were all that survived a listing
-    ///     that never existed, and offered a report file for findings there are none of. First because it is the gate
-    ///     that short-circuits the other two.
+    ///     How many issues the rendering covers. At zero this returns <c>""</c>, which
+    ///     <c>ProgressiveRenderer</c> reads as no reduction, so no note is emitted: <see cref="Format" />
+    ///     renders <c>No issues found.</c> at every level, and a note would describe a listing that never
+    ///     existed and offer a report of no findings.
     /// </param>
     /// <param name="reportWritten">
     ///     Whether this call already wrote a report. When it did, <see cref="FullReportHint" /> is omitted at
-    ///     every level: <see cref="InspectReportNote" /> has already named the file, and telling a caller to
-    ///     do what it just did is worse than saying nothing.
+    ///     every level, because <see cref="InspectReportNote" /> has already named the file.
     /// </param>
     /// <param name="levelWasRequested">
     ///     Whether <paramref name="level" /> is the one the caller's <c>detail</c> asked for rather than one
-    ///     the budget forced. When it is, <see cref="NarrowingHint" /> is omitted for the same reason
-    ///     <paramref name="reportWritten" /> drops the report offer: a caller that just asked for less does
-    ///     not need to be told to ask for less. Both flags are required rather than optional — a call site
-    ///     that forgets one loses its suppression silently, which is the class of defect this shape exists
-    ///     to make impossible.
+    ///     the budget forced. When it is, <see cref="NarrowingHint" /> is omitted, since a caller that just
+    ///     asked for less does not need telling to ask for less. Both flags are required, not optional, so a
+    ///     call site cannot lose a suppression by forgetting one.
     /// </param>
     public static string DescribeReduction(
         DetailLevel level, int issueCount, bool reportWritten, bool levelWasRequested)
@@ -107,13 +102,13 @@ internal static class IssueMarkdownFormatter
     }
 
     /// <summary>
-    ///     Renders issue <b>start</b> lines as an ascending, deduplicated, comma-separated list, collapsing
+    ///     Renders the issues' start lines as an ascending, deduplicated, comma-separated list, collapsing
     ///     runs of two or more consecutive lines to <c>13-15</c>.
     /// </summary>
     /// <remarks>
     ///     Deduplication is deliberate: two issues can share a line, and the <c>x{n}</c> count carries the true
-    ///     total while this list is only a locator. <see cref="InspectIssue.EndLine" /> is intentionally unused
-    ///     — a range here spans several distinct issues, not one issue's extent. Past
+    ///     total while this list is only a locator. <see cref="InspectIssue.EndLine" /> goes unused, because a
+    ///     range here spans several distinct issues rather than one issue's extent. Past
     ///     <see cref="MaxLineRanges" /> ranges the tail collapses to <c>(+N more)</c>.
     /// </remarks>
     internal static string FormatLineRanges(IEnumerable<int> lines)
@@ -134,7 +129,7 @@ internal static class IssueMarkdownFormatter
     }
 
     /// <summary>
-    ///     <paramref name="items" /> joined by <c>", "</c>, listing at most <paramref name="maxListed" />
+    ///     Joins <paramref name="items" /> with <c>", "</c>, listing at most <paramref name="maxListed" />
     ///     before the tail collapses to <c>(+N more)</c>.
     /// </summary>
     /// <remarks>
@@ -148,7 +143,7 @@ internal static class IssueMarkdownFormatter
         return $"{string.Join(", ", items.Take(maxListed))} (+{items.Count - maxListed} more)";
     }
 
-    /// <summary>Full: every issue on its own line, grouped by file in first-seen order.</summary>
+    /// <summary>Renders Full: every issue on its own line, grouped by file in first-seen order.</summary>
     private static string FormatFull(IReadOnlyList<InspectIssue> issues, List<FileGroup> files)
     {
         List<string> lines = [$"{HeaderText(issues, files)}:", ""];
@@ -164,21 +159,25 @@ internal static class IssueMarkdownFormatter
         return string.Join("\n", lines);
     }
 
-    /// <summary>High: every file listed, with issues repeating a rule within a file collapsed to one line.</summary>
+    /// <summary>
+    ///     Renders High: every file listed, with issues repeating a rule within a file collapsed to one line.
+    /// </summary>
     private static string FormatHigh(IReadOnlyList<InspectIssue> issues, List<FileGroup> files)
     {
         return FormatListing(issues, files, files.Count);
     }
 
-    /// <summary>Medium: High's shape restricted to the most-affected files, the rest collapsed to a count.</summary>
+    /// <summary>
+    ///     Renders Medium: High's shape restricted to the most-affected files, the rest collapsed to a count.
+    /// </summary>
     private static string FormatMedium(IReadOnlyList<InspectIssue> issues, List<FileGroup> files)
     {
         return FormatListing(issues, files, MaxListedFiles);
     }
 
     /// <summary>
-    ///     The shared High/Medium shape: per-file sections whose repeated <c>(rule, severity)</c> pairs are
-    ///     collapsed, listing at most <paramref name="maxFiles" /> files.
+    ///     Renders the shape High and Medium share: per-file sections whose repeated <c>(rule, severity)</c>
+    ///     pairs are collapsed, listing at most <paramref name="maxFiles" /> files.
     /// </summary>
     private static string FormatListing(IReadOnlyList<InspectIssue> issues, List<FileGroup> files, int maxFiles)
     {
@@ -215,7 +214,7 @@ internal static class IssueMarkdownFormatter
         return string.Join("\n", lines);
     }
 
-    /// <summary>Low: no per-issue detail at all — the top rules and the top files, each with counts.</summary>
+    /// <summary>Renders Low: no per-issue detail, only the top rules and the top files, each with counts.</summary>
     private static string FormatRollup(IReadOnlyList<InspectIssue> issues, List<FileGroup> files)
     {
         List<RuleRollup> rules = RollUpRules(issues);
@@ -243,7 +242,7 @@ internal static class IssueMarkdownFormatter
         return string.Join("\n", lines);
     }
 
-    /// <summary>Minimal: one line of totals, severity counts, and the top rules.</summary>
+    /// <summary>Renders Minimal: one line of totals, severity counts, and the top rules.</summary>
     private static string FormatMinimal(IReadOnlyList<InspectIssue> issues, List<FileGroup> files)
     {
         List<RuleRollup> rules = RollUpRules(issues);
@@ -258,8 +257,8 @@ internal static class IssueMarkdownFormatter
     }
 
     /// <summary>
-    ///     The header body, without its trailing punctuation. Invariant at every level (the listing levels
-    ///     append <c>:</c>, Minimal a <c>.</c>), so a caller can anchor on it whichever level fired.
+    ///     Returns the header body without its trailing punctuation: the listing levels append <c>:</c>, and
+    ///     Minimal a <c>.</c>.
     /// </summary>
     private static string HeaderText(IReadOnlyList<InspectIssue> issues, List<FileGroup> files)
     {
@@ -271,13 +270,11 @@ internal static class IssueMarkdownFormatter
         return $"- **Line {issue.Line}** [{issue.Severity}] `{issue.RuleId}`: {issue.Message}";
     }
 
-    /// <summary>Emits one rule group.</summary>
+    /// <summary>Appends one rule group's lines.</summary>
     /// <remarks>
-    ///     A singleton renders exactly as it does at Full, so a file whose rules never repeat is byte-identical
-    ///     across Full and High. A repeated group becomes a count, a line-range list, and one message — the
-    ///     shared text when every issue in the group says the same thing (lossless), the first prefixed with
-    ///     <c>e.g. </c> when they differ, and nothing at all when it is empty (<c>SarifParser</c> can yield an
-    ///     empty message).
+    ///     A singleton renders as it does at Full, so a file whose rules never repeat is byte-identical across
+    ///     Full and High. A repeated group whose first message is empty gets no message line, because
+    ///     <c>SarifParser</c> can yield an empty message.
     /// </remarks>
     private static void AppendRuleGroup(List<string> lines, RuleGroup rule)
     {
@@ -319,13 +316,13 @@ internal static class IssueMarkdownFormatter
     }
 
     /// <summary>
-    ///     Solution-wide rule counts, keyed by <c>(rule, severity)</c> exactly as the per-file collapse is, so
+    ///     Counts issues per <c>(rule, severity)</c> across the solution, keyed as the per-file collapse is, so
     ///     the severity shown beside a rule is always the one its issues were reported at.
     /// </summary>
     /// <remarks>
-    ///     Ranked by count alone — severity-first would bury a 120-issue rule behind one stray ERROR, and the
-    ///     per-file severity breakdown already makes errors unmissable. <c>OrderByDescending</c> is stable, so
-    ///     equal counts keep first-seen order before the rule-id tie-break applies.
+    ///     Ranked by count, then rule id. Severity-first would bury a 120-issue rule behind one stray ERROR, and
+    ///     the per-file severity breakdown already makes errors unmissable. <c>OrderByDescending</c> is stable,
+    ///     so a rule reported at two severities with equal counts keeps first-seen order.
     /// </remarks>
     private static List<RuleRollup> RollUpRules(IReadOnlyList<InspectIssue> issues)
     {
@@ -341,7 +338,7 @@ internal static class IssueMarkdownFormatter
             .ToList();
     }
 
-    /// <summary>Severity counts most-serious-first, for example <c>1 ERROR, 5 WARNING</c>.</summary>
+    /// <summary>Formats severity counts most-serious-first, for example <c>1 ERROR, 5 WARNING</c>.</summary>
     private static string SeverityBreakdown(IEnumerable<InspectIssue> issues)
     {
         IEnumerable<string> parts = issues
@@ -352,10 +349,10 @@ internal static class IssueMarkdownFormatter
         return string.Join(", ", parts);
     }
 
-    /// <summary>Orders a severity label most-serious-first.</summary>
+    /// <summary>Ranks a severity label, most serious first.</summary>
     /// <remarks>
-    ///     The trailing bucket is load-bearing: <c>SarifParser.MapSeverity</c> passes an unrecognised jb level
-    ///     through uppercased rather than dropping it, so an unknown label must still sort deterministically.
+    ///     Any other label sorts last: <c>SarifParser.MapSeverity</c> passes an unrecognised jb level through
+    ///     uppercased rather than dropping it, so an unknown label must still sort deterministically.
     /// </remarks>
     private static int SeverityRank(string severity)
     {

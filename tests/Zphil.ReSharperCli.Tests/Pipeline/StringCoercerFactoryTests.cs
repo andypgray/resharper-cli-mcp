@@ -18,9 +18,9 @@ public sealed class StringCoercerFactoryTests
     [Theory]
     // The canonical, well-formed input shape.
     [InlineData("A")]
-    // An empty string passes through verbatim; it is NOT coerced to null.
+    // An empty string passes through verbatim; it is not coerced to null.
     [InlineData("")]
-    // A literal string that looks like a JSON array must NOT be unwrapped.
+    // A literal string that looks like a JSON array must not be unwrapped.
     [InlineData("[A]")]
     public void Deserialize_JsonString_PassesThroughVerbatim(string value)
     {

@@ -15,11 +15,10 @@ internal sealed class InspectService(JbRunner jbRunner)
     ///     The severity a cache pre-warm reports at.
     /// </summary>
     /// <remarks>
-    ///     Matching the <c>resharper_inspect</c> default rather than raising it to shrink the discarded SARIF is
-    ///     deliberate: <c>--severity</c> is believed to be a report filter only, but if that belief is ever
-    ///     wrong the warm-up would populate a cache generation no real call opens and the whole feature would
-    ///     silently do nothing, with no signal. An identical argument list to the commonest real call removes
-    ///     the question, and a test pins the two together.
+    ///     The <c>resharper_inspect</c> default, not raised to shrink the discarded SARIF: <c>--severity</c> is
+    ///     believed to be a report filter only, but were that belief wrong the warm-up would populate a cache
+    ///     generation no real call opens and the feature would silently do nothing. An argument list identical
+    ///     to the default real call's removes the question, and a test pins the two together.
     /// </remarks>
     internal const InspectSeverity WarmUpSeverity = InspectSeverity.Warning;
 
@@ -30,11 +29,6 @@ internal sealed class InspectService(JbRunner jbRunner)
     ///     Inspects <paramref name="config" />'s solution, optionally scoped to <paramref name="files" />, and
     ///     parses what <c>jb</c> reported at <paramref name="severity" /> or above.
     /// </summary>
-    /// <remarks>
-    ///     <paramref name="onProgress" /> is passed straight through: what a progress line says is
-    ///     <see cref="JbRunner" />'s to decide, and how it reaches a client is the tool surface's. Omitted
-    ///     when the caller has nowhere to report to.
-    /// </remarks>
     public async Task<IReadOnlyList<InspectIssue>> RunAsync(
         ResolvedConfig config,
         IReadOnlyList<string>? files,
@@ -66,19 +60,15 @@ internal sealed class InspectService(JbRunner jbRunner)
     }
 
     /// <summary>
-    ///     Populates the solution's ReSharper cache generation speculatively, discarding the SARIF unread —
-    ///     the run's value is entirely in the cache it leaves behind.
+    ///     Populates the solution's ReSharper cache generation speculatively, discarding the SARIF unread: the
+    ///     run's value is in the cache it leaves behind.
     /// </summary>
     /// <remarks>
-    ///     What comes back is how the pass ended: whether a <c>jb</c> started at all, and if it did, whether it
-    ///     finished, failed, ran out the cap or was handed to a real call. A non-zero exit is reported rather
-    ///     than thrown, because there is no user waiting on this. Lives here rather than in
-    ///     <see cref="CacheWarmer" /> because a warm-up is only worth anything if it opens the <em>same</em> cache
-    ///     generation a real call will — same <c>--caches-home</c>, <c>--settings</c>, <c>--swea</c>, extensions and
-    ///     all — and a second argument-building site would drift from <see cref="BuildArguments" /> with only one of
-    ///     the two covered by the pinned-order tests. So this class owns <em>how</em> a warm-up runs and
-    ///     <see cref="CacheWarmer" /> owns <em>when</em>; the warmer never sees a jb argument. Note that
-    ///     <c>--include</c> does not shrink jb's work, so a warm-up is inherently a full-solution run.
+    ///     A warm-up is worth something only if it opens the same cache generation a real call will (same
+    ///     <c>--caches-home</c>, <c>--settings</c>, <c>--swea</c> and extensions), so its arguments come from
+    ///     <see cref="BuildArguments" />, whose order the tests pin, rather than from a second site that would
+    ///     drift. <c>--include</c> does not shrink <c>jb</c>'s work, so this unscoped run warms what a scoped
+    ///     call opens too.
     /// </remarks>
     public Task<SpeculativeRunOutcome> WarmCacheAsync(ResolvedConfig config, CancellationToken cancellationToken)
     {
@@ -116,13 +106,13 @@ internal sealed class InspectService(JbRunner jbRunner)
     }
 
     /// <summary>
-    ///     One scratch directory per run, holding jb's <c>results.json</c>, deleted best-effort when the run
-    ///     is over.
+    ///     Runs <paramref name="run" /> against a fresh scratch directory holding jb's <c>results.json</c>, and
+    ///     deletes the directory best-effort when the run is over.
     /// </summary>
     /// <remarks>
-    ///     Shared by the real call and the warm-up so the output-file lifecycle cannot drift between them. The
-    ///     <paramref name="prefix" /> stays distinct per caller: the path rides jb's command line, which is how
-    ///     an operator tells a pre-warm process from a real one.
+    ///     One output-file lifecycle for every inspect run, so it cannot drift between a real call and a
+    ///     warm-up. <paramref name="prefix" /> differs by kind of run: the path rides jb's command line, which is
+    ///     how an operator tells a pre-warm process from a real one.
     /// </remarks>
     private static async Task<T> WithSarifScratchAsync<T>(string prefix, Func<string, Task<T>> run)
     {

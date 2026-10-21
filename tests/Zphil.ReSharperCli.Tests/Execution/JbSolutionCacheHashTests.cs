@@ -5,22 +5,17 @@ using Zphil.ReSharperCli.Execution;
 namespace Zphil.ReSharperCli.Tests.Execution;
 
 /// <summary>
-///     Pins rather than derivations: the values are frozen against directory names <c>jb</c> itself wrote, so
-///     any change to the <see cref="JbSolutionCacheHash" /> recipe — the seed, the multiplier, or how a
-///     character is lower-cased — fails here rather than silently addressing a cache generation that does not
-///     exist.
+///     Pins <see cref="JbSolutionCacheHash" /> against directory names <c>jb</c> itself wrote, so a change to
+///     the recipe (the seed, the multiplier, or how a character is lower-cased) fails here rather than silently
+///     addressing a cache generation that does not exist.
 /// </summary>
 /// <remarks>
-///     The failure this guards is quiet by construction. A wrong hash never names another solution's cache;
-///     it names nothing, so a reset drops nothing and a transplant is skipped, and both look like an ordinary
-///     empty cache home from the outside.
+///     The failure this guards is silent. A wrong hash never names another solution's cache; it names nothing,
+///     so a reset drops nothing and a transplant is skipped, and both look like an ordinary empty cache home
+///     from the outside.
 /// </remarks>
 public sealed class JbSolutionCacheHashTests
 {
-    /// <summary>
-    ///     Windows accepts <c>/</c> as a separator as well as <c>\</c>, so a POSIX path is the one shape
-    ///     whose solution name comes out the same on every platform.
-    /// </summary>
     public static bool OnWindows => OperatingSystem.IsWindows();
 
     [Theory]
@@ -44,8 +39,8 @@ public sealed class JbSolutionCacheHashTests
     [Fact]
     public void Compute_OneSolutionNameInTwoDirectories_Differs()
     {
-        // Assert — the property the whole scheme rests on: the hash is of the *path*, so two checkouts of one
-        // repository are two cache generations, and telling them apart is what this class is for.
+        // Assert — the hash is of the *path*, so two checkouts of one repository are two cache generations, and
+        // telling them apart is what JbSolutionCacheHash is for.
         JbSolutionCacheHash.Compute(@"C:\repo\App.sln").ShouldNotBe(JbSolutionCacheHash.Compute(@"C:\other\App.sln"));
     }
 
@@ -58,6 +53,8 @@ public sealed class JbSolutionCacheHashTests
         JbSolutionCacheHash.Compute(@"C:\repö\App.sln").ShouldNotBe(JbSolutionCacheHash.Compute(@"C:\repÖ\App.sln"));
     }
 
+    // POSIX paths, because Windows accepts / as a separator as well as \: a POSIX path is the one shape whose
+    // solution name comes out the same on every platform.
     [Theory]
     // A negative hash is the ordinary case about half the time, and the minus sign is part of the name.
     [InlineData("/repo/App.sln", "_App.-979675449.00")]
@@ -69,8 +66,8 @@ public sealed class JbSolutionCacheHashTests
     }
 
     [Theory(Skip = "A backslash only separates a path on Windows.", SkipUnless = nameof(OnWindows))]
-    // The names jb actually wrote, on the platform it wrote them on: the solution name is taken from the
-    // last backslash, which off Windows is an ordinary character and would leave the whole path in the name.
+    // The names jb wrote, on the platform it wrote them on: the solution name is taken from the last
+    // backslash, which off Windows is an ordinary character and would leave the whole path in the name.
     [InlineData(@"C:\repo\App.sln", "_App.-609246064.00")]
     [InlineData(@"C:\repo\Zphil.ReSharperCli.slnx", "_Zphil.ReSharperCli.-1122688508.00")]
     public void FirstGenerationDirectoryName_AWindowsPath_TakesTheNameFromTheLastBackslash(
@@ -82,9 +79,8 @@ public sealed class JbSolutionCacheHashTests
     [Fact]
     public void FirstGenerationDirectoryName_IsReadBackByTheParserThatFindsGenerations()
     {
-        // Arrange — the two halves of one undocumented scheme, written apart: this composes a name and
-        // JbCacheGenerations parses one. A change to either that the other did not follow leaves a directory
-        // nothing can find, so they are pinned against each other rather than only against literals.
+        // Arrange — composer and parser are pinned against each other, not only against literals: a change to
+        // either that the other did not follow leaves a directory nothing can find.
         const string solutionPath = "/repo/Zphil.ReSharperCli.slnx";
         string composed = JbSolutionCacheHash.FirstGenerationDirectoryName(solutionPath);
 

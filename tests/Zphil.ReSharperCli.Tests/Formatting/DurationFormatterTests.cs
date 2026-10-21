@@ -4,7 +4,6 @@ using Zphil.ReSharperCli.Formatting;
 
 namespace Zphil.ReSharperCli.Tests.Formatting;
 
-/// <summary>Pins <see cref="DurationFormatter" />'s spelling of a duration.</summary>
 public sealed class DurationFormatterTests
 {
     [Theory]
@@ -29,7 +28,7 @@ public sealed class DurationFormatterTests
     public void Format_LeftoverSeconds_SaysThemRatherThanRoundingIntoTheMinutes(int seconds, string expected)
     {
         // The run cap is configured in seconds, so rounding 90 up to "2 minutes" would report a cap the
-        // user never set and quietly contradict the value in their own config.
+        // user never set and contradict the value in their own config.
         DurationFormatter.Format(TimeSpan.FromSeconds(seconds)).ShouldBe(expected);
     }
 }

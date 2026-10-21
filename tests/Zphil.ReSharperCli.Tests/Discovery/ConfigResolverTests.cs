@@ -79,8 +79,8 @@ public sealed class ConfigResolverTests : IDisposable
     [Fact]
     public async Task ResolveForCacheResetAsync_SolutionOverrideExists_IsUnchanged()
     {
-        // Arrange — the ordinary reset, which is most of them. Accepting a missing file must not change what
-        // it does when the file is there.
+        // Arrange — the ordinary reset. Accepting a missing file must not change what it does when the file
+        // is there.
         string overridePath = _environment.PlantSolution("Explicit.sln");
 
         // Act
@@ -320,7 +320,7 @@ public sealed class ConfigResolverTests : IDisposable
     public async Task ResolveAsync_JbSettingsPathNamesTheAdjacentDotSettings_IsNotACustomLayer()
     {
         // Arrange — hardening: what the env var names is what jb would discover anyway, so passing it
-        // as --settings would demote the project layers exactly as the discovered branch would.
+        // as --settings would demote the project layers as the discovered branch would.
         _environment.PlantSolution("App.sln");
         DotSettingsFixtures.PlantBeside(_environment.CurrentDirectory, string.Empty);
         _environment.SetVariable("JB_SETTINGS_PATH", Path.Combine(_environment.CurrentDirectory, "App.sln.DotSettings"));
@@ -403,7 +403,7 @@ public sealed class ConfigResolverTests : IDisposable
     {
         // Arrange — a settings file this server cannot parse must degrade to the built-in default, not fail
         // every cleanup call. But the fallback to Full Cleanup rewrites the code the declared profile was
-        // protecting, so the failure has to reach the caller and not just the log.
+        // protecting, so the failure has to reach the caller as well as the log.
         _environment.PlantSolution("App.sln");
         DotSettingsFixtures.PlantBeside(_environment.CurrentDirectory, DotSettingsFixtures.Unparseable());
 
@@ -566,8 +566,8 @@ public sealed class ConfigResolverTests : IDisposable
     public async Task ResolveAsync_SettingsWrittenAfterAnEarlierResolve_AreSeenOnTheNextCall()
     {
         // Arrange — the reason the resolver holds no cache. An agent that declares a cleanup profile
-        // mid-session (exactly what the configuration guide tells it to do) must not keep getting Full
-        // Cleanup — the very rewrite the profile was defined to prevent — until the client restarts us.
+        // mid-session, as the configuration guide tells it to, must not keep getting Full Cleanup, the rewrite
+        // the profile was defined to prevent, until the client restarts the server.
         _environment.PlantSolution("App.sln");
         ResolvedConfig before = await _resolver.ResolveAsync(null, Ct);
         before.CleanupProfile.ShouldBeNull();
@@ -585,9 +585,9 @@ public sealed class ConfigResolverTests : IDisposable
     [Fact]
     public async Task ResolveAsync_CalledRepeatedly_ProbesJbOnlyOnce()
     {
-        // Arrange — resolving fresh every call must not mean re-probing jb. That probe is the one
-        // genuinely expensive step, and JbLocator caches it until jb's files change; the rest is a
-        // directory enumeration and a small XML read.
+        // Arrange — resolving fresh every call must not mean re-probing jb. That probe is the one expensive
+        // step, and JbLocator caches it until jb's files change; the rest is a directory enumeration and a
+        // small XML read.
         _environment.PlantSolution("App.sln");
 
         // Act

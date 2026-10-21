@@ -35,8 +35,8 @@ internal static class SarifParser
 
     private static List<InspectIssue> ExtractIssues(SarifReport? report)
     {
-        // Issues repeat the same few hundred file URIs thousands of times; converting each distinct URI once
-        // also lets every issue in a file share one path string instance.
+        // Issues repeat the same file URIs many times over; converting each distinct URI once also lets every
+        // issue in a file share one path string instance.
         Dictionary<string, string> fileByUri = new(StringComparer.Ordinal);
 
         List<InspectIssue> issues = [];
@@ -75,7 +75,7 @@ internal static class SarifParser
             // Tried rather than assumed: a file:// string the runtime rejects (a malformed host, an embedded
             // null) is bad input from jb, not a fault here, and constructing a Uri from it would throw past
             // the JsonException the caller catches — surfacing minutes of finished work as a bug in this
-            // server. Left verbatim instead, exactly as the non-file:// branch below leaves its input.
+            // server. Left verbatim instead, as the non-file:// branch below leaves its input.
             file = uri.StartsWith("file://", StringComparison.Ordinal)
                    && Uri.TryCreate(uri, UriKind.Absolute, out Uri? parsed)
                 ? parsed.LocalPath

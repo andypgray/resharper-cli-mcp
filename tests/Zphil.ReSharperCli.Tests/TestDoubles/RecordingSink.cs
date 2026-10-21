@@ -1,16 +1,16 @@
 namespace Zphil.ReSharperCli.Tests.TestDoubles;
 
 /// <summary>
-///     A thread-safe recorder for whatever a sink is handed, with a bounded wait for "at least this much
-///     has arrived".
+///     Records whatever a sink is handed, thread-safely, with a bounded wait for "at least this much has
+///     arrived".
 /// </summary>
 /// <remarks>
-///     A base class, so the poll loop and its give-up policy — the parts that drift when hand-rolled per
-///     test class — have one spelling.
+///     A base class, so the poll loop and its give-up policy have one spelling rather than drifting apart
+///     when hand-rolled per test class.
 /// </remarks>
 /// <param name="patience">
-///     How long a wait may go unanswered before it fails. Long enough that only a genuine hang reaches it,
-///     short enough to fail rather than wedge the run.
+///     How long a wait may go unanswered before it fails: long enough that only a hang reaches it, short
+///     enough to fail rather than wedge the run.
 /// </param>
 internal class RecordingSink<T>(TimeSpan patience)
 {
@@ -28,7 +28,7 @@ internal class RecordingSink<T>(TimeSpan patience)
         }
     }
 
-    /// <summary>A snapshot of everything recorded so far, in arrival order.</summary>
+    /// <summary>Gets a snapshot of everything recorded so far, in arrival order.</summary>
     public IReadOnlyList<T> Items
     {
         get
@@ -56,8 +56,8 @@ internal class RecordingSink<T>(TimeSpan patience)
 
     /// <summary>Waits until <paramref name="condition" /> holds.</summary>
     /// <remarks>
-    ///     When it never does, fails with a message naming <paramref name="awaited" /> rather than with a bare
-    ///     cancellation.
+    ///     When it still does not hold after the patience, throws a <see cref="TimeoutException" /> naming
+    ///     <paramref name="awaited" /> rather than a bare cancellation.
     /// </remarks>
     public async Task WaitUntilAsync(Func<bool> condition, string awaited, CancellationToken cancellationToken)
     {

@@ -9,10 +9,9 @@ namespace Zphil.ReSharperCli.Tests.Execution;
 ///     surfaces that read it.
 /// </summary>
 /// <remarks>
-///     Two claims carry the class. With no figure recorded, every arm reads exactly as its pinned string, which
-///     is what lets a figure be added to this sentence without touching a single consumer's expectations. And
-///     a figure appears only where one predicts something: the arms with no band, warm among them, quote
-///     nothing however they are constructed.
+///     With no figure recorded, every arm reads exactly as its pinned string, which is what every consumer of
+///     the sentence expects. A figure appears only where one predicts something: the arms with no band, warm
+///     among them, quote nothing however they are constructed.
 /// </remarks>
 public sealed class JbCacheStateTests
 {
@@ -28,9 +27,8 @@ public sealed class JbCacheStateTests
     [Fact]
     public void Summary_EveryArmWithNoFigure_ReadsExactlyAsItAlwaysHas()
     {
-        // Assert — the regression guard, and the reason it is one assertion rather than six: these six
-        // strings are what every existing consumer of this sentence was written against, so an arm tidied
-        // in passing breaks a log line and a progress message that nothing else pins together.
+        // Assert — every arm in one test, because these strings are what every consumer of the sentence
+        // expects and nothing else pins them together.
         Unreadable().Summary.ShouldBe("cache state unreadable");
         Cold().Summary.ShouldBe("cold (none on disk)");
         ColdAfterAReset().Summary.ShouldBe("cold after a reset (none on disk)");
@@ -42,8 +40,8 @@ public sealed class JbCacheStateTests
     [Fact]
     public void Summary_AColdRunWithARecordedCost_NamesWhatTheLastColdRunTook()
     {
-        // Assert — the case the feature exists for. A cold run is minutes of silence, and the figure is what
-        // separates "slow, as expected" from "stuck".
+        // Assert — a cold run is minutes of silence, and the figure is what separates "slow, as expected" from
+        // "stuck".
         JbCacheState state = Cold() with { LastComparableCost = TimeSpan.FromSeconds(497) };
 
         state.Summary.ShouldBe("cold (none on disk; the last cold run took 8 minutes 17 seconds)");
@@ -84,8 +82,8 @@ public sealed class JbCacheStateTests
     [Fact]
     public void Summary_AGenerationAnotherJbBuildWrote_ReadsAsStaleAndNamesBothBuilds()
     {
-        // Assert — the lie this arm exists to stop: a generation an earlier jb build left behind buys the next
-        // run nothing, so the sentence has to say which build wrote it.
+        // Assert — a generation another jb build left behind buys the next run nothing, so the sentence has to
+        // say which build wrote it.
         Stale().Summary.ShouldBe($"stale (cache written by jb {AnotherJb}, this is {ThisJb}, and jb rebuilds it)");
     }
 
@@ -164,58 +162,58 @@ public sealed class JbCacheStateTests
         };
     }
 
-    /// <summary>The cache home could not be enumerated at all.</summary>
+    /// <summary>Returns the state of a cache home that could not be enumerated at all.</summary>
     private static JbCacheState Unreadable()
     {
         return new JbCacheState(null, null, false, false);
     }
 
-    /// <summary>A fresh checkout: nothing on disk, and nothing asked for it to be that way.</summary>
+    /// <summary>Returns a fresh checkout's state: nothing on disk, and nothing asked for it to be that way.</summary>
     private static JbCacheState Cold()
     {
         return new JbCacheState([], null, false, false);
     }
 
-    /// <summary>The same emptiness, with a reset's tombstone explaining it.</summary>
+    /// <summary>Returns the same emptiness, with a reset's tombstone explaining it.</summary>
     private static JbCacheState ColdAfterAReset()
     {
         return new JbCacheState([], null, true, false);
     }
 
-    /// <summary>A generation a transplant has just copied in, which is why it carries no marker.</summary>
+    /// <summary>Returns a just-transplanted generation's state, which is why it carries no marker.</summary>
     private static JbCacheState Seeded()
     {
         return new JbCacheState([Generation], null, false, true);
     }
 
-    /// <summary>The remnant of a killed run: a generation on disk that no run ever finished against.</summary>
+    /// <summary>Returns the remnant of a killed run: a generation on disk that no run ever finished against.</summary>
     private static JbCacheState PartBuilt()
     {
         return new JbCacheState([Generation], null, false, false);
     }
 
     /// <summary>
-    ///     A generation of this solution's own, vouched for by a marker — and, since no build is named on
-    ///     either side, one the staleness judgement has nothing to say about.
+    ///     Returns a generation of this solution's own, vouched for by a marker. No build is named on either
+    ///     side, so the staleness judgement has nothing to say about it.
     /// </summary>
     private static JbCacheState Warm()
     {
         return new JbCacheState([Generation], MarkerAge, false, false);
     }
 
-    /// <summary>The same generation, vouched for by a marker the build about to open it wrote.</summary>
+    /// <summary>Returns the same generation, vouched for by a marker the build about to open it wrote.</summary>
     private static JbCacheState WarmUnderThisJb()
     {
         return Warm() with { MarkerJbVersion = ThisJb, CurrentJbVersion = ThisJb };
     }
 
-    /// <summary>The same generation again, left warm by a jb the upgrade has since replaced.</summary>
+    /// <summary>Returns the same generation again, left warm by a jb the upgrade has since replaced.</summary>
     private static JbCacheState Stale()
     {
         return Warm() with { MarkerJbVersion = AnotherJb, CurrentJbVersion = ThisJb };
     }
 
-    /// <summary>A marker that names no <c>jb</c> build at all.</summary>
+    /// <summary>Returns a state whose marker names no <c>jb</c> build at all.</summary>
     private static JbCacheState StaleWithNoRecordedBuild()
     {
         return Warm() with { CurrentJbVersion = ThisJb };

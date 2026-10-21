@@ -113,8 +113,8 @@ public sealed class InspectReportWriterTests : IDisposable
     {
         // Arrange — the guarantee the prune's swallow exists for: housekeeping must never cost the caller
         // the report it asked for. An expired file held open is the portable way to make one delete fail on
-        // Windows; where the platform allows deleting an open file the delete simply succeeds, and the
-        // assertion below is the same either way.
+        // Windows; where the platform allows deleting an open file the delete succeeds, and the assertion
+        // below is the same either way.
         string directory = ReportsDirectory();
         string expired = WriteExisting(directory, "Old-inspect-cccccccc.md");
         Expire(expired);
@@ -153,7 +153,7 @@ public sealed class InspectReportWriterTests : IDisposable
         return new InspectReportWriter(_root, Logs.For<InspectReportWriter>(logs));
     }
 
-    /// <summary>The directory the writer under test keeps its reports in, created ahead of it.</summary>
+    /// <summary>Returns the directory the writer under test keeps its reports in, created ahead of it.</summary>
     private string ReportsDirectory()
     {
         string path = Path.Combine(_root, InspectReportWriter.ReportsDirectoryName);

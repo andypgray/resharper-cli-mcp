@@ -5,8 +5,8 @@ using Xunit;
 namespace Zphil.ReSharperCli.Tests.TestSupport;
 
 /// <summary>
-///     The negative control for <see cref="WireLog" />: proof that it reports the violation it exists to
-///     report, which no green run against a correct server can give.
+///     Provides the negative control for <see cref="WireLog" />: proof that it reports the violation it exists
+///     to report, which no green run against a correct server can give.
 /// </summary>
 /// <remarks>
 ///     Synthetic frames, no transport and no timing, so this is the deterministic half of the contract
@@ -17,7 +17,7 @@ public sealed class WireLogTests
     private const string ToolResultFrame =
         """{"jsonrpc":"2.0","id":2,"result":{"content":[{"type":"text","text":"No issues found."}],"isError":false}}""";
 
-    /// <summary>A response with no <c>content</c> — the anchor must not settle on one of these.</summary>
+    /// <summary>A response with no <c>content</c>, which the anchor must not settle on.</summary>
     private const string InitializeResultFrame =
         """{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-06-18","capabilities":{},"serverInfo":{"name":"resharper-cli-mcp"}}}""";
 
@@ -98,14 +98,19 @@ public sealed class WireLogTests
         log.ToolResultIndex.ShouldBe(-1);
     }
 
-    /// <summary>The server's own two writes per frame: the UTF-8 JSON, then the terminator.</summary>
+    /// <summary>
+    ///     Writes <paramref name="frame" /> in the server's own two writes: the UTF-8 JSON, then the terminator.
+    /// </summary>
     private static void Write(WireLog log, string frame)
     {
         log.Append(Encoding.UTF8.GetBytes(frame));
         log.Append("\n"u8);
     }
 
-    /// <summary>Three <c>$</c>, because the frame's own trailing <c>}}</c> is content rather than an interpolation.</summary>
+    /// <summary>Returns a progress notification frame carrying <paramref name="counter" />.</summary>
+    /// <remarks>
+    ///     Three <c>$</c>, because the frame's own trailing <c>}}</c> is content rather than an interpolation.
+    /// </remarks>
     private static string ProgressFrame(int counter)
     {
         return

@@ -7,28 +7,15 @@ namespace Zphil.ReSharperCli.Formatting;
 ///     go, and what the next call now costs.
 /// </summary>
 /// <remarks>
-///     <para>
-///         Output uses <c>\n</c> line endings and is ASCII-only, matching the other formatters.
-///     </para>
-///     <para>
-///         A generation left alone carries the solution path its own last successful run recorded, which is
-///         the only thing that can turn a directory name back into a checkout — the hash <c>jb</c> names it
-///         by is one-way. Where that path is gone, the report says so and names the call that reclaims it,
-///         because a caller reading a list of directories they did not ask about is at the one moment they
-///         can act on it.
-///     </para>
-///     <para>
-///         It carries no <see cref="DetailLevel" /> ladder, because it has no axis to reduce along: a reset
-///         report is one line per cache generation for a single solution — a handful at the very most —
-///         where an inspect or cleanup report grows with the codebase. <c>ResponseTruncator</c> remains the
-///         backstop if a pathological budget ever proves that wrong.
-///     </para>
+///     It carries no <see cref="DetailLevel" /> ladder, because it has no axis to reduce along: a reset report
+///     is one line per cache generation for a single solution, where an inspect or cleanup report grows with the
+///     codebase. <c>ResponseTruncator</c> is its only backstop.
 /// </remarks>
 internal static class CacheResetFormatter
 {
     /// <summary>
-    ///     Closes the truncation footer for this tool. A report cut short must not read as fewer generations
-    ///     deleted — the directories are already gone.
+    ///     The sentence that closes a cut-short reset report, so it cannot read as fewer generations deleted:
+    ///     the directories are already gone.
     /// </summary>
     internal const string ResetRanInFull = "The reset itself completed; only the report was cut short.";
 
@@ -36,18 +23,19 @@ internal static class CacheResetFormatter
         "The next inspect or cleanup against this solution rebuilds the cache from cold, which can take minutes.";
 
     /// <summary>
-    ///     How to act on a left-alone generation whose checkout is gone or cannot be named. Stated inline
-    ///     rather than pointed at, and only where something in the list is actually reclaimable: a cure a
-    ///     reader has to go and fetch is one that competes with whatever else the result says, and loses.
+    ///     How to act on a left-alone generation whose checkout is gone or cannot be named.
     /// </summary>
+    /// <remarks>
+    ///     Stated inline rather than pointed at, because an agent acts on a cure in the result it is reading and
+    ///     passes over a pointer to one.
+    /// </remarks>
     private const string ReclaimHint =
         "To reclaim the cache of a checkout that has been deleted, call this tool again with solutionPath "
         + "set to the path it had.";
 
     /// <summary>
-    ///     What a reclaim closes with instead. There is no next call against a path with no checkout on it,
-    ///     so the cold-cost warning would be describing a run that cannot happen; what the caller is owed
-    ///     instead is that the space is not coming back and that re-creating the checkout costs nothing extra.
+    ///     What a reclaim closes with in place of <see cref="ColdNextCall" />, since there is no next call
+    ///     against a path with no checkout on it.
     /// </summary>
     private const string NothingRebuildsThis =
         "The solution file does not exist, so nothing rebuilds this cache. A checkout created at that path "
@@ -93,19 +81,19 @@ internal static class CacheResetFormatter
             if (outcome.LeftAlone.Any(NeedsReclaiming)) lines.Add(ReclaimHint);
         }
 
-        // Only true if something actually went: a reset that dropped nothing left the cache exactly as warm
-        // (or as stale) as it found it, and saying otherwise would send the caller to wait out a cold run
-        // that is not going to happen.
+        // Only true if something went: a reset that dropped nothing left the cache as warm (or as stale) as
+        // it found it, and saying otherwise would send the caller to wait out a cold run that is not going to
+        // happen.
         if (outcome.Dropped.Count > 0) lines.Add(outcome.SolutionFileExists ? ColdNextCall : NothingRebuildsThis);
 
         return string.Join("\n", lines);
     }
 
-    /// <summary>One left-alone generation as its list item: the name, and whose it is.</summary>
+    /// <summary>Formats one left-alone generation as its list item: the name, and whose it is.</summary>
     /// <remarks>
-    ///     The four attributions read differently on purpose — a path that still exists is someone's working
-    ///     checkout, a path that is gone is reclaimable, and one that cannot be named is a fact about this
-    ///     server's own records rather than about the directory.
+    ///     Each attribution reads differently because each tells the caller something different: a path that
+    ///     still exists is someone's working checkout, a path that is gone is reclaimable, and one that cannot be
+    ///     named is a fact about this server's own records rather than about the directory.
     /// </remarks>
     private static string Describe(LeftAloneGeneration generation)
     {
@@ -125,8 +113,8 @@ internal static class CacheResetFormatter
     }
 
     /// <summary>
-    ///     Whether this item is one the reclaim hint would help with: its checkout is gone, or this server
-    ///     cannot say whose it is, which leaves the caller the one who might know.
+    ///     Determines whether the reclaim hint would help with this item: its checkout is gone, or this server
+    ///     cannot say whose it is, which leaves the caller as the one who might know.
     /// </summary>
     private static bool NeedsReclaiming(LeftAloneGeneration generation)
     {
@@ -138,7 +126,7 @@ internal static class CacheResetFormatter
         var opening = $"No ReSharper cache generation for \"{outcome.SolutionPath}\" was found under \"{outcome.CacheHome}\". ";
 
         // A reclaim that found nothing has nothing to say about a next call either: there is no checkout at
-        // that path to make one. Promising a cold rebuild would be describing a run that cannot happen.
+        // that path to make one.
         return outcome.SolutionFileExists
             ? opening + "Nothing to drop, so the next inspect or cleanup builds the cache from cold anyway."
             : opening + "Nothing to drop.";

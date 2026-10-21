@@ -7,64 +7,36 @@ namespace Zphil.ReSharperCli.Services;
 
 /// <summary>
 ///     Gives a solution with no ReSharper cache a running start by copying one belonging to another copy of
-///     the same solution — a second worktree, a clone, a build directory — under the name <c>jb</c> will look
+///     the same solution (a second worktree, a clone, a build directory) under the name <c>jb</c> will look
 ///     for.
 /// </summary>
 /// <remarks>
 ///     <para>
 ///         <c>jb</c> keys a cache generation by the solution's absolute path, so every fresh worktree of a
-///         repository already analysed is cold, however much analysis of the same code sits beside it. Cold is
-///         not merely slow on a large solution: it is the case that runs past the cap and comes back as a
-///         timeout, so the pre-warm built for it never gets the chance to help a session that works in a
-///         worktree.
+///         repository already analysed is cold, however much analysis of the same code sits beside it, and on a
+///         large solution cold is the case that runs past the cap.
 ///     </para>
 ///     <para>
-///         Nothing inside the cache binds it to a path — <c>jb</c> validates a generation against its own
-///         format version and rebuilds it in place when that does not match — so a copy under another hash is
-///         either accepted and re-keyed by the run that opens it, or wiped and rebuilt exactly as an absent
-///         one would be. That is what makes this safe to build on a naming scheme nobody documents: a copy
-///         <c>jb</c> refuses costs the copy and nothing else.
+///         Nothing inside the cache binds it to a path: <c>jb</c> validates a generation against its own format
+///         version and rebuilds it in place when that does not match, so a copy under another hash is either
+///         accepted and re-keyed by the run that opens it, or wiped and rebuilt as an absent one would be. That
+///         is what makes this safe to build on a naming scheme nobody documents: a copy <c>jb</c> refuses costs
+///         the copy and nothing else. No size threshold guards it, because a generation's size tracks how much
+///         analysis has accumulated against its path rather than how heavy the solution is, so nothing on disk
+///         predicts which side of the seeding trade a run lands on.
 ///     </para>
 ///     <para>
-///         It is a trade rather than a free win, and the arithmetic decides where it belongs. A seeded run
-///         pays to re-key the copy and to analyse whatever the donor's checkout never saw, and that premium
-///         is not fixed: it grows with the donor's size and with how far its checkout has drifted, from about
-///         a minute to several. What it buys is however much a warm cache is worth on that solution. On one
-///         whose cold analysis runs past the cap, that is the difference between a result and a timeout. On
-///         one that goes cold in a minute or two, the premium can cost more than the rebuild it replaced. The
-///         copy itself is not what makes it a trade: it takes seconds even for the largest generation measured.
+///         Every step may decline, and every decline ends the same way: no seed, no error, and the cold run the
+///         call was going to have anyway. It never acts on a maybe.
 ///     </para>
 ///     <para>
-///         No size threshold guards it, because none can be placed from disk. A generation's size tracks how
-///         much analysis has accumulated against that path, not how heavy the solution is — in a censused cache
-///         home most fresh checkouts of the largest solution measured smaller than an aged cache of a small one
-///         — so nothing available before the run separates "rescues a call that would have timed out" from
-///         "adds a minute to one that would have been fine". The losing case is bounded and one-time, a single
-///         re-key per new checkout; the winning case is a call that returns at all.
-///     </para>
-///     <para>
-///         Every step may decline. No donor, an unreadable marker, a donor an earlier <c>jb</c> build wrote, a
-///         busy donor, a copy that fails halfway, and a solution whose cache was just reset all end the same
-///         way — no seed, no error, and the cold run the call was going to have anyway. The one thing it must
-///         never do is act on a maybe. So the donor has to be named by a marker a successful run wrote, and it
-///         acts on the target only where no run against that path has ever succeeded: no generation at all, or
-///         generations with no warm marker beside them, since every successful run stamps one and any marker —
-///         naming a generation or empty — protects what is on disk. Even then nothing is deleted until the
-///         full copy is standing beside the slot, so a failure costs the copy rather than the cache. A reset
-///         ends the whole thing outright, because <c>resharper_reset_cache</c> composes with this and guessing
-///         does not.
+///         <paramref name="runLock" /> is the lock every other cache-home operation takes. The caller already
+///         holds the target generation's lease; this takes the donor's for the length of the copy, so a
+///         solution being analysed elsewhere is not read from mid-write. <paramref name="donorLockPatience" />
+///         bounds that wait, defaulting to <see cref="DefaultDonorLockPatience" />, and stays small because it is
+///         spent while holding the target's lease: a busy donor is one to skip rather than to queue for.
 ///     </para>
 /// </remarks>
-/// <param name="runLock">
-///     The same lock every other cache-home operation takes. The caller already holds the <em>target</em>
-///     generation's lease; this takes the <em>donor</em>'s for the length of the copy, so a solution being
-///     analysed elsewhere is not read from mid-write.
-/// </param>
-/// <param name="donorLockPatience">
-///     How long to wait for the donor's lease before giving up, defaulting to
-///     <see cref="DefaultDonorLockPatience" />. Small on purpose: it is spent while holding the target's
-///     lease, and a donor that is busy is a donor to skip rather than to queue for.
-/// </param>
 internal sealed class CacheTransplanter(
     JbRunLock runLock,
     ILogger<CacheTransplanter> logger,
@@ -88,8 +60,8 @@ internal sealed class CacheTransplanter(
     ///     <see cref="ProcessRunner.KilledTreeReapBudget" /> is a measured bound on how long a departing holder
     ///     takes to let go, and a donor's lease can be held by one: a <c>jb</c> on its way out in another
     ///     server process, or one started by hand. Within this process <see cref="JbRunSlot" /> already orders
-    ///     the case — a killed speculative pass holds this server's slot until <see cref="ProcessRunner" /> has
-    ///     reaped it, so a caller for another solution arrives strictly after it rather than beside it.
+    ///     the case: a killed speculative pass holds this server's slot until <see cref="ProcessRunner" /> has
+    ///     reaped it, so a caller for another solution arrives after it rather than beside it.
     /// </remarks>
     internal static readonly TimeSpan DefaultDonorLockPatience = ProcessRunner.KilledTreeReapBudget;
 
@@ -97,7 +69,7 @@ internal sealed class CacheTransplanter(
 
     /// <summary>
     ///     Seeds the cache for <paramref name="config" />'s solution from a sibling's, reporting whether one
-    ///     was actually planted.
+    ///     was planted.
     /// </summary>
     /// <remarks>
     ///     The caller must already hold the target generation's run lease, and must be about to run <c>jb</c>
@@ -120,12 +92,11 @@ internal sealed class CacheTransplanter(
 
     /// <summary>Logs that nothing was planted, and why.</summary>
     /// <remarks>
-    ///     A silent decline would make "declined to seed" and "never looked" the same observation — and the
-    ///     distinction is the whole diagnosis when a checkout that should have been seeded runs cold instead.
-    ///     Split by level on what the decline leaves behind rather than on how interesting the reason sounds: a
-    ///     target that is still <em>cold</em> is about to cost minutes and the reason is the explanation for
-    ///     them, while declining over a cache that is already warm is the ordinary case on every call of every
-    ///     session.
+    ///     A silent decline would make "declined to seed" and "never looked" the same observation, and that
+    ///     distinction is what diagnoses a checkout that should have been seeded and ran cold instead. Split by
+    ///     level on what the decline leaves behind: a target that is still cold is about to cost minutes and the
+    ///     reason explains them, while declining over a cache that is already warm is the ordinary case on every
+    ///     call of every session.
     /// </remarks>
     private void Declined(string solutionPath, string reason, bool leavesTargetCold)
     {
@@ -149,11 +120,10 @@ internal sealed class CacheTransplanter(
         // "this solution has no generations at all" would find the donor's and never fire.
         //
         // What makes generations that are already there replaceable is the marker's absence, and nothing
-        // else. Every successful run stamps one, so a marker — any marker, the empty legacy form included —
-        // says a run produced what is on disk and this has no business touching it. No marker at all says no
-        // run against this path ever finished, leaving the part-built remnant of one that was killed: worth
-        // less than the copy, and the reason a first run that dies at the cap would otherwise never be
-        // seeded again.
+        // else. Every successful run stamps one, so any marker (the empty form included) says a run produced
+        // what is on disk and this has no business touching it. No marker at all says no run against this path
+        // ever finished, leaving the part-built remnant of one that was killed: worth less than the copy, and
+        // were it protected, a first run that dies at the cap would never be seeded again.
         JbSolutionGenerations generations = JbCacheGenerations.FindFor(config.CacheHome, config.SolutionPath);
         if (generations.Owned.Count > 0 && JbWarmMarker.Exists(config.SolutionPath, config.CacheHome, logger))
         {
@@ -192,14 +162,14 @@ internal sealed class CacheTransplanter(
     }
 
     /// <summary>
-    ///     The most recently warmed cache generation under this cache home built from a solution file of the
-    ///     same name at a <em>different</em> path, or <see langword="null" /> when there is none to copy.
+    ///     Finds the most recently warmed cache generation under this cache home built from a solution file of
+    ///     the same name at a different path.
     /// </summary>
     /// <remarks>
     ///     Donors are found through the warm markers rather than by reading directory names, because a
-    ///     directory only says a cache exists while a marker says a <c>jb</c> run against it finished cleanly
-    ///     — the difference between a cache worth copying and the abandoned husk of a run that was killed.
-    ///     The first candidate is the only candidate: falling through to a second-best donor would spend the
+    ///     directory only says a cache exists while a marker says a <c>jb</c> run against it finished cleanly:
+    ///     the difference between a cache worth copying and the abandoned husk of a run that was killed. The
+    ///     first candidate is the only one tried, since falling through to a second-best donor would spend the
     ///     caller's time on a chain of attempts to save a cold run that is already running late.
     /// </remarks>
     private Donor? FindDonor(ResolvedConfig config)
@@ -218,10 +188,9 @@ internal sealed class CacheTransplanter(
 
             // A donor another jb build wrote is worse than none: jb rebuilds a generation it did not write
             // in place, so the copy would buy a cold-shaped run and charge the seeding premium on top of it.
-            // A check rather than a guarantee, because the build a marker names is the label its run was
-            // given, and JbLocator's remarks name the window in which that label is still the old build's.
-            // Here the mislabel declines a donor this could have used: a seeding forgone, which is the
-            // direction this check may fail in.
+            // A check rather than a guarantee: a marker names the build its run was labelled with, which can
+            // lag an in-place update (JbLocator's remarks name the window), and a mislabel only declines a donor
+            // this could have used.
             if (JbWarmMarker.WrittenByAnotherBuild(donor.JbVersion, config.JbVersion)) continue;
 
             candidates.Add(new Donor(key, generationName, File.GetLastWriteTimeUtc(markerPath)));
@@ -232,18 +201,16 @@ internal sealed class CacheTransplanter(
 
     /// <summary>
     ///     Copies the donor's tree into place, replacing whichever <paramref name="replaced" /> generations are
-    ///     there — the leftovers of runs that never finished, and usually none.
+    ///     there: the leftovers of runs that never finished, and usually none.
     /// </summary>
     /// <remarks>
-    ///     Built somewhere <c>jb</c> and this server's own reset both ignore, and moved into position at the
-    ///     end, so a copy that fails or is cancelled adds no directory a later run could open as a cache: within
-    ///     one parent the move is a rename, which cannot be observed half-done. The order is the safety
-    ///     property, and it is one-way: the copy is complete and standing beside the slot before anything is
-    ///     deleted, so every way this can fail up to that point leaves what was on disk exactly where it was,
-    ///     and the run about to start resumes it. Only the rename spends that safety, and it cannot be observed
-    ///     half-done. What is accepted in exchange is a slot delete that fails part way through, on the same terms as
-    ///     the reset's own: <c>jb</c> validates a generation against its format version and rebuilds it in place, so
-    ///     the worst residue is a cold run.
+    ///     Built under a name <c>jb</c> and this server's own reset both ignore, and moved into position at the
+    ///     end: within one parent the move is a rename, which cannot be observed half-done, so a copy that fails
+    ///     or is cancelled adds no directory a later run could open as a cache. Nothing is deleted until the copy
+    ///     is complete beside the slot, so every failure before that point leaves what was on disk where it was,
+    ///     for the run about to start to resume. What is accepted in exchange is a slot delete that fails part
+    ///     way through, on the same terms as the reset's own: <c>jb</c> validates a generation against its format
+    ///     version and rebuilds it in place, so the worst residue is a cold run.
     /// </remarks>
     private bool Copy(
         string donorPath,
@@ -256,14 +223,13 @@ internal sealed class CacheTransplanter(
 
         try
         {
-            // A copy this one abandoned, from a process that was killed mid-run. Deletable because the caller
-            // holds the target's lease, so nothing else can be building it.
+            // A copy an earlier attempt abandoned, from a process that was killed mid-run. Deletable because the
+            // caller holds the target's lease, so nothing else can be building it.
             if (Directory.Exists(inProgressPath)) Directory.Delete(inProgressPath, true);
 
-            // Measured while copying rather than by a second walk, and reported because the seeded-run premium
-            // scales with it: the copy itself is seconds, but re-keying what was copied is what a seeded run
-            // then spends minutes on, and without this line that arithmetic has to be reconstructed by hand
-            // from two tool-call totals.
+            // Measured while copying rather than by a second walk, and logged because the seeded-run premium
+            // scales with it: re-keying what was copied, not the copy itself, is what a seeded run spends its
+            // extra time on.
             var copied = Stopwatch.StartNew();
             (long bytes, int files) = CopyTree(donorPath, inProgressPath, cancellationToken);
             copied.Stop();
@@ -326,10 +292,10 @@ internal sealed class CacheTransplanter(
     /// </summary>
     /// <remarks>
     ///     Nothing there is the ordinary case and is clear for free; what this exists for is the part-built
-    ///     remnant <see cref="SeedAsync" /> has just proved no successful run produced. A delete that fails
-    ///     costs the copy and not the cache: the remnant stays whole, the aside is discarded, and the run about
-    ///     to start resumes exactly what it would have resumed anyway. A <em>file</em> at the slot is not a
-    ///     directory to delete and reads as clear, so it goes on to fail at the move.
+    ///     remnant <see cref="SeedAsync" /> has just proved no successful run produced. A recursive delete removes
+    ///     what it can before it throws, so one that fails discards the copy and leaves what survived of the
+    ///     remnant to the run about to start, at worst a cold run. A file at the slot is not a directory to
+    ///     delete and reads as clear, so it goes on to fail at the move.
     /// </remarks>
     private bool TryClearTargetSlot(string targetPath, string solutionPath)
     {
@@ -353,15 +319,14 @@ internal sealed class CacheTransplanter(
     }
 
     /// <summary>
-    ///     Remove what is left of the replaced generations once the copy has landed: the forks a concurrent
+    ///     Removes what is left of the replaced generations once the copy has landed: the forks a concurrent
     ///     <c>jb</c> made of the remnant, which the slot delete does not cover.
     /// </summary>
     /// <remarks>
-    ///     Deliberately after the rename and deliberately best effort, which together shrink the delete the
-    ///     seeding depends on to one directory. A fork that will not go costs disk and nothing else: <c>jb</c>
-    ///     opens the first generation, which is the one just seeded, and the marker the next successful run
-    ///     stamps names that one too — so a survivor is reclaimed by the next cache reset rather than being
-    ///     worth failing over.
+    ///     It runs after the rename and is best effort, which together shrink the delete the seeding depends on
+    ///     to one directory. A fork that will not go costs disk and nothing else: <c>jb</c> opens the first generation,
+    ///     which is the one just seeded, and the marker the next successful run stamps names that one too, so a
+    ///     survivor is reclaimed by the next cache reset rather than being worth failing over.
     /// </remarks>
     private void SweepReplacedForks(string targetPath, IReadOnlyList<JbCacheGeneration> replaced)
     {
@@ -387,14 +352,15 @@ internal sealed class CacheTransplanter(
     }
 
     /// <summary>
-    ///     Recursive copy by hand rather than a library helper, so cancellation is honoured between files
-    ///     rather than only between whole trees — a cache generation is hundreds of megabytes, and the caller
-    ///     cancels when the user's own run wants to start.
+    ///     Copies the tree at <paramref name="sourcePath" /> to <paramref name="destinationPath" />, honouring
+    ///     cancellation between files.
     /// </summary>
     /// <remarks>
-    ///     Reparse points are stepped over rather than followed. Nothing <c>jb</c> writes contains one, so
-    ///     skipping costs nothing real, and following one in a cache home somebody has been rearranging could
-    ///     copy a directory tree into itself.
+    ///     By hand rather than a library helper, so cancellation lands between files rather than only between
+    ///     whole trees: a cache generation is hundreds of megabytes, and the caller cancels when the user's own
+    ///     run wants to start. Reparse points are stepped over rather than followed. Nothing <c>jb</c> writes
+    ///     contains one, so skipping costs nothing, and following one in a cache home somebody has been
+    ///     rearranging could copy a directory tree into itself.
     /// </remarks>
     /// <returns>The bytes and file count copied, tallied from the same enumeration rather than by a second walk.</returns>
     private static (long Bytes, int Files) CopyTree(
@@ -407,8 +373,8 @@ internal sealed class CacheTransplanter(
         long bytes = 0;
         var files = 0;
 
-        // One enumeration serves both kinds of entry, and Attributes comes from its find data — no
-        // per-directory re-stat on the only path in this server that walks hundreds of megabytes.
+        // One enumeration serves both kinds of entry, and Attributes comes from its find data, so a walk of
+        // hundreds of megabytes makes no per-directory re-stat.
         foreach (FileSystemInfo entry in new DirectoryInfo(sourcePath).EnumerateFileSystemInfos())
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -437,8 +403,8 @@ internal sealed class CacheTransplanter(
 
     /// <summary>Removes a copy that will not be finished.</summary>
     /// <remarks>
-    ///     Best effort: what is left behind if this fails is inert — no parser reads it as a cache generation —
-    ///     and the next attempt deletes it before starting.
+    ///     Best effort: what is left behind if this fails is inert, since no parser reads it as a cache
+    ///     generation, and the next attempt deletes it before starting.
     /// </remarks>
     private void Discard(string inProgressPath)
     {
@@ -452,6 +418,6 @@ internal sealed class CacheTransplanter(
         }
     }
 
-    /// <summary>A cache generation worth copying, and what it takes to lock it.</summary>
+    /// <summary>Represents a cache generation worth copying, and what it takes to lock it.</summary>
     private sealed record Donor(string Key, string GenerationName, DateTime WarmedAt);
 }

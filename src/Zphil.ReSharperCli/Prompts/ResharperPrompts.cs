@@ -5,7 +5,7 @@ using Zphil.ReSharperCli.Infrastructure;
 namespace Zphil.ReSharperCli.Prompts;
 
 /// <summary>
-///     The MCP prompt surface: one prompt, <c>derive_style_guide</c>, whose body is the embedded
+///     Defines the MCP prompt surface: the <c>derive_style_guide</c> prompt, whose body is the embedded
 ///     <c>derive-style-guide.md</c> recipe.
 /// </summary>
 /// <remarks>

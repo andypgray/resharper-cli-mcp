@@ -9,10 +9,12 @@ namespace Zphil.ReSharperCli.Tests.Execution;
 
 /// <summary>
 ///     Pins the one-sided invariant of <see cref="JbCacheGenerations" />, whose answers may be deleted: anything
-///     not provably this solution's cache is skipped. The sibling-solution cases model a shape that occurs in
-///     real cache homes — <c>_App.100200300.00</c> sitting beside <c>_App.Core.400500600.00</c>, the pair a
-///     loose prefix match would conflate.
+///     not proved to be this solution's cache is skipped.
 /// </summary>
+/// <remarks>
+///     The sibling-solution cases model a shape that occurs in real cache homes: <c>_App.100200300.00</c>
+///     sitting beside <c>_App.Core.400500600.00</c>, the pair a loose prefix match would conflate.
+/// </remarks>
 public sealed class JbCacheGenerationsTests : IDisposable
 {
     private readonly FakeEnvironment _environment = new();
@@ -37,8 +39,8 @@ public sealed class JbCacheGenerationsTests : IDisposable
     }
 
     [Theory]
-    // The one that matters: a longer-named solution's cache starts with the shorter one's prefix, and only
-    // the strict {hash}.{generation} parse keeps them apart.
+    // A longer-named solution's cache starts with the shorter one's prefix, and only the strict
+    // {hash}.{generation} parse keeps them apart.
     [InlineData("_App.Core.400500600.00", "App")]
     [InlineData("_Zphil.ReSharperCli.-1625048228.00", "Zphil")]
     // A different solution entirely.
@@ -60,7 +62,7 @@ public sealed class JbCacheGenerationsTests : IDisposable
     public void Find_CacheHomeWithSeveralSolutions_ReturnsOnlyThisSolutionsGenerations()
     {
         // Arrange — one solution's two generations, a same-prefixed sibling solution, an unrelated solution,
-        // and the server's own sidecar files, which are files rather than directories.
+        // and a sidecar of the server's own, which is a file rather than a directory.
         string cacheHome = _environment.CreateTempDirectory();
         CacheHomes.PlantGeneration(cacheHome, "_App.100200300.00");
         CacheHomes.PlantGeneration(cacheHome, "_App.100200300.01");

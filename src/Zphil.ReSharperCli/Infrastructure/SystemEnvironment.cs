@@ -1,7 +1,7 @@
 namespace Zphil.ReSharperCli.Infrastructure;
 
 /// <summary>
-///     The production <see cref="IEnvironment" /> backed by <see cref="System.Environment" />.
+///     Implements <see cref="IEnvironment" /> over <see cref="System.Environment" /> for production.
 /// </summary>
 internal sealed class SystemEnvironment : IEnvironment
 {

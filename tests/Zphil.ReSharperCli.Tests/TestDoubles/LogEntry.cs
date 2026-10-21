@@ -2,13 +2,13 @@ using Microsoft.Extensions.Logging;
 
 namespace Zphil.ReSharperCli.Tests.TestDoubles;
 
-/// <summary>One captured logger call.</summary>
+/// <summary>Represents one captured logger call.</summary>
 /// <remarks>
 ///     The structured properties of its message template and the state of every logging scope open around
-///     it are what let a test assert on a log line by <em>name</em> — <c>{SolutionPath}</c>,
-///     <c>{CacheState}</c>, <c>{RunId}</c> — rather than by matching substrings of a rendered sentence.
-///     Matching prose pins the wording of a message alongside the fact it carries, so every reworded line
-///     breaks a test that was never about the wording.
+///     it are what let a test assert on a log line by name (<c>{SolutionPath}</c>, <c>{CacheState}</c>,
+///     <c>{RunId}</c>) rather than by matching substrings of a rendered sentence. Matching prose pins the
+///     wording of a message alongside the fact it carries, so every reworded line breaks a test that was
+///     never about the wording.
 /// </remarks>
 internal sealed record LogEntry(
     LogLevel Level,
@@ -18,8 +18,7 @@ internal sealed record LogEntry(
     IReadOnlyList<KeyValuePair<string, object?>> Properties,
     IReadOnlyList<object> Scopes)
 {
-    /// <summary>The value of the structured property <paramref name="name" />.</summary>
-    /// <remarks><see langword="null" /> when this line carries none by that name.</remarks>
+    /// <summary>Returns the value of the structured property <paramref name="name" />.</summary>
     public object? Property(string name)
     {
         foreach ((string key, object? value) in Properties)
@@ -29,10 +28,10 @@ internal sealed record LogEntry(
         return null;
     }
 
-    /// <summary>The value <paramref name="name" /> was pushed with by a scope open around this line.</summary>
+    /// <summary>Returns the value a scope open around this line pushed for <paramref name="name" />.</summary>
     /// <remarks>
-    ///     <see langword="null" /> when no scope carried one. Scopes are searched innermost first, which is how
-    ///     the logging providers themselves resolve a repeated key.
+    ///     Scopes are searched innermost first, which is how the logging providers themselves resolve a
+    ///     repeated key.
     /// </remarks>
     public object? ScopeValue(string name)
     {

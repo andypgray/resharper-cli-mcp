@@ -9,9 +9,8 @@ namespace Zphil.ReSharperCli.Services;
 ///     changed by hashing each concrete file before and after the run.
 /// </summary>
 /// <remarks>
-///     A non-zero exit (e.g. an unknown profile, or an <c>--include</c> set that matched nothing) surfaces from
-///     <see cref="JbRunner" /> and is restated here as a failed pass — see <see cref="FailedPassMessage" /> —
-///     rather than being silently swallowed.
+///     A non-zero exit (an unknown profile, say, or an <c>--include</c> set that matched nothing) surfaces from
+///     <see cref="JbRunner" /> and is restated as a failed pass by <see cref="FailedPassMessage" />.
 /// </remarks>
 internal sealed class CleanupService(JbRunner jbRunner, ILogger<CleanupService> logger)
 {
@@ -22,10 +21,6 @@ internal sealed class CleanupService(JbRunner jbRunner, ILogger<CleanupService> 
     ///     Cleans up <paramref name="files" /> in <paramref name="config" />'s solution with
     ///     <paramref name="profile" />, and classifies what changed.
     /// </summary>
-    /// <remarks>
-    ///     <paramref name="onProgress" /> is passed straight through, as inspect's is, and is omitted when
-    ///     the caller has nowhere to report to.
-    /// </remarks>
     public async Task<CleanupOutcome> RunAsync(
         ResolvedConfig config,
         IReadOnlyList<string> files,
@@ -51,9 +46,9 @@ internal sealed class CleanupService(JbRunner jbRunner, ILogger<CleanupService> 
                 $"The following files were not found (relative to the solution root \"{solutionDirectory}\", or absolute):\n"
                 + string.Join("\n", missing.Select(file => $"  - {file}")));
 
-        // Snapshot each concrete file's content hash before the run. Index-aligned with files (not a dict:
-        // duplicate entries and case-insensitive Windows paths would collide, and the displayed entry must
-        // stay aligned). Wildcards get no snapshot — jb expands them, so they are never a single file.
+        // Index-aligned with files rather than a dictionary: duplicate entries and case-insensitive Windows
+        // paths would collide, and the displayed entry must stay aligned. Wildcards get no snapshot, since jb
+        // expands them and they are never a single file.
         var beforeHashes = new List<byte[]?>(files.Count);
         foreach (string entry in files)
             beforeHashes.Add(
@@ -70,8 +65,7 @@ internal sealed class CleanupService(JbRunner jbRunner, ILogger<CleanupService> 
             throw new UserErrorException(FailedPassMessage(exception, files, solutionDirectory), exception);
         }
 
-        // jb has exited (ProcessRunner awaits WaitForExitAsync), so re-hash and classify. This is pure
-        // observability: a hash-read failure must never turn a cleanup jb already performed into an error.
+        // jb has exited (ProcessRunner awaits WaitForExitAsync), so the files are settled for re-hashing.
         var entries = new List<CleanupEntry>(files.Count);
         for (var i = 0; i < files.Count; i++)
             entries.Add(new CleanupEntry(files[i], Classify(files[i], beforeHashes[i], solutionDirectory)));
@@ -112,22 +106,22 @@ internal sealed class CleanupService(JbRunner jbRunner, ILogger<CleanupService> 
     ///     Restates a non-zero <c>jb cleanupcode</c> exit in cleanup's own terms.
     /// </summary>
     /// <remarks>
-    ///     The commonest such failure reads as a success: <c>jb</c> exits 3 with "No items were found to
+    ///     The failure it exists for reads as a success: <c>jb</c> exits 3 with "No items were found to
     ///     cleanup", and an agent that has just made a run of edits reads that tail as "nothing needed changing"
     ///     and moves on. Only this class knows the caller named specific files and got none of them, so only
-    ///     this class can say so, and it lists the patterns <c>jb</c> was actually given (translated, unlike the
-    ///     report's own entries) because that spelling is the thing the caller cannot see.
+    ///     this class can say so, and it lists the patterns <c>jb</c> was given (translated, unlike the report's
+    ///     own entries) because that spelling is the thing the caller cannot see.
     /// </remarks>
     private static string FailedPassMessage(
         JbExitCodeException failure,
         IReadOnlyList<string> files,
         string solutionDirectory)
     {
+        // Unbounded, as the missing-files error is: a caller that named the files is owed every one of them.
         IEnumerable<string> patterns = files.Select(entry => FilePathList.ToIncludePattern(entry, solutionDirectory));
         IEnumerable<string> lines = patterns.Select(pattern => $"  - {pattern}");
         string listed = string.Join("\n", lines);
 
-        // Unbounded, as the missing-files error above is: a caller that named 27 files is owed all 27.
         string reported = failure.StandardErrorTail.Length > 0
             ? $"jb reported: {failure.StandardErrorTail}\n"
             : string.Empty;
@@ -155,13 +149,14 @@ internal sealed class CleanupService(JbRunner jbRunner, ILogger<CleanupService> 
     }
 
     /// <summary>
-    ///     SHA-256 of the file's content, or <see langword="null" /> if it cannot be read.
+    ///     Returns the SHA-256 of the file's content, or <see langword="null" /> if it cannot be read.
     /// </summary>
     /// <remarks>
-    ///     Content hashing is deliberate: <c>(length, mtime)</c> false-positives on a touch-with-identical-content
-    ///     and false-negatives on a same-length edit, while holding the raw bytes would pin every before-buffer
-    ///     across a jb run that can last minutes. Never throws — a transient lock (AV/indexer) or a file jb
-    ///     deleted must not turn a completed cleanup into a reported error.
+    ///     A content hash, because <c>(length, mtime)</c> false-positives on a touch-with-identical-content and
+    ///     false-negatives on a same-length edit, while holding the raw bytes would pin every before-buffer
+    ///     across a jb run that can last minutes. Never throws: classification is observability only, and a
+    ///     transient lock (AV/indexer) or a file jb deleted must not turn a completed cleanup into a reported
+    ///     error.
     /// </remarks>
     private static byte[]? HashFile(string resolvedPath)
     {

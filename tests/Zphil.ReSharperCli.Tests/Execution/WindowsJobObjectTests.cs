@@ -6,8 +6,8 @@ using Zphil.ReSharperCli.Execution;
 namespace Zphil.ReSharperCli.Tests.Execution;
 
 /// <summary>
-///     The primitive the Windows half of the orphan guard rests on, exercised against real processes: a
-///     child assigned to the job is terminated by the kernel when the job's last handle closes.
+///     Pins the primitive the Windows half of the orphan guard rests on, against real processes: a child
+///     assigned to the job is terminated by the kernel when the job's last handle closes.
 /// </summary>
 /// <remarks>
 ///     Worth testing directly rather than only through <see cref="ProcessRunner" />, because the thing being
@@ -19,7 +19,6 @@ public sealed class WindowsJobObjectTests
 {
     private const string NotWindows = "A job object is a Windows primitive.";
 
-    /// <summary>Read by <c>SkipUnless</c>.</summary>
     public static bool OnWindows => OperatingSystem.IsWindows();
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -37,7 +36,7 @@ public sealed class WindowsJobObjectTests
             job.TryAssign(child).ShouldBeTrue();
             child.HasExited.ShouldBeFalse();
 
-            // Act — the whole mechanism. On an ungraceful kill the OS does this on the process's behalf.
+            // Act — closing the last handle, which the OS does on the server's behalf when it is killed.
             job.Dispose();
 
             // Assert

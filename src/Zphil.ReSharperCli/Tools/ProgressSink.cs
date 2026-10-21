@@ -6,50 +6,36 @@ using ModelContextProtocol.Server;
 namespace Zphil.ReSharperCli.Tools;
 
 /// <summary>
-///     The SDK's progress channel as the plain string sink the services take: every line handed to
+///     Adapts the SDK's progress channel to the plain string sink the services take: every line handed to
 ///     <see cref="Send" /> becomes one <c>notifications/progress</c> frame, numbered and written in the order
-///     the lines arrived. The one place in this server where a run's advance becomes an MCP notification, and
-///     the reason <c>Services/</c> and <c>Execution/</c> import no MCP types.
+///     the lines arrived.
 /// </summary>
 /// <remarks>
 ///     <para>
-///         <strong>The order is the whole reason this is a class.</strong> MCP asks exactly one thing of
-///         <c>progress</c> — that it increase — and a counter assigned before the send does not deliver it.
-///         The SDK's own <c>IProgress&lt;ProgressNotificationValue&gt;</c> ends at <c>TokenProgress.Report</c>,
-///         which starts a send and discards the task, so two perfectly ordered <c>Report</c> calls race for the
-///         transport's send lock and can reach the wire transposed — measured on this server's own output
-///         stream, not inferred. Here the counter is assigned <em>inside</em> a chain where each send awaits
-///         the one before it, so counter order is send order is wire order. <see cref="Send" /> stays a prompt
-///         <c>Action&lt;string&gt;</c> for the timer thread that calls it: it links the send onto the chain and
-///         returns, and the transport write never runs on the caller's thread or under this class's lock.
+///         This is the one place a run's advance becomes an MCP notification, which keeps <c>Services/</c> and
+///         <c>Execution/</c> free of MCP types.
 ///     </para>
 ///     <para>
-///         <strong>The drain is what keeps the last frame ahead of the result.</strong>
-///         <see cref="DisposeAsync" /> closes the sink and awaits whatever it has already accepted, and a tool
-///         method disposes it after its return value is built and before the SDK writes the result frame. A
-///         line arriving after that writes nothing rather than reporting against an answered request.
+///         MCP requires <c>progress</c> to increase, and a counter assigned before the send does not deliver
+///         that. The SDK's own <c>IProgress&lt;ProgressNotificationValue&gt;</c> ends at
+///         <c>TokenProgress.Report</c>, which starts a send and discards the task, so two ordered <c>Report</c>
+///         calls race for the transport's send lock and can reach the wire transposed. Here the counter is
+///         assigned inside a chain where each send awaits the one before it, so counter order is send order is
+///         wire order.
 ///     </para>
 ///     <para>
-///         <see cref="For" /> answers a sink that sends nothing — rather than no sink — for a client that
-///         asked for no progress. That is load-bearing: the heartbeat writing to it runs either way, and that
-///         heartbeat is what keeps a file count for the timeout message even for a client that never asked to
-///         watch.
+///         The counter counts notifications rather than files, because <c>jb</c>'s sweeps report different
+///         file totals for the same solution, so a file-derived counter would fall back to zero halfway through
+///         a run. No <c>total</c> is sent either: <c>jb</c> announces no file count up front, and a client draws
+///         <c>total</c> as a filling bar, so the one denominator available, elapsed time against the run cap,
+///         would read as work done while meaning budget consumed.
 ///     </para>
 ///     <para>
-///         The counter counts notifications rather than files on purpose: <c>jb</c>'s two sweeps report
-///         different file totals for the same solution, so a file-derived counter would fall back to zero
-///         halfway through a run. There is deliberately no <c>total</c> — see
-///         <see cref="Formatting.RunProgressFormatter" />.
+///         <paramref name="send" /> must complete only once its frame is on the wire, since the next link waits
+///         on it. It is a delegate rather than the <see cref="McpServer" /> so the ordering can be tested
+///         without one.
 ///     </para>
 /// </remarks>
-/// <param name="send">
-///     Writes one notification and completes when it is on the wire. A delegate rather than the
-///     <see cref="McpServer" /> itself so the ordering can be tested without one.
-/// </param>
-/// <param name="logger">
-///     The caller's own. Required rather than optional for the reason every other logger in this codebase is:
-///     a site that forgets it loses the record silently.
-/// </param>
 internal sealed class ProgressSink(Func<int, string, Task> send, ILogger logger) : IAsyncDisposable
 {
     private readonly Lock _gate = new();
@@ -87,23 +73,28 @@ internal sealed class ProgressSink(Func<int, string, Task> send, ILogger logger)
     }
 
     /// <summary>
-    ///     The sink for one tool call.
+    ///     Returns the sink for one tool call.
     /// </summary>
     /// <remarks>
-    ///     <see langword="null" /> when there is no request context at all — a direct call rather than one the
-    ///     SDK dispatched. Answering <see langword="null" /> there mirrors
-    ///     <see cref="Execution.JbRunProgress.Reporting" />: a caller with nowhere to report to gets nothing
-    ///     to dispose rather than a reporter that drops its lines.
+    ///     <para>
+    ///         <see langword="null" /> when there is no request context at all, as in a direct call rather than
+    ///         one the SDK dispatched. That mirrors <see cref="Execution.JbRunProgress.Reporting" />: a caller
+    ///         with nowhere to report to gets nothing to dispose rather than a reporter that drops its lines.
+    ///     </para>
+    ///     <para>
+    ///         A client that asked for no progress gets a sink that sends nothing rather than no sink, because
+    ///         the heartbeat writing to it runs either way, and that heartbeat is what keeps a file count for the
+    ///         timeout message.
+    ///     </para>
     /// </remarks>
     internal static ProgressSink? For(RequestContext<CallToolRequestParams>? context, ILogger logger)
     {
         if (context is null) return null;
 
-        // No token means the client asked for no progress. A sink that accepts and discards keeps the
-        // heartbeat above it running — see the class remarks for why that is worth the discarded messages.
-        // The annotation on Params says non-null and the SDK's own obsolete RequestContext constructor
-        // leaves it default anyway, which is why RequestServiceProvider reads it through `?.` too. A tool
-        // call may not fail over a channel its caller never asked for, so the annotation is not trusted.
+        // No token means the client asked for no progress. The annotation on Params says non-null, but the
+        // SDK's own obsolete RequestContext constructor leaves it default, which is why RequestServiceProvider
+        // reads it through `?.` too; a tool call may not fail over a channel its caller never asked for, so the
+        // annotation is not trusted.
         // ReSharper disable once ConditionalAccessQualifierIsNonNullableAccordingToAPIContract
         if (context.Params?.ProgressToken is not { } token)
             return new ProgressSink(static (_, _) => Task.CompletedTask, logger);
@@ -121,8 +112,9 @@ internal sealed class ProgressSink(Func<int, string, Task> send, ILogger logger)
     ///     Queues <paramref name="message" /> as the next notification.
     /// </summary>
     /// <remarks>
-    ///     Prompt by contract — it links the send on and returns — because it is called from a timer callback,
-    ///     and disposing a timer waits for a callback in flight.
+    ///     Prompt by contract, linking the send on and returning, because it is called from a timer callback and
+    ///     disposing a timer waits for a callback in flight. The transport write never runs on the caller's
+    ///     thread or under this class's lock.
     /// </remarks>
     internal void Send(string message)
     {
@@ -135,7 +127,7 @@ internal sealed class ProgressSink(Func<int, string, Task> send, ILogger logger)
     }
 
     /// <summary>
-    ///     One link of the chain: waits for <paramref name="previous" />, takes the next counter value, and
+    ///     Runs one link of the chain: waits for <paramref name="previous" />, takes the next counter value, and
     ///     writes.
     /// </summary>
     /// <remarks>
@@ -144,11 +136,11 @@ internal sealed class ProgressSink(Func<int, string, Task> send, ILogger logger)
     /// </remarks>
     private async Task SendAfterAsync(Task previous, string message)
     {
-        // Off the caller's thread before anything else. This is invoked under _gate, so without the yield the
-        // wait for the previous send would happen there, and a slow transport would stall jb's own progress.
-        // ForceYielding rather than Task.Yield() because that one captures whatever synchronization context
-        // the caller happens to be on, and this runs from a timer thread that has no business dictating where
-        // a transport write lands. It is the SDK's own spelling for the same reason.
+        // Off the caller's thread before anything else. This is invoked under _gate, so without the yield a
+        // send whose predecessor had finished would start there, on the caller's thread, and a slow transport
+        // write would stall the heartbeat that called it. ForceYielding rather than Task.Yield(), because
+        // Task.Yield captures whatever synchronization context the caller is on, and a timer thread has no
+        // business dictating where a transport write lands. It is the SDK's own spelling for the same reason.
         await Task.CompletedTask.ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
         await previous.ConfigureAwait(false);
 

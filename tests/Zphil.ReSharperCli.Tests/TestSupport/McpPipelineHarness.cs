@@ -17,22 +17,23 @@ using Zphil.ReSharperCli.Tests.TestDoubles;
 namespace Zphil.ReSharperCli.Tests.TestSupport;
 
 /// <summary>
-///     A real MCP client and server connected in-process over a pair of pipes — no child process, no real
-///     stdio — composed exactly as <c>Program.cs</c> composes the production server. Lets integration tests
-///     drive the <c>tools/call</c> pipeline end to end and assert both on what the client sees and on what the
-///     server logged.
+///     Connects a real MCP client and server in-process over a pair of pipes, with no child process and no real
+///     stdio, composed as <c>Program.cs</c> composes the production server with its two seams faked. A test
+///     drives the <c>tools/call</c> pipeline end to end and asserts both on what the client sees and on what
+///     the server logged.
 /// </summary>
 /// <remarks>
-///     Per-test-instance and parallel-safe: no shared statics and no environment mutation (the
-///     <see cref="FakeEnvironment" /> stands in for the real process environment), matching the repo's
-///     zero-<c>[Collection]</c> design.
+///     Per test instance and parallel-safe: no mutable statics, and the <see cref="FakeEnvironment" /> stands
+///     in for the process environment, so no test needs a <c>[Collection]</c>.
 /// </remarks>
 internal sealed class McpPipelineHarness : IAsyncDisposable
 {
     /// <summary>How often anything in this graph that reports itself does so.</summary>
     /// <remarks>
-    ///     One number for the runner and the cache reset alike: a test watching progress is watching whichever
-    ///     of them it called, and two intervals would be two ways for one to sit out a wait the other does not.
+    ///     Brisk, so a test watching progress sees a second beat in tens of milliseconds rather than at
+    ///     <see cref="JbRunProgress.HeartbeatInterval" />. One number for the runner and the cache reset alike: a
+    ///     test watching progress is watching whichever of them it called, and two intervals would be two ways
+    ///     for one to sit out a wait the other does not.
     /// </remarks>
     private static readonly TimeSpan BriskHeartbeat = TimeSpan.FromMilliseconds(50);
 
@@ -56,31 +57,31 @@ internal sealed class McpPipelineHarness : IAsyncDisposable
         Wire = wire;
     }
 
-    /// <summary>The connected client, past the <c>initialize</c> handshake.</summary>
+    /// <summary>Gets the connected client, past the <c>initialize</c> handshake.</summary>
     public McpClient Client { get; }
 
     /// <summary>
-    ///     The server's environment seam: set <c>MAX_MCP_OUTPUT_TOKENS</c>, plant a solution in its working directory,
-    ///     etc.
+    ///     Gets the server's environment seam, for setting <c>MAX_MCP_OUTPUT_TOKENS</c> or planting a solution in
+    ///     its working directory.
     /// </summary>
     public FakeEnvironment Environment { get; }
 
-    /// <summary>The single <c>jb</c> process-runner substitute — stub it (probe, inspectcode, cleanupcode) before a tool call.</summary>
+    /// <summary>
+    ///     Gets the process seam the server spawns <c>jb</c> through, which a test stubs (probe,
+    ///     <c>inspectcode</c>, <c>cleanupcode</c>) before a tool call.
+    /// </summary>
     public IProcessRunner ProcessRunner { get; }
 
-    /// <summary>Everything the server logged through its <see cref="ILoggerFactory" /> during the session.</summary>
+    /// <summary>Gets everything the server logged through its <see cref="ILoggerFactory" />.</summary>
     public CapturingLoggerProvider Logs { get; }
 
     /// <summary>
-    ///     The server's background cache pre-warm — the same instance the client's first message triggers.
+    ///     Gets the server's background cache pre-warm, the same instance the client's first message triggers.
     /// </summary>
     /// <remarks>Await its <c>Finished</c> to make a test that opted in deterministic.</remarks>
     public CacheWarmer Warmer { get; }
 
-    /// <summary>
-    ///     Every frame the server wrote, in the order it wrote them — the only place an ordering claim about
-    ///     notifications is a fact rather than an inference about thread-pool scheduling.
-    /// </summary>
+    /// <summary>Gets every frame the server wrote, in the order it wrote them.</summary>
     /// <remarks>
     ///     Always on rather than opt-in: it costs one extra copy of this session's own frames, freed with the
     ///     harness, and no test should have to opt in to have the wire it is already using be observable.
@@ -89,9 +90,8 @@ internal sealed class McpPipelineHarness : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        // Dispose order matters: closing the client sends EOF, which ends the single-session server's
-        // RunAsync and triggers host shutdown; then stop the host (bounded so a stuck stop can't hang the
-        // suite); finally delete the environment's temp directories.
+        // Order matters: closing the client sends EOF, which ends the single-session server's RunAsync and
+        // starts host shutdown. The stop is bounded so a stuck one cannot hang the suite.
         await Client.DisposeAsync();
 
         using CancellationTokenSource stopTimeout = new(TimeSpan.FromSeconds(30));
@@ -106,12 +106,11 @@ internal sealed class McpPipelineHarness : IAsyncDisposable
     /// </summary>
     /// <param name="cancellationToken">The test's cancellation token.</param>
     /// <param name="preWarm">
-    ///     Whether the background cache pre-warm is left on. It defaults to <em>off</em> because the first
-    ///     message of the client's handshake triggers it, which would otherwise start a speculative <c>jb</c>
-    ///     run in every test in the suite — racing whatever the test arranges afterwards, and logging a
-    ///     warning of its own against the unstubbed substitute process runner, which breaks the "exactly one
-    ///     warning" assertions this harness exists to make. Tests about the pre-warm itself opt in, and
-    ///     everything else gets a deterministic session and exercises the off switch for free.
+    ///     Whether the background cache pre-warm is left on. Off by default, because the first message of the
+    ///     client's handshake triggers it: left on, every test in the suite would start a speculative <c>jb</c>
+    ///     run that races whatever the test arranges afterwards and logs a warning of its own against the
+    ///     unstubbed substitute process runner, breaking the "exactly one warning" assertions this harness
+    ///     exists to make.
     /// </param>
     /// <param name="arrange">
     ///     Runs against the two seams before the host starts, so a test that opted into the pre-warm can plant
@@ -119,8 +118,8 @@ internal sealed class McpPipelineHarness : IAsyncDisposable
     /// </param>
     /// <param name="processRunner">
     ///     The process seam, defaulting to a fresh NSubstitute double. Passing the real
-    ///     <see cref="Zphil.ReSharperCli.Execution.ProcessRunner" /> is the only way to drive a genuine <c>jb</c>
-    ///     through the whole <c>tools/call</c> pipeline; a test that wants the double gets it by saying nothing.
+    ///     <see cref="Zphil.ReSharperCli.Execution.ProcessRunner" /> is the only way to drive a real <c>jb</c>
+    ///     through the whole <c>tools/call</c> pipeline.
     /// </param>
     public static async Task<McpPipelineHarness> StartAsync(
         CancellationToken cancellationToken,
@@ -142,10 +141,6 @@ internal sealed class McpPipelineHarness : IAsyncDisposable
 
         HostApplicationBuilder builder = Host.CreateApplicationBuilder();
 
-        // Capture everything the server logs and nothing else, so "no warning" / "exactly one warning"
-        // assertions see the filter alone rather than the default console/debug providers. Down to Trace,
-        // because the filter's own call envelope is Debug and would otherwise be hidden in a way that looks
-        // exactly like a filter that never logged.
         builder.Logging.CaptureInto(logs);
 
         // The Program.cs service graph, with the two seams faked.
@@ -154,13 +149,11 @@ internal sealed class McpPipelineHarness : IAsyncDisposable
         builder.Services.AddSingleton<JbLocator>();
         builder.Services.AddSingleton<ConfigResolver>();
 
-        // The lock and the runner are the two the composition root builds by factory, because the run cap is a
-        // value rather than a service; the loggers come from the host's own factory, so everything the graph
+        // The lock and the runner take the run cap, a value rather than a service, so the composition root
+        // builds both by factory; the loggers come from the host's own factory, so everything the graph
         // writes reaches the capturing provider above.
         builder.Services.AddSingleton(provider => JbRunners.Lock(logs: provider.GetRequiredService<ILoggerFactory>()));
         builder.Services.AddSingleton<JbRunYield>();
-        // A brisk heartbeat, so a test watching progress notifications sees a second beat in tens of
-        // milliseconds instead of paying the production ten seconds per run of the suite.
         builder.Services.AddSingleton(provider => JbRunners.Create(
             processRunner,
             provider.GetRequiredService<JbRunLock>(),
@@ -171,17 +164,17 @@ internal sealed class McpPipelineHarness : IAsyncDisposable
         builder.Services.AddSingleton<CleanupService>();
 
         // By factory for the heartbeat alone: a reset reports the wait it is serving out, so registered by
-        // type it would beat at the production interval and a test watching one would sit out ten seconds.
+        // type it would beat at the production interval and a test watching one would sit out a whole beat.
         builder.Services.AddSingleton(provider => JbRunners.Reset(
             provider.GetRequiredService<JbRunLock>(),
             provider.GetRequiredService<JbRunYield>(),
             provider.GetRequiredService<ILoggerFactory>(),
             BriskHeartbeat));
 
-        // Registering the writer is not optional even though no harness test asks for a report:
-        // CoercingToolRegistration activates ResharperTools per tools/call, so a missing registration
-        // surfaces as every call returning an error result rather than as anything a build would catch.
-        // Its root is a temp directory of this harness's own, deleted with the environment.
+        // The writer must be registered whether or not a test asks for a report: CoercingToolRegistration
+        // activates ResharperTools per tools/call, so a missing registration surfaces as every call returning
+        // an error result rather than as anything a build would catch. Its root is a temp directory of this
+        // harness's own, deleted with the environment.
         builder.Services.AddSingleton(provider => new InspectReportWriter(
             environment.CreateTempDirectory(),
             provider.GetRequiredService<ILogger<InspectReportWriter>>()));
@@ -204,8 +197,6 @@ internal sealed class McpPipelineHarness : IAsyncDisposable
 
         IHost host = builder.Build();
 
-        // Before the host starts, and so before the client's first message can reach the server: a pre-warm
-        // test has to have its solution planted and its jb stubbed by then.
         arrange?.Invoke(environment, processRunner);
 
         await host.StartAsync(cancellationToken);

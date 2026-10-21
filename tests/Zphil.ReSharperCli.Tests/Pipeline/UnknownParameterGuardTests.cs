@@ -14,8 +14,8 @@ namespace Zphil.ReSharperCli.Tests.Pipeline;
 public sealed class UnknownParameterGuardTests(AdvertisedToolsFixture advertised)
     : IClassFixture<AdvertisedToolsFixture>
 {
-    // Value is never inspected by the guard (only keys are), so a single shared dummy
-    // suffices; the document is intentionally kept alive for the class lifetime.
+    // The guard reads keys only, never values, so one shared dummy value serves every case. Its document is
+    // never disposed: disposing a JsonDocument invalidates the elements it handed out.
     private static readonly JsonElement DummyValue = JsonDocument.Parse("null").RootElement;
 
     [Theory]
@@ -66,7 +66,7 @@ public sealed class UnknownParameterGuardTests(AdvertisedToolsFixture advertised
             new Dictionary<string, JsonElement>()).ShouldBeNull();
     }
 
-    /// <summary>The advertised tool named <paramref name="name" />, as the guard is handed it.</summary>
+    /// <summary>Returns the advertised tool named <paramref name="name" />, as the guard is handed it.</summary>
     private Tool ToolNamed(string name)
     {
         return advertised.Tools.Single(tool => tool.Name == name).ProtocolTool;

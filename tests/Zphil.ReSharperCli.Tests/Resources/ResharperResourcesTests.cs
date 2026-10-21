@@ -74,7 +74,7 @@ public sealed class ResharperResourcesTests
         text.ShouldContain("InspectionSeverities"); // the DotSettings severity key shape
         text.ShouldContain("resharper_cleanup"); // the style axis
         text.ShouldContain(ResharperResources.SetupGuideUri); // the onward cross-link to the setup guide
-        text.ShouldContain("@formatter:off"); // the only lever measured to survive a formatting revert
+        text.ShouldContain("@formatter:off"); // the fence that holds against a formatting revert
         text.ShouldContain("extracting it to a local"); // the other one: change the shape, nothing to revert
     }
 
@@ -99,7 +99,7 @@ public sealed class ResharperResourcesTests
 
         text.ShouldContain("queue"); // why a concurrent call waits rather than forking a cold cache
         text.ShouldContain("25,000"); // the output cap when the client sets no budget
-        text.ShouldContain("DETAIL REDUCED"); // the marker an agent actually sees on an over-budget result
+        text.ShouldContain("DETAIL REDUCED"); // the marker an agent sees on an over-budget result
 
         // The other way out of the budget, and the retention that decides how long the path it hands back
         // stays good — derived from its owner, so lengthening the window cannot leave the guide behind.
@@ -118,9 +118,9 @@ public sealed class ResharperResourcesTests
         text.ShouldContain("worktree"); // the always-cold case, and the only place the seeding is described
         text.ShouldContain("Running `jb` yourself"); // how far the queue reaches: a jb the server never spawned is outside it
 
-        // The other way a fork appears — a client killing the server outright — and the three values the
-        // startup line can report for it, derived from their owner so a renamed guarantee cannot leave the
-        // guide describing a field nobody will find in a log.
+        // The other way a fork appears, a client killing the server outright, and the values the startup line
+        // can report for it, derived from their owner so a renamed guarantee cannot leave the guide describing
+        // a field nobody will find in a log.
         text.ShouldContain(ChildProcessLifetime.KillOnJobClose);
         text.ShouldContain(ChildProcessLifetime.ParentDeathSignalled);
         text.ShouldContain("orphan guard");
@@ -133,9 +133,8 @@ public sealed class ResharperResourcesTests
         text.ShouldContain(RunIdScope.OutsideARun); // the run column on a line belonging to no run
     }
 
-    // The full set the server reads, hardcoded to match CLAUDE.md's Identity table: the product spells these
-    // in several places with no single list to reflect over, so a variable added to the product needs a row
-    // here too. MAX_MCP_OUTPUT_TOKENS is set by the MCP client rather than the user, and still needs
+    // The full set the server reads, hardcoded because the product spells these in several places with no
+    // single list to reflect over, so a variable added to the product needs a row here too. MAX_MCP_OUTPUT_TOKENS is set by the MCP client rather than the user, and still needs
     // documenting because it is what caps a truncated result.
     [Theory]
     [InlineData("JB_SOLUTION_PATH")]
@@ -154,7 +153,7 @@ public sealed class ResharperResourcesTests
         ResharperResources.SetupGuide().ShouldContain(variable);
     }
 
-    /// <summary>The text the resource method behind <paramref name="uri" /> returns when called directly.</summary>
+    /// <summary>Calls the resource method behind <paramref name="uri" /> directly and returns its text.</summary>
     private static string GuideAt(string uri)
     {
         return uri switch

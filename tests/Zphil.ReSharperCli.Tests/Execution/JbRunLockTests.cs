@@ -10,12 +10,12 @@ namespace Zphil.ReSharperCli.Tests.Execution;
 
 /// <summary>
 ///     Pins both halves of <see cref="JbRunLock" />: the in-process semaphore that keeps concurrent calls
-///     inside one server ordered, and the lock <em>file</em> that does the same across server processes — the
-///     case that actually bites, since two sessions are two processes.
+///     inside one server ordered, and the lock file that does the same across server processes, since two
+///     sessions are two processes.
 /// </summary>
 /// <remarks>
 ///     The cross-process half is stood in for by these tests opening the lock file themselves with
-///     <see cref="FileShare.None" />, which is exactly what another holder's handle looks like to the OS.
+///     <see cref="FileShare.None" />, which is what another holder's handle looks like to the OS.
 /// </remarks>
 public sealed class JbRunLockTests : IDisposable
 {
@@ -252,8 +252,8 @@ public sealed class JbRunLockTests : IDisposable
         // Act
         IDisposable? lease = runLock.TryAcquire(SolutionPath, _cacheHome);
 
-        // Assert — a lease that did not really take the *file* would let another server process onto the
-        // cache generation, which is the whole failure this lock exists to prevent.
+        // Assert — a lease that did not take the *file* would let another server process onto the cache
+        // generation, which is the failure this lock exists to prevent.
         lease.ShouldNotBeNull();
         Should.Throw<IOException>(() => OpenLockFileExclusively().Dispose());
         lease.Dispose();
@@ -308,11 +308,11 @@ public sealed class JbRunLockTests : IDisposable
     public async Task TryAcquire_ThatCouldNotProveExclusivity_StillLetsTheNextCallerIn()
     {
         // Arrange — a *directory* sitting where the lock file goes: the cache home is fine, the file can never
-        // be opened. Two claims ride on it. TryAcquire skips rather than degrades, as it does for a cache home
-        // that cannot be created. And the gate-leak guard: TryAcquire takes the in-process semaphore, then
-        // discovers it cannot open the lock file and *returns* null rather than throwing, so AcquireAsync's
-        // release-on-throw does not cover it. A leak here would be paid by a real call: it would queue against
-        // nothing, burn the whole wait cap, and fail with a contention error naming a run that never existed.
+        // be opened. TryAcquire skips rather than degrades, as it does for a cache home that cannot be created,
+        // and this is also the gate-leak guard: TryAcquire takes the in-process semaphore, then finds it cannot
+        // open the lock file and *returns* null rather than throwing, so a release-on-throw does not cover it. A
+        // leak here would be paid by a real call: it would queue against nothing, burn the whole wait cap, and
+        // fail with a contention error naming a run that never existed.
         JbRunLock runLock = JbRunners.Lock(ShortWait);
         Directory.CreateDirectory(LockFilePath());
         runLock.TryAcquire(SolutionPath, _cacheHome).ShouldBeNull();
@@ -364,7 +364,7 @@ public sealed class JbRunLockTests : IDisposable
     public async Task TryAcquireByKeyAsync_ReleasedPartWayThroughThePatience_TakesIt()
     {
         // Arrange — the reason it waits at all rather than trying once: a donor is normally free within a
-        // moment, and the run it was busy with is exactly what made it worth copying.
+        // moment, and the run it was busy with is what made it worth copying.
         JbRunLock runLock = JbRunners.Lock();
         FileStream otherProcess = OpenLockFileExclusively();
         Task release = Task.Run(async () =>

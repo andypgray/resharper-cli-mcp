@@ -11,20 +11,17 @@ using ILogger = Microsoft.Extensions.Logging.ILogger;
 namespace Zphil.ReSharperCli.Tests.Infrastructure;
 
 /// <summary>
-///     <see cref="SerilogConfiguration" />: the level policy of the file log, driven through the real
+///     Pins the level policy of the file log, driven through the real
 ///     <see cref="SerilogConfiguration.Configure" /> against an in-memory sink, and
 ///     <see cref="SerilogConfiguration.ParseLogLevel" />.
 /// </summary>
 /// <remarks>
 ///     <para>
-///         Two claims are pinned here that nothing else can pin, and both are the kind that fails silently.
-///         The first is that the <see cref="SerilogConfiguration.QuietedCategories" /> really are quieted: a
-///         filter that does not take effect looks exactly like a log that was always this noisy.
-///     </para>
-///     <para>
-///         The second is the enricher order behind the <c>{RunId}</c> column, which
-///         <see cref="SerilogConfiguration.Configure" /> explains: getting it backwards would give every line in
-///         the file the same <c>----</c>, silently, with the column still present and still looking right.
+///         Two claims pinned here fail silently when broken, and nothing else pins them. One is that the
+///         <see cref="SerilogConfiguration.QuietedCategories" /> are quieted: a filter that does not take effect
+///         is indistinguishable from a log that was always this noisy. The other is that an open
+///         <see cref="RunIdScope" />'s id reaches the <c>{RunId}</c> column: lost, it would leave every line in the
+///         file the same <c>----</c>, with the column still present and still looking right.
 ///     </para>
 ///     <para>
 ///         Driven through <see cref="SerilogLoggerFactory" /> rather than by pushing onto Serilog's
@@ -61,7 +58,7 @@ public sealed class SerilogConfigurationTests
         level.ShouldBe(expected);
     }
 
-    /// <summary>A category from each quieted framework, spelled as the SDK and Hosting actually emit them.</summary>
+    /// <summary>A category from each quieted framework, spelled as the SDK and Hosting emit them.</summary>
     [Theory]
     [InlineData("ModelContextProtocol.Server.McpServer")]
     [InlineData("Microsoft.Hosting.Lifetime")]
@@ -84,7 +81,7 @@ public sealed class SerilogConfigurationTests
     [Fact]
     public void ServerCategory_AtInformation_Survives()
     {
-        // Arrange — the same run that drops the chatter above has to keep this, or the policy is just silence.
+        // Arrange — the policy that drops framework chatter has to keep this, or it is silence, not a policy.
         CollectingSink sink = new();
         using SerilogLoggerFactory factory = Factory(sink, LogEventLevel.Information);
         ILogger logger = factory.CreateLogger("Zphil.ReSharperCli.Services.JbRunner");
@@ -100,7 +97,7 @@ public sealed class SerilogConfigurationTests
     public void FrameworkOverride_NeverTalksBelowTheLevelAskedFor()
     {
         // Arrange — an override is there to quiet a category. Pinned at Error because that is where a fixed
-        // Warning override would invert the policy and leave the frameworks the *only* thing still talking.
+        // Warning override would invert the policy and leave the frameworks the only thing still talking.
         CollectingSink sink = new();
         using SerilogLoggerFactory factory = Factory(sink, LogEventLevel.Error);
         ILogger logger = factory.CreateLogger("ModelContextProtocol.Server.McpServer");
@@ -135,8 +132,8 @@ public sealed class SerilogConfigurationTests
         using SerilogLoggerFactory factory = Factory(sink, LogEventLevel.Information);
         ILogger opener = factory.CreateLogger("Zphil.ReSharperCli.Pipeline.GlobalCallToolFilter");
 
-        // A second category, because the whole point of a scope over a logger is that the lines it tags are
-        // written by other classes further down the call.
+        // A second category, because a scope opened on one logger exists to tag the lines other classes write
+        // further down the call.
         ILogger downstream = factory.CreateLogger("Zphil.ReSharperCli.Services.JbRunner");
 
         // Act
@@ -163,7 +160,9 @@ public sealed class SerilogConfigurationTests
         SerilogConfiguration.QuietedCategories.ShouldBe(["ModelContextProtocol", "Microsoft.Hosting"]);
     }
 
-    /// <summary>The production logger arrangement — <see cref="SerilogConfiguration.Configure" /> plus a sink.</summary>
+    /// <summary>
+    ///     Builds the production logger arrangement: <see cref="SerilogConfiguration.Configure" /> plus a sink.
+    /// </summary>
     private static SerilogLoggerFactory Factory(CollectingSink sink, LogEventLevel minimumLevel)
     {
         Logger logger = SerilogConfiguration

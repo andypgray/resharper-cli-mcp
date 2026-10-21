@@ -4,7 +4,6 @@ using Zphil.ReSharperCli.Formatting;
 
 namespace Zphil.ReSharperCli.Tests.Formatting;
 
-/// <summary>Pins how <see cref="ProgressiveRenderer" /> walks the <see cref="DetailLevel" /> ladder.</summary>
 public sealed class ProgressiveRendererTests
 {
     [Theory]
@@ -43,8 +42,8 @@ public sealed class ProgressiveRendererTests
     public void Render_FitsAtLow_NamesLowLevel()
     {
         // Arrange — Full, High and Medium each render something different and each too large, so the walk
-        // genuinely tries all three before Low plus its note fits. (Identical oversized levels would be
-        // content-skipped instead, which is the byte-identical test below.)
+        // tries all three before Low plus its note fits. (Identical oversized levels would be content-skipped
+        // instead, which is the byte-identical test below.)
         ProgressiveRendering rendering = ProgressiveRenderer.Render(
             "input",
             (_, level) => level switch
@@ -115,7 +114,7 @@ public sealed class ProgressiveRendererTests
     {
         // Arrange — High's raw output fits the 200-char budget on its own but not once the reduction note
         // is appended; Medium fits including its note. Returning High would hand the downstream truncator
-        // an over-budget string — exactly the mid-chop this renderer exists to prevent.
+        // an over-budget string, the mid-chop this renderer exists to prevent.
         ProgressiveRendering rendering = ProgressiveRenderer.Render(
             "input",
             (_, level) => level switch
@@ -178,8 +177,8 @@ public sealed class ProgressiveRendererTests
         string result = ProgressiveRenderer.Render(
             "input", (_, _) => "No issues found.", 400, _ => "", DetailLevel.Minimal).Text;
 
-        // Assert — not merely a note with an empty tail: the whole marker goes, because an agent matches on
-        // it to know the response is a reduction.
+        // Assert — no note with an empty tail either: the whole marker goes, because an agent matches on it to
+        // know the response is a reduction.
         result.ShouldBe("No issues found.");
         result.ShouldNotContain("DETAIL REDUCED");
     }
@@ -275,13 +274,13 @@ public sealed class ProgressiveRendererTests
         ProgressiveRendering rendering = ProgressiveRenderer.Render(
             "input", (_, _) => new string('x', 200), 100, startLevel: DetailLevel.Minimal);
 
-        // Assert — it genuinely is the level asked for; ResponseTruncator's own footer reports the cut.
+        // Assert — it is the level asked for; ResponseTruncator's own footer reports the cut.
         rendering.Level.ShouldBe(DetailLevel.Minimal);
         rendering.Text.ShouldContain("Rendered at the requested detail level Minimal");
         rendering.Text.ShouldNotContain("Reduced to Full");
     }
 
-    /// <summary>Full overflows a 400-character budget; every lower level renders 50 characters.</summary>
+    /// <summary>Renders Full past a 400-character budget, and every lower level in 50 characters.</summary>
     private static string FullOverflows(string _, DetailLevel level)
     {
         return level == DetailLevel.Full ? new string('x', 1000) : new string('y', 50);

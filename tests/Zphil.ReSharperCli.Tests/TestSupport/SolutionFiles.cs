@@ -2,8 +2,8 @@ namespace Zphil.ReSharperCli.Tests.TestSupport;
 
 /// <summary>Plants the source files a test's solution is meant to contain.</summary>
 /// <remarks>
-///     Takes the root rather than an environment, because some tests root their files at the working
-///     directory and others at a solution directory of their own.
+///     Takes the root rather than an environment, so a file can be rooted at the working directory or at a
+///     solution directory of the test's own.
 /// </remarks>
 internal static class SolutionFiles
 {

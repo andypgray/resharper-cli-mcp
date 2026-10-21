@@ -10,9 +10,8 @@ namespace Zphil.ReSharperCli.Tests.TestSupport;
 ///     with enough inside them to be copied and compared.
 /// </summary>
 /// <remarks>
-///     Shared rather than repeated per test class because the shape is a fact about <c>jb</c> rather than
-///     about any one test: a generation is a directory tree with files nested inside it, not an empty
-///     directory, and a copy that flattened it would pass against a flat fake.
+///     A generation is planted as <c>jb</c> leaves one, a directory tree with a file nested inside it rather
+///     than an empty directory: a copy that flattened the tree would pass against a flat fake.
 /// </remarks>
 internal static class CacheHomes
 {
@@ -33,8 +32,8 @@ internal static class CacheHomes
     ///     full path.
     /// </summary>
     /// <remarks>
-    ///     The name carries the real computed hash, not a made-up one, so a test exercises the same name
-    ///     production code the server uses.
+    ///     The name carries the real computed hash, not a made-up one, so a test exercises the naming code the
+    ///     server uses.
     /// </remarks>
     public static string PlantGenerationFor(string cacheHome, string solutionPath)
     {
@@ -42,7 +41,7 @@ internal static class CacheHomes
     }
 
     /// <summary>
-    ///     Where the generation for <paramref name="solutionPath" /> sits under
+    ///     Returns where the generation for <paramref name="solutionPath" /> sits under
     ///     <paramref name="cacheHome" />, planted or not.
     /// </summary>
     /// <remarks>For a test asserting on a directory something else is expected to create.</remarks>
@@ -52,11 +51,11 @@ internal static class CacheHomes
     }
 
     /// <summary>
-    ///     Holds the run-lock file for <paramref name="solutionPath" /> the way another server process's live
-    ///     <c>jb</c> holds it — exclusively, until the returned stream is disposed.
+    ///     Holds the run-lock file for <paramref name="solutionPath" /> exclusively until the returned stream
+    ///     is disposed, as another server process holds it while its <c>jb</c> runs.
     /// </summary>
     /// <remarks>
-    ///     This is exactly what another holder's handle looks like to the OS, so it is how a test stands in for
+    ///     To the OS this handle is indistinguishable from another holder's, so it is how a test stands in for
     ///     a concurrent run.
     /// </remarks>
     public static FileStream HoldLockFile(string cacheHome, string solutionPath)
@@ -74,10 +73,9 @@ internal static class CacheHomes
     ///         Dispose to let go again — a test that did not would leave its own fixture unable to clean up.
     ///     </para>
     ///     <para>
-    ///         One situation, two opposite levers, and neither stands in for the other: Windows will not unlink
-    ///         a file something holds open, while POSIX unlinks an open file quite happily and refuses only when
-    ///         the containing directory is unwritable. Holding a handle — the obvious spelling — therefore blocks
-    ///         nothing outside Windows, and a test relying on it passes there while asserting the opposite of the
+    ///         Windows will not unlink a file something holds open, while POSIX unlinks an open file and refuses
+    ///         only when the containing directory is unwritable. A held handle therefore blocks nothing outside
+    ///         Windows, and a test relying on one would pass on Windows while asserting the opposite of the
     ///         truth everywhere else.
     ///     </para>
     /// </remarks>
@@ -90,8 +88,8 @@ internal static class CacheHomes
     }
 
     /// <summary>
-    ///     A cache home nothing can bring into existence: a <em>file</em> sits where the directory should
-    ///     be, so every attempt to create or write under it fails.
+    ///     Returns a cache home nothing can bring into existence: a file sits where the directory should be,
+    ///     so every attempt to create or write under it fails.
     /// </summary>
     /// <remarks>For pinning that a cache-home side effect degrades instead of failing its call.</remarks>
     public static string BlockedCacheHome(FakeEnvironment environment)
@@ -103,7 +101,7 @@ internal static class CacheHomes
 
     /// <summary>
     ///     Plants the fork a concurrent <c>jb</c> creates when it cannot open
-    ///     <paramref name="generationPath" /> — the same solution and hash at the next generation number — and
+    ///     <paramref name="generationPath" /> (the same solution and hash at the next generation number) and
     ///     returns its full path.
     /// </summary>
     public static string PlantFork(string cacheHome, string generationPath)
@@ -129,12 +127,13 @@ internal static class CacheHomes
     }
 
     /// <summary>
-    ///     <see cref="PlantWarmDonor" /> with a marker that records no solution path: the one-line shape, the
-    ///     generation name alone, or with <paramref name="jbVersion" /> the two-line shape that adds the build.
+    ///     Plants a warm donor as <see cref="PlantWarmDonor" /> does, with a marker that records no solution
+    ///     path: the one-line shape (the generation name alone), or with <paramref name="jbVersion" /> the
+    ///     two-line shape that adds the build.
     /// </summary>
     /// <remarks>
-    ///     <see cref="JbWarmMarker.Stamp" /> never writes either shape, but earlier builds of this server left
-    ///     markers in both, so every reader of a marker still has to read them.
+    ///     <see cref="JbWarmMarker.Stamp" /> never writes either shape, but a cache home can still hold markers
+    ///     an earlier build of this server wrote in them, so every reader of a marker has to read both.
     /// </remarks>
     public static string PlantWarmDonorFromAnEarlierBuild(string cacheHome, string solutionPath, string? jbVersion = null)
     {

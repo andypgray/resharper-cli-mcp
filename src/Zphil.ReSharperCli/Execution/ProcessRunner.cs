@@ -7,29 +7,28 @@ namespace Zphil.ReSharperCli.Execution;
 
 /// <summary>
 ///     Spawns an external process directly (no shell), captures its output, and enforces a timeout by
-///     killing the whole process tree. This is the only class in the server that starts a process.
+///     killing the whole process tree.
 /// </summary>
 /// <remarks>
 ///     <para>
-///         It logs the mechanics of a spawn — the command line, the wall clock, the exit code, a tree killed
-///         at the cap or an output drain cut at it — and does so at <c>Debug</c>, because this layer cannot
-///         tell one spawn from another: a <c>jb inspectcode</c> the user is waiting on and a
-///         <c>jb inspectcode --version</c> probe arrive here identically, and an <c>Information</c> line here would
-///         report the probe as a run.
+///         It logs the mechanics of a spawn (the command line, the wall clock, the exit code, a tree killed or
+///         an output drain cut at the cap) at <c>Debug</c>, because this layer cannot tell one spawn from
+///         another: a <c>jb inspectcode</c> the user is waiting on and a <c>jb inspectcode --version</c> probe
+///         arrive here identically, and an <c>Information</c> line here would report the probe as a run.
 ///     </para>
 ///     <para>
 ///         <see cref="ChildProcessLifetime" /> owns the spawn itself, so that a child cannot outlive this
-///         server. That can put a platform wrapper between the caller's command and the process, which
-///         splits the two names a line can use: the "Starting" line takes the <em>effective</em> command,
-///         because its job is to be reproducible by hand, and every other line and message takes the name
-///         the caller asked for — a Linux timeout reporting <c>'setpriv' timed out</c> would name a program
-///         the caller has never heard of.
+///         server. That can put a platform wrapper between the caller's command and the process, which splits
+///         the two names a line can use: the "Starting" line takes the effective command, because its job is to
+///         be reproducible by hand, and every other line and message takes the name the caller asked for, since
+///         a Linux timeout reporting <c>'setpriv' timed out</c> would name a program the caller has never heard
+///         of.
 ///     </para>
 /// </remarks>
 internal sealed class ProcessRunner(ChildProcessLifetime childLifetime, ILogger<ProcessRunner> logger) : IProcessRunner
 {
     /// <summary>
-    ///     The cap on captured stdout/stderr, 10&#160;MB each; past it the reader keeps draining but stops
+    ///     The cap on the characters captured from each stream; past it the reader keeps draining but stops
     ///     appending.
     /// </summary>
     private const int MaxCapturedChars = 10 * 1024 * 1024;
@@ -38,9 +37,9 @@ internal sealed class ProcessRunner(ChildProcessLifetime childLifetime, ILogger<
     private const int ReadChunkChars = 8192;
 
     /// <summary>
-    ///     The most of one line that is carried across chunk boundaries for a line observer. Generous against
-    ///     any real line — <c>jb</c>'s longest is a file path — and the reason a stream that never emits a
-    ///     newline cannot grow the carry to the size of the whole output.
+    ///     The most of one line that is carried across chunk boundaries for a line observer: generous against
+    ///     any real line (<c>jb</c>'s longest is a file path), and bounded so a stream that never emits a
+    ///     newline cannot grow the carry to the size of its whole output.
     /// </summary>
     private const int MaxCarriedLineChars = 8192;
 
@@ -48,8 +47,7 @@ internal sealed class ProcessRunner(ChildProcessLifetime childLifetime, ILogger<
     ///     How long a killed process tree is given to be reaped before this gives up on it and unwinds.
     /// </summary>
     /// <remarks>
-    ///     Shared rather than left inline because it is the width of a window the rest of the server can see:
-    ///     a run cancelled here holds its cache-generation lease until this has elapsed.
+    ///     A cancelled run holds its cache-generation lease until the reap ends or this runs out.
     /// </remarks>
     internal static readonly TimeSpan KilledTreeReapBudget = TimeSpan.FromSeconds(5);
 
@@ -78,16 +76,15 @@ internal sealed class ProcessRunner(ChildProcessLifetime childLifetime, ILogger<
         using Process process = new();
         process.StartInfo = startInfo;
 
-        // The full command line, and the only place it is ever written out: it is the difference between
-        // reading "a jb run took nine minutes" and being able to reproduce that run by hand.
+        // The full command line, which is what lets a slow run be reproduced by hand.
         logger.LogDebug("Starting {FileName} {Arguments}", command.FileName, command.Arguments);
         var elapsed = Stopwatch.StartNew();
 
-        // A missing executable throws Win32Exception here — deliberately allowed to propagate.
+        // A missing executable throws Win32Exception here, and it propagates, as IProcessRunner documents.
         childLifetime.Start(process, command.Wrapped);
 
-        // Close our end of stdin at once so the child sees EOF instead of inheriting — and blocking a
-        // reader on — the MCP server's own JSON-RPC stdin handle.
+        // Close our end of stdin at once, so the child reads EOF from its own pipe rather than inheriting the
+        // MCP server's JSON-RPC stdin handle and blocking a reader on it.
         process.StandardInput.Close();
 
         // Cancelled wherever this call gives up on its readers: at the cap, which is how they hand back what they
@@ -183,14 +180,8 @@ internal sealed class ProcessRunner(ChildProcessLifetime childLifetime, ILogger<
     /// </summary>
     /// <remarks>
     ///     <para>
-    ///         When <paramref name="onLine" /> is given, each complete line is handed to it as it arrives — the
+    ///         When <paramref name="onLine" /> is given, each complete line is handed to it as it arrives: the
     ///         same stream, observed in flight as well as captured.
-    ///     </para>
-    ///     <para>
-    ///         Chunks fall wherever the pipe happens to break, so a line routinely straddles two of them and the
-    ///         tail of a chunk has to be carried into the next. That carry is bounded by
-    ///         <see cref="MaxCarriedLineChars" />: a stream with no newline in it at all would otherwise grow one
-    ///         line to the size of the whole output.
     ///     </para>
     ///     <para>
     ///         A cut is the call giving up on a pipe that a process the child started still holds, at the cap or
@@ -264,7 +255,7 @@ internal sealed class ProcessRunner(ChildProcessLifetime childLifetime, ILogger<
     /// </summary>
     /// <remarks>
     ///     <c>jb</c> writes CRLF, so the trailing carriage return is dropped here rather than left for every
-    ///     consumer to trim — off the carry before materializing, since trimming the string instead would
+    ///     consumer to trim, and off the carry before materializing, since trimming the string instead would
     ///     recopy every line on a stream where every line ends in one.
     /// </remarks>
     private void EmitLine(StringBuilder carry, Action<string> onLine)
@@ -291,8 +282,7 @@ internal sealed class ProcessRunner(ChildProcessLifetime childLifetime, ILogger<
     ///     Adds <paramref name="text" /> to the carried line, stopping at <see cref="MaxCarriedLineChars" />.
     /// </summary>
     /// <remarks>
-    ///     Past the bound the rest of that line is dropped and the next newline resynchronises, so a stream
-    ///     with no line breaks costs a bounded buffer rather than an unbounded one.
+    ///     Past the bound the rest of that line is dropped, and the next newline resynchronises.
     /// </remarks>
     private static void Append(StringBuilder carry, ReadOnlySpan<char> text)
     {

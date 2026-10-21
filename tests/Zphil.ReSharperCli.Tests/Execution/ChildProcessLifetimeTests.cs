@@ -8,15 +8,17 @@ using Zphil.ReSharperCli.Infrastructure;
 namespace Zphil.ReSharperCli.Tests.Execution;
 
 /// <summary>
-///     The platform switch: which guarantee this process got, and what it does on a platform that offers
+///     Pins the platform switch: which guarantee this process got, and what it does on a platform that offers
 ///     none.
 /// </summary>
 public sealed class ChildProcessLifetimeTests
 {
-    /// <summary>Read by <c>SkipUnless</c>: macOS today, and any future platform with nothing to reach for.</summary>
+    /// <summary>
+    ///     Gets a value indicating whether this platform offers neither primitive: macOS, and any other platform
+    ///     with nothing to reach for.
+    /// </summary>
     public static bool WithoutAPrimitive => !OperatingSystem.IsWindows() && !OperatingSystem.IsLinux();
 
-    /// <summary>Read by <c>SkipUnless</c>.</summary>
     public static bool OnWindows => OperatingSystem.IsWindows();
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -37,7 +39,7 @@ public sealed class ChildProcessLifetimeTests
     [Fact(Skip = "The job object is a Windows primitive.", SkipUnless = nameof(OnWindows))]
     public void Guarantee_OnWindows_IsTheJobObject()
     {
-        // Assert — a job creation that quietly failed would leave a server reporting "none", which is safe but
+        // Assert — a job creation that silently failed would leave a server reporting "none", which is safe but
         // lets a jb outlive its server.
         using ChildProcessLifetime lifetime = Lifetime();
 
@@ -61,8 +63,8 @@ public sealed class ChildProcessLifetimeTests
     [Fact(Skip = "Windows and Linux both have a primitive to apply.", SkipUnless = nameof(WithoutAPrimitive))]
     public async Task Dispose_WhereThePlatformOffersNoPrimitive_LeavesARunningChildExactlyAsItWas()
     {
-        // Arrange — the deliberate limit rather than an oversight: a platform with no equivalent gets no guard
-        // rather than a heuristic that is wrong in ways nobody can predict.
+        // Arrange — a platform with no equivalent gets no guard, rather than a heuristic that is wrong in ways
+        // nobody can predict.
         ChildProcessLifetime lifetime = Lifetime();
         lifetime.Guarantee.ShouldBe(ChildProcessLifetime.NoGuarantee);
 

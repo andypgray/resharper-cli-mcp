@@ -4,11 +4,11 @@ using Zphil.ReSharperCli.Execution;
 
 namespace Zphil.ReSharperCli.Tests.Execution;
 
-/// <summary>
-///     What <see cref="JbProgressLines" /> makes of the lines a real <c>jb</c> prints. The sample lines here
-///     are transcribed from captured runs of <c>jb</c> 2026.2.1; that they still describe the <c>jb</c> on the
-///     machine is the <c>JbContract</c> suite's business, not this one's.
-/// </summary>
+/// <summary>Pins what <see cref="JbProgressLines" /> makes of the lines a real <c>jb</c> prints.</summary>
+/// <remarks>
+///     The sample lines are transcribed from captured runs of <c>jb</c> 2026.2.1; whether they describe the
+///     <c>jb</c> on the machine is the <c>JbContract</c> suite's business, not this one's.
+/// </remarks>
 public sealed class JbProgressLinesTests
 {
     [Fact]

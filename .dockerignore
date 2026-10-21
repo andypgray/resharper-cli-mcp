@@ -1,8 +1,7 @@
-# What the build context leaves behind. The first block is load-bearing rather than hygiene:
-# those paths are gitignored, so they are absent from the repository a directory clones and
-# builds, but they are present in a working tree — where `COPY . .` would bake them into the
-# image. The rest is build output that would either bloat the context or contradict the
-# container's own restore.
+# What the build context leaves behind. The first block's paths are gitignored, so they are
+# absent from the repository a directory clones and builds, but present in a working tree,
+# where `COPY . .` would bake them into the image. The rest is build output that would either
+# bloat the context or contradict the container's own restore.
 
 .claude/
 .mcp.json

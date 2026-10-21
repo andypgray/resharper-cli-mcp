@@ -13,8 +13,8 @@ using Zphil.ReSharperCli.Tools;
 namespace Zphil.ReSharperCli.Tests.Tools;
 
 /// <summary>
-///     <see cref="ResharperTools.InspectAsync" /> end to end over the two faked seams, with the config and
-///     service graph real.
+///     Drives <see cref="ResharperTools.InspectAsync" /> end to end over the faked process and environment
+///     seams, with the config and service graph real.
 /// </summary>
 public sealed class ResharperToolsInspectTests : IDisposable
 {
@@ -44,8 +44,8 @@ public sealed class ResharperToolsInspectTests : IDisposable
         // Act
         string result = await tools.InspectAsync(cancellationToken: Ct);
 
-        // Assert — FakeEnvironment sets no MAX_MCP_OUTPUT_TOKENS, so the budget is the 25,000 default and
-        // this ~420-character result renders at Full: the small-batch case is unchanged by the ladder.
+        // Assert — FakeEnvironment sets no MAX_MCP_OUTPUT_TOKENS, so the budget is the 25,000-character default
+        // and this small result renders at Full: the small-batch case is unchanged by the ladder.
         result.ShouldStartWith("Found 3 issue(s)");
         result.ShouldNotContain("--- DETAIL REDUCED ---");
     }
@@ -78,9 +78,8 @@ public sealed class ResharperToolsInspectTests : IDisposable
     [Fact]
     public async Task InspectAsync_AbsolutePaths_ReachJbRelative()
     {
-        // Arrange — jb's --include matches relative paths only, and here the miss is silent: jb exits 0 having
-        // matched nothing, so an absolute path passed through verbatim comes back as "No issues found." with no
-        // error anywhere.
+        // Arrange — jb's --include matches relative paths only, so an absolute path passed through verbatim
+        // would match nothing.
         List<string>? inspectArguments = null;
         StubJb(
             Fixtures.ReadSarif("inspect-sample.json"),
@@ -99,8 +98,7 @@ public sealed class ResharperToolsInspectTests : IDisposable
     public async Task InspectAsync_EntryJoiningSeveralGlobs_IsSplitIntoSeparatePatterns()
     {
         // Arrange — several globs joined into one array element. Unsplit, the joined string reaches jb as one
-        // pattern that matches nothing, and the tool reports "No issues found." for a scan that never looked at
-        // the files asked for.
+        // pattern that matches nothing, so the scan never looks at the files asked for.
         List<string>? inspectArguments = null;
         StubJb(
             Fixtures.ReadSarif("inspect-sample.json"),
@@ -118,10 +116,9 @@ public sealed class ResharperToolsInspectTests : IDisposable
     [Fact]
     public async Task InspectAsync_UnreadableSettings_SaysNothingAboutIt()
     {
-        // Arrange — the blast radii differ. jb reads that file itself — the adjacent .DotSettings is a
-        // layer it mounts on its own — and parses it perfectly well, so inspection severities are
-        // unaffected; only this server's own profile lookup failed. Warning here would report a
-        // consequence that does not exist.
+        // Arrange — the blast radii differ. jb reads that file itself (the adjacent .DotSettings is a layer it
+        // mounts on its own) and its parser accepts it, so inspection severities are unaffected; only this
+        // server's own profile lookup failed. Warning here would report a consequence that does not exist.
         DotSettingsFixtures.PlantBeside(_environment.CurrentDirectory, DotSettingsFixtures.Unparseable());
         StubJb(Fixtures.ReadSarif("inspect-sample.json"));
         ResharperTools tools = Tools();
@@ -286,8 +283,8 @@ public sealed class ResharperToolsInspectTests : IDisposable
     [Fact]
     public async Task InspectAsync_CompilationErrorsAndASqueezedBudget_KeepsTheNoteDownToMinimal()
     {
-        // Arrange — the case the note exists for is a wall of phantom errors, which is exactly the result too
-        // big to render in full. Charging the note to the budget before rendering is what makes it survive
+        // Arrange — the case the note exists for is a wall of phantom errors, which is the result too big to
+        // render in full. Charging the note to the budget before rendering is what makes it survive
         // every reduction step instead of vanishing at the level that fires.
         _environment.SetVariable("MAX_MCP_OUTPUT_TOKENS", "300"); // 750 characters
         string cacheHome = _environment.CreateTempDirectory();
@@ -308,8 +305,8 @@ public sealed class ResharperToolsInspectTests : IDisposable
         result.ShouldContain("Found 201 issue(s) across 201 file(s)");
     }
 
-    // The report parameter is an internal enum, so every case below is a Fact with the value as a body
-    // literal — the same CS0051 constraint the severity pair above is written around.
+    // The report and detail parameters are internal enums too, so every case below is a Fact with the value
+    // as a body literal.
     [Fact]
     public async Task InspectAsync_NoReportAsked_WritesNothingAndReturnsWhatItAlwaysDid()
     {
@@ -378,7 +375,7 @@ public sealed class ResharperToolsInspectTests : IDisposable
     {
         // Arrange — the case the parameter exists for. The response is reduced to the one-liner while the
         // file keeps every finding, and the note naming that file has to survive the whole ladder or it
-        // vanishes exactly when it matters.
+        // vanishes when it matters.
         _environment.SetVariable("MAX_MCP_OUTPUT_TOKENS", "300"); // 750 characters
         string reportRoot = _environment.CreateTempDirectory();
         StubJb(ManyIssuesSarif(200));
@@ -404,8 +401,6 @@ public sealed class ResharperToolsInspectTests : IDisposable
         result.ShouldNotContain("File199.cs"); // the response could not carry what the file does
     }
 
-    // detail is an internal enum too, so the same CS0051 constraint applies: every case is a Fact with the
-    // value as a body literal.
     [Fact]
     public async Task InspectAsync_DetailLowOnAResultThatFitsAtFull_ReturnsTheRollupAndSaysItWasAskedFor()
     {
@@ -551,7 +546,7 @@ public sealed class ResharperToolsInspectTests : IDisposable
     {
         // Arrange — unreachable through the binder, which rejects anything not a member by name. It is
         // reachable by a member added to InspectDetail and not to the mapping, and the reason the two enums
-        // are mapped by hand is that such a gap must not quietly resolve to a plausible-looking level.
+        // are mapped by hand is that such a gap must not silently resolve to a plausible-looking level.
         StubJb(Fixtures.ReadSarif("inspect-sample.json"));
         ResharperTools tools = Tools();
 
@@ -594,7 +589,7 @@ public sealed class ResharperToolsInspectTests : IDisposable
         exception.Message.ShouldContain("JB_SOLUTION_PATH");
     }
 
-    /// <summary>The tool methods over this class's environment and process runner.</summary>
+    /// <summary>Builds the tool methods over this class's environment and process runner.</summary>
     private ResharperTools Tools(string? reportRoot = null)
     {
         return ToolHarness.Build(_processRunner, _environment, reportRoot: reportRoot);
@@ -627,13 +622,13 @@ public sealed class ResharperToolsInspectTests : IDisposable
     }
 
     /// <summary>
-    ///     A SARIF document with one compilation error and <paramref name="warnings" /> ordinary warnings, each
-    ///     in its own long-pathed file — enough files that the issue listing cannot fit a squeezed budget at
-    ///     any level above Minimal.
+    ///     Returns a SARIF document with one compilation error and <paramref name="warnings" /> ordinary warnings,
+    ///     each in its own long-pathed file, so the issue listing cannot fit a squeezed budget at any level above
+    ///     Minimal.
     /// </summary>
     /// <remarks>
-    ///     Generated rather than a fixture: the only thing that matters about it is its size, and a 200-result
-    ///     JSON file would be unreadable to a maintainer.
+    ///     Generated rather than a fixture: the only thing that matters about it is its size, and a JSON file of
+    ///     hundreds of results would be unreadable to a maintainer.
     /// </remarks>
     private static string ManyIssuesSarif(int warnings)
     {
@@ -671,7 +666,7 @@ public sealed class ResharperToolsInspectTests : IDisposable
         }
     }
 
-    /// <summary>The report path out of the response's preamble, read the way an agent would.</summary>
+    /// <summary>Reads the report path out of the response's preamble, the way an agent would.</summary>
     /// <remarks>
     ///     Anchored on the report note's own wording rather than on the first quotation mark in the response:
     ///     the compilation-error note leads when it applies, and it quotes the cache home.

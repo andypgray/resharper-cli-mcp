@@ -5,28 +5,24 @@ using Zphil.ReSharperCli.Formatting;
 namespace Zphil.ReSharperCli.Execution;
 
 /// <summary>
-///     Everything one progress message is written from: the fixed facts of the run, where it has got to, and
-///     how long it has been there.
+///     Represents everything one progress message is written from: the fixed facts of the run, where it has got
+///     to, and how long it has been there.
 /// </summary>
 /// <param name="Subcommand">The <c>jb</c> subcommand this run is, e.g. <c>inspectcode</c>.</param>
 /// <param name="SolutionPath">The solution being analysed.</param>
 /// <param name="Phase">Where the run has got to.</param>
 /// <param name="FilesSeen">How many files <c>jb</c> has named in this phase.</param>
 /// <param name="CacheSummary">
-///     What <see cref="JbCacheState" /> made of the cache in the moment before <c>jb</c> opened it, or
-///     <see langword="null" /> while the run has not reached that moment. It is the single best predictor of
-///     the minutes about to follow, which is why a message sent before <c>jb</c> has said anything carries it
-///     rather than nothing.
+///     What <see cref="JbCacheState" /> made of the cache just before <c>jb</c> opened it, or
+///     <see langword="null" /> before the run reaches that point.
 /// </param>
 /// <param name="Elapsed">
-///     Time in the <c>jb</c> process when there is one, and time since the call arrived when there is not.
-///     Two clocks rather than one because only the first is comparable to <see cref="Cap" />: queue time is
-///     deliberately outside the run budget.
+///     Time in the <c>jb</c> process once there is one, and time since the call arrived before that. Only the
+///     first is comparable to <see cref="Cap" />, because queue time is outside the run budget.
 /// </param>
 /// <param name="Cap">
-///     The run cap, once armed — which is to say once <c>jb</c> has started. <see langword="null" /> before
-///     that, because a queued call is not spending the run budget and a message saying otherwise would send a
-///     caller to raise a cap that was never the problem.
+///     The run cap once <c>jb</c> has started, and <see langword="null" /> before then, because a queued call is
+///     not spending the run budget.
 /// </param>
 internal sealed record JbRunProgressSnapshot(
     string Subcommand,
@@ -38,64 +34,42 @@ internal sealed record JbRunProgressSnapshot(
     TimeSpan? Cap)
 {
     /// <summary>
-    ///     Whether the run has only just arrived: still waiting on one of the two queues it passes through
-    ///     before <c>jb</c> exists, for less than <see cref="JbRunLock.NotableWait" />.
+    ///     Gets a value indicating whether the run has only just arrived: still waiting in a queue before
+    ///     <c>jb</c> exists, for less than <see cref="JbRunLock.NotableWait" />.
     /// </summary>
     /// <remarks>
-    ///     The threshold is the lock's rather than one of this record's own, and the judgement is made here
-    ///     beside the measurement rather than in the formatter, so "has this caller genuinely queued behind
-    ///     someone" cannot answer differently between the log and the progress message describing the same
-    ///     wait. <see cref="JbRunPhase.Turn" /> as well as <see cref="JbRunPhase.Queued" />, because the first beat
-    ///     is immediate and lands before either wait has established anything: a call reaches the slot before
-    ///     it reaches the lock, so whichever of the two it is in at that instant, naming a run ahead of it
-    ///     would be a claim nothing has made.
+    ///     <see cref="JbRunPhase.Turn" /> counts as well as <see cref="JbRunPhase.Queued" />, because the first
+    ///     beat is immediate and lands before either wait has established anything, so naming a run ahead of the
+    ///     caller would be a claim nothing has made.
     /// </remarks>
     internal bool JustArrived =>
         Elapsed < JbRunLock.NotableWait && Phase is JbRunPhase.Turn or JbRunPhase.Queued;
 }
 
 /// <summary>
-///     The advance of one <c>jb</c> run, reported on a timer.
+///     Reports the advance of one <c>jb</c> run on a timer.
 /// </summary>
 /// <remarks>
 ///     <para>
-///         <strong>The timer is the only thing that emits, and only once at a time.</strong> <c>jb</c>'s own
-///         lines reach <see cref="OnOutputLine" />, which does nothing but write fields the timer callback
-///         later reads. Three things fall out of that one decision. Rate limiting and a heartbeat come from a
-///         single moving part, so the interior gaps in <c>jb</c>'s output — tens of seconds mid-stream on a
-///         cold solution-wide run — are covered by the same mechanism that stops a cold run sending a
-///         notification for every file. The queue wait is covered too, which streaming <c>jb</c>'s output could
-///         never do: <see cref="JbRunLock" />'s wait is bounded by the run cap, so a call can sit for the whole
-///         cap before a process exists to stream. And a late line is harmless by construction —
-///         <see cref="ProcessRunner" /> can abandon a live reader at the cap, so <see cref="OnOutputLine" />
-///         may fire after the run it describes has already returned or thrown. One emitter is not the same as
-///         one emission, though: <see cref="Timer" /> does not serialize its callbacks, so
-///         <see cref="Beat" /> carries a guard of its own — see there for what two overlapping beats would
-///         otherwise report.
+///         The timer is the only thing that emits, one beat at a time. <c>jb</c>'s own lines reach
+///         <see cref="OnOutputLine" />, which only writes fields the timer callback later reads. So one mechanism
+///         is both the rate limit and the heartbeat, covering the gaps in <c>jb</c>'s output and the queue wait
+///         before any process exists, and a line that arrives after the run has returned or thrown is harmless;
+///         <see cref="ProcessRunner" /> can deliver one, since it abandons a live reader at the cap.
+///         <see cref="Timer" /> does not serialize its callbacks, so <see cref="Beat" /> carries a guard of its own.
 ///     </para>
 ///     <para>
-///         <strong>Nothing may emit after disposal.</strong> A beat that lands after the call it reports has
-///         been answered has no frame it may legally write, and both halves of that hold rather than one: the
-///         call's progress sink refuses a line once closed, and it closes before the result frame goes out. So
-///         the cost of a late beat is a message dropped rather than a report against an answered request.
-///         Hence <see cref="IAsyncDisposable" /> rather than <see cref="IDisposable" />:
-///         <see cref="DisposeAsync" /> raises the disposed flag under the lock, which stops a beat that has
-///         not started, and then awaits <see cref="Timer.DisposeAsync" />, which waits out one that has — so
-///         this reporter is finished with its sink before the call disposes it. A synchronous <c>Dispose</c>
-///         can do the first but not the second.
-///     </para>
-///     <para>
-///         Speculative work reports nothing and so never builds one of these: a pre-warm has no caller to
-///         report to, and its whole contract is that it can neither delay nor fail a call.
+///         Nothing emits once <see cref="DisposeAsync" /> has completed, since a beat after the call has been
+///         answered has no frame it may write. That is why this is <see cref="IAsyncDisposable" />: only an
+///         awaited <see cref="Timer.DisposeAsync" /> waits out a beat already in flight.
 ///     </para>
 /// </remarks>
 internal sealed class JbRunProgress : IAsyncDisposable
 {
     /// <summary>How often a run in flight reports itself.</summary>
     /// <remarks>
-    ///     The number carries no protocol meaning and is chosen for legibility at both ends of the range this
-    ///     server sees: a few messages across a warm run of well under a minute, and about fifty across a cold
-    ///     one of several minutes — against one per file that streaming <c>jb</c>'s lines unfiltered would send.
+    ///     Chosen for legibility rather than any protocol meaning: a few messages across a warm run, and a few
+    ///     dozen across a cold one of several minutes, where streaming <c>jb</c>'s lines would send one per file.
     /// </remarks>
     internal static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(10);
 
@@ -108,10 +82,7 @@ internal sealed class JbRunProgress : IAsyncDisposable
     private readonly string _subcommand;
     private readonly Timer _timer;
 
-    /// <summary>
-    ///     Whether a beat is running right now — the one-at-a-time flag <see cref="Beat" /> takes, and see
-    ///     there for why it is not <see cref="_gate" />.
-    /// </summary>
+    /// <summary>Set while a beat runs; <see cref="Beat" /> says why this is not <see cref="_gate" />.</summary>
     private int _beating;
 
     private string? _cacheSummary;
@@ -120,37 +91,31 @@ internal sealed class JbRunProgress : IAsyncDisposable
     private JbRunPhase _phase;
 
     /// <summary>
-    ///     When <c>jb</c> started, measured on <see cref="_elapsed" />, or <see langword="null" /> while it
-    ///     has not. Both halves of the two-clock rule come off this one field: it is what the reported elapsed
-    ///     is taken from, and it is what says whether the run cap is armed and so worth naming.
+    ///     When <c>jb</c> started, measured on <see cref="_elapsed" />, or <see langword="null" /> before then.
+    ///     Both clocks come off it: the reported elapsed is measured from it, and its presence is what says the
+    ///     run cap is armed.
     /// </summary>
     private TimeSpan? _spawnedAt;
 
-    /// <param name="subcommand">The <c>jb</c> subcommand this run is.</param>
-    /// <param name="solutionPath">The solution being analysed.</param>
-    /// <param name="cap">The run cap, named in every message sent once <c>jb</c> is running.</param>
-    /// <param name="report">
-    ///     Where a heartbeat goes. Called from a timer thread, never under this class's lock, never two at
-    ///     once, and never after <see cref="DisposeAsync" /> has completed. It is expected to be prompt:
-    ///     disposal waits for a call in flight, so a sink that blocked would hold up the tool call's own
-    ///     unwinding.
-    /// </param>
-    /// <param name="logger">
-    ///     The caller's own, so a throwing sink leaves a line rather than vanishing. Required rather than
-    ///     optional for the reason every other logger in this codebase is: a site that forgets it loses the
-    ///     record silently, which is the class of defect the rule exists to prevent.
-    /// </param>
-    /// <param name="initialPhase">
-    ///     The wait this run starts in. A <c>jb</c> run reaches <see cref="JbRunSlot" /> before it reaches
-    ///     <see cref="JbRunLock" /> and so opens in <see cref="JbRunPhase.Turn" />; a cache reset takes no
-    ///     slot and opens on the lock, in <see cref="JbRunPhase.Queued" />. Required rather than defaulted, so
-    ///     a reporter over a new lifecycle names its opening wait instead of inheriting one that may not be
-    ///     its own — the first beat is immediate, and it reports whatever this says.
-    /// </param>
-    /// <param name="interval">
-    ///     How often a heartbeat is sent, defaulting to <see cref="HeartbeatInterval" />. A parameter only so
-    ///     a test need not wait a production interval to see a second beat.
-    /// </param>
+    /// <summary>
+    ///     Starts reporting a run of <paramref name="subcommand" /> on <paramref name="solutionPath" /> under the
+    ///     run cap <paramref name="cap" />, sending the first beat at once.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         <paramref name="report" /> is called from a timer thread, never under this class's lock, never two
+    ///         at once, and never after <see cref="DisposeAsync" /> has completed. It has to be prompt: disposal
+    ///         waits for a call in flight, so a sink that blocked would hold up the tool call's own unwinding.
+    ///         <paramref name="logger" /> is the caller's, so a throwing sink leaves a line rather than vanishing.
+    ///     </para>
+    ///     <para>
+    ///         <paramref name="initialPhase" /> is the wait the run opens in: <see cref="JbRunPhase.Turn" /> for a
+    ///         run that queues for <see cref="JbRunSlot" /> first, <see cref="JbRunPhase.Queued" /> for one that
+    ///         goes straight to <see cref="JbRunLock" />. It is required rather than defaulted because the first
+    ///         beat reports it. <paramref name="interval" /> defaults to <see cref="HeartbeatInterval" />, and is a
+    ///         parameter so a test need not wait a production interval to see a second beat.
+    ///     </para>
+    /// </remarks>
     internal JbRunProgress(
         string subcommand,
         string solutionPath,
@@ -167,20 +132,16 @@ internal sealed class JbRunProgress : IAsyncDisposable
         _logger = logger;
         _phase = initialPhase;
 
-        // Last, and that is the whole reason this is a constructor body rather than a field initializer: the
-        // first beat is immediate, and a callback reaching Snapshot() before the fields above were assigned
-        // would report a half-built run. Immediate because the silence this exists to break starts at once —
-        // the queue wait is the first thing a call does, and it runs up to the whole cap with no jb to stream.
+        // Created last, which is why this is a constructor body rather than field initializers: the first beat
+        // is immediate, and a callback reaching Snapshot() before the fields above were assigned would report a
+        // half-built run. Immediate because the queue wait is the first thing a call does, and it can last the
+        // whole cap with no jb to stream.
         _timer = new Timer(_ => Beat(), null, TimeSpan.Zero, interval ?? HeartbeatInterval);
     }
 
     /// <summary>
-    ///     How many files <c>jb</c> named in the phase it is in — for a caller restating how the run ended.
+    ///     Gets how many files <c>jb</c> has named in the phase it is in.
     /// </summary>
-    /// <remarks>
-    ///     A run killed at the cap having analysed forty files and one killed at 1,200 are otherwise
-    ///     indistinguishable.
-    /// </remarks>
     internal int FilesSeen
     {
         get
@@ -208,16 +169,12 @@ internal sealed class JbRunProgress : IAsyncDisposable
     }
 
     /// <summary>
-    ///     The heartbeat for one piece of work, or <see langword="null" /> when nobody asked for one.
+    ///     Returns a reporter that formats each snapshot with <see cref="RunProgressFormatter" /> for
+    ///     <paramref name="onProgress" />, or <see langword="null" /> when there is no sink.
     /// </summary>
     /// <remarks>
-    ///     Nobody asked when a client sent no progress token, or a caller has no channel at all. The one
-    ///     spelling of "a snapshot becomes prose", so every caller that reports itself reads the same. The
-    ///     adapter lives here rather than in each caller because <see cref="RunProgressFormatter" /> is
-    ///     pure and everything above this handles strings, so neither the services nor the tool surface has
-    ///     to know what a run's phases are called. A <see langword="null" /> sink answers
-    ///     <see langword="null" /> rather than a reporter that drops its lines, which leaves a call site with
-    ///     one nullable reporter to <c>await using</c> rather than a branch of its own.
+    ///     Formatting here leaves every caller handling strings, so none of them needs to know what a run's
+    ///     phases are called.
     /// </remarks>
     internal static JbRunProgress? Reporting(
         string subcommand,
@@ -244,7 +201,6 @@ internal sealed class JbRunProgress : IAsyncDisposable
     ///     Enters the phase in which this server's <c>jb</c> slot is held and the cache generation's lease is
     ///     being queued for.
     /// </summary>
-    /// <remarks>The second of the two waits a run serves before <c>jb</c> exists.</remarks>
     internal void Queued()
     {
         Enter(JbRunPhase.Queued);
@@ -257,8 +213,7 @@ internal sealed class JbRunProgress : IAsyncDisposable
     }
 
     /// <summary>
-    ///     Moves to <paramref name="phase" /> unless disposed: the one spelling of a phase change that carries
-    ///     nothing else with it.
+    ///     Moves to <paramref name="phase" /> unless disposed.
     /// </summary>
     private void Enter(JbRunPhase phase)
     {
@@ -274,7 +229,7 @@ internal sealed class JbRunProgress : IAsyncDisposable
     ///     Records that <c>jb</c> is about to start, with <paramref name="cacheSummary" /> describing what it
     ///     will open.
     /// </summary>
-    /// <remarks>This is also where the second clock starts and the run cap becomes worth naming.</remarks>
+    /// <remarks>From here a snapshot's elapsed time is time in the process, and its cap is set.</remarks>
     internal void Spawning(string cacheSummary)
     {
         lock (_gate)
@@ -289,8 +244,8 @@ internal sealed class JbRunProgress : IAsyncDisposable
 
     /// <summary>Takes in one line of <c>jb</c>'s standard output.</summary>
     /// <remarks>
-    ///     Writes state and never emits, never throws, and no-ops once disposed — see the class remarks for why
-    ///     all three are load-bearing rather than defensive.
+    ///     Writes state and nothing else: it never emits, never throws, and does nothing once disposed, because it
+    ///     runs on the process reader thread and can run after the run it describes has returned.
     /// </remarks>
     internal void OnOutputLine(string line)
     {
@@ -300,9 +255,9 @@ internal sealed class JbRunProgress : IAsyncDisposable
         {
             if (_disposed) return;
 
-            // A phase change resets the count rather than carrying it: jb's two sweeps report different file
-            // totals for the same solution, so a running total across both would be a number matching nothing
-            // jb ever said.
+            // A phase change resets the count rather than carrying it: jb's analysis and inspection sweeps
+            // report different file totals for the same solution, so a running total across both would match
+            // nothing jb ever said.
             if (_phase != step.Phase)
             {
                 _phase = step.Phase;
@@ -317,17 +272,14 @@ internal sealed class JbRunProgress : IAsyncDisposable
     ///     Emits one beat, skipping it while another is still going out.
     /// </summary>
     /// <remarks>
-    ///     <see cref="Timer" /> does not serialize its callbacks, so under a starved thread pool two queued
-    ///     beats run at once — and skipping the second is the answer rather than queueing it. A beat that would
-    ///     have gone out beside one already going out adds nothing: it reports the same state a few milliseconds later.
-    ///     What it costs is real, though. Two overlapping beats snapshot in one order and reach the sink in the other,
-    ///     so a message could name an earlier elapsed than the one before it — and a pool that recovers from a stall
-    ///     delivers the whole burst it queued during it. The lock is deliberately not held across
-    ///     <see cref="_report" /> instead: <see cref="_gate" /> is also taken by <see cref="OnOutputLine" /> from the
-    ///     process reader thread, and the contract that the sink is called outside it is what stops a slow sink
-    ///     stalling <c>jb</c>'s stdout drain. Nor does a sink that serializes its own writes make this redundant: what
-    ///     one of those orders is sends, what this orders is snapshots, and a sink is free to be neither — leaning on
-    ///     one would put a guarantee this class makes in the hands of a caller it cannot see.
+    ///     <see cref="Timer" /> does not serialize its callbacks, so under a starved thread pool two beats can run
+    ///     at once, snapshot in one order and reach the sink in the other, naming an earlier elapsed than the
+    ///     message before; a pool recovering from a stall would also deliver the whole burst it queued. Skipping
+    ///     loses nothing, since the skipped beat would report the same state milliseconds later. The guard is a
+    ///     flag rather than <see cref="_gate" /> held across <see cref="_report" />, because
+    ///     <see cref="OnOutputLine" /> takes that lock on the process reader thread, and a slow sink must not stall
+    ///     <c>jb</c>'s stdout drain. A sink that serializes its own writes does not make this redundant: it orders
+    ///     sends, and this orders snapshots.
     /// </remarks>
     private void Beat()
     {
@@ -344,13 +296,13 @@ internal sealed class JbRunProgress : IAsyncDisposable
     }
 
     /// <summary>
-    ///     One heartbeat: reads the state, hands it to the sink outside the lock, and swallows whatever the sink
-    ///     does with it.
+    ///     Sends one heartbeat: reads the state under the lock, hands it to the sink outside it, and swallows
+    ///     whatever the sink throws.
     /// </summary>
     /// <remarks>
     ///     The catch is total: this runs on a timer thread, where an escaping exception has no caller to reach
     ///     and takes the process down instead. Reporting progress is an optimisation over silence, and an
-    ///     optimisation may not fail — let alone end — a call.
+    ///     optimisation must not fail a call, let alone end the process.
     /// </remarks>
     private void Emit()
     {

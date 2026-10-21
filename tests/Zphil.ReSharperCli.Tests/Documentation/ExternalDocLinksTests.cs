@@ -6,13 +6,13 @@ using Zphil.ReSharperCli.Tests.TestSupport;
 namespace Zphil.ReSharperCli.Tests.Documentation;
 
 /// <summary>
-///     Guards the curated external documentation links (JetBrains + StyleCop.Analyzers) that the repository's
+///     Guards the curated external documentation links (JetBrains and StyleCop.Analyzers) that the repository's
 ///     Markdown cites.
 /// </summary>
 /// <remarks>
-///     The liveness check is <em>warn-only</em>: a dead third-party page is reported but never fails the build,
-///     so a JetBrains docs reorganization cannot turn this repo red. The offline extraction check is the one
-///     that fails, and only when a doc edit drops or malforms a curated link.
+///     The liveness check is warn-only: a dead third-party page is reported but never fails the build, so a
+///     JetBrains docs reorganization cannot turn this repo red. The offline extraction check is the one that
+///     fails, and only when a doc edit drops or malforms a curated link.
 /// </remarks>
 public sealed class ExternalDocLinksTests(ITestOutputHelper output)
 {
@@ -28,8 +28,9 @@ public sealed class ExternalDocLinksTests(ITestOutputHelper output)
         IReadOnlyList<ExternalDocLink> links = DocLinks.ExtractExternalDocLinks();
         List<string> urls = links.Select(link => link.Url).ToList();
 
-        // Assert — the curated set is present. Guards against a doc edit silently dropping a link, and
-        // guarantees the scheduled liveness check never degrades to "0 links, all healthy".
+        // Assert — the curated set is present, 12 being a floor on its size rather than its exact count.
+        // Guards against a doc edit silently dropping a link, and guarantees the scheduled liveness check never
+        // degrades to "0 links, all healthy".
         links.Count.ShouldBeGreaterThanOrEqualTo(12);
         urls.ShouldContain(url => url.Contains("InspectCode.html"));
         urls.ShouldContain(url => url.Contains("CleanupCode.html"));
@@ -51,8 +52,8 @@ public sealed class ExternalDocLinksTests(ITestOutputHelper output)
         // Arrange
         IReadOnlyList<ExternalDocLink> links = DocLinks.ExtractExternalDocLinks();
 
-        // The only hard assertion: the check actually ran. Staleness below is warn-only, so this is the
-        // one way the test goes red — if the extractor or doc structure genuinely breaks.
+        // The only hard assertion: the check ran. Staleness below is warn-only, so this is the one way the
+        // test goes red, when the extractor or the doc structure breaks.
         links.Count.ShouldBeGreaterThan(0);
 
         // Assign after construction (not an object initializer) so the handler is always disposed even

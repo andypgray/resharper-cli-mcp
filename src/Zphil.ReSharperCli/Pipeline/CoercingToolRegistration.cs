@@ -7,27 +7,20 @@ using ModelContextProtocol.Server;
 namespace Zphil.ReSharperCli.Pipeline;
 
 /// <summary>
-///     Replaces <c>WithToolsFromAssembly</c> with a per-tool registration that can pass
-///     <c>McpServerToolCreateOptions</c>. It exists to do exactly two things
-///     <c>WithToolsFromAssembly</c> cannot: wire <see cref="ToolInputSerializerOptions" /> (the
-///     forgiving-input coercers) into each tool's argument binder, and re-inject the schema shape
-///     those coercers erase.
+///     Registers each tool with the <c>McpServerToolCreateOptions</c> that <c>WithToolsFromAssembly</c>
+///     cannot pass: <see cref="ToolInputSerializerOptions" /> for the argument binder, and a schema hook that
+///     restores the shape those coercers erase.
 /// </summary>
 /// <remarks>
 ///     <para>
-///         Registering a custom <see cref="System.Text.Json.Serialization.JsonConverter" /> for a
-///         type makes STJ's schema exporter emit <c>{}</c> for that parameter — it can no longer
-///         infer the shape. Every converter-bound parameter is affected: <c>resharper_cleanup</c>'s
-///         <c>files</c> would collapse from an array-of-strings to <c>{}</c>, <c>resharper_inspect</c>'s
-///         <c>severity</c> would lose its string type, and (verified empirically) every scalar
-///         <c>string?</c> parameter erases too. <see cref="ReinjectErasedSchema" /> is the
-///         <c>SchemaCreateOptions.TransformSchemaNode</c> hook that restores the erased shape from the
-///         underlying CLR type.
+///         Registering a custom <see cref="System.Text.Json.Serialization.JsonConverter" /> for a type makes
+///         STJ's schema exporter emit <c>{}</c> for that parameter, because it can no longer infer the shape.
+///         Every converter-bound parameter is affected, scalar <c>string?</c> parameters included: a
+///         <c>string[]</c> collapses to <c>{}</c>, and an enum loses its type and its values.
 ///     </para>
 ///     <para>
-///         It wires only the coercers and re-injects the schema they erase, and does not touch tool
-///         metadata (<c>Title</c>/<c>Execution</c>) or shrink the payload: either would change this
-///         server's advertised <c>tools/list</c> output.
+///         It changes nothing else, neither tool metadata (<c>Title</c>/<c>Execution</c>) nor payload size:
+///         either would change this server's advertised <c>tools/list</c> output.
 ///     </para>
 /// </remarks>
 internal static class CoercingToolRegistration
@@ -104,9 +97,9 @@ internal static class CoercingToolRegistration
             }
             else if (t == typeof(string) && !obj.ContainsKey("type"))
             {
-                // Load-bearing: under StringCoercerFactory the exporter erases every scalar string?/string
-                // parameter (solutionPath, profile) to {}, and without this repair they would advertise no
-                // type at all. The advertised shape is a plain "string"; no ["string","null"] union appears.
+                // Under StringCoercerFactory the exporter erases every scalar string parameter to {}, so without
+                // this repair they would advertise no type at all. The advertised shape is a plain "string",
+                // with no ["string","null"] union.
                 obj["type"] = "string";
             }
         }
@@ -114,7 +107,7 @@ internal static class CoercingToolRegistration
         return node;
     }
 
-    /// <summary>The enum member names as a JSON string array, for a schema <c>enum</c> constraint.</summary>
+    /// <summary>Returns the enum member names as a JSON string array, for a schema <c>enum</c> constraint.</summary>
     private static JsonArray EnumNames(Type enumType)
     {
         JsonArray names = [];

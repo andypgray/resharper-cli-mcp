@@ -9,29 +9,26 @@ using Zphil.ReSharperCli.Tests.TestSupport;
 namespace Zphil.ReSharperCli.Tests.Services;
 
 /// <summary>
-///     The two <see cref="FilePathList" /> members whose contract a table of examples cannot state.
+///     Pins the <see cref="FilePathList" /> members whose contract a table of examples cannot state,
+///     <see cref="FilePathList.Split" /> and <see cref="FilePathList.ToIncludePattern" />.
 /// </summary>
 /// <remarks>
 ///     <para>
-///         <see cref="FilePathList.Split" /> does not build a new list until it meets the first entry that
-///         needs splitting, and then has to graft the entries it already walked past onto the front — an
-///         optimisation over an obvious model (expand every entry, concatenate) which has to agree with it for
-///         any arrangement, and that is the class of bug an example test picks up only if someone guessed the
-///         right position for the first split.
+///         <see cref="FilePathList.Split" /> builds a new list only from the first entry that needs splitting,
+///         grafting the entries it walked past onto the front. That optimisation has to agree with the obvious
+///         model (expand every entry, concatenate) for any arrangement, and an example test catches a
+///         disagreement only if it guessed where the first split falls.
 ///     </para>
 ///     <para>
-///         <see cref="FilePathList.ToIncludePattern" /> has to be total, because it runs on the way to
-///         <c>jb</c>, past the validation that would otherwise have named a bad entry: every string a path API
-///         can refuse must come back as the entry rather than as an exception, and which strings those are is
+///         <see cref="FilePathList.ToIncludePattern" /> has to be total, and which strings a path API refuses is
 ///         what a generator finds and a reader does not.
 ///     </para>
 ///     <para>
 ///         Every fragment the splitting generators produce is relative, and the solution directory is a freshly
-///         created empty one, so nothing an entry names can exist. That keeps the existing-file guard — which
-///         correctly keeps a real <c>Foo,Bar.cs</c> verbatim — out of the comparison, because it is a fact
-///         about the disk rather than about the splitting rule under test. The totality generator is free of
-///         that constraint: it names nothing that could exist either, and what it draws is aimed at the path
-///         APIs.
+///         created empty one, so nothing an entry names can exist. That keeps the existing-file guard, which
+///         keeps a real <c>Foo,Bar.cs</c> verbatim, out of the comparison, because it is a fact about the disk
+///         rather than about the splitting rule under test. The totality generator is free of that constraint:
+///         it names nothing that could exist either, and what it draws is aimed at the path APIs.
 ///     </para>
 /// </remarks>
 public sealed class FilePathListPropertyTests : IDisposable
@@ -81,7 +78,7 @@ public sealed class FilePathListPropertyTests : IDisposable
                 // Act
                 IReadOnlyList<string> resplit = FilePathList.Split(split, _solutionDirectory);
 
-                // Assert — the same list, not merely an equal one. "Returns files itself when nothing needed
+                // Assert — the same list instance, not an equal copy. "Returns files itself when nothing needed
                 // splitting" is the documented signal that a second pass changed nothing, and a caller that
                 // normalizes twice must not pay a copy for the second.
                 resplit.ShouldBeSameAs(
@@ -109,8 +106,8 @@ public sealed class FilePathListPropertyTests : IDisposable
     }
 
     /// <summary>
-    ///     The obvious implementation, written for clarity rather than for the allocation the real one avoids:
-    ///     expand each entry independently, concatenate the results.
+    ///     Expands each entry independently and concatenates the results: the obvious implementation, written
+    ///     for clarity rather than for the allocation the real one avoids.
     /// </summary>
     private static IReadOnlyList<string> NaiveExpansion(IReadOnlyList<string> files)
     {
@@ -133,14 +130,9 @@ public sealed class FilePathListPropertyTests : IDisposable
     }
 
     /// <summary>
-    ///     A <c>files</c> argument: a short list of entries, each either a lone path or several joined the way
-    ///     the mistake this rescues actually arrives.
+    ///     Generates a <c>files</c> argument: a short list of entries, each either a lone path or several joined
+    ///     the way the mistake this rescues arrives.
     /// </summary>
-    /// <remarks>
-    ///     The awkward arrangements — an entry that is nothing but delimiters, empty fragments between two real
-    ///     ones, leading and trailing delimiters — are unioned in rather than left for a lucky draw, because
-    ///     they are where the "keep it verbatim" fallbacks live.
-    /// </remarks>
     private static Gen<IReadOnlyList<string>> EntryList()
     {
         return Gen.Choose(1, 5)
@@ -148,6 +140,15 @@ public sealed class FilePathListPropertyTests : IDisposable
             .Select(entries => (IReadOnlyList<string>)entries.ToList());
     }
 
+    /// <summary>
+    ///     Generates one entry: a lone fragment, several fragments joined by a delimiter, or an awkward
+    ///     arrangement.
+    /// </summary>
+    /// <remarks>
+    ///     The awkward arrangements (an entry that is nothing but delimiters, empty fragments between two real
+    ///     ones, leading and trailing delimiters) are unioned in rather than left for a lucky draw, because they
+    ///     are where the "keep it verbatim" fallbacks live.
+    /// </remarks>
     private static Gen<string> Entry()
     {
         Gen<List<string>> fragments = Gen.Choose(1, 4)
@@ -165,7 +166,7 @@ public sealed class FilePathListPropertyTests : IDisposable
     }
 
     /// <summary>
-    ///     A relative path naming a file that cannot exist under a fresh temp directory.
+    ///     Generates a relative path naming a file that cannot exist under a fresh temp directory.
     /// </summary>
     /// <remarks>
     ///     No <c>..</c> segment is ever generated, so no entry can resolve outside that directory and
@@ -194,13 +195,14 @@ public sealed class FilePathListPropertyTests : IDisposable
     }
 
     /// <summary>
-    ///     Anything a <c>files</c> entry can arrive as, aimed at the path APIs rather than at <c>jb</c>.
+    ///     Generates anything a <c>files</c> entry can arrive as, aimed at the path APIs rather than at
+    ///     <c>jb</c>.
     /// </summary>
     /// <remarks>
-    ///     Arbitrary strings unioned with the shapes those APIs refuse or treat specially — an embedded null, a
+    ///     Arbitrary strings unioned with the shapes those APIs refuse or treat specially: an embedded null, a
     ///     lone surrogate, a bare device or UNC prefix, a drive-relative entry, a stream-qualified name, and
     ///     lengths on both sides of the operating system's path limit. No UNC host name is drawn: resolving one
-    ///     would put a network round trip inside a property that runs a hundred times.
+    ///     would put a network round trip inside every case the property draws.
     /// </remarks>
     private Gen<string> HostileEntry()
     {

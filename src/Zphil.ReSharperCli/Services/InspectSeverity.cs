@@ -1,12 +1,12 @@
 namespace Zphil.ReSharperCli.Services;
 
 /// <summary>
-///     Minimum severity for <c>resharper_inspect</c> to report.
+///     Defines the minimum severity for <c>resharper_inspect</c> to report.
 /// </summary>
 /// <remarks>
-///     The member names are chosen so that <c>.ToString().ToUpperInvariant()</c> yields the exact <c>jb --severity</c>
-///     CLI tokens (<c>SUGGESTION</c>, <c>WARNING</c>, <c>ERROR</c>) —
-///     <see cref="InspectSeverityExtensions.ToJbToken" /> owns that mapping.
+///     The member names are chosen so that <c>.ToString().ToUpperInvariant()</c> yields the <c>jb --severity</c>
+///     CLI tokens (<c>SUGGESTION</c>, <c>WARNING</c>, <c>ERROR</c>); <see cref="InspectSeverityExtensions.ToJbToken" />
+///     owns that mapping.
 /// </remarks>
 internal enum InspectSeverity
 {
@@ -21,7 +21,7 @@ internal enum InspectSeverity
 }
 
 /// <summary>
-///     The one application of the name-to-token recipe, so a member whose CLI token ever stops being its
+///     Provides the one application of the name-to-token recipe, so a member whose CLI token stops being its
 ///     uppercased name is a one-place change instead of a drift between the places that spell it.
 /// </summary>
 internal static class InspectSeverityExtensions

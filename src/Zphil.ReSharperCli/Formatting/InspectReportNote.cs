@@ -3,15 +3,13 @@ using Zphil.ReSharperCli.Services;
 namespace Zphil.ReSharperCli.Formatting;
 
 /// <summary>
-///     The line an inspect result leads with when the caller asked for a report file: where it went, or why
-///     it did not.
+///     Renders the line an inspect result leads with when the caller asked for a report file: where it went,
+///     or why it did not.
 /// </summary>
 /// <remarks>
 ///     <para>
-///         It is charged to the budget before rendering (<c>ResponseTruncator.BudgetForBody</c>), which is
-///         what puts it outside the reduction ladder — a note naming the file would otherwise vanish at
-///         <c>Minimal</c>, precisely when the response is most reduced and the file matters most. Being a
-///         prefix, it survives hard truncation too.
+///         As a prefix outside the reduction ladder it survives <c>Minimal</c> and hard truncation alike, which
+///         is when the response is most reduced and the file matters most.
 ///     </para>
 ///     <para>
 ///         It does not claim the file holds anything the response lacks. A scoped scan that fits at
@@ -22,7 +20,7 @@ namespace Zphil.ReSharperCli.Formatting;
 internal static class InspectReportNote
 {
     /// <summary>
-    ///     The note for <paramref name="outcome" />, or <c>""</c> when no report was asked for
+    ///     Renders the note for <paramref name="outcome" />, or <c>""</c> when no report was asked for
     ///     (<paramref name="outcome" /> is <see langword="null" />).
     /// </summary>
     public static string For(InspectReportOutcome? outcome, int issueCount)
@@ -35,8 +33,7 @@ internal static class InspectReportNote
                    + "call, reduced if it did not fit the response budget.\n\n";
 
         // A run that found nothing has no listing for the file to hold more of, so the budget clause would
-        // be describing a reduction of nothing. The file is still written and still named: a report was asked
-        // for, so the response names a file that exists, and a dated clean bill of health is what it carries.
+        // describe a reduction of nothing. The file is still written and named, because a report was asked for.
         if (issueCount == 0)
             return $"FULL REPORT: no issues found; the run and its scope were written to \"{outcome.Path}\".\n\n";
 

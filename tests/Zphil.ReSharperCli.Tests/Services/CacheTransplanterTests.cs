@@ -84,7 +84,7 @@ public sealed class CacheTransplanterTests : IDisposable
     {
         // Arrange — a marker means a jb run against this path finished, so whatever is on disk is the
         // solution's own analysis. Replacing that would be a delete this server was not asked for, and
-        // resetting first is how a caller asks for exactly that.
+        // resetting first is how a caller asks for that.
         CacheHomes.PlantWarmDonor(_cacheHome, _mainSolution);
         string existing = CacheHomes.PlantWarmDonor(_cacheHome, _worktreeSolution);
         File.WriteAllText(Path.Combine(existing, "Db", "CURRENT"), "this solution's own");
@@ -205,8 +205,8 @@ public sealed class CacheTransplanterTests : IDisposable
     [Fact]
     public async Task TryTransplantAsync_MarkerWrittenBeforeItRecordedNames_IsNotADonor()
     {
-        // Arrange — a marker from an older build of this server, or one written under naming drift: warm, and
-        // silent about what it warmed. This is the self-disable, seen from the donor side.
+        // Arrange — an empty marker on the donor, as an older build of this server wrote one: warm, and silent
+        // about what it warmed, so seeding declines rather than guess which generation to copy.
         CacheHomes.PlantGenerationFor(_cacheHome, _mainSolution);
         File.WriteAllText(JbWarmMarker.PathFor(_mainSolution, _cacheHome), string.Empty);
 
@@ -218,7 +218,7 @@ public sealed class CacheTransplanterTests : IDisposable
     public async Task TryTransplantAsync_MarkerNamingAGenerationThatIsGone_IsNotADonor()
     {
         // Arrange — the cache was cleared out from under the marker, by a reset elsewhere or by jb's own
-        // collection of generations nothing has touched for a month.
+        // clean-up of generations nothing has used for a while.
         string donor = CacheHomes.PlantWarmDonor(_cacheHome, _mainSolution);
         Directory.Delete(donor, true);
 
@@ -494,14 +494,14 @@ public sealed class CacheTransplanterTests : IDisposable
     }
 
     /// <summary>
-    ///     Every decline says why, and a decline that leaves the target <em>cold</em> says it at
+    ///     Every decline says why, and a decline that leaves the target cold says it at
     ///     <see cref="LogLevel.Information" />.
     /// </summary>
     /// <remarks>
     ///     Without the line, "declined to seed" and "never looked" are one observation, and the difference
     ///     between them is the whole diagnosis when a fresh checkout that should have been seeded runs cold
-    ///     instead. The reason text is matched rather than a property name because the reason <em>is</em> the
-    ///     payload here; the level is the part that carries policy.
+    ///     instead. The reason text is matched rather than a property name because the reason is the payload
+    ///     here; the level is the part that carries policy.
     /// </remarks>
     [Fact]
     public async Task TryTransplantAsync_NoDonorAtAll_SaysSoAtInformationBecauseTheRunWillBeCold()
@@ -582,7 +582,7 @@ public sealed class CacheTransplanterTests : IDisposable
         // Act
         await Transplanter(logs).TryTransplantAsync(ConfigFor(_worktreeSolution), Ct);
 
-        // Assert — 5 bytes of "cache" plus 7 of "leveldb", and a duration that was actually measured.
+        // Assert — 5 bytes of "cache" plus 7 of "leveldb", and a recorded duration.
         LogEntry seeded = logs.WithProperty("DonorBytes").ShouldHaveSingleItem();
         seeded.Level.ShouldBe(LogLevel.Information);
         seeded.Property("DonorFiles").ShouldBe(2);
@@ -590,7 +590,7 @@ public sealed class CacheTransplanterTests : IDisposable
         seeded.Property("CopiedMs").ShouldNotBeNull();
     }
 
-    /// <summary>The one decline line this transplant wrote, whatever level it chose.</summary>
+    /// <summary>Returns the one decline line this transplant wrote, whatever level it chose.</summary>
     private static LogEntry Decline(CapturingLoggerProvider logs)
     {
         return logs.WithProperty("DeclineReason").ShouldHaveSingleItem();
@@ -601,7 +601,7 @@ public sealed class CacheTransplanterTests : IDisposable
         return new CacheTransplanter(JbRunners.Lock(TimeSpan.FromSeconds(1)), Logs.For<CacheTransplanter>(logs), ShortPatience);
     }
 
-    /// <summary>Where a seeded generation for the worktree lands.</summary>
+    /// <summary>Returns where a seeded generation for the worktree lands.</summary>
     private string TargetPath()
     {
         return CacheHomes.GenerationPathFor(_cacheHome, _worktreeSolution);
@@ -616,9 +616,6 @@ public sealed class CacheTransplanterTests : IDisposable
     ///     Seeds the worktree from a donor big enough that the copy is still running when it is cancelled,
     ///     cancels it as soon as there is a partial copy to abandon, and returns once it has thrown.
     /// </summary>
-    /// <remarks>
-    ///     Throwing is how a transplant reports a cancellation, and the only thing it reports by throwing.
-    /// </remarks>
     private async Task TransplantCancelledMidCopyAsync()
     {
         string donor = CacheHomes.PlantWarmDonor(_cacheHome, _mainSolution);
@@ -644,8 +641,9 @@ public sealed class CacheTransplanterTests : IDisposable
     }
 
     /// <summary>
-    ///     <paramref name="jbVersion" /> defaults to none, which takes the donor's own build out of the decision
-    ///     for every test not about builds.
+    ///     Returns a config for <paramref name="solutionPath" /> naming no <c>jb</c> version unless
+    ///     <paramref name="jbVersion" /> gives one, which takes the donor's own build out of the decision for
+    ///     every test not about builds.
     /// </summary>
     private ResolvedConfig ConfigFor(string solutionPath, string? jbVersion = null)
     {

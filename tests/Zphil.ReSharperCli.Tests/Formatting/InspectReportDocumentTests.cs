@@ -52,8 +52,8 @@ public sealed class InspectReportDocumentTests
     [Fact]
     public void Compose_AppendsTheFullListingUnmodified()
     {
-        // Arrange — the whole point: at High, which is where a solution-wide response lands, these two would
-        // collapse to one line carrying one example message. The Full listing keeps both, byte for byte.
+        // Arrange — at High, which is where a solution-wide response lands, these two would collapse to one
+        // line carrying one example message. The Full listing keeps both, byte for byte.
 
         // Act
         string document = InspectReportDocument.Compose(FullListing, "/repo/App.slnx", "WARNING", null, GeneratedAt);

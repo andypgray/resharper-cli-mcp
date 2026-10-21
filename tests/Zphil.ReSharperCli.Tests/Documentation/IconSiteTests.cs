@@ -161,7 +161,7 @@ public sealed partial class IconSiteTests
         return RepoRoot.ReadText(RepoRoot.ProductCsproj);
     }
 
-    /// <summary>The <c>icons</c> array declared by the MCP registry manifest.</summary>
+    /// <summary>Reads the <c>icons</c> array the MCP registry manifest declares.</summary>
     private static IReadOnlyList<RegistryIcon> RegistryIcons()
     {
         JsonElement icons = RepoManifest.Read(".mcp/server.json", "/icons");

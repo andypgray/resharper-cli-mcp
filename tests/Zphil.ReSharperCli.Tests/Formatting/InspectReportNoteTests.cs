@@ -33,7 +33,7 @@ public sealed class InspectReportNoteTests
 
         // Assert — "the same run", never "more than the response": a scoped scan that fits at Full puts the
         // same listing in both places, so a note promising the file has what the response lacks would be
-        // false exactly there. The blank line separates it from the listing, like the other preambles.
+        // false there. The blank line separates it from the listing, like the other preambles.
         note.ShouldBe(
             $"FULL REPORT: all 327 issue(s), each with its own message, written to \"{ReportPath}\". "
             + "The listing below is the same run rendered to fit the response budget.\n\n");

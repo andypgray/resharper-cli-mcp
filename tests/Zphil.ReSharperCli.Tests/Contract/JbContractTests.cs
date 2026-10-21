@@ -14,24 +14,21 @@ using Zphil.ReSharperCli.Tools;
 
 namespace Zphil.ReSharperCli.Tests.Contract;
 
-/// <summary>What this server assumes about <c>jb</c>, checked against a real one.</summary>
+/// <summary>Checks what this server assumes about <c>jb</c> against a real one.</summary>
 /// <remarks>
 ///     <para>
-///         Every other test in the suite runs against a recorded SARIF fixture or an NSubstitute double, so
-///         JetBrains could change any of these and the build would stay green — and they ship roughly thirty
-///         stable releases a year.
+///         No other test in the suite runs a real <c>jb</c>: they run against recorded SARIF or a double, so
+///         JetBrains could change any of these behaviours and the build would stay green.
 ///     </para>
 ///     <para>
-///         Two tiers. The methods below turn the run red: they are the behaviours that stop the server
-///         working at all. The single soft-tier method reports rather than asserts, because the surfaces it
-///         watches are ones the code is designed to degrade safely on — a red build for those would be a
-///         false alarm, and false alarms are what kill a watcher job.
+///         Two tiers. A hard-tier test turns the run red, because it pins a behaviour without which the server
+///         stops working. <see cref="SoftContracts_AreReportedRatherThanAsserted" /> reports rather than
+///         asserts, because the code degrades safely on every surface it watches, and a red build for one of
+///         those would be a false alarm.
 ///     </para>
 ///     <para>
 ///         Every check drives the product's own code rather than a re-spelling of it: a test that hardcoded
 ///         its own <c>jb</c> argument list would drift from <see cref="InspectService" /> and stop testing it.
-///         The one exception is the absolute-<c>--include</c> probe, where not applying
-///         <see cref="FilePathList.ToIncludePattern" /> is the entire point.
 ///     </para>
 ///     <para>
 ///         Gated behind the <c>JbContract</c> trait, so <c>ci.yml</c> keeps the every-PR suite offline, and
@@ -57,7 +54,7 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
         Enum.GetValues<InspectSeverity>().Select(severity => severity.ToJbToken()).ToArray();
 
     /// <summary>
-    ///     <see cref="JbContractFixture.IsInstalled" />, exposed on the test class for <c>SkipUnless</c> to read.
+    ///     Gets <see cref="JbContractFixture.IsInstalled" /> on the test class, for <c>SkipUnless</c> to read.
     /// </summary>
     public static bool JbIsInstalled => JbContractFixture.IsInstalled;
 
@@ -175,8 +172,8 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
         string pattern = FilePathList.ToIncludePattern(absolute, fixture.Config.SolutionDirectory);
 
         // Assert — the translation still produces the spelling jb matches against the solution model, and the
-        // file it named was genuinely rewritten. Its own report echoes the caller's absolute path back
-        // untranslated, which is the half a unit test cannot check.
+        // file it named was rewritten. Its own report echoes the caller's absolute path back untranslated,
+        // which is the half a unit test cannot check.
         pattern.ShouldBe("Misformatted.cs");
         fixture.DeclaredProfileCleanup.Outcome.Entries.Single().Display.ShouldBe(absolute);
         fixture.DeclaredProfileCleanup.ShouldHaveRewrittenTheFile();
@@ -185,9 +182,9 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
     [Fact(Skip = NoJb, SkipUnless = nameof(JbIsInstalled))]
     public async Task ToolsCall_Inspect_ReturnsIssuesNamingAFixtureFile()
     {
-        // Arrange — the production DI graph over the real process seam, so this is a genuine jb run reaching a
-        // real MCP client. Declared ahead of the harness so it is disposed after it: closing the job while jb
-        // was still in it would kill the very run this is measuring.
+        // Arrange — the production DI graph over the real process seam, so a real jb run reaches an MCP client
+        // end to end. Declared ahead of the harness so it is disposed after it: closing the job while jb was
+        // still in it would kill the run this is measuring.
         using ChildProcessLifetime childLifetime = new(new SystemEnvironment(), NullLogger<ChildProcessLifetime>.Instance);
         await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(
             Ct,
@@ -211,21 +208,18 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
     }
 
     /// <summary>The soft tier: the surfaces the server degrades safely on.</summary>
-    /// <remarks>
-    ///     A drifted surface is a finding in the report, never a failure. The report goes to the test output, and
-    ///     to the file <see cref="JbContractFixture.ReportVariable" /> names when that is set.
-    /// </remarks>
+    /// <remarks>A drifted surface is a finding in the report, never a failure.</remarks>
     [Fact(Skip = NoJb, SkipUnless = nameof(JbIsInstalled))]
     public async Task SoftContracts_AreReportedRatherThanAsserted()
     {
         // The one hard assertion, and the reason it is here: without it a broken fixture would report an
-        // empty finding list, which reads exactly like a clean bill of health.
+        // empty finding list, which reads the same as a clean bill of health.
         fixture.Issues.ShouldNotBeEmpty();
 
         List<string> findings = [];
 
         // Hash drift costs a skipped optimisation, never a wrong delete: a computed hash matching no
-        // directory means "nothing here is provably ours". Cache reset then drops nothing and transplanting
+        // directory means "nothing here is known to be ours". Cache reset then drops nothing and transplanting
         // stops seeding, both silently — which is why it is watched at all.
         string generation = Path.Combine(
             fixture.CacheHome, JbSolutionCacheHash.FirstGenerationDirectoryName(fixture.SolutionPath));
@@ -248,9 +242,8 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
                 "CompilationErrorNote did not fire on a solution that does not compile, so an agent meeting "
                 + "phantom errors would not be told how to tell them from real ones.");
 
-        // The premise behind ToIncludePattern. jb has refused an absolute --include two different ways —
-        // exit 0 with an empty report through 2026.1, a non-zero exit writing no report at all in 2026.2 —
-        // so what is watched is that it still refuses, not how.
+        // The premise behind ToIncludePattern. How jb refuses an absolute --include varies by release (see
+        // RawIncludeInspect), so what is watched is that it still refuses, not how.
         RawIncludeProbe raw = fixture.RawAbsoluteInclude;
         if (raw.CleanupExitCode == 0)
             findings.Add(
@@ -262,10 +255,8 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
                 $"jb inspectcode now matches an absolute --include ({raw.Inspect.IssueCount} issue(s) at exit 0). "
                 + "The translation in FilePathList.ToIncludePattern may no longer be needed.");
 
-        // SarifParser leaves run.artifacts unread because it has listed only the files the results already
-        // name, so a files entry that matched nothing reads exactly like a clean file. A probe that can no
-        // longer see a clean file is reported too: a watch that silently stops watching is worse than a
-        // warning.
+        // SarifArtifactsProbe says why run.artifacts is watched. A probe that can no longer see a clean file is
+        // reported too: a watch that silently stops watching is worse than a warning.
         SarifArtifactsProbe artifacts = fixture.SarifArtifacts;
         if (artifacts.Unreadable is not null)
             findings.Add(
@@ -289,9 +280,9 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
 
         // The heartbeat reads jb's per-file output to say "analyzing 402 files", and the timeout message
         // spends that count on a claim about a retry resuming. Losing the vocabulary costs a quieter
-        // notification and a hedged timeout message, never a broken run — so it is watched, not pinned. Only
+        // notification and a hedged timeout message, never a broken run, so it is watched, not pinned. Only
         // inspectcode is held to producing per-file lines: cleanupcode names its files as bare paths that
-        // nothing can recognise, which is the measured state of affairs rather than drift.
+        // nothing can recognise, and that is its normal output rather than drift.
         ProgressVocabulary? inspectVocabulary = VocabularyOf("inspectcode");
         if (inspectVocabulary is null)
             findings.Add(
@@ -320,8 +311,8 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
                 $"jb has moved to major line {majorLine}; these contracts were last read by hand against "
                 + $"{JbContractFixture.LastVerifiedMajorLine}. Re-read them and move LastVerifiedMajorLine.");
 
-        // An unmapped level passes through verbatim and upper-cased, so it would reach an agent as a severity
-        // label nothing in the formatter knows — sortable, but not one of the three tiers documented anywhere.
+        // An unmapped level passes through upper-cased but otherwise verbatim, so it would reach an agent as a
+        // severity label nothing in the formatter knows: sortable, but not one of the InspectSeverity tiers.
         List<string> unmapped = fixture.Issues
             .Select(issue => issue.Severity)
             .Where(severity => !MappedSeverities.Contains(severity))
@@ -342,7 +333,7 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
         if (!string.IsNullOrWhiteSpace(reportPath)) await File.WriteAllTextAsync(reportPath, report, Ct);
     }
 
-    /// <summary>The report the workflow publishes: what was observed, then the drift.</summary>
+    /// <summary>Builds the report the workflow publishes: what was observed, then the drift.</summary>
     /// <remarks>
     ///     Only the finding lines start with <c>- </c>, which is what the workflow turns into annotations, so the
     ///     observations can stay in the summary of a run with nothing wrong with it. Explicit <c>'\n'</c> keeps
@@ -410,7 +401,7 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
     }
 
     /// <summary>
-    ///     What one subcommand's real output looked like to the progress reader, or <see langword="null" />
+    ///     Returns what one subcommand's output looked like to the progress reader, or <see langword="null" />
     ///     when no run of it wrote a line at all.
     /// </summary>
     private ProgressVocabulary? VocabularyOf(string subcommand)
@@ -428,11 +419,10 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
         return issues.Count == 0 ? "none" : string.Join(", ", distinct);
     }
 
-    /// <summary>The <c>YYYY.N</c> prefix of a full <c>jb</c> version.</summary>
-    /// <remarks>
-    ///     Patch releases have to pass in silence — some thirty a year — so only this much of the version is
-    ///     compared.
-    /// </remarks>
+    /// <summary>
+    ///     Returns the <c>YYYY.N</c> prefix of a full <c>jb</c> version, the part
+    ///     <see cref="JbContractFixture.LastVerifiedMajorLine" /> is compared against.
+    /// </summary>
     private static string MajorLineOf(string version)
     {
         string[] parts = version.Split('.');

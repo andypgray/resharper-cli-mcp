@@ -4,44 +4,16 @@ using System.Text.Json.Serialization;
 namespace Zphil.ReSharperCli.Pipeline;
 
 /// <summary>
-///     Coerces malformed scalar <c>string</c> tool inputs into the value the caller clearly
-///     intended. Symmetric counterpart to <see cref="StringArrayCoercerFactory" />.
+///     Coerces malformed scalar <c>string</c> tool inputs into the value the caller intended. Symmetric
+///     counterpart to <see cref="StringArrayCoercerFactory" />.
 /// </summary>
 /// <remarks>
 ///     <para>
 ///         Models routinely wrap a single value in a one-element array (<c>["A"]</c>) where a scalar
-///         <c>string</c> is advertised; the SDK default surfaces this as a generic byte-position
-///         deserializer error that gives the model nothing actionable and burns retries.
+///         <c>string</c> is advertised, so a one-string array unwraps and an empty one reads as absent. A string
+///         that looks like an array (<c>"[A]"</c>) is never unwrapped: a literal string argument must survive
+///         untouched.
 ///     </para>
-///     <para>
-///         Handled token shapes for any <c>string</c> (or <c>string?</c>) parameter:
-///     </para>
-///     <list type="bullet">
-///         <item>
-///             <description>
-///                 <c>String</c> → pass through verbatim. Strings that happen to look like
-///                 arrays (e.g. <c>"[A]"</c>) are NOT unwrapped — a literal string argument
-///                 must survive untouched.
-///             </description>
-///         </item>
-///         <item>
-///             <description><c>Null</c> → <c>null</c>.</description>
-///         </item>
-///         <item>
-///             <description>
-///                 <c>StartArray</c> with a single <c>String</c> element (<c>["A"]</c>) →
-///                 unwrap to the string. The empty array <c>[]</c> coerces to <c>null</c>
-///                 (semantic match for "absent").
-///             </description>
-///         </item>
-///         <item>
-///             <description>
-///                 <c>StartArray</c> with multiple elements, with a non-string element, or
-///                 any other token (number, object, boolean) → throw <see cref="UserErrorException" />
-///                 naming the offending token kind.
-///             </description>
-///         </item>
-///     </list>
 ///     <para>
 ///         <see cref="JsonConverter{T}" /> on <c>string?</c> serves both <c>string</c> and
 ///         <c>string?</c> parameters: <c>string</c> is a reference type and
@@ -91,8 +63,8 @@ internal sealed class StringCoercerFactory : JsonConverterFactory
         }
 
         /// <summary>
-        ///     Reads a JSON array opened by the caller and collapses it to a single string per
-        ///     the rules in the class remarks.
+        ///     Reads a JSON array opened by the caller and collapses it to its one string element, or to
+        ///     <see langword="null" /> when it is empty.
         /// </summary>
         /// <remarks>
         ///     Hand-rolled to avoid recursing through <see cref="StringCoercerFactory" /> via

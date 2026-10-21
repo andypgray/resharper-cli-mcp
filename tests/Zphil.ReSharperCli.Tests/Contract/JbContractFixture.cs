@@ -14,8 +14,8 @@ using Zphil.ReSharperCli.Tests.TestSupport;
 namespace Zphil.ReSharperCli.Tests.Contract;
 
 /// <summary>
-///     Everything <see cref="JbContractTests" /> asserts over, produced once by a handful of real <c>jb</c>
-///     runs against a real copy of the fixture solution.
+///     Produces everything <see cref="JbContractTests" /> asserts over, once, from a handful of real <c>jb</c>
+///     runs against a copy of the fixture solution.
 /// </summary>
 /// <remarks>
 ///     <para>
@@ -28,18 +28,20 @@ namespace Zphil.ReSharperCli.Tests.Contract;
 ///         paths, so copying the built output would point back at the working tree.
 ///     </para>
 ///     <para>
-///         <see cref="InitializeAsync" /> does nothing at all when <c>jb</c> is absent. The skip gate on the
-///         test methods reports them as skipped either way, but a class fixture is built before those gates
-///         decide anything, so the fixture has to be the thing that costs nothing on a machine — or a release
-///         runner — with no <c>jb</c> installed.
+///         <see cref="InitializeAsync" /> returns before creating anything when <c>jb</c> is absent, which is
+///         why the environment seam, whose constructor creates temp directories, and the child-process lifetime
+///         are created there rather than in field initializers. The skip gate on the test methods reports them
+///         as skipped either way, but a class fixture is built before those gates decide anything, so the
+///         fixture is what has to cost nothing on a machine with no <c>jb</c> installed, a release runner
+///         included.
 ///     </para>
 /// </remarks>
 public sealed class JbContractFixture : IAsyncLifetime
 {
     /// <summary>The <c>jb</c> major line (<c>YYYY.N</c>) these contracts were last read against by hand.</summary>
     /// <remarks>
-    ///     JetBrains ships roughly two major lines and thirty patch releases a year; the patches have to pass in
-    ///     silence or the signal drowns, so only a change to this line is reported.
+    ///     JetBrains ships patch releases far more often than major lines, and a finding on every patch would
+    ///     drown the signal, so only a change of major line is reported.
     /// </remarks>
     internal const string LastVerifiedMajorLine = "2026.2";
 
@@ -66,7 +68,7 @@ public sealed class JbContractFixture : IAsyncLifetime
     private const string FixtureDirectoryName = "ContractSolution";
     private const string SolutionFileName = "ContractFixture.slnx";
 
-    /// <summary>A file that genuinely does not compile, planted only in the copy that exists to provoke one.</summary>
+    /// <summary>A file that does not compile, planted only in the broken copy.</summary>
     private const string BrokenFileName = "Broken.cs";
 
     private const string BrokenFileContent = """
@@ -88,11 +90,11 @@ public sealed class JbContractFixture : IAsyncLifetime
 
     /// <summary>The <c>jb</c> this machine has, probed once per process.</summary>
     /// <remarks>
-    ///     Deliberately not <see cref="JbLocator.LocateAsync" /> — the gate has to be synchronous
-    ///     (<c>SkipUnless</c> reads a bool property), and it keeps the raw version banner the tests assert on —
-    ///     but it enumerates <see cref="JbLocator.Candidates" /> and spawns <see cref="JbLocator.ProbeArguments" />,
-    ///     so a candidate added to the product is a candidate this gate finds. What <see cref="JbLocator" /> makes
-    ///     of the same candidates is a contract in its own right, asserted rather than assumed.
+    ///     Not <see cref="JbLocator.LocateAsync" />, because the gate has to be synchronous (<c>SkipUnless</c>
+    ///     reads a bool property) and the tests assert on the raw version banner, which this keeps. It does
+    ///     enumerate <see cref="JbLocator.Candidates" /> and spawn <see cref="JbLocator.ProbeArguments" />, so a
+    ///     candidate added to the product is a candidate this gate finds. What <see cref="JbLocator" /> makes of
+    ///     the same candidates is a contract of its own, asserted rather than assumed.
     /// </remarks>
     private static readonly Lazy<JbPresence> Presence = new(LocateJb);
 
@@ -104,26 +106,20 @@ public sealed class JbContractFixture : IAsyncLifetime
     /// </summary>
     private readonly CapturingLoggerProvider _serverLog = new();
 
-    /// <summary>
-    ///     Created only once <see cref="InitializeAsync" /> has decided there is a <c>jb</c> to run, so the
-    ///     fixture still costs nothing on a machine without one.
-    /// </summary>
     private ChildProcessLifetime? _childLifetime;
 
-    /// <summary>
-    ///     The environment seam, created only once <see cref="InitializeAsync" /> has decided there is a
-    ///     <c>jb</c> to run: constructing one creates two temp directories, and the fixture has to cost nothing
-    ///     on a machine without <c>jb</c>.
-    /// </summary>
     private FakeEnvironment? _environment;
 
     /// <summary>The process seam every run goes through, kept so a cleanup pass can read back what jb printed.</summary>
     private LineRecordingRunner? _runs;
 
-    /// <summary>Whether a <c>jb</c> was found, and so whether any of the members below were ever filled in.</summary>
+    /// <summary>
+    ///     Gets a value indicating whether a <c>jb</c> was found, and so whether any of the members below were
+    ///     filled in.
+    /// </summary>
     public static bool IsInstalled => Presence.Value.ExecutablePath is not null;
 
-    /// <summary>The banner <c>jb inspectcode --version</c> printed, captured by the gate probe.</summary>
+    /// <summary>Gets the banner <c>jb inspectcode --version</c> printed, captured by the gate probe.</summary>
     /// <remarks>
     ///     Throws when no <c>jb</c> was found, which a test the gate let through never reaches. A throw rather
     ///     than a defaulted result, because a defaulted one reads as "exit code 0, no output", which is a failure
@@ -132,53 +128,53 @@ public sealed class JbContractFixture : IAsyncLifetime
     internal static ProcessResult VersionProbe =>
         Presence.Value.Probe ?? throw new InvalidOperationException("No jb was found, so no version was captured.");
 
-    /// <summary>What <see cref="JbLocator" /> made of the same machine — the product's own discovery path.</summary>
+    /// <summary>Gets what <see cref="JbLocator" /> made of this machine, by the product's own discovery path.</summary>
     internal JbInstallation Installation { get; private set; } = null!;
 
-    /// <summary>The configuration a real call resolves for the fixture solution, warnings and all.</summary>
+    /// <summary>Gets the configuration a real call resolves for the fixture solution, warnings and all.</summary>
     internal ResolvedConfig Config { get; private set; } = null!;
 
-    /// <summary>What a solution-wide <c>resharper_inspect</c> reports, at the widest severity.</summary>
+    /// <summary>Gets what a solution-wide <c>resharper_inspect</c> reports, at the widest severity.</summary>
     internal IReadOnlyList<InspectIssue> Issues { get; private set; } = [];
 
-    /// <summary>The same, over a copy carrying a genuine compilation error.</summary>
+    /// <summary>Gets the same report over a copy carrying a compilation error.</summary>
     internal IReadOnlyList<InspectIssue> BrokenSolutionIssues { get; private set; } = [];
 
-    /// <summary>Its resolved configuration, whose cache home the compilation-error note has to name.</summary>
+    /// <summary>Gets the broken copy's configuration, whose cache home the compilation-error note must name.</summary>
     internal ResolvedConfig BrokenSolutionConfig { get; private set; } = null!;
 
-    /// <summary>A cleanup pass with the built-in profile literal, over a relative path.</summary>
+    /// <summary>Gets a cleanup pass with the built-in profile literal, over a relative path.</summary>
     internal CleanupRun BuiltInProfileCleanup { get; private set; } = null!;
 
-    /// <summary>A cleanup pass with no profile argument, over an absolute one.</summary>
+    /// <summary>Gets a cleanup pass with no profile argument, over an absolute path.</summary>
     internal CleanupRun DeclaredProfileCleanup { get; private set; } = null!;
 
-    /// <summary>How each subcommand answered an <c>--include</c> that was left absolute.</summary>
+    /// <summary>Gets how each subcommand answered an absolute <c>--include</c>.</summary>
     internal RawIncludeProbe RawAbsoluteInclude { get; private set; } = null!;
 
-    /// <summary>What the solution-wide inspect's report lists under <c>run.artifacts</c>.</summary>
+    /// <summary>Gets what the solution-wide inspect's report lists under <c>run.artifacts</c>.</summary>
     internal SarifArtifactsProbe SarifArtifacts { get; private set; } = null!;
 
     /// <summary>
-    ///     What <see cref="JbProgressLines" /> made of the standard output of the real runs above, per
-    ///     subcommand.
+    ///     Gets what <see cref="JbProgressLines" /> made of the standard output of the runs above, per subcommand.
     /// </summary>
     /// <remarks>
-    ///     The progress heartbeat is driven entirely off that classification, and it is reading someone else's
-    ///     undocumented output — so it is watched here rather than assumed.
+    ///     The progress heartbeat's phase and file count come from that classification, which reads someone
+    ///     else's undocumented output, so it is watched here rather than assumed.
     /// </remarks>
     internal IReadOnlyDictionary<string, ProgressVocabulary> ProgressVocabularies => _progressVocabularies;
 
-    /// <summary>The solution the runs above analysed, and the cache home they filled.</summary>
+    /// <summary>Gets the solution file the runs above analysed.</summary>
     internal string SolutionPath { get; private set; } = "";
 
+    /// <summary>Gets the cache home the runs above filled.</summary>
     internal string CacheHome { get; private set; } = "";
 
     private static string FixtureDirectory => Fixtures.PathTo(FixtureDirectoryName);
 
     /// <summary>
-    ///     <see cref="_environment" />, for the steps <see cref="InitializeAsync" /> reaches only after creating
-    ///     it.
+    ///     Gets <see cref="_environment" />, for the steps <see cref="InitializeAsync" /> reaches only after
+    ///     creating it.
     /// </summary>
     private FakeEnvironment SeamEnvironment =>
         _environment ?? throw new InvalidOperationException("No jb was found, so no environment was created.");
@@ -202,9 +198,9 @@ public sealed class JbContractFixture : IAsyncLifetime
         _childLifetime = new ChildProcessLifetime(new SystemEnvironment(), NullLogger<ChildProcessLifetime>.Instance);
         ProcessRunner realProcessRunner = new(_childLifetime, serverLog.CreateLogger<ProcessRunner>());
 
-        // Every run below goes through the recorder, so the runs that answer the other contracts answer the
-        // progress-vocabulary one for free — and answer it from the same bytes jb actually wrote, split by
-        // the product's own reader rather than by a re-spelling of it.
+        // Every run below goes through the recorder, so the runs that answer the other contracts also answer
+        // the progress-vocabulary one, from the bytes jb wrote, split by the product's own reader rather than
+        // by a re-spelling of it.
         _runs = new LineRecordingRunner(realProcessRunner, RecordProgressLine);
         IProcessRunner processRunner = _runs;
 
@@ -289,9 +285,8 @@ public sealed class JbContractFixture : IAsyncLifetime
 
     /// <summary>Resolves the broken copy against a cache home of its own.</summary>
     /// <remarks>
-    ///     The two copies share a solution <em>file name</em>, which is exactly what makes one a transplant donor
-    ///     for the other — and a run seeded from a sibling is not the cold run the compilation-error check means
-    ///     to be making.
+    ///     The two copies share a solution file name, which makes each a transplant donor for the other, and a
+    ///     run seeded from a sibling is not the cold run the compilation-error check means to make.
     /// </remarks>
     private async Task<ResolvedConfig> ResolveBrokenSolutionAsync(
         ConfigResolver configResolver, string brokenSolutionPath, CancellationToken cancellationToken)
@@ -313,7 +308,7 @@ public sealed class JbContractFixture : IAsyncLifetime
     /// </summary>
     /// <remarks>
     ///     The restore is what makes a pass detectable more than once: cleanup is idempotent, so a second pass
-    ///     over an already-formatted file rewrites nothing and the check would pass vacuously.
+    ///     over an already-formatted file rewrites nothing and the check would pass with nothing to detect.
     /// </remarks>
     private async Task<CleanupRun> CleanUpAsync(
         CleanupService cleanupService,
@@ -347,7 +342,7 @@ public sealed class JbContractFixture : IAsyncLifetime
         return new CleanupRun(outcome, evidence);
     }
 
-    /// <summary>This solution's cache generations under the run's cache home, by directory name.</summary>
+    /// <summary>Lists this solution's cache generations under the run's cache home, by directory name.</summary>
     private string GenerationNames()
     {
         JbSolutionGenerations generations = JbCacheGenerations.FindFor(Config.CacheHome, Config.SolutionPath);
@@ -358,7 +353,7 @@ public sealed class JbContractFixture : IAsyncLifetime
         return names.Count == 0 ? "none" : string.Join(", ", names);
     }
 
-    /// <summary>Everything beside the cleanup target, so a save that left a temporary file behind shows.</summary>
+    /// <summary>Lists everything beside the cleanup target, so a save that left a temp file behind shows.</summary>
     private string SolutionDirectoryListing()
     {
         IEnumerable<string> entries = new DirectoryInfo(Config.SolutionDirectory)
@@ -374,7 +369,7 @@ public sealed class JbContractFixture : IAsyncLifetime
         return string.Join(", ", outcome.Entries.Select(entry => $"{entry.Display} {entry.Status}"));
     }
 
-    /// <summary>What the server logged from entry <paramref name="first" /> on, one indented line each.</summary>
+    /// <summary>Renders the server's log from entry <paramref name="first" /> on, one indented line each.</summary>
     private string ServerLogSince(int first)
     {
         IEnumerable<string> lines = _serverLog.Entries
@@ -385,8 +380,8 @@ public sealed class JbContractFixture : IAsyncLifetime
     }
 
     /// <summary>
-    ///     Whether a line <c>jb</c> printed names <paramref name="fileName" /> after <paramref name="prefix" />, or
-    ///     <see langword="null" /> when no run was captured.
+    ///     Returns whether a line <c>jb</c> printed names <paramref name="fileName" /> after
+    ///     <paramref name="prefix" />, or <see langword="null" /> when no run was captured.
     /// </summary>
     private static bool? Printed(ProcessResult? jb, string fileName, string prefix = "")
     {
@@ -397,9 +392,9 @@ public sealed class JbContractFixture : IAsyncLifetime
     }
 
     /// <summary>
-    ///     Whether <paramref name="path" /> ends in the file <paramref name="fileName" />: a path, a line of
-    ///     <c>jb</c>'s output naming one, or a SARIF <c>file://</c> URI, whose last segment is the file name all
-    ///     the same.
+    ///     Determines whether <paramref name="path" /> ends in the file <paramref name="fileName" />: a path, a
+    ///     line of <c>jb</c>'s output naming one, or a SARIF <c>file://</c> URI, whose last segment is the file
+    ///     name all the same.
     /// </summary>
     private static bool NamesFile(string path, string fileName)
     {
@@ -408,7 +403,7 @@ public sealed class JbContractFixture : IAsyncLifetime
         return string.Equals(Path.GetFileName(path.Trim()), fileName, StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>The last <paramref name="count" /> non-blank lines of <paramref name="text" />, indented.</summary>
+    /// <summary>Returns <paramref name="text" />'s last <paramref name="count" /> non-blank lines, indented.</summary>
     private static string Tail(string? text, int count)
     {
         if (text is null) return "  (no run captured)\n";
@@ -422,7 +417,10 @@ public sealed class JbContractFixture : IAsyncLifetime
         return lines.Count == 0 ? "  (none)\n" : string.Concat(lines.TakeLast(count).Select(line => $"  {line}\n"));
     }
 
-    /// <summary>What <paramref name="read" /> produces, or why it could not, as <see cref="DescribeFailure" /> puts it.</summary>
+    /// <summary>
+    ///     Returns what <paramref name="read" /> produces, or why it could not, as <see cref="DescribeFailure" />
+    ///     puts it.
+    /// </summary>
     private static string Safely(Func<string> read)
     {
         try
@@ -435,7 +433,7 @@ public sealed class JbContractFixture : IAsyncLifetime
         }
     }
 
-    /// <summary>A reading that failed, as one line of evidence.</summary>
+    /// <summary>Describes a reading that failed as one line of evidence.</summary>
     /// <remarks>
     ///     Evidence is gathered inside <see cref="InitializeAsync" />, where one exception would fail every test in
     ///     the class, so every reading that can fail is caught and described with this instead. Line breaks are
@@ -448,9 +446,9 @@ public sealed class JbContractFixture : IAsyncLifetime
 
     /// <summary>Runs both subcommands with the <c>--include</c> left absolute.</summary>
     /// <remarks>
-    ///     This is the one place the suite spells a <c>jb</c> argument itself, because <em>not</em> applying
-    ///     <see cref="FilePathList.ToIncludePattern" /> is the whole point of the probe — and even here only the
-    ///     include entry is swapped, so a change to how a run is configured still reaches it.
+    ///     This is the one place the suite spells a <c>jb</c> argument itself, because what the probe observes is
+    ///     <c>jb</c> given an include that <see cref="FilePathList.ToIncludePattern" /> never translated. Even
+    ///     here only the include entry is swapped, so a change to how a run is configured still reaches it.
     /// </remarks>
     private async Task<RawIncludeProbe> ProbeRawAbsoluteIncludeAsync(
         JbRunner jbRunner, string absolutePath, CancellationToken cancellationToken)
@@ -470,8 +468,8 @@ public sealed class JbContractFixture : IAsyncLifetime
 
         int inspectExitCode = await ExitCodeOfAsync(jbRunner, inspectArguments, cancellationToken);
 
-        // No output file at all is one of the two refusals this has been seen to make, so its absence is
-        // read as "reported nothing" rather than as a failure.
+        // Writing no output file is one way jb refuses an absolute include, so a missing file is read as
+        // "reported nothing" rather than as a failure.
         var issues = 0;
         if (File.Exists(outputFile))
         {
@@ -482,7 +480,7 @@ public sealed class JbContractFixture : IAsyncLifetime
         return new RawIncludeProbe(cleanupExitCode, new RawIncludeInspect(inspectExitCode, issues));
     }
 
-    /// <summary>The exit code of one run, whichever way it ended.</summary>
+    /// <summary>Returns the exit code of one run, whichever way it ended.</summary>
     /// <remarks>
     ///     <see cref="JbRunner" /> raises a non-zero exit as an exception; here the code itself is the observation.
     /// </remarks>
@@ -508,7 +506,7 @@ public sealed class JbContractFixture : IAsyncLifetime
     }
 
     /// <summary>
-    ///     Sets what the solution-wide inspect's report lists under <c>run.artifacts</c> beside what jb printed
+    ///     Records what the solution-wide inspect's report lists under <c>run.artifacts</c>, beside what jb printed
     ///     about <see cref="CleanFileName" /> and what <see cref="SarifParser" /> made of the same report.
     /// </summary>
     /// <remarks>
@@ -544,8 +542,8 @@ public sealed class JbContractFixture : IAsyncLifetime
     }
 
     /// <summary>
-    ///     The location URI of every entry in every run's <c>artifacts</c> array, null for an entry that names
-    ///     none, or <see langword="null" /> when no run carries the array at all.
+    ///     Returns the location URI of every entry in every run's <c>artifacts</c> array, null for an entry that
+    ///     names none, or <see langword="null" /> when no run carries the array at all.
     /// </summary>
     private static List<string?>? ArtifactUris(JsonElement report)
     {
@@ -582,7 +580,7 @@ public sealed class JbContractFixture : IAsyncLifetime
         }
     }
 
-    /// <summary>The <c>jb</c> the gate found, and the version banner it printed.</summary>
+    /// <summary>Returns the first candidate that answers the version probe, with the banner it printed.</summary>
     private static JbPresence LocateJb()
     {
         SystemEnvironment environment = new();
@@ -595,8 +593,8 @@ public sealed class JbContractFixture : IAsyncLifetime
         foreach (string candidate in JbLocator.Candidates(environment.HomeDirectory))
             try
             {
-                // Blocking on purpose: SkipUnless reads a bool property, so the gate cannot be async, and
-                // xUnit installs no synchronization context for this to deadlock against.
+                // Blocking, because the gate cannot be async; xUnit installs no synchronization context for
+                // this to deadlock against.
                 ProcessResult result = runner
                     .RunAsync(candidate, JbLocator.ProbeArguments, JbLocator.ProbeTimeout, CancellationToken.None)
                     .GetAwaiter()
@@ -623,7 +621,7 @@ public sealed class JbContractFixture : IAsyncLifetime
             CopyDirectory(directory, Path.Combine(destination, Path.GetFileName(directory)));
     }
 
-    /// <summary>A <c>jb</c> executable the gate probe accepted, with the banner it printed.</summary>
+    /// <summary>Represents what the gate probe found: an accepted <c>jb</c> and its banner, or neither.</summary>
     private sealed record JbPresence(string? ExecutablePath, ProcessResult? Probe);
 
     /// <summary>
@@ -632,16 +630,15 @@ public sealed class JbContractFixture : IAsyncLifetime
     ///     wrote.
     /// </summary>
     /// <remarks>
-    ///     A decorator rather than a progress sink threaded through the services, because the two see
-    ///     different things: a progress sink receives this server's own rendering, on a heartbeat, which says
-    ///     nothing about the words <c>jb</c> used. The observation this suite exists to make is about <c>jb</c>'s
-    ///     vocabulary, so it has to be made where the vocabulary is. The report is kept here for the same reason:
-    ///     <see cref="InspectService" /> deletes it as soon as it has parsed it, so the only window in which its raw
-    ///     text exists is between <c>jb</c>'s exit and this method's return.
+    ///     A decorator rather than a progress sink threaded through the services, because a progress sink
+    ///     receives this server's own rendering on a heartbeat, which says nothing about the words <c>jb</c>
+    ///     used: the vocabulary has to be observed where <c>jb</c>'s output is. The report is kept here because
+    ///     <see cref="InspectService" /> deletes it once parsed, so its raw text exists only between <c>jb</c>'s
+    ///     exit and this method's return.
     /// </remarks>
     private sealed class LineRecordingRunner(IProcessRunner inner, Action<string, string> record) : IProcessRunner
     {
-        /// <summary>What the most recent run returned, or <see langword="null" /> when it threw.</summary>
+        /// <summary>Gets what the most recent run returned, or <see langword="null" /> when it threw.</summary>
         /// <remarks>
         ///     The fixture runs one thing at a time, so a caller that reads this as soon as its run returns reads
         ///     its own result.
@@ -649,7 +646,7 @@ public sealed class JbContractFixture : IAsyncLifetime
         public ProcessResult? LastResult { get; private set; }
 
         /// <summary>
-        ///     The report the most recent run wrote, or <see langword="null" /> when it named no output file,
+        ///     Gets the report the most recent run wrote, or <see langword="null" /> when it named no output file,
         ///     wrote none, or the file could not be read.
         /// </summary>
         public string? LastReport { get; private set; }

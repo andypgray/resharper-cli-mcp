@@ -37,8 +37,9 @@ internal static class JbInstalls
     }
 
     /// <summary>
-    ///     What <c>dotnet tool update</c> does to the shim, as far as a stat can tell: the write time moves on
-    ///     and the size stays, since the shim is an apphost whose size does not depend on the build it starts.
+    ///     Does to <paramref name="file" /> what <c>dotnet tool update</c> does to the shim, as far as a stat can
+    ///     tell: the write time moves on and the size stays, since the shim is an apphost whose size does not
+    ///     depend on the build it starts.
     /// </summary>
     public static void UpdateInPlace(string file)
     {

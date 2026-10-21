@@ -4,42 +4,11 @@ using System.Text.Json.Serialization;
 namespace Zphil.ReSharperCli.Pipeline;
 
 /// <summary>
-///     Coerces malformed <c>string[]</c> tool inputs into the array the caller clearly intended.
+///     Coerces malformed <c>string[]</c> tool inputs into the array the caller intended.
 /// </summary>
 /// <remarks>
-///     <para>
-///         Models routinely send a JSON-encoded string (<c>"[\"A\",\"B\"]"</c>) where an array is
-///         advertised, and one bare string (<c>"A"</c>) where a single-element array is expected; the SDK
-///         default surfaces both as a generic byte-position deserializer error that gives the model nothing
-///         actionable and burns retries.
-///     </para>
-///     <para>
-///         Handled token shapes for any <c>string[]</c> parameter:
-///     </para>
-///     <list type="bullet">
-///         <item>
-///             <description><c>StartArray</c> → read as a normal JSON array of strings.</description>
-///         </item>
-///         <item>
-///             <description>
-///                 <c>String</c> whose contents parse as a JSON array of strings → return the
-///                 unwrapped array. Surrounding whitespace is tolerated.
-///             </description>
-///         </item>
-///         <item>
-///             <description>
-///                 Any other <c>String</c> (including the empty string and strings that look like
-///                 arrays but are not valid JSON arrays of strings) → return a single-element
-///                 array containing the string verbatim.
-///             </description>
-///         </item>
-///         <item>
-///             <description>
-///                 Any other token (number, object, boolean) → throw <see cref="UserErrorException" />
-///                 naming the offending token kind.
-///             </description>
-///         </item>
-///     </list>
+///     Models routinely send a JSON-encoded string (<c>"[\"A\",\"B\"]"</c>) where an array is advertised,
+///     and one bare string (<c>"A"</c>) where a single-element array is expected.
 /// </remarks>
 internal sealed class StringArrayCoercerFactory : JsonConverterFactory
 {

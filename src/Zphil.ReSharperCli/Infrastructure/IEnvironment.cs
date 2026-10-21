@@ -1,7 +1,7 @@
 namespace Zphil.ReSharperCli.Infrastructure;
 
 /// <summary>
-///     The single seam through which product code reads process environment variables, the current
+///     Defines the single seam through which product code reads process environment variables, the current
 ///     working directory, and the user's home directory.
 /// </summary>
 /// <remarks>

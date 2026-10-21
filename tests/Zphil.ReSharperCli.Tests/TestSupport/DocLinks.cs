@@ -3,12 +3,12 @@ using System.Text.RegularExpressions;
 namespace Zphil.ReSharperCli.Tests.TestSupport;
 
 /// <summary>
-///     Extracts the curated set of external documentation links (JetBrains + StyleCop.Analyzers) that the
+///     Extracts the curated set of external documentation links (JetBrains and StyleCop.Analyzers) that the
 ///     repo's markdown cites.
 /// </summary>
 /// <remarks>
-///     Pure, offline, deterministic — no network, no environment reads — so it is safe under the parallel
-///     runner.
+///     Offline and deterministic, with no network access and no environment reads, so it is safe under the
+///     parallel runner.
 /// </remarks>
 internal static partial class DocLinks
 {
@@ -24,7 +24,8 @@ internal static partial class DocLinks
     }
 
     /// <summary>
-    ///     The deduped curated external doc links, each paired with the repo-relative files that cite it.
+    ///     Returns the deduplicated curated external doc links, each paired with the repo-relative files that
+    ///     cite it.
     /// </summary>
     public static IReadOnlyList<ExternalDocLink> ExtractExternalDocLinks()
     {
@@ -56,9 +57,9 @@ internal static partial class DocLinks
             .ToList();
     }
 
-    // Keep only the third-party doc links we curate: JetBrains help/marketing pages (but not the
-    // bare-domain trademark link, whose path is just "/") and the blog, plus StyleCop.Analyzers docs and
-    // schema. Anchoring GitHub to /DotNetAnalyzers/ naturally excludes our own github.com/andypgray links.
+    // The curated third-party doc links: JetBrains help and marketing pages (but not the bare-domain
+    // trademark link, whose path is "/") and the blog, plus StyleCop.Analyzers docs and schema. Anchoring
+    // GitHub to /DotNetAnalyzers/ also excludes this repo's own github.com/andypgray links.
     private static bool IsCuratedDocLink(string url)
     {
         if (!Uri.TryCreate(url, UriKind.Absolute, out Uri? uri)) return false;

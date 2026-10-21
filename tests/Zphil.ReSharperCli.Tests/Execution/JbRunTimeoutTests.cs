@@ -5,20 +5,20 @@ using Zphil.ReSharperCli.Execution;
 namespace Zphil.ReSharperCli.Tests.Execution;
 
 /// <summary>
-///     How <c>RESHARPER_MCP_TIMEOUT_SECS</c> reads: a value nobody can make sense of costs the shipped default,
-///     never a failed call, and the clamps keep a plausible typo from turning the cap into something worse than
-///     having no lever at all.
+///     Pins how <c>RESHARPER_MCP_TIMEOUT_SECS</c> reads: a value nobody can make sense of costs the shipped
+///     default, never a failed call, and the clamps keep a plausible typo from turning the cap into something
+///     worse than having no lever at all.
 /// </summary>
 /// <remarks>
-///     A pure <c>(string?) → TimeSpan</c>, which is what keeps the variable out of the parallel suite's way:
-///     nothing here touches real process environment.
+///     A pure function from <c>string?</c> to <c>TimeSpan</c>, which is what keeps the variable out of the
+///     parallel suite's way: nothing here touches the real process environment.
 /// </remarks>
 public sealed class JbRunTimeoutTests
 {
     [Fact]
     public void Default_IsSixHundredSeconds()
     {
-        // The number itself matters, not just the lever: a cold whole-solution analysis needs more than five
+        // The number matters as well as the lever: a cold whole-solution analysis needs more than five
         // minutes, and no MCP client imposes a shorter limit of its own.
         JbRunTimeout.Default.ShouldBe(TimeSpan.FromSeconds(600));
     }
@@ -36,8 +36,8 @@ public sealed class JbRunTimeoutTests
     [InlineData("-5")]
     public void Resolve_UnusableValue_FallsBackToTheDefault(string? envValue)
     {
-        // A misconfigured variable must never be the reason a call fails, so every unreadable spelling —
-        // including the non-finite ones that would throw out of TimeSpan.FromSeconds — lands on the default.
+        // A misconfigured variable must never be the reason a call fails, so every unreadable spelling lands on
+        // the default, including the non-finite ones that would throw out of TimeSpan.FromSeconds.
         JbRunTimeout.Resolve(envValue).ShouldBe(JbRunTimeout.Default);
     }
 
@@ -68,8 +68,8 @@ public sealed class JbRunTimeoutTests
     [InlineData("1e300")]
     public void Resolve_AboveTheCeiling_IsCappedAtADay(string envValue)
     {
-        // Bounding a hung jb is the whole point of having a cap; a value large enough to overflow
-        // TimeSpan.FromSeconds must clamp rather than throw on the way past.
+        // A cap exists to bound a hung jb, so a value large enough to overflow TimeSpan.FromSeconds must clamp
+        // rather than throw on the way past.
         JbRunTimeout.Resolve(envValue).ShouldBe(TimeSpan.FromHours(24));
     }
 

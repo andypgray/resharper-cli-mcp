@@ -19,7 +19,9 @@ public sealed class CoercionIntegrationTests(AdvertisedToolsFixture advertised)
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-    /// <summary>Each enum parameter inspect takes, and the values its schema must list in declaration order.</summary>
+    /// <summary>
+    ///     Gets each enum parameter inspect takes, and the values its schema must list in declaration order.
+    /// </summary>
     public static TheoryData<string, string[]> InspectEnumParameters =>
         new()
         {
@@ -27,7 +29,7 @@ public sealed class CoercionIntegrationTests(AdvertisedToolsFixture advertised)
             // A second enum, which is what shows the re-injection generalises rather than being special-cased to
             // severity.
             { "report", ["None", "Markdown"] },
-            // The five levels in ladder order, so the description prose never has to name them.
+            // The levels in ladder order, so the description prose never has to name them.
             { "detail", ["Full", "High", "Medium", "Low", "Minimal"] }
         };
 
@@ -61,7 +63,7 @@ public sealed class CoercionIntegrationTests(AdvertisedToolsFixture advertised)
         JsonElement schema = inspect.PropertySchema(parameter);
 
         // Assert — EnumValidationConverterFactory erases the enum's shape; re-injection restores both the
-        // string type AND the value list, so the allowed values travel in the schema itself. This is the
+        // string type and the value list, so the allowed values travel in the schema itself. This is the
         // guard that lets the description prose stay free of the enum names.
         schema.GetProperty("type").GetString().ShouldBe("string");
         inspect.EnumValues(parameter).ShouldBe(values);
@@ -70,9 +72,9 @@ public sealed class CoercionIntegrationTests(AdvertisedToolsFixture advertised)
     [Fact]
     public void ListTools_ScalarStringParameters_AdvertiseStringType()
     {
-        // Arrange — the scalar-string reinjection is load-bearing: this project's exporter erases every
-        // string?/string parameter to a bare {} under StringCoercerFactory. Assert a representative one
-        // on each tool advertises a plain "string" (not {}, and not a ["string","null"] union).
+        // Arrange — this project's exporter erases every string?/string parameter to a bare {} under
+        // StringCoercerFactory, so the scalar-string reinjection is what puts the type back. Assert that a
+        // representative one on each tool advertises a plain "string" (not {}, and not a ["string","null"] union).
         McpClientTool inspect = advertised.Tools.Single(tool => tool.Name == "resharper_inspect");
         McpClientTool cleanup = advertised.Tools.Single(tool => tool.Name == "resharper_cleanup");
 

@@ -4,35 +4,32 @@ using Zphil.ReSharperCli.Infrastructure;
 namespace Zphil.ReSharperCli.Discovery;
 
 /// <summary>
-///     What went wrong while resolving configuration, in a form a tool can report rather than only log.
+///     Represents what went wrong while resolving configuration, in a form a tool can report rather than only
+///     log.
 /// </summary>
 /// <remarks>
-///     Neither of these fails a call — both degrade it silently, which is exactly why they have to be said
-///     out loud, and their blast radii differ: <see cref="MissingSettingsPath" /> means the settings file
-///     the user named was never applied, taking inspection severities and cleanup profiles with it, while
-///     <see cref="SettingsRead" /> means <c>jb</c> got the file and parsed it fine and only this server's
-///     own profile lookup failed, so cleanup silently fell back to a broader profile.
+///     Neither fails a call. Both degrade it silently, which is why they are reported, and their blast radii
+///     differ: <see cref="MissingSettingsPath" /> means the settings file the user named was never applied,
+///     taking inspection severities and cleanup profiles with it, while <see cref="SettingsRead" /> means
+///     <c>jb</c> was still given the file and only this server's own profile lookup failed, so cleanup fell
+///     back to a broader profile.
 /// </remarks>
 internal sealed record ConfigWarnings(string? MissingSettingsPath, SettingsReadFailure? SettingsRead)
 {
-    /// <summary>Nothing to report — the one spelling of "no warnings", so consumers never meet a null.</summary>
+    /// <summary>Nothing to report: the one spelling of "no warnings", so consumers never meet a null.</summary>
     public static readonly ConfigWarnings None = new(null, null);
 }
 
-/// <summary>Everything needed to shell out to <c>jb</c>.</summary>
-/// <param name="SettingsPathIsCustomLayer">
-///     Whether <see cref="SettingsPath" /> must ride <c>jb</c>'s command line as <c>--settings</c>: true only
-///     when it is non-null <em>and</em> names a file outside every location <c>jb</c> mounts itself, so the
-///     flag is reserved for the one case it exists for — a file <c>jb</c> cannot find on its own.
-/// </param>
-/// <param name="JbVersion">
-///     What the <c>jb</c> located for this call reported itself as. It reaches no command line: it is
-///     stamped into the warm marker so a later run can tell a cache <em>this</em> build wrote from one an
-///     earlier build left, which <c>jb</c> rebuilds in place. Nullable and defaulted although
-///     <see cref="JbInstallation.Version" /> is not, because "no build known" has to be representable — it is
-///     what switches the staleness judgement off rather than letting a server that cannot name its own
-///     <c>jb</c> call every cache stale for ever.
-/// </param>
+/// <summary>Represents everything needed to shell out to <c>jb</c>.</summary>
+/// <remarks>
+///     <paramref name="SolutionPath" /> and <paramref name="CacheHome" /> are always resolved absolute.
+///     <paramref name="SettingsPathIsCustomLayer" /> says whether <paramref name="SettingsPath" /> rides
+///     <c>jb</c>'s command line as <c>--settings</c>: true only when it names a file outside every location
+///     <c>jb</c> mounts itself, a file <c>jb</c> cannot find on its own. <paramref name="JbVersion" /> is what
+///     the located <c>jb</c> reported itself as, and reaches no command line; it is nullable although
+///     <see cref="JbInstallation.Version" /> is not, because "no build known" turns the staleness judgement
+///     off.
+/// </remarks>
 internal sealed record ResolvedConfig(
     string SolutionPath,
     string? SettingsPath,
@@ -46,15 +43,12 @@ internal sealed record ResolvedConfig(
     string? JbVersion = null)
 {
     /// <summary>
-    ///     The directory holding the solution — the root a relative <c>files</c> entry resolves against.
-    ///     <see cref="SolutionPath" /> is always a resolved absolute path, so it always has one.
+    ///     Gets the directory holding the solution, the root a relative <c>files</c> entry resolves against.
     /// </summary>
     /// <remarks>
-    ///     For every config the analysis tools see, that path also names a file that exists, which is what
-    ///     makes the directory a real one. The exception is a config from
-    ///     <see cref="ConfigResolver.ResolveForCacheResetAsync" />: a cache reset can be asked to reclaim the
-    ///     cache of a checkout that has been deleted, so its solution path is a resolved string and nothing
-    ///     more, and this directory need not exist.
+    ///     Never null, because <see cref="SolutionPath" /> is always absolute. The directory exists for every
+    ///     config the analysis tools see; a config from <see cref="ConfigResolver.ResolveForCacheResetAsync" />
+    ///     may name the solution of a deleted checkout, whose directory need not exist.
     /// </remarks>
     public string SolutionDirectory => Path.GetDirectoryName(SolutionPath)!;
 }
@@ -65,13 +59,11 @@ internal sealed record ResolvedConfig(
 ///     overrides, environment variables, and the current directory.
 /// </summary>
 /// <remarks>
-///     Deliberately uncached. Every field but the <c>jb</c> path is re-read from disk on each call, so a
-///     settings file added or edited mid-session — notably one newly declaring a cleanup profile, which is
-///     exactly what the configuration guide tells an agent to do — takes effect on the next call instead of
-///     after a client restart. The one genuinely expensive step, the <c>jb inspectcode --version</c> probe,
-///     is cached inside <see cref="JbLocator" /> and repeated only when <c>jb</c>'s files have changed; what
-///     remains here is one directory enumeration, a few existence checks, and a small XML read — noise
-///     beside the jb run that follows.
+///     Uncached apart from the <c>jb</c> probe <see cref="JbLocator" /> caches, so a settings file added or
+///     edited mid-session takes effect on the next call instead of after a client restart; the configuration
+///     guide relies on that when it has an agent declare a cleanup profile. What is re-read on each call is
+///     cheap beside the <c>jb</c> run that follows: a directory enumeration, a few existence checks and a
+///     small XML read.
 /// </remarks>
 internal sealed class ConfigResolver(JbLocator jbLocator, IEnvironment environment, ILogger<ConfigResolver> logger)
 {
@@ -81,8 +73,8 @@ internal sealed class ConfigResolver(JbLocator jbLocator, IEnvironment environme
     }
 
     /// <summary>
-    ///     The same resolution for a cache reset, which addresses cache directories by the hash of the
-    ///     solution path and so needs the path rather than the file.
+    ///     Resolves the same configuration for a cache reset, which addresses cache directories by the hash of
+    ///     the solution path and so needs the path rather than the file.
     /// </summary>
     /// <remarks>
     ///     An explicit <paramref name="solutionPathOverride" /> naming no existing file resolves anyway, which
@@ -125,13 +117,12 @@ internal sealed class ConfigResolver(JbLocator jbLocator, IEnvironment environme
     }
 
     /// <summary>
-    ///     Where a solution's ReSharper caches live for this server process: <c>JB_CACHE_HOME</c> if set, else
-    ///     <c>~/.jb-cache</c>.
+    ///     Returns where a solution's ReSharper caches live for this server process: <c>JB_CACHE_HOME</c> if
+    ///     set, else <c>~/.jb-cache</c>.
     /// </summary>
     /// <remarks>
-    ///     Readable without resolving a whole config, which would mean probing for <c>jb</c> — a probe timeout
-    ///     per candidate on a machine that has none. This one axis is independent of every other and costs
-    ///     two environment reads.
+    ///     Readable without resolving a whole config, which would mean probing for <c>jb</c>: a probe timeout
+    ///     per candidate on a machine that has none.
     /// </remarks>
     internal string ResolveCacheHome()
     {
@@ -144,8 +135,8 @@ internal sealed class ConfigResolver(JbLocator jbLocator, IEnvironment environme
     /// <summary>Logs what this call resolved and how.</summary>
     /// <remarks>
     ///     One line per call, at <c>Information</c>, because every axis on it changes what <c>jb</c> is asked
-    ///     to do and none of them is visible from the outside — above all which of the three solution sources
-    ///     won, and whether <c>--settings</c> mounts a Custom layer above the whole stack.
+    ///     to do and none of them is visible from outside: above all which solution source won, and whether
+    ///     <c>--settings</c> mounts a Custom layer above the whole stack.
     /// </remarks>
     private void Report(ResolvedConfig config, string solutionSource)
     {
@@ -237,13 +228,14 @@ internal sealed class ConfigResolver(JbLocator jbLocator, IEnvironment environme
     }
 
     /// <summary>
-    ///     Whether <c>jb</c> mounts this settings file itself — as its SolutionShared or GlobalAll layer.
+    ///     Determines whether <c>jb</c> mounts this settings file itself, as its SolutionShared or GlobalAll
+    ///     layer.
     /// </summary>
     /// <remarks>
-    ///     Naming such a file with <c>--settings</c> does not add it; it re-mounts it as a Custom layer
-    ///     <em>above</em> the project layers, so a <c>{project}.csproj.DotSettings</c> the solution relies on
-    ///     stops applying. Only the <c>JB_SETTINGS_PATH</c> branch can land outside these two, which is the
-    ///     one case <c>--settings</c> exists for.
+    ///     Naming such a file with <c>--settings</c> does not add it; it re-mounts it as a Custom layer above
+    ///     the project layers, so a <c>{project}.csproj.DotSettings</c> the solution relies on stops applying.
+    ///     Only the <c>JB_SETTINGS_PATH</c> branch can land outside those layers, which is the one case
+    ///     <c>--settings</c> exists for.
     /// </remarks>
     private bool JbMountsItself(string settingsPath, string solutionPath)
     {
@@ -252,12 +244,12 @@ internal sealed class ConfigResolver(JbLocator jbLocator, IEnvironment environme
     }
 
     /// <summary>
-    ///     How two settings paths are compared, with the OS standing in for the filesystem's case rules.
+    ///     Compares two settings paths, with the operating system standing in for the filesystem's case rules.
     /// </summary>
     /// <remarks>
     ///     Both operands are already absolute and normalized. A symlinked or 8.3-form spelling, or a
-    ///     case-insensitive filesystem the OS key misreads, defeats equality and simply falls back to passing
-    ///     <c>--settings</c>.
+    ///     case-insensitive filesystem the operating system key misreads, defeats equality and falls back to
+    ///     passing <c>--settings</c>.
     /// </remarks>
     private static bool PathsEqual(string left, string right)
     {
@@ -297,20 +289,22 @@ internal sealed class ConfigResolver(JbLocator jbLocator, IEnvironment environme
     }
 
     /// <summary>
-    ///     The solution this call landed on, and which of the three sources supplied it. The source is carried
-    ///     for the log alone — nothing about the run depends on it — which is why it stays a private detail
-    ///     here rather than joining <see cref="ResolvedConfig" />.
+    ///     Represents the solution this call landed on, and which source supplied it.
     /// </summary>
+    /// <remarks>
+    ///     The source is carried for the log alone, so it stays here rather than joining
+    ///     <see cref="ResolvedConfig" />.
+    /// </remarks>
     private sealed record SolutionResolution(string Path, string Source);
 
     /// <summary>
-    ///     The settings file the chain landed on, plus the <c>JB_SETTINGS_PATH</c> value that named a file
-    ///     that does not exist.
+    ///     Represents the settings file the chain landed on, plus the <c>JB_SETTINGS_PATH</c> value that named
+    ///     a file that does not exist.
     /// </summary>
     /// <remarks>
     ///     Both travel together because a bad env path does not stop the chain: it can fall through to an
     ///     adjacent or shared settings file, and the caller is owed the warning either way.
-    ///     <see cref="IsCustomLayer" /> can be true only for the env branch — the other two land on files
+    ///     <see cref="IsCustomLayer" /> can be true only for the env branch, since the others land on files
     ///     <c>jb</c> mounts itself.
     /// </remarks>
     private sealed record SettingsResolution(string? Path, string? MissingEnvPath, bool IsCustomLayer);

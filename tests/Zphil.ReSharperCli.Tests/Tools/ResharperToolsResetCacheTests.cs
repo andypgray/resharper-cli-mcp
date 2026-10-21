@@ -10,8 +10,8 @@ using Zphil.ReSharperCli.Tools;
 namespace Zphil.ReSharperCli.Tests.Tools;
 
 /// <summary>
-///     <see cref="ResharperTools.ResetCacheAsync" /> end to end over the two faked seams, with the config and
-///     service graph real.
+///     Drives <see cref="ResharperTools.ResetCacheAsync" /> end to end over the faked process and environment
+///     seams, with the config and service graph real.
 /// </summary>
 public sealed class ResharperToolsResetCacheTests : IDisposable
 {
@@ -36,7 +36,7 @@ public sealed class ResharperToolsResetCacheTests : IDisposable
     [Fact]
     public async Task ResetCacheAsync_SolutionWithACachedGeneration_DropsItAndReportsTheColdNextCall()
     {
-        // Arrange — end to end through the tool method, including the discovery it shares with the other two.
+        // Arrange — end to end through the tool method, discovery included.
         string ours = CacheHomes.PlantGenerationFor(_cacheHome, Path.Combine(_environment.CurrentDirectory, "App.sln"));
         CacheHomes.PlantGeneration(_cacheHome, "_Other.99.00");
         StubJb();
@@ -69,8 +69,8 @@ public sealed class ResharperToolsResetCacheTests : IDisposable
         // Act
         string result = await tools.ResetCacheAsync(removed, cancellationToken: Ct);
 
-        // Assert — dropped, the live checkout's left alone and named, and no promise about a next call that
-        // nobody can make.
+        // Assert — dropped, the live checkout's left alone, and no promise about a next call that nobody can
+        // make.
         result.ShouldContain($"  - {Path.GetFileName(theirs)}");
         result.ShouldEndWith("seeded from a sibling checkout where one is warm.");
         Directory.Exists(theirs).ShouldBeFalse();
@@ -81,7 +81,7 @@ public sealed class ResharperToolsResetCacheTests : IDisposable
     public async Task ResetCacheAsync_RunsNoJbBeyondTheVersionProbe()
     {
         // Arrange — a reset is a directory delete, not an analysis. Spending a cold jb run here would double
-        // the cost of the very situation the tool exists to get out of.
+        // the cost of the situation the tool exists to get out of.
         StubJb();
         ResharperTools tools = Tools();
 
@@ -93,7 +93,7 @@ public sealed class ResharperToolsResetCacheTests : IDisposable
         await _processRunner.DidNotReceive().AnyRunWith(args => args != null && !args.Contains("--version"));
     }
 
-    /// <summary>The tool methods over this class's environment and process runner.</summary>
+    /// <summary>Builds the tool methods over this class's environment and process runner.</summary>
     private ResharperTools Tools()
     {
         return ToolHarness.Build(_processRunner, _environment);

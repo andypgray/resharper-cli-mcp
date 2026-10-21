@@ -12,12 +12,12 @@ namespace Zphil.ReSharperCli.Tests.Execution;
 ///     not the same for all of them.
 /// </summary>
 /// <remarks>
-///     The three hints — freshness, generation name and <c>jb</c> build — must read as <em>not</em> warm,
-///     <em>no</em> name and <em>not</em> this build whatever goes wrong, so they can permit a redundant pre-warm
-///     or a skipped copy but never suppress one forever or point at the wrong directory;
-///     <see cref="JbWarmMarker.Exists" /> must read as <em>protected</em>, because its caller's only use for the
-///     other answer is to delete. The structural fact that a marker bug can never clobber the lock file it sits
-///     beside is the sidecar scheme's, and is pinned in <see cref="JbSidecarTests" />.
+///     The hints (freshness, generation name and <c>jb</c> build) must read as "not warm", "no name" and "not
+///     this build" whatever goes wrong, so they can permit a redundant pre-warm or a skipped copy but never
+///     suppress one forever or point at the wrong directory. <see cref="JbWarmMarker.Exists" /> must read as
+///     "protected", because its caller's only use for the other answer is to delete. That a marker bug cannot
+///     clobber the lock file beside it is the sidecar scheme's guarantee, pinned in
+///     <see cref="JbSidecarTests" />.
 /// </remarks>
 public sealed class JbWarmMarkerTests : IDisposable
 {
@@ -75,8 +75,8 @@ public sealed class JbWarmMarkerTests : IDisposable
     public void Stamp_SolutionWithAForkedGeneration_RecordsTheOneWrittenMostRecently()
     {
         // Arrange — a concurrent jb forks ".01" off the same hash, and both are this solution's. The one the
-        // run that just succeeded actually used is the one it has only just closed, and the ordinal-latest
-        // name is aged here on purpose so a name-ordered pick would fail.
+        // run that just succeeded used is the one it has only just closed, and the ordinal-latest name is aged
+        // here on purpose so a name-ordered pick would fail.
         string first = CacheHomes.PlantGenerationFor(_cacheHome, SolutionPath);
         string fork = CacheHomes.PlantFork(_cacheHome, first);
         Directory.SetLastWriteTimeUtc(fork, DateTime.UtcNow - TimeSpan.FromHours(2));
@@ -222,7 +222,7 @@ public sealed class JbWarmMarkerTests : IDisposable
     public void TryReadJbVersion_MarkerThatIsNotThere_IsNullRatherThanThrowing()
     {
         // Assert — no marker at all reads as no build: a cache written by something other than the jb about to
-        // run. That is the direction this file always fails in.
+        // run. That is the direction every hint reader fails in.
         JbWarmMarker.TryReadJbVersion(JbWarmMarker.PathFor(SolutionPath, _cacheHome), NullLogger.Instance).ShouldBeNull();
     }
 
@@ -247,8 +247,8 @@ public sealed class JbWarmMarkerTests : IDisposable
     }
 
     [Theory]
-    // A parent reference, and a name carrying a separator: both resolve outside the cache home, which is
-    // where a caller would otherwise copy from.
+    // A parent or self reference, and a name carrying a path separator: none names a generation directory
+    // inside the cache home, and a transplant would copy from wherever it resolves.
     [InlineData("..")]
     [InlineData(".")]
     [InlineData("../_App.999.00")]
@@ -344,9 +344,9 @@ public sealed class JbWarmMarkerTests : IDisposable
         // Act
         StampOutcome outcome = Should.NotThrow(() => JbWarmMarker.Stamp(SolutionPath, blocked, NullLogger.Instance));
 
-        // Assert — the two answers that write no name are kept apart here, because a caller turns one of them
-        // into a warning about jb: no directory matched the hash on this cache home either, so an outcome
-        // decided above the open would blame jb's naming for a filesystem this machine cannot write to.
+        // Assert — NotStamped is kept apart from NoGenerationMatched here, because a caller turns the latter into
+        // a warning about jb: no directory matched the hash on this cache home either, so an outcome decided
+        // above the open would blame jb's naming for a filesystem this machine cannot write to.
         outcome.ShouldBe(StampOutcome.NotStamped);
 
         // An unwritable marker reads as stale, so the next pre-warm runs rather than being skipped.

@@ -12,7 +12,7 @@ using Zphil.ReSharperCli.Tests.TestSupport;
 namespace Zphil.ReSharperCli.Tests.Services;
 
 /// <summary>
-///     What <see cref="JbRunner" /> owns for every <c>jb</c> run, through both of its entry points.
+///     Pins what <see cref="JbRunner" /> owns for every <c>jb</c> run, whichever entry point starts it.
 /// </summary>
 public sealed class JbRunnerTests : IDisposable
 {
@@ -42,7 +42,7 @@ public sealed class JbRunnerTests : IDisposable
     public async Task RunAsync_NonZeroExit_NamesTheSubcommandItWasGiven()
     {
         // Arrange — the subcommand comes from the argument list rather than a parameter, so it cannot drift
-        // from what jb was actually asked to do.
+        // from what jb was asked to do.
         StubExit(3, "profile not found");
 
         // Act
@@ -56,8 +56,8 @@ public sealed class JbRunnerTests : IDisposable
     [Fact]
     public async Task RunAsync_VeryLongStandardError_KeepsOnlyTheTail()
     {
-        // Arrange — jb can emit megabytes on a bad run; only the end of it diagnoses anything, and the
-        // response budget is not the place to find that out.
+        // Arrange — jb can emit megabytes on a bad run, and only the end of it diagnoses anything, so only
+        // the end is quoted into the error.
         string noise = new('x', 5000);
         StubExit(1, noise + "the actual failure");
 
@@ -72,9 +72,8 @@ public sealed class JbRunnerTests : IDisposable
     [Fact]
     public void StandardErrorTail_NoStandardErrorAtAll_IsEmptyRatherThanThrowing()
     {
-        // Arrange & Act — a defaulted ProcessResult carries a null standard error, and the paths that quote
-        // a tail (a non-zero exit, a missing SARIF file) are already reporting a failure. Adding a
-        // NullReferenceException on top of one would replace the diagnosis with a crash.
+        // Arrange & Act — a defaulted ProcessResult carries a null standard error, and a tail is quoted into
+        // a failure report, so a NullReferenceException here would replace the diagnosis with a crash.
         string tail = JbRunner.StandardErrorTail(null);
 
         // Assert
@@ -87,8 +86,8 @@ public sealed class JbRunnerTests : IDisposable
         // Arrange — resolved, but a file jb mounts on its own (the adjacent .DotSettings). Passing it as
         // --settings would re-mount it as a Custom layer above the project layers: inspect would silently
         // demote every {project}.csproj.DotSettings in the solution, and cleanup, which rewrites files, would
-        // normalize away the style such a file protects. Both services append through this one helper, and
-        // their exact-order pins are what prove each of them does.
+        // normalize away the style such a file protects. Each service's exact-order argument pin is what
+        // proves it appends through this helper.
         List<string> arguments = [];
         ResolvedConfig config = Configs.With("/sln/App.sln", "/cache", "/sln/App.sln.DotSettings");
 
@@ -104,7 +103,7 @@ public sealed class JbRunnerTests : IDisposable
     {
         // Arrange — jb's --include takes relative paths only, so an absolute one matches nothing: cleanupcode
         // exits 3 with "No items were found to cleanup", and an inspect can come back as "No issues found."
-        // rather than as any kind of failure. Both services build --include through this one helper.
+        // rather than as any kind of failure.
         string solutionDirectory = Path.GetFullPath("/sln");
         string absolute = Path.Combine(solutionDirectory, "src", "A.cs");
 
@@ -132,10 +131,11 @@ public sealed class JbRunnerTests : IDisposable
     [Fact]
     public async Task RunAsync_FailingRun_LeavesEverySidecarAsItFoundIt()
     {
-        // Arrange — all three sidecars are the clean exit's alone, and a jb that exited non-zero earns none of
-        // them. It warmed nothing worth skipping a pre-warm over. It may have built nothing, so a preceding
-        // reset's promise of a cold next run still stands and the next attempt must not shortcut it. And it
-        // may have given up in seconds, which is no measure of the run the next caller is about to make.
+        // Arrange — stamping the warm marker, discharging a reset's tombstone and recording a cost belong to a
+        // clean exit alone, and a jb that exited non-zero earns none of them. It warmed nothing worth skipping a
+        // pre-warm over. It may have built nothing, so a preceding reset's promise of a cold next run still
+        // stands and the next attempt must not shortcut it. And it may have given up in seconds, which is no
+        // measure of the run the next caller is about to make.
         JbColdTombstone.Write(_config.SolutionPath, _config.CacheHome, NullLogger.Instance);
         StubExit(2, "boom");
 
@@ -162,9 +162,9 @@ public sealed class JbRunnerTests : IDisposable
         // Act
         await runner.RunAsync(_config, ["inspectcode", _config.SolutionPath], Ct);
 
-        // Assert — the two names an operator needs to check the derivation by hand, plus the one phrase that
-        // says which derivation broke. Pinned here because this is the wording's only owner: the marker
-        // reports the condition and says nothing about it.
+        // Assert — the solution path and cache home an operator needs to check the derivation by hand, plus
+        // the phrase that says which derivation broke. Pinned here because the runner owns the wording: the
+        // marker reports the condition and says nothing about it.
         LogEntry drift = logs.Warnings.ShouldHaveSingleItem();
         drift.Property("SolutionPath").ShouldBe(_config.SolutionPath);
         drift.Property("CacheHome").ShouldBe(_config.CacheHome);
@@ -192,9 +192,9 @@ public sealed class JbRunnerTests : IDisposable
     public async Task RunAsync_TwoServerSessionsBothSeeingDrift_EachWarnsInItsOwnLog()
     {
         // Arrange — two runners is two server sessions, which is what a parallel test run puts inside one
-        // process. Each has a log of its own, and the latch is per instance for exactly this reason: held on
-        // a static, the first session to warn swallows the second's, and the second's log then denies a drift
-        // its own run had just met.
+        // process. Each has a log of its own, and the latch is per instance for this reason: held on a static,
+        // the first session to warn swallows the second's, and the second's log then denies a drift its own
+        // run had just met.
         CapturingLoggerProvider firstLogs = new();
         CapturingLoggerProvider secondLogs = new();
         JbRunner firstSession = JbRunners.Create(_processRunner, _runLock, logs: Logs.Capturing(firstLogs));
@@ -215,7 +215,7 @@ public sealed class JbRunnerTests : IDisposable
     {
         // Arrange — the pre-warm stamps through the same spawn, so on a session that starts by warming it is
         // the run that meets the drift first. Warning only from the foreground path would leave that session
-        // silent about the thing that has just switched half its cache features off.
+        // silent about a drift that has just disabled the cache features keyed on that hash.
         CapturingLoggerProvider logs = new();
         JbRunner runner = JbRunners.Create(_processRunner, _runLock, logs: Logs.Capturing(logs));
         StubExit(0, string.Empty);
@@ -223,8 +223,8 @@ public sealed class JbRunnerTests : IDisposable
         // Act
         SpeculativeRunOutcome result = await runner.TryRunAsync(_config, ["inspectcode", _config.SolutionPath], Ct);
 
-        // Assert — speculative work reports rather than throws, and this is the one thing it may still say out
-        // loud: the condition is about jb rather than about the pass that happened to notice it.
+        // Assert — speculative work reports rather than throws, but a drift is still worth a warning: the
+        // condition is about jb rather than about the pass that happened to notice it.
         result.ShouldBe(SpeculativeRunOutcome.Completed);
         logs.Warnings.ShouldHaveSingleItem().Message.ShouldContain("matching its computed hash");
     }
@@ -292,9 +292,9 @@ public sealed class JbRunnerTests : IDisposable
     [Fact]
     public async Task RunAsync_RunFiredByATransplant_RecordsItAsSeededRatherThanCold()
     {
-        // Arrange — the band that most needs keeping apart. A seeded run can cost many times the warm run after
-        // it, so a seeded figure filed under cold would quote minutes at a caller about to wait seconds — and
-        // cold at the moment of the read is exactly what a solution about to be seeded looks like.
+        // Arrange — a solution about to be seeded reads as cold when its band is read, before the transplant
+        // runs. A seeded run and a cold one cost differently, so filing this run by that reading would quote
+        // its figure to the next cold run.
         CacheHomes.PlantWarmDonor(_config.CacheHome, SiblingSolutionPath());
         StubExit(0, string.Empty);
 
@@ -374,11 +374,9 @@ public sealed class JbRunnerTests : IDisposable
     public async Task RunAsync_RunHitsTheCapWithNothingOnRecord_ReadsExactlyAsItAlwaysHas()
     {
         // Arrange — the first run of a solution is both the one most likely to hit the cap and the one that
-        // can never have a figure, so the no-figure message is the common case rather than an edge. Nothing
-        // was watching either, so nothing knows how far jb got: cleanupcode lands here too, because its
-        // per-file output is unrecognisable and its count is always zero. ProcessRunner reports the
-        // mechanical fact and stops there, because it does not know whose timeout it was handed; only the
-        // runner can answer the questions a caller is left with.
+        // can never have a figure, so the no-figure message is the common case rather than an edge. No
+        // progress callback is passed, so nothing counts how far jb got: cleanupcode lands here too, because
+        // its per-file output is unrecognisable and its count is always zero.
         StubTimeout();
 
         // Act
@@ -386,8 +384,8 @@ public sealed class JbRunnerTests : IDisposable
 
         // Assert — every timeout a user meets is one this server chose (an MCP client would have waited far
         // longer), so the message disowns it, names the variable that moves it, and heads off the scoped
-        // retry that does not work. The cold-cache sentence and the scoping one meet with no figure between
-        // them, and the closing claim about the cache is the general one, hedged, with no invented count.
+        // retry that does not work. With nothing on record, no figure sits between the cold-cache sentence
+        // and the scoping one, and the closing claim about the cache is the general one, with no count.
         exception.Message.ShouldBe(
             "jb inspectcode timed out after 10 minutes and was stopped.\n"
             + "That cap is this server's, not jb's own: raise it by setting RESHARPER_MCP_TIMEOUT_SECS (in seconds) "
@@ -401,8 +399,8 @@ public sealed class JbRunnerTests : IDisposable
     [Fact]
     public async Task RunAsync_ColdSolutionWithAWarmSibling_SeedsTheCacheBeforeJbStarts()
     {
-        // Arrange — the ordering is the whole contract: a copy landing after jb opened the generation is worse
-        // than none, so the check is made from inside the spawn rather than after the call returns.
+        // Arrange — the ordering is the contract: a copy landing after jb opened the generation is worse than
+        // none, so the check is made from inside the spawn rather than after the call returns.
         CacheHomes.PlantWarmDonor(_config.CacheHome, SiblingSolutionPath());
         var seededAtSpawn = false;
         StubExit(0, string.Empty, () => seededAtSpawn = Directory.Exists(SeededGenerationPath()));
@@ -418,7 +416,7 @@ public sealed class JbRunnerTests : IDisposable
     public async Task TryRunAsync_ColdSolutionWithAWarmSibling_SeedsTheCacheBeforeJbStarts()
     {
         // Arrange — the speculative entry point too: a server launched inside a worktree pre-warms that
-        // worktree, and the pre-warm is the very run most likely to be the cold one worth seeding.
+        // worktree, and the pre-warm is the run most likely to be the cold one worth seeding.
         CacheHomes.PlantWarmDonor(_config.CacheHome, SiblingSolutionPath());
         var seededAtSpawn = false;
         StubExit(0, string.Empty, () => seededAtSpawn = Directory.Exists(SeededGenerationPath()));
@@ -433,9 +431,9 @@ public sealed class JbRunnerTests : IDisposable
     [Fact]
     public async Task RunAsync_RunHitsTheCapAfterAnalysingFiles_NamesHowFarItGot()
     {
-        // Arrange — a jb that reports 40 files and is then killed at the cap. Without the count, the promise
-        // that "a retry resumes rather than starting over" is made with confidence it has not earned: a run
-        // killed having analysed 40 files and one killed at 1,200 read identically.
+        // Arrange — without the count, the promise that "a retry resumes rather than starting over" is made
+        // with confidence it has not earned: a run killed having analysed 40 files and one killed at 1,200
+        // read identically.
         StubTimeoutAfterAnalysing(40);
 
         // Act — with a progress callback, even one that drops every line: the runner watches jb's output only
@@ -491,9 +489,9 @@ public sealed class JbRunnerTests : IDisposable
         // Act
         SpeculativeRunOutcome result = await _runner.TryRunAsync(_config, ["inspectcode", _config.SolutionPath], Ct);
 
-        // Assert — not merely "did not wait": speculative work that cannot prove exclusivity never starts jb
-        // at all, because a second jb on one cache generation forks a cold one. This is one of the two
-        // endings that genuinely cost nothing, and the only kind the summary may call a skip.
+        // Assert — not only "did not wait": speculative work that cannot prove exclusivity never starts jb at
+        // all, because a second jb on one cache generation forks a cold one. Nothing ran and nothing was
+        // spent, which is the only ending the summary may call a skip.
         result.ShouldBe(SpeculativeRunOutcome.NotStarted);
         await _processRunner.DidNotReceive().AnyRun();
     }
@@ -532,8 +530,8 @@ public sealed class JbRunnerTests : IDisposable
     [Fact]
     public async Task RunAsync_RunHitsTheCap_AnnouncesItWithTheConfigurationThatRanOut()
     {
-        // Arrange — the config travels with the signal so a listener warms the solution that actually timed
-        // out, rather than whatever the server's working directory would resolve to.
+        // Arrange — the config travels with the signal so a listener warms the solution that timed out,
+        // rather than whatever the server's working directory would resolve to.
         StubTimeout();
         List<ResolvedConfig> announced = [];
         _runner.ForegroundRunTimedOut += announced.Add;
@@ -587,9 +585,9 @@ public sealed class JbRunnerTests : IDisposable
     public async Task RunAsync_RunHitsTheCap_AnnouncesOnlyOnceTheLeaseIsFreeAndTheCountIsBack()
     {
         // Arrange — both orderings pinned through behaviour rather than by reading privates. A listener that
-        // can take the lease proves the lease went first; one whose own speculative run actually starts
-        // proves the count was decremented first. Reverse either and nothing throws: the re-armed pass just
-        // settles as a skip and the whole feature quietly buys nothing.
+        // can take the lease proves the lease went first; one whose own speculative run starts proves the
+        // count was decremented first. Reverse either and nothing throws: the re-armed pass settles as a skip
+        // and the feature silently buys nothing.
         StubTimeout();
         var leaseWasFree = false;
         Task<SpeculativeRunOutcome>? speculative = null;
@@ -634,7 +632,7 @@ public sealed class JbRunnerTests : IDisposable
     {
         // Arrange — ProcessRunner calls Start() before it ever looks at its token, so without the check a
         // pre-warm cancelled in that window forks a jb only to tree-kill and reap it, holding for those
-        // seconds the very lease the real call is queueing for.
+        // seconds the lease the foreground call is queueing for.
         StubExit(0, string.Empty);
         using CancellationTokenSource cancelled = new();
         await cancelled.CancelAsync();
@@ -647,8 +645,8 @@ public sealed class JbRunnerTests : IDisposable
     }
 
     /// <summary>
-    ///     A run killed at the cap, as <see cref="Zphil.ReSharperCli.Execution.ProcessRunner" /> reports it:
-    ///     the mechanical message, carrying no idea of whose cap it was.
+    ///     Stubs a run killed at the cap as <see cref="Zphil.ReSharperCli.Execution.ProcessRunner" /> reports
+    ///     it: the mechanical message, carrying no idea of whose cap it was.
     /// </summary>
     private void StubTimeout()
     {
@@ -658,8 +656,8 @@ public sealed class JbRunnerTests : IDisposable
     }
 
     /// <summary>
-    ///     A jb that reports <paramref name="files" /> analysed files and is then killed at the cap — the
-    ///     shape of every cold run that runs out of budget, and the only one that can say how far it got.
+    ///     Stubs a jb that reports <paramref name="files" /> analysed files and is then killed at the cap, the
+    ///     way a cold run that runs out of budget looks when its output is watched.
     /// </summary>
     private void StubTimeoutAfterAnalysing(int files)
     {
@@ -687,7 +685,7 @@ public sealed class JbRunnerTests : IDisposable
     }
 
     /// <summary>
-    ///     What this solution has on record for <paramref name="band" />.
+    ///     Returns what this solution has on record for <paramref name="band" />.
     /// </summary>
     /// <remarks>
     ///     A stubbed run finishes in microseconds, so presence is the assertable fact and the figure itself is
@@ -698,13 +696,13 @@ public sealed class JbRunnerTests : IDisposable
         return JbCostRecord.TryRead(_config.SolutionPath, _config.CacheHome, band, NullLogger.Instance);
     }
 
-    /// <summary>Another checkout of the same solution file, which is what makes a donor a donor.</summary>
+    /// <summary>Returns a same-named solution path in another checkout, whose warm cache can be a donor.</summary>
     private string SiblingSolutionPath()
     {
         return _environment.CreateSolutionPath(Path.GetFileName(_config.SolutionPath));
     }
 
-    /// <summary>Where a cache seeded for this runner's own solution would land.</summary>
+    /// <summary>Returns where a cache seeded for this runner's own solution would land.</summary>
     private string SeededGenerationPath()
     {
         return CacheHomes.GenerationPathFor(_config.CacheHome, _config.SolutionPath);

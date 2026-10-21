@@ -8,8 +8,8 @@ using Zphil.ReSharperCli.Services;
 namespace Zphil.ReSharperCli.Tests.Formatting;
 
 /// <summary>
-///     The string spec for <see cref="ConfigWarningBanner" />, and the budget arithmetic of
-///     <see cref="ResponseTruncator.BudgetForBody" /> that keeps it alive.
+///     Pins the text of <see cref="ConfigWarningBanner" />, and the budget arithmetic of
+///     <see cref="ResponseTruncator.BudgetForBody" /> that keeps the banner whole while the body is reduced.
 /// </summary>
 public sealed class ConfigWarningBannerTests
 {
@@ -106,9 +106,9 @@ public sealed class ConfigWarningBannerTests
     [Fact]
     public void Render_BodyThatWouldFitWithoutTheBanner_ReducesSoTheTotalStillFits()
     {
-        // Arrange — the load-bearing arithmetic. The budget is one character short of banner + Full, so Full
-        // fits the raw budget and provably does not fit the banner-charged one. Without the deduction the
-        // total would overshoot and hand the truncator exactly the mid-chop the renderer exists to prevent.
+        // Arrange — the budget is one character short of banner + Full, so Full fits the raw budget and does
+        // not fit the banner-charged one. Without the deduction the total would overshoot and hand the
+        // truncator the mid-chop the renderer exists to prevent.
         CleanupOutcome outcome = OutcomeWith(20, CleanupFileStatus.Unchanged);
         string banner = ConfigWarningBanner.ForCleanup(new ConfigWarnings(null, ReadFailure));
         string full = CleanupSummaryFormatter.Format(outcome, DetailLevel.Full);

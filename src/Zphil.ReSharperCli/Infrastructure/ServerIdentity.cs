@@ -3,7 +3,7 @@ using ModelContextProtocol.Protocol;
 namespace Zphil.ReSharperCli.Infrastructure;
 
 /// <summary>
-///     The <see cref="Implementation" /> this server sends as <c>serverInfo</c> on <c>initialize</c>.
+///     Provides the <see cref="Implementation" /> this server sends as <c>serverInfo</c> on <c>initialize</c>.
 /// </summary>
 /// <remarks>
 ///     Shared rather than written at the composition root: a test host builds a host of its own, and a
@@ -24,8 +24,8 @@ internal static class ServerIdentity
     ///     The icons spec allows an HTTP(S) URL or a <c>data:</c> URI, and a stdio server is the case that
     ///     makes the choice: it listens on no authority, so a remote URL has no domain for a client to match it
     ///     against, and it has no install path a manifest could point at that survives a tool install, a
-    ///     <c>dnx</c> cache and a container image alike. The bytes travel in the handshake instead — about
-    ///     2.5 KB of base64, once per session, and no fetch.
+    ///     <c>dnx</c> cache and a container image alike. The bytes travel in the handshake instead, once per
+    ///     session, with no fetch.
     /// </remarks>
     private static readonly string IconDataUri = BuildIconDataUri();
 

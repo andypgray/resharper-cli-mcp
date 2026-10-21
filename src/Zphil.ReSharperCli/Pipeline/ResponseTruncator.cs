@@ -8,10 +8,8 @@ namespace Zphil.ReSharperCli.Pipeline;
 ///     context window.
 /// </summary>
 /// <remarks>
-///     Truncation cuts at the last line boundary before the cap and appends a footer saying how much was
-///     dropped, plus a caller-supplied hint on how to get a smaller result. It is the last-resort backstop: a
-///     response rendered through <see cref="ProgressiveRenderer" /> only reaches here when even the smallest
-///     rendering overflows.
+///     It is the last-resort backstop: a response rendered through <see cref="ProgressiveRenderer" /> is cut
+///     here only when even its smallest rendering overflows.
 /// </remarks>
 internal static class ResponseTruncator
 {
@@ -29,7 +27,7 @@ internal static class ResponseTruncator
     /// <summary>
     ///     Resolves the character cap from the MCP client's <c>MAX_MCP_OUTPUT_TOKENS</c> budget.
     /// </summary>
-    /// <remarks>Falls back to <see cref="DefaultMaxChars" /> when the value is unset, blank, or non-positive.</remarks>
+    /// <remarks>Falls back to <see cref="DefaultMaxChars" /> when the value is unset, not an integer, or not positive.</remarks>
     internal static int ComputeMaxChars(string? maxMcpOutputTokens)
     {
         if (int.TryParse(maxMcpOutputTokens, out int tokens) && tokens > 0) return (int)(tokens * CharsPerToken);
@@ -38,8 +36,8 @@ internal static class ResponseTruncator
     }
 
     /// <summary>
-    ///     <see cref="ComputeMaxChars(string?)" /> over the <see cref="MaxTokensVariable" /> read from
-    ///     <paramref name="environment" /> — the one spelling of that lookup, shared by every call site.
+    ///     Resolves the character cap from <see cref="MaxTokensVariable" /> in <paramref name="environment" />, so
+    ///     the lookup is spelt once.
     /// </summary>
     internal static int ComputeMaxChars(IEnvironment? environment)
     {
@@ -47,13 +45,12 @@ internal static class ResponseTruncator
     }
 
     /// <summary>
-    ///     The budget left for the rendered body when <paramref name="prefix" /> is prepended to it.
+    ///     Returns the budget left for the rendered body when <paramref name="prefix" /> is prepended to it.
     /// </summary>
     /// <remarks>
-    ///     Charging a warning banner to the budget before rendering is what puts it <em>outside</em>
-    ///     <see cref="ProgressiveRenderer" />'s reduction ladder: it survives every step down to
-    ///     <c>Minimal</c> — correct for a warning about a destructive fallback — while the total still fits,
-    ///     so <see cref="TruncateIfNeeded" /> is no likelier to bite than without it.
+    ///     Charging a prefix to the budget before rendering is what puts it outside
+    ///     <see cref="ProgressiveRenderer" />'s reduction ladder: it survives every step down to <c>Minimal</c>
+    ///     while the total still fits, so <see cref="TruncateIfNeeded" /> is no likelier to bite than without it.
     /// </remarks>
     internal static int BudgetForBody(int maxChars, string prefix)
     {
@@ -68,8 +65,8 @@ internal static class ResponseTruncator
     ///     otherwise returns a truncated copy with a "RESPONSE TRUNCATED" footer.
     /// </summary>
     /// <remarks>
-    ///     The footer closes with <paramref name="hint" /> when one is given — the domain's own advice on
-    ///     getting a smaller result, which this generic backstop cannot know itself.
+    ///     The footer closes with <paramref name="hint" /> when one is given: the domain's own word on the cut,
+    ///     which this generic backstop cannot know itself.
     /// </remarks>
     public static string TruncateIfNeeded(string text, string hint, int maxChars)
     {

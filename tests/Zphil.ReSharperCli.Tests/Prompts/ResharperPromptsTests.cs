@@ -40,7 +40,8 @@ public sealed class ResharperPromptsTests
             ResharperPrompts.DeriveStyleGuideName, cancellationToken: Ct);
 
         // Assert — a string-returning prompt method maps to one Role.User text message, and the wire carries
-        // the embedded recipe unaltered, so the anchor fact below holds for what a client receives.
+        // the embedded recipe unaltered, so anchors asserted on the method's own return hold for what a client
+        // receives.
         PromptMessage message = result.Messages.ShouldHaveSingleItem();
         message.Role.ShouldBe(Role.User);
         message.Content.ShouldBeOfType<TextContentBlock>().Text.ShouldBe(ResharperPrompts.DeriveStyleGuide());
@@ -61,7 +62,7 @@ public sealed class ResharperPromptsTests
         text.ShouldContain("resharper_inspect"); // the validation loop
         text.ShouldContain("do not guess"); // resolve conflicts with the user
 
-        // Assert — the executing agent needs the real specs; guard the links so they aren't dropped.
+        // Assert — the executing agent needs the specs, so the links to them must not be dropped.
         text.ShouldContain("EditorConfig_Properties.html");
         text.ShouldContain("stylecop.schema.json");
         text.ShouldContain("InspectCode.html");

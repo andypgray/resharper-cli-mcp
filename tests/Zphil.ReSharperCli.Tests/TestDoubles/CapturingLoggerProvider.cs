@@ -4,8 +4,8 @@ using Microsoft.Extensions.Logging;
 namespace Zphil.ReSharperCli.Tests.TestDoubles;
 
 /// <summary>
-///     An <see cref="ILoggerProvider" /> that records every logger call into a thread-safe queue, so a test
-///     can assert on what the server logged.
+///     Records every call to the loggers it creates into a thread-safe queue, so a test can assert on what
+///     the server logged.
 /// </summary>
 /// <remarks>
 ///     The scope stack is <see cref="AsyncLocal{T}" />, mirroring how the real providers hold theirs, so a
@@ -20,7 +20,8 @@ internal sealed class CapturingLoggerProvider : ILoggerProvider
     private readonly TaskCompletionSource<LogEntry> _firstWarning = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     /// <summary>
-    ///     Completes with the first entry logged at <see cref="LogLevel.Warning" />, whenever that arrives.
+    ///     Gets a task that completes with the first entry logged at <see cref="LogLevel.Warning" />, whenever
+    ///     that arrives.
     /// </summary>
     /// <remarks>
     ///     The MCP SDK logs some warnings further up the unwind than anything a test can observe from inside
@@ -29,7 +30,7 @@ internal sealed class CapturingLoggerProvider : ILoggerProvider
     /// </remarks>
     public Task<LogEntry> FirstWarning => _firstWarning.Task;
 
-    /// <summary>Everything captured, in the order it was logged.</summary>
+    /// <summary>Gets everything captured, in the order it was logged.</summary>
     public IReadOnlyList<LogEntry> Entries => _entries.ToList();
 
     public IReadOnlyList<LogEntry> Warnings => _entries.Where(entry => entry.Level == LogLevel.Warning).ToList();
@@ -44,12 +45,8 @@ internal sealed class CapturingLoggerProvider : ILoggerProvider
     }
 
     /// <summary>
-    ///     The entries whose message template carries a property called <paramref name="name" />.
+    ///     Returns the entries whose message template carries a property called <paramref name="name" />.
     /// </summary>
-    /// <remarks>
-    ///     The shape an assertion about one event takes, since it is the template that identifies the event
-    ///     rather than the sentence around it.
-    /// </remarks>
     public IReadOnlyList<LogEntry> WithProperty(string name)
     {
         return _entries.Where(entry => entry.Properties.Any(property => property.Key == name)).ToList();
@@ -93,10 +90,10 @@ internal sealed class CapturingLoggerProvider : ILoggerProvider
             if (logLevel == LogLevel.Warning) firstWarning.TrySetResult(entry);
         }
 
-        /// <summary>The message template's named values.</summary>
+        /// <summary>Returns the message template's named values.</summary>
         /// <remarks>
         ///     Every <c>ILogger.Log</c> call the framework's own extension methods make passes a
-        ///     <c>FormattedLogValues</c>, which is exactly this list; anything else — a bare object state —
+        ///     <c>FormattedLogValues</c>, which implements this list. Any other state, such as a bare object,
         ///     carries no names and is reported as carrying none.
         /// </remarks>
         private static IReadOnlyList<KeyValuePair<string, object?>> Properties<TState>(TState state)
@@ -104,7 +101,7 @@ internal sealed class CapturingLoggerProvider : ILoggerProvider
             return state as IReadOnlyList<KeyValuePair<string, object?>> ?? [];
         }
 
-        /// <summary>The state of every scope open on this async flow, innermost first.</summary>
+        /// <summary>Returns the state of every scope open on this async flow, innermost first.</summary>
         private static IReadOnlyList<object> OpenScopes()
         {
             List<object> states = [];
@@ -114,10 +111,10 @@ internal sealed class CapturingLoggerProvider : ILoggerProvider
         }
     }
 
-    /// <summary>One open scope and its parent.</summary>
+    /// <summary>Represents one open scope and its parent.</summary>
     /// <remarks>
-    ///     Disposal restores the parent rather than clearing the slot, so nested scopes unwind correctly and a
-    ///     scope disposed out of order cannot orphan the ones inside it.
+    ///     Disposal restores the parent rather than clearing the slot, so a nested scope unwinds to the one
+    ///     around it.
     /// </remarks>
     private sealed class Scope(object state, Scope? parent) : IDisposable
     {

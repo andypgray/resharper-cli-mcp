@@ -3,8 +3,8 @@ using System.Text.Json;
 namespace Zphil.ReSharperCli.Tests.TestSupport;
 
 /// <summary>
-///     Reads one value out of one of the repository's JSON install manifests, addressed by JSON pointer —
-///     <c>/description</c>, <c>/packages/0/version</c>.
+///     Reads one value out of one of the repository's JSON install manifests, addressed by JSON pointer, such
+///     as <c>/description</c> or <c>/packages/0/version</c>.
 /// </summary>
 /// <remarks>
 ///     The pointer walk lives here rather than once per test: a second copy is free to read
@@ -27,7 +27,8 @@ internal static class RepoManifest
     }
 
     /// <summary>
-    ///     The value at <paramref name="jsonPointer" />, for a test that walks an array or an object from there.
+    ///     Returns the value at <paramref name="jsonPointer" />, for a test that walks an array or an object
+    ///     from there.
     /// </summary>
     /// <remarks>
     ///     Detached from the parsed document, so it outlives this call. Throws when the pointer names nothing.
@@ -42,7 +43,10 @@ internal static class RepoManifest
         return value.Clone();
     }
 
-    /// <summary>Whether the manifest has anything at <paramref name="jsonPointer" />, JSON <c>null</c> included.</summary>
+    /// <summary>
+    ///     Determines whether the manifest has anything at <paramref name="jsonPointer" />, JSON <c>null</c>
+    ///     included.
+    /// </summary>
     public static bool Has(string manifestPath, string jsonPointer)
     {
         using JsonDocument document = Parse(manifestPath);
@@ -57,7 +61,7 @@ internal static class RepoManifest
     }
 
     /// <summary>
-    ///     Walks a JSON pointer — <c>/packages/0/version</c> — from <paramref name="root" />, indexing an
+    ///     Walks a JSON pointer such as <c>/packages/0/version</c> from <paramref name="root" />, indexing an
     ///     array when a segment is a number and reading a property otherwise.
     /// </summary>
     private static bool TryResolve(JsonElement root, string jsonPointer, out JsonElement value)

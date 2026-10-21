@@ -62,7 +62,7 @@ Each check drives a real analysis, so the suite takes minutes rather than second
 - Small and focused: one change per PR.
 - A green build and passing tests (see [Running tests](#running-tests)).
 - XML doc comments on public members.
-- Behavioral stability is load-bearing. The `jb` argument order, the error-message text, and the formatter output are pinned by tests; a change to any of them needs a stated reason in the PR.
+- Stable behavior: the `jb` argument order, the error-message text, and the formatter output are pinned by tests, and a change to any of them needs a stated reason in the PR.
 
 ## Versioning and releases
 

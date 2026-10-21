@@ -11,8 +11,8 @@ using Zphil.ReSharperCli.Tests.TestSupport;
 namespace Zphil.ReSharperCli.Tests.Services;
 
 /// <summary>
-///     <see cref="CacheResetService" /> deletes directories a caller never named, on the strength of a
-///     derivation from <c>jb</c>'s undocumented naming, so these pin the properties that make that safe.
+///     Pins the properties that make it safe for <see cref="CacheResetService" /> to delete directories a
+///     caller never named, on the strength of a derivation from <c>jb</c>'s undocumented naming.
 /// </summary>
 public sealed class CacheResetServiceTests : IDisposable
 {
@@ -22,7 +22,7 @@ public sealed class CacheResetServiceTests : IDisposable
     /// <summary>Short enough that a test sees several beats, long enough not to be flaky under load.</summary>
     private static readonly TimeSpan Brisk = TimeSpan.FromMilliseconds(40);
 
-    /// <summary>Long enough that only a genuine hang reaches it.</summary>
+    /// <summary>Long enough that only a hang reaches it.</summary>
     private static readonly TimeSpan Generous = TimeSpan.FromSeconds(30);
 
     private readonly string _cacheHome;
@@ -324,9 +324,8 @@ public sealed class CacheResetServiceTests : IDisposable
     [Fact]
     public async Task RunAsync_AJbRunHoldsTheCacheGeneration_WaitsAndThenRefusesWithoutDeleting()
     {
-        // Arrange — the whole reason this is a server-side tool rather than advice to delete a glob. The held
-        // lock file is what another session's live jb looks like from here, and the short-wait service is
-        // what lets the test hit the cap.
+        // Arrange — the whole reason this is a server-side tool rather than advice to delete a glob. The
+        // short-wait service is what lets the test hit the cap.
         string ours = CacheHomes.PlantGenerationFor(_cacheHome, _config.SolutionPath);
         await using FileStream held = CacheHomes.HoldLockFile(_cacheHome, _config.SolutionPath);
         CacheResetService service = JbRunners.StandaloneReset(TimeSpan.FromMilliseconds(250));
@@ -344,14 +343,14 @@ public sealed class CacheResetServiceTests : IDisposable
     {
         // Arrange — the silence this exists to break. A reset takes the same lock a jb run does, so it can
         // sit here for the whole wait budget, and it has no process of its own whose output could stand in
-        // for a report. The held lock file is what another session's live jb looks like from here.
+        // for a report.
         CacheHomes.PlantGenerationFor(_cacheHome, _config.SolutionPath);
         FileStream held = CacheHomes.HoldLockFile(_cacheHome, _config.SolutionPath);
         RecordingSink<string> lines = new(Generous);
         CacheResetService service = JbRunners.StandaloneReset(Generous, heartbeat: Brisk);
 
         // Act — the wait has to outlast JbRunLock.NotableWait before a beat stops reading "starting", so
-        // this genuinely waits the second out rather than shortening the threshold to suit itself.
+        // this waits that threshold out rather than shortening it to suit itself.
         Task<CacheResetOutcome> reset = service.RunAsync(_config, Ct, lines.Record);
         try
         {
@@ -362,8 +361,9 @@ public sealed class CacheResetServiceTests : IDisposable
         }
         finally
         {
-            // Released on every path rather than at scope exit: the reset is queued on this very lock, so a
-            // failed wait would otherwise leave it parked behind a file nothing was going to let go of.
+            // Released before the reset is awaited, because the reset is queued on this lock and cannot
+            // finish until the file is let go; and in a finally, so a failed wait does not leave it parked
+            // behind a handle nothing releases.
             await held.DisposeAsync();
         }
 
@@ -426,9 +426,9 @@ public sealed class CacheResetServiceTests : IDisposable
     }
 
     /// <summary>
-    ///     A reset spawns no <c>jb</c>, so no run line can stand in for it, and it is precisely why the
-    ///     <em>next</em> call runs cold: a log without it shows that call taking minutes against a cache home
-    ///     that a moment earlier looked populated, for no visible reason.
+    ///     A reset spawns no <c>jb</c>, so no run line can stand in for it, and it is the reason the next call
+    ///     runs cold: a log without it shows that call taking minutes against a cache home that a moment
+    ///     earlier looked populated, for no visible reason.
     /// </summary>
     [Fact]
     public async Task RunAsync_WhateverItDropped_RecordsTheOutcomeAtInformation()
@@ -481,8 +481,8 @@ public sealed class CacheResetServiceTests : IDisposable
     }
 
     /// <summary>
-    ///     The config a reclaim is called with: a solution path with no file on it, whose cache generation
-    ///     outlived the worktree, clone or copy deleted from it.
+    ///     Returns the config a reclaim is called with: a solution path with no file on it, whose cache
+    ///     generation outlived the worktree, clone or copy deleted from it.
     /// </summary>
     private ResolvedConfig RemovedCheckout()
     {

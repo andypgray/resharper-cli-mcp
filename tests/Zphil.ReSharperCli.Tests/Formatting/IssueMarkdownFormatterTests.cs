@@ -7,8 +7,8 @@ using Zphil.ReSharperCli.Sarif;
 namespace Zphil.ReSharperCli.Tests.Formatting;
 
 /// <summary>
-///     The authoritative string spec for the inspection listing: one fixture, hitting every branch of the
-///     ladder, rendered at each <see cref="DetailLevel" /> and pinned with an exact <c>ShouldBe</c>.
+///     Pins the inspection listing's exact text at each <see cref="DetailLevel" />, rendered from one fixture
+///     that hits every branch of the ladder.
 /// </summary>
 public sealed class IssueMarkdownFormatterTests
 {
@@ -36,8 +36,8 @@ public sealed class IssueMarkdownFormatterTests
         // Act
         string result = IssueMarkdownFormatter.Format(ThreeIssuesAcrossTwoFiles(), DetailLevel.Full);
 
-        // Assert — the byte-compatibility pin: a scoped scan that fits is returned at Full, so Full must not
-        // move by a character. The header counts issues and distinct files.
+        // Assert — a scoped scan that fits is returned at Full, so Full must not move by a character. The
+        // header counts issues and distinct files.
         const string expected =
             "Found 3 issue(s) across 2 file(s):\n" +
             "\n" +
@@ -276,8 +276,8 @@ public sealed class IssueMarkdownFormatterTests
 
         // Assert — this pins the size arithmetic: if a format change pushes High past the budget, this
         // fails loudly instead of silently degrading every solution-wide run to Medium.
-        full.Length.ShouldBeGreaterThan(maxChars); // precondition: Full genuinely did not fit
-        result.Length.ShouldBeLessThanOrEqualTo(maxChars); // note included, so the budget genuinely holds
+        full.Length.ShouldBeGreaterThan(maxChars); // precondition: Full did not fit
+        result.Length.ShouldBeLessThanOrEqualTo(maxChars); // note included, so the budget holds
         result.ShouldStartWith("Found 150 issue(s) across 24 file(s):"); // header intact, no mid-line chop
         result.ShouldContain("--- DETAIL REDUCED ---");
         result.ShouldContain("Reduced to High");
@@ -293,7 +293,7 @@ public sealed class IssueMarkdownFormatterTests
     [InlineData("1,2,4,5,6,9", "1-2, 4-6, 9")]
     public void FormatLineRanges_CollapsesRunsAndSortsAscending(string input, string expected)
     {
-        // Arrange — string in, string out: the internal InspectIssue never reaches the public signature.
+        // Arrange
         IEnumerable<int> lines = input.Split(',').Select(int.Parse);
 
         // Act / Assert
@@ -337,9 +337,9 @@ public sealed class IssueMarkdownFormatterTests
         // Act
         string description = IssueMarkdownFormatter.DescribeReduction(DetailLevel.High, 12, false, false);
 
-        // Assert — High is the level essentially every solution-wide run lands on, and re-running scoped is
-        // a whole solution's analysis again, so telling the agent to do that here would be noise. A report
-        // is the opposite trade: it recovers the very messages High collapsed, for no extra jb work.
+        // Assert — High is the level a solution-wide run usually lands on, and re-running scoped is a whole
+        // solution's analysis again, so telling the agent to do that here would be noise. A report is the
+        // opposite trade: it recovers the messages High collapsed, for no extra jb work.
         description.ShouldNotContain("Narrow the scan");
         description.ShouldContain("Every issue is still counted.");
         description.ShouldEndWith(IssueMarkdownFormatter.FullReportHint);
@@ -416,8 +416,8 @@ public sealed class IssueMarkdownFormatterTests
     }
 
     /// <summary>
-    ///     11 issues over 3 files, hitting every branch: four issues of one rule with differing messages on
-    ///     a run plus a stray line, a singleton inside that collapsing file, three issues of one rule with
+    ///     Returns 11 issues over 3 files, hitting every branch: four issues of one rule with differing messages
+    ///     on a run plus a stray line, a singleton inside that collapsing file, three issues of one rule with
     ///     identical messages, one ERROR for the severity ordering, and two issues sharing a line.
     /// </summary>
     private static List<InspectIssue> Mixed()
@@ -442,7 +442,7 @@ public sealed class IssueMarkdownFormatterTests
         ];
     }
 
-    /// <summary>Three issues over two files, each a distinct rule: the scoped-scan shape.</summary>
+    /// <summary>Returns three issues over two files, each a distinct rule: the scoped-scan shape.</summary>
     private static List<InspectIssue> ThreeIssuesAcrossTwoFiles()
     {
         return
@@ -454,8 +454,8 @@ public sealed class IssueMarkdownFormatterTests
     }
 
     /// <summary>
-    ///     Nine files, one issue each except the last-seen, which has two. Past Medium's cap of eight, so the
-    ///     top-8 selection and the first-seen emission order are both observable.
+    ///     Returns nine files, one issue each except the last-seen, which has two. Past Medium's cap of eight, so
+    ///     the top-8 selection and the first-seen emission order are both observable.
     /// </summary>
     private static List<InspectIssue> NineFiles()
     {
@@ -467,8 +467,8 @@ public sealed class IssueMarkdownFormatterTests
     }
 
     /// <summary>
-    ///     A solution-wide shape: 120 issues of one rule over 4 generated DTO files (each message naming a
-    ///     different property), plus 30 singletons over 20 more files, at realistic absolute-path and message
+    ///     Returns a solution-wide shape: 120 issues of one rule over 4 generated DTO files (each message naming
+    ///     a different property), plus 30 singletons over 20 more files, at realistic absolute-path and message
     ///     lengths. 150 issues over 24 files, which overflow the default 25,000-character budget at Full.
     /// </summary>
     private static List<InspectIssue> SolutionWideRepetition()

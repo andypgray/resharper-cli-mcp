@@ -1,28 +1,30 @@
 namespace Zphil.ReSharperCli.Execution;
 
 /// <summary>
-///     What a command name resolves to on <c>PATH</c>, spelled once for every caller that needs the file
-///     rather than the name.
+///     Resolves a command name to the file a spawn of it would start, searching <c>PATH</c> for a bare name.
 /// </summary>
 internal static class PathSearch
 {
-    /// <summary>
-    ///     The variable this searches. Read through <see cref="Infrastructure.IEnvironment" />, so no test has
-    ///     to touch the real one.
-    /// </summary>
     internal const string PathVariable = "PATH";
 
     /// <summary>
-    ///     The file a spawn of <paramref name="fileName" /> would start: the name itself when it carries a
-    ///     directory separator, otherwise the first executable of that name across
+    ///     Returns the file a spawn of <paramref name="fileName" /> would start: the name itself when it carries
+    ///     a directory separator, otherwise the first executable of that name across
     ///     <paramref name="pathVariable" />'s entries.
     /// </summary>
     /// <remarks>
-    ///     <see langword="null" /> means "nothing to run". Outside Windows this is <c>execvp</c>'s rule, and
-    ///     "executable" means a file with an execute bit. On Windows a name with no extension is looked up as
-    ///     <c>name.exe</c>, which is <c>CreateProcess</c>'s rule, and any file of that name counts, there being
-    ///     no execute bit to ask. <c>CreateProcess</c> also looks in the application's directory, the working directory
-    ///     and the system directories before <c>PATH</c>. This answers for the <c>PATH</c> route alone.
+    ///     <para>
+    ///         <see langword="null" /> means "nothing to run". Outside Windows this is <c>execvp</c>'s rule, and
+    ///         "executable" means a file with an execute bit. On Windows a name with no extension is looked up as
+    ///         <c>name.exe</c>, which is <c>CreateProcess</c>'s rule, and any file of that name counts, there
+    ///         being no execute bit to ask. <c>CreateProcess</c> also looks in the application's directory, the
+    ///         working directory and the system directories before <c>PATH</c>. This answers for the <c>PATH</c>
+    ///         route alone.
+    ///     </para>
+    ///     <para>
+    ///         <paramref name="pathVariable" /> is the variable's value, passed in rather than read here so that
+    ///         no test has to touch the real environment.
+    ///     </para>
     /// </remarks>
     internal static string? Resolve(string fileName, string? pathVariable)
     {

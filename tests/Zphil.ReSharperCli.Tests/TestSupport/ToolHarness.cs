@@ -9,24 +9,21 @@ using Zphil.ReSharperCli.Tools;
 namespace Zphil.ReSharperCli.Tests.TestSupport;
 
 /// <summary>
-///     Builds a real <see cref="ResharperTools" /> wired to the concrete service graph, composed over the
-///     only two fakeable seams (<see cref="IProcessRunner" /> and <see cref="IEnvironment" />). Lets the
-///     tool tests exercise the full tool → config → service → process path without a DI container.
+///     Builds a real <see cref="ResharperTools" /> wired to the concrete service graph, composed over the two
+///     fakeable seams (<see cref="IProcessRunner" /> and <see cref="IEnvironment" />), so a test exercises the
+///     whole path from tool to config, service and process without a DI container.
 /// </summary>
 internal static class ToolHarness
 {
-    /// <param name="processRunner">The process seam every jb spawn in the graph goes through.</param>
-    /// <param name="environment">The environment seam: variables, working directory, home directory.</param>
-    /// <param name="logs">
-    ///     Wired through the whole graph when a test means to assert on what it logged; omitted, every class
-    ///     logs to a <see cref="NullLogger{T}" />.
-    /// </param>
-    /// <param name="reportRoot">
-    ///     Where <see cref="InspectReportWriter" /> puts the files it writes. Defaulting to the real temp path
-    ///     looks careless and is not: nothing is written unless a call passes <c>report</c>, and a test that
-    ///     passes <c>report</c> passes a root of its own too — <c>FakeEnvironment.CreateTempDirectory()</c>,
-    ///     which is deleted with the environment.
-    /// </param>
+    /// <summary>Builds the tools over the given seams.</summary>
+    /// <remarks>
+    ///     <paramref name="logs" /> is wired through the whole graph when a test means to assert on what it
+    ///     logged; omitted, every class logs to a <see cref="NullLogger{T}" />. <paramref name="reportRoot" /> is
+    ///     where <see cref="InspectReportWriter" /> puts the files it writes. The real temp path is a safe default
+    ///     because nothing is written unless a call passes <c>report</c>; a test that passes <c>report</c> should
+    ///     pass a root of its own, such as <c>FakeEnvironment.CreateTempDirectory()</c>, which is deleted with the
+    ///     environment.
+    /// </remarks>
     public static ResharperTools Build(
         IProcessRunner processRunner,
         IEnvironment environment,
@@ -36,9 +33,8 @@ internal static class ToolHarness
         JbLocator jbLocator = new(processRunner, environment, Logs.For<JbLocator>(logs));
         ConfigResolver configResolver = new(jbLocator, environment, Logs.For<ConfigResolver>(logs));
 
-        // One lock and one yield for the whole graph, exactly as the composition root registers them: a
-        // cache reset with a lock of its own would serialize against nothing and could delete a generation
-        // mid-run, and one with a yield of its own would queue behind the pre-warm it is meant to displace.
+        // One lock and one yield for the whole graph, shared by the runner and the reset as the composition
+        // root shares them.
         JbRunLock runLock = JbRunners.Lock(logs: logs);
         JbRunYield runYield = JbRunners.Yield(logs);
         JbRunner jbRunner = JbRunners.Create(processRunner, runLock, runYield, logs: logs);

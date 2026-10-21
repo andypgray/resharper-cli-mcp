@@ -10,9 +10,12 @@ internal static class ToolAttributeDiscovery
 {
     /// <summary>
     ///     Returns every <see cref="McpServerToolAttribute" />-annotated method on
-    ///     <see cref="McpServerToolTypeAttribute" />-annotated classes — the one place "which methods are
-    ///     tools" is decided, so consumers cannot drift on the rule.
+    ///     <see cref="McpServerToolTypeAttribute" />-annotated classes.
     /// </summary>
+    /// <remarks>
+    ///     The one place the rule for which methods are tools is decided, so everything that needs the tool set
+    ///     applies the same rule.
+    /// </remarks>
     internal static IEnumerable<MethodInfo> GetToolMethods()
     {
         return typeof(ToolAttributeDiscovery).Assembly

@@ -3,7 +3,7 @@ using Zphil.ReSharperCli.Infrastructure;
 namespace Zphil.ReSharperCli.Tests.TestDoubles;
 
 /// <summary>
-///     A hand-rolled <see cref="IEnvironment" /> for tests: dictionary-backed variables, with
+///     Provides a test <see cref="IEnvironment" /> whose variables live in a dictionary, with
 ///     <see cref="CurrentDirectory" /> and <see cref="HomeDirectory" /> pointed at freshly created temp
 ///     directories.
 /// </summary>
@@ -67,12 +67,12 @@ internal sealed class FakeEnvironment : IEnvironment, IDisposable
     }
 
     /// <summary>
-    ///     A path for a solution file called <paramref name="solutionFileName" /> in a fresh temp directory
-    ///     of its own; nothing is written at it.
+    ///     Returns a path for a solution file called <paramref name="solutionFileName" /> in a fresh temp
+    ///     directory of its own, without writing anything at it.
     /// </summary>
     /// <remarks>
-    ///     Reusing another solution's file name makes the checkout shape <c>jb</c> hashes apart — a transplant
-    ///     donor, a reset's left-alone neighbour — and a different name makes an unrelated solution.
+    ///     Reusing another solution's file name gives the shape <c>jb</c> hashes apart, such as a transplant
+    ///     donor or a reset's left-alone neighbour; a different name gives an unrelated solution.
     /// </remarks>
     public string CreateSolutionPath(string solutionFileName)
     {
@@ -80,8 +80,9 @@ internal sealed class FakeEnvironment : IEnvironment, IDisposable
     }
 
     /// <summary>
-    ///     <see cref="CreateSolutionPath" /> with an empty solution file written at it: the shape of a
-    ///     checkout that is still there, where the bare path is the shape of one that has been deleted.
+    ///     Writes an empty solution file at a fresh <see cref="CreateSolutionPath" /> path and returns it: the
+    ///     shape of a checkout that is still there, where the bare path is the shape of one that has been
+    ///     deleted.
     /// </summary>
     public string CreateCheckout(string solutionFileName)
     {
@@ -92,7 +93,7 @@ internal sealed class FakeEnvironment : IEnvironment, IDisposable
 
     /// <summary>
     ///     Writes an empty solution file called <paramref name="solutionFileName" /> in
-    ///     <see cref="CurrentDirectory" /> — where discovery looks first — and returns its path.
+    ///     <see cref="CurrentDirectory" />, where discovery looks first, and returns its path.
     /// </summary>
     /// <remarks>
     ///     For a server that resolves its solution the way the production default does, by discovery rather

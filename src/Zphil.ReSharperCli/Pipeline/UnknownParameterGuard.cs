@@ -16,19 +16,18 @@ namespace Zphil.ReSharperCli.Pipeline;
 ///         as missing, through the binder's <see cref="ArgumentException" />, which
 ///         <see cref="GlobalCallToolFilter" /> logs as unexpected, and an optional one silently takes
 ///         its default. This guard inspects the raw argument keys ahead of binding and names both the
-///         bad keys and the real parameter list so the next call self-corrects, mirroring the
-///         forgiving-input policy of <see cref="EnumValidationConverterFactory" /> and
-///         <see cref="StringArrayCoercerFactory" />.
+///         bad keys and the parameters the tool does take, so the next call self-corrects, in line with the
+///         forgiving-input coercers in <see cref="ToolInputSerializerOptions" />.
 ///     </para>
 ///     <para>
-///         The SDK <em>has</em> a dormant strict check, but it needs
-///         <c>JsonUnmappedMemberHandling.Disallow</c> AND no parameter bound by a
-///         <c>BindParameter</c> callback. Here the Web defaults leave <c>UnmappedMemberHandling</c> at
-///         <c>Skip</c>, and every tool's <c>RequestContext&lt;CallToolRequestParams&gt;</c> is bound by
-///         the SDK's own <c>BindParameter</c>; custom converters are not custom parameter binding. Do
-///         NOT "fix" this by flipping <c>UnmappedMemberHandling</c>: for these tools that arms nothing,
-///         and where the check does fire it throws an <see cref="ArgumentException" /> that the filter
-///         logs as unexpected and that names no valid parameter. This guard is the working equivalent.
+///         The SDK has a dormant strict check, but it needs <c>JsonUnmappedMemberHandling.Disallow</c> and
+///         no parameter bound by a <c>BindParameter</c> callback. Here the Web defaults leave
+///         <c>UnmappedMemberHandling</c> at <c>Skip</c>, and every tool's
+///         <c>RequestContext&lt;CallToolRequestParams&gt;</c> is bound by the SDK's own <c>BindParameter</c>;
+///         custom converters are not custom parameter binding. Do not "fix" this by flipping
+///         <c>UnmappedMemberHandling</c>: for these tools that arms nothing, and where the check does fire it
+///         throws an <see cref="ArgumentException" /> that the filter logs as unexpected and that names no
+///         valid parameter.
 ///     </para>
 ///     <para>
 ///         It must accept exactly the keys the binder binds, and the SDK publishes that set itself: the
@@ -46,9 +45,8 @@ internal static class UnknownParameterGuard
     ///     property of <paramref name="tool" />'s input schema.
     /// </summary>
     /// <remarks>
-    ///     Keys must match exactly — ordinally, as the SDK binds them — and <see langword="null" /> means every
-    ///     key did. Only key identity is inspected — values are never read, so a present-but-null valid
-    ///     argument is fine.
+    ///     Returns <see langword="null" /> when every key matches. Values are never read, so a present-but-null
+    ///     valid argument is fine.
     /// </remarks>
     internal static string? Validate(Tool tool, IDictionary<string, JsonElement>? arguments)
     {
@@ -62,7 +60,7 @@ internal static class UnknownParameterGuard
         return $"Unknown parameter {badKeys} on \"{tool.Name}\". Valid: {string.Join(", ", validNames)}.";
     }
 
-    /// <summary>The argument keys <paramref name="tool" /> binds, in the order its schema lists them.</summary>
+    /// <summary>Returns the argument keys <paramref name="tool" /> binds, in the order its schema lists them.</summary>
     private static List<string> ParameterNames(Tool tool)
     {
         return tool.InputSchema.TryGetProperty("properties", out JsonElement properties)

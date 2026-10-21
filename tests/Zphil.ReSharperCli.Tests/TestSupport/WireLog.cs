@@ -5,34 +5,31 @@ using ModelContextProtocol.Protocol;
 namespace Zphil.ReSharperCli.Tests.TestSupport;
 
 /// <summary>
-///     Everything the server wrote to its transport, in the order it wrote it — the one place a progress
-///     contract is a fact rather than an inference about thread-pool scheduling.
+///     Records everything the server wrote to its transport, in the order it wrote it: the one place a
+///     progress contract is a fact rather than an inference about thread-pool scheduling.
 /// </summary>
 /// <remarks>
 ///     <para>
 ///         A client's arrival order carries no information about a server's emission order, so an ordering
 ///         assertion made client-side reads a promise the transport never gave. In ModelContextProtocol 2.2.0,
 ///         <c>McpSessionHandler.ProcessMessagesCoreAsync</c> dispatches each inbound message with a bare
-///         <c>_ = ProcessMessageAsync()</c>, and that method forces a yield —
-///         <c>await Task.CompletedTask.ConfigureAwait(ConfigureAwaitOptions.ForceYielding)</c> — before running
+///         <c>_ = ProcessMessageAsync()</c>, and that method forces a yield
+///         (<c>await Task.CompletedTask.ConfigureAwait(ConfigureAwaitOptions.ForceYielding)</c>) before running
 ///         a handler, so every notification becomes an independent thread-pool work item.
 ///         <c>CallToolAsync(progress:)</c> registers an ordinary notification handler and rides that same path.
-///         The scrambling is routine rather than theoretical: a monotonic pin read client-side fails on ordinary
-///         full-suite runs.
+///         The scrambling happens in practice: a monotonic pin read client-side fails on ordinary full-suite runs.
 ///     </para>
 ///     <para>
-///         The write side concedes nothing. <c>StreamServerTransport.SendMessageAsync</c> holds a single
-///         <c>SemaphoreSlim</c> across the whole send — serialize, write the UTF-8 JSON, write <c>"\n"</c>,
-///         flush — so frames never interleave, one line is one frame, and write order is emission order. That
-///         also makes the decode torn-read-free for nothing: a frame still being written has no newline yet, so
-///         dropping the trailing partial line drops exactly the one that is incomplete.
+///         The write side is ordered. <c>StreamServerTransport.SendMessageAsync</c> holds a single
+///         <c>SemaphoreSlim</c> across the whole send (serialize, write the UTF-8 JSON, write <c>"\n"</c>,
+///         flush), so frames never interleave, one line is one frame, and write order is emission order. That
+///         also keeps the decode free of torn reads: a frame still being written has no newline yet, so dropping
+///         the trailing partial line drops only the one that is incomplete.
 ///     </para>
 ///     <para>
-///         What the write side does <em>not</em> settle is which send reaches that semaphore first, and for
-///         progress that is the whole contract. Two sends started in order race for it, so ordering has to be
-///         decided before the transport, which is <c>ProgressSink</c>'s job. Reading order here is therefore
-///         reading a promise the server makes, not a coincidence of scheduling: this class is what makes the
-///         promise checkable, and the sink is what makes it true.
+///         The write side does not settle which send reaches that semaphore first. Two sends started in order
+///         race for it, so ordering has to be decided before the transport, which is <c>ProgressSink</c>'s job.
+///         An order read here is therefore the order the server promises, not a coincidence of scheduling.
 ///     </para>
 /// </remarks>
 internal sealed class WireLog
@@ -47,7 +44,7 @@ internal sealed class WireLog
     private readonly MemoryStream _bytes = new();
     private readonly Lock _gate = new();
 
-    /// <summary>Every completed frame, in the order the server wrote it.</summary>
+    /// <summary>Gets every completed frame, in the order the server wrote it.</summary>
     public IReadOnlyList<WireFrame> Frames
     {
         get
@@ -58,7 +55,7 @@ internal sealed class WireLog
                 snapshot = _bytes.ToArray();
             }
 
-            // The final element is whatever is mid-write — no newline has closed it — so it is not yet a frame.
+            // The final element is whatever is mid-write, with no newline closing it yet, so it is not a frame.
             string[] lines = Encoding.UTF8.GetString(snapshot).Split('\n');
 
             return lines
@@ -71,7 +68,7 @@ internal sealed class WireLog
     }
 
     /// <summary>
-    ///     The <c>progress</c> value of every progress notification, in the order the server wrote them.
+    ///     Gets the <c>progress</c> value of every progress notification, in the order the server wrote them.
     /// </summary>
     /// <remarks>
     ///     A frame whose <c>progress</c> is missing or non-numeric reads as <see langword="null" /> rather than
@@ -82,7 +79,7 @@ internal sealed class WireLog
         .Select(frame => frame.ProgressValue)
         .ToList();
 
-    /// <summary>Where the last progress notification sits among <see cref="Frames" />.</summary>
+    /// <summary>Gets where the last progress notification sits among <see cref="Frames" />.</summary>
     /// <remarks><c>-1</c> when the server wrote none.</remarks>
     public int LastProgressIndex
     {
@@ -96,7 +93,7 @@ internal sealed class WireLog
         }
     }
 
-    /// <summary>Where the <c>tools/call</c> result sits among <see cref="Frames" />.</summary>
+    /// <summary>Gets where the <c>tools/call</c> result sits among <see cref="Frames" />.</summary>
     /// <remarks>
     ///     <c>-1</c> when the server has not written one. See <see cref="ToolResultProperty" /> for what
     ///     identifies it.
@@ -159,12 +156,16 @@ internal sealed class WireLog
     }
 }
 
-/// <summary>One completed JSON-RPC frame, read off the wire.</summary>
-/// <param name="Method">The frame's <c>method</c>, or <see langword="null" /> when it is a response.</param>
-/// <param name="IsToolResult">Whether the frame is a <c>tools/call</c> result — a <c>result</c> carrying <c>content</c>.</param>
-/// <param name="ProgressValue">The frame's <c>params.progress</c>, or <see langword="null" /> when it has none.</param>
+/// <summary>
+///     Represents one completed JSON-RPC frame, read off the wire. <paramref name="Method" /> is
+///     <see langword="null" /> for a response, and <paramref name="IsToolResult" /> marks a <c>tools/call</c>
+///     result: a <c>result</c> carrying <c>content</c>.
+/// </summary>
 internal sealed record WireFrame(string? Method, bool IsToolResult, double? ProgressValue)
 {
-    /// <summary>Whether the frame is a progress notification, by the SDK's own spelling of the method name.</summary>
+    /// <summary>
+    ///     Gets a value indicating whether the frame is a progress notification, by the SDK's own spelling of
+    ///     the method name.
+    /// </summary>
     public bool IsProgressNotification => Method == NotificationMethods.ProgressNotification;
 }

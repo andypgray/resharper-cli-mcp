@@ -4,7 +4,7 @@ namespace Zphil.ReSharperCli.Tests.TestSupport;
 
 /// <summary>
 ///     Reads a PNG's pixel dimensions out of its header, so a test can hold a declared <c>sizes</c> entry
-///     to the render it actually names.
+///     to the render it names.
 /// </summary>
 /// <remarks>
 ///     Every icon channel states a size next to a path, and a copied entry with an unchanged size is the drift
@@ -15,7 +15,7 @@ internal static class PngRender
     private static readonly byte[] Signature = [0x89, (byte)'P', (byte)'N', (byte)'G', 0x0D, 0x0A, 0x1A, 0x0A];
 
     /// <summary>
-    ///     The render's size in the <c>WxH</c> form the MCP icons schema specifies, read from the IHDR
+    ///     Returns the render's size in the <c>WxH</c> form the MCP icons schema specifies, read from the IHDR
     ///     chunk that a PNG is required to open with.
     /// </summary>
     /// <exception cref="ArgumentException">The bytes are not a PNG.</exception>

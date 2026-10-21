@@ -8,18 +8,17 @@ using Zphil.ReSharperCli.Tests.TestSupport;
 namespace Zphil.ReSharperCli.Tests.Execution;
 
 /// <summary>
-///     Generation ownership stated over generated names rather than the handful a table can hold: a generation
+///     States generation ownership over generated names rather than the handful a table can hold: a generation
 ///     directory belongs to the solution whose name composed it, and to no other.
 /// </summary>
 /// <remarks>
-///     <see cref="MatchHash_GenerationOfALongerSolutionSharingThisPrefix_ReturnsNull" /> is the one that
-///     matters: it is the invariant that stops <c>resharper_reset_cache</c> deleting <c>_App.Core.*</c> when it
-///     was asked about <c>App</c>, and a table of examples can only ever demonstrate it for the pairs someone
-///     thought to write down.
+///     <see cref="MatchHash_GenerationOfALongerSolutionSharingThisPrefix_ReturnsNull" /> carries the invariant
+///     that keeps <c>resharper_reset_cache</c> from deleting <c>_App.Core.*</c> when asked about <c>App</c>, which
+///     a table of examples demonstrates only for the pairs someone wrote down.
 /// </remarks>
 public sealed class JbCacheGenerationsPropertyTests
 {
-    /// <summary>A generation directory composed from the very solution name it is then parsed against.</summary>
+    /// <summary>Draws a generation directory composed from the solution name it is then parsed against.</summary>
     private static Gen<OwnGenerationCase> OwnGeneration()
     {
         return JbNameGenerators.SolutionName().SelectMany(
@@ -29,7 +28,7 @@ public sealed class JbCacheGenerationsPropertyTests
     }
 
     /// <summary>
-    ///     A directory name that shares a shorter solution's prefix but is a longer solution's generation.
+    ///     Draws a directory name that shares a shorter solution's prefix but is a longer solution's generation.
     /// </summary>
     /// <remarks>
     ///     Both ways of being longer are drawn: a further dot-separated segment (the <c>App</c> /
@@ -54,7 +53,7 @@ public sealed class JbCacheGenerationsPropertyTests
     }
 
     /// <summary>
-    ///     A generation directory built from another ASCII-case spelling of the solution name it is then
+    ///     Draws a generation directory built from another ASCII-case spelling of the solution name it is then
     ///     parsed against.
     /// </summary>
     private static Gen<CaseVariantCase> CaseVariantGeneration()
@@ -107,14 +106,13 @@ public sealed class JbCacheGenerationsPropertyTests
 
     /// <summary>
     ///     Stated through <see cref="JbCacheGenerations.NameComparison" /> rather than behind a platform skip,
-    ///     so it means the same thing on every operating system — on Windows every draw exercises it, and
-    ///     elsewhere the identity spellings the generator draws deliberately do.
+    ///     so it means the same thing on every operating system: on Windows every draw exercises it, and
+    ///     elsewhere the identity spellings among the draws do.
     /// </summary>
     /// <remarks>
-    ///     The converse is left unpinned on purpose. Off Windows the comparison is ordinal, which stands in
-    ///     for the cache home's filesystem and is wrong on a case-insensitive one such as macOS's default
-    ///     APFS volume, and that gap is not a promise a test should make on its behalf. Asserting only the
-    ///     direction that holds everywhere is what keeps this from freezing the proxy in place.
+    ///     The converse is left unpinned. Off Windows the comparison is ordinal, a proxy for the cache home's
+    ///     filesystem that is wrong on a case-insensitive one, and a test asserting it would freeze the proxy in
+    ///     place.
     /// </remarks>
     [Property]
     public Property MatchHash_ASolutionNameSpeltInAnotherCase_MatchesWhereverNameComparisonCallsItTheSameName()
@@ -138,15 +136,15 @@ public sealed class JbCacheGenerationsPropertyTests
             });
     }
 
-    /// <summary>A generation directory, the solution name it was composed from, and the hash it carries.</summary>
+    /// <summary>Holds a generation directory, the solution name it was composed from, and its hash.</summary>
     private sealed record OwnGenerationCase(string DirectoryName, string SolutionName, string Hash);
 
-    /// <summary>A longer solution's generation directory, and the shorter name it must not answer to.</summary>
+    /// <summary>Holds a longer solution's generation directory, and the shorter name it must not answer to.</summary>
     private sealed record LongerSolutionCase(string DirectoryName, string ShorterName, string LongerName);
 
     /// <summary>
-    ///     A generation directory, the solution name it is parsed against, the spelling of that name it was
-    ///     actually composed from, and the hash it carries.
+    ///     Holds a generation directory, the solution name it is parsed against, the spelling of that name it was
+    ///     composed from, and the hash it carries.
     /// </summary>
     private sealed record CaseVariantCase(
         string DirectoryName,

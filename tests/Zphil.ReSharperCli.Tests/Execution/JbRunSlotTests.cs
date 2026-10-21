@@ -20,7 +20,7 @@ public sealed class JbRunSlotTests
 
     private static readonly TimeSpan Generous = TimeSpan.FromSeconds(10);
 
-    /// <summary>Long enough that a slot genuinely not taken shows up as a completed wait.</summary>
+    /// <summary>Long enough that a slot not taken shows up as a completed wait.</summary>
     private static readonly TimeSpan HeldFor = TimeSpan.FromMilliseconds(200);
 
     private readonly JbRunSlot _slot = JbRunners.Slot();
@@ -44,8 +44,8 @@ public sealed class JbRunSlotTests
     [Fact]
     public async Task TakeAsync_WhileHeldForAnotherSolution_WaitsForIt()
     {
-        // Arrange — the whole point, and the case JbRunLock cannot see: two solutions are two cache
-        // generations, so the lock lets both through and only this stops two jb processes running at once.
+        // Arrange — the case JbRunLock cannot see: two solutions are two cache generations, so the lock lets
+        // both through and only the slot stops two jb processes running at once.
         IDisposable first = await _slot.TakeAsync(Subcommand, SolutionPath, Ct);
 
         // Act / Assert
@@ -73,7 +73,7 @@ public sealed class JbRunSlotTests
     public async Task TakeAsync_Cancelled_EndsTheWaitRatherThanServingItOut()
     {
         // Arrange — the wait has no cap of its own, so the client's cancellation is what ends it. Without
-        // that this would be unbounded rather than merely long.
+        // that this would be unbounded, not only long.
         using IDisposable held = await _slot.TakeAsync(Subcommand, SolutionPath, Ct);
         using CancellationTokenSource cancelled = new();
 
@@ -107,8 +107,8 @@ public sealed class JbRunSlotTests
         // Act
         IDisposable? speculative = _slot.TryTake(Subcommand, SolutionPath);
 
-        // Assert — a claim that did not really take the slot would let a jb run beside the pass, which is
-        // the whole failure this class exists to prevent.
+        // Assert — a claim that did not take the slot would let a jb run beside the pass, which is the failure
+        // the slot exists to prevent.
         speculative.ShouldNotBeNull();
         await ShouldAdmitTheNextCallerOnlyAfter(speculative);
     }
@@ -117,7 +117,7 @@ public sealed class JbRunSlotTests
     public async Task Dispose_CalledTwice_DoesNotAdmitAnExtraRun()
     {
         // Arrange — an over-release would put two jb processes on the machine while one still holds the
-        // slot, which is exactly the state this bounds.
+        // slot, which is the state the slot bounds.
         IDisposable first = await _slot.TakeAsync(Subcommand, SolutionPath, Ct);
         first.Dispose();
         first.Dispose();
@@ -133,8 +133,8 @@ public sealed class JbRunSlotTests
     [Fact]
     public async Task TakeAsync_AfterANotableWait_SaysWhatItQueuedBehind()
     {
-        // Arrange — the wait is the whole point: nothing else in the log records that a call spent minutes
-        // behind this server's own run on another solution, and read from outside it looks like a slow run.
+        // Arrange — nothing else in the log records that a call spent minutes behind this server's own run on
+        // another solution, and read from outside, such a wait looks like a slow run.
         CapturingLoggerProvider logs = new();
         JbRunSlot slot = JbRunners.Slot(Logs.Capturing(logs));
         IDisposable held = await slot.TakeAsync("cleanupcode", OtherSolutionPath, Ct);
@@ -156,7 +156,7 @@ public sealed class JbRunSlotTests
     public async Task TakeAsync_Uncontended_RecordsTheAcquireWithoutClaimingAWait()
     {
         // Arrange — the ordinary case is every call, so it rides at Debug: an Information line per run for
-        // a wait nobody served would bury the caching events that cost real minutes.
+        // a wait nobody served would bury the caching events that cost minutes.
         CapturingLoggerProvider logs = new();
         JbRunSlot slot = JbRunners.Slot(Logs.Capturing(logs));
 
@@ -170,8 +170,9 @@ public sealed class JbRunSlotTests
     }
 
     /// <summary>
-    ///     A caller the user is waiting on, queued on another solution behind <paramref name="holder" />: still
-    ///     parked after <see cref="HeldFor" />, and admitted once the holder lets go.
+    ///     Asserts that a caller the user is waiting on, queued on another solution behind
+    ///     <paramref name="holder" />, is still parked after <see cref="HeldFor" /> and admitted once the holder
+    ///     lets go.
     /// </summary>
     private async Task ShouldAdmitTheNextCallerOnlyAfter(IDisposable holder)
     {

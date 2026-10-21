@@ -16,7 +16,9 @@ public sealed class StringArrayCoercerFactoryTests
         Converters = { new StringArrayCoercerFactory() }
     };
 
-    /// <summary>The text inside a JSON string that holds a JSON string array, and the array it unwraps to.</summary>
+    /// <summary>
+    ///     Gets the text inside a JSON string that holds a JSON string array, and the array it unwraps to.
+    /// </summary>
     public static TheoryData<string, string[]> StringifiedArrays =>
         new()
         {
@@ -117,9 +119,9 @@ public sealed class StringArrayCoercerFactoryTests
     [Fact]
     public void Deserialize_UnclosedArray_ThrowsJsonException()
     {
-        // Act — STJ's outer parser rejects truncated JSON before it ever reaches the converter,
-        // but the EndOfStream guard inside ReadArray exists to keep the converter safe if a
-        // future caller hands it a primed Utf8JsonReader.
+        // Act — STJ's outer parser rejects truncated JSON before it ever reaches the converter, but the
+        // end-of-input throw inside ReadArray keeps the converter safe if it is ever handed a primed
+        // Utf8JsonReader.
         Should.Throw<JsonException>(() =>
             JsonSerializer.Deserialize<string[]>("""["A","B" """, Options));
     }

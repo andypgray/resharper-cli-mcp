@@ -3,7 +3,7 @@ using FsCheck.Fluent;
 
 namespace Zphil.ReSharperCli.Tests.TestSupport;
 
-/// <summary>Generators for the names <c>jb</c>'s undocumented cache layout is built from.</summary>
+/// <summary>Provides generators for the names <c>jb</c>'s undocumented cache layout is built from.</summary>
 /// <remarks>
 ///     Each one is constrained to the domain the code under test documents rather than to "any string",
 ///     because a property whose generator wanders outside that domain proves nothing about the invariant and
@@ -12,17 +12,16 @@ namespace Zphil.ReSharperCli.Tests.TestSupport;
 /// </remarks>
 internal static class JbNameGenerators
 {
-    /// <summary>Names that have actually appeared in a cache home, hit on every seed rather than waited for.</summary>
+    /// <summary>The solution-name shapes the parser must not get wrong: plain, dotted, one character.</summary>
     private static readonly string[] KnownSolutionNames = ["App", "App.Core", "Zphil.ReSharperCli", "a"];
 
     /// <summary>
-    ///     A solution file name without its extension: one to three dot-joined segments of ASCII letters,
-    ///     digits, <c>-</c> and <c>_</c>.
+    ///     Generates a solution file name without its extension: one to three dot-joined segments of ASCII
+    ///     letters, digits, <c>-</c> and <c>_</c>.
     /// </summary>
     /// <remarks>
-    ///     Dots are the interesting part — they are ordinary in a solution name and are also the character the
-    ///     generation-directory scheme separates on, which is the whole reason the parser cannot simply split
-    ///     on them.
+    ///     Dots matter most: they are ordinary in a solution name and are also the character the
+    ///     generation-directory scheme separates on, which is why the parser cannot split on them.
     /// </remarks>
     internal static Gen<string> SolutionName()
     {
@@ -34,11 +33,11 @@ internal static class JbNameGenerators
     }
 
     /// <summary>
-    ///     A hash as <c>jb</c> renders it into a directory name: an optionally negative run of one to ten
-    ///     ASCII digits.
+    ///     Generates a hash as <c>jb</c> renders it into a directory name: an optionally negative run of one to
+    ///     ten ASCII digits.
     /// </summary>
     /// <remarks>
-    ///     Negative values are about half of the real ones, so they are drawn deliberately rather than left to
+    ///     Negative values are about half of the real ones, so the sign is drawn explicitly rather than left to
     ///     chance.
     /// </remarks>
     private static Gen<string> CacheHash()
@@ -51,8 +50,8 @@ internal static class JbNameGenerators
     }
 
     /// <summary>
-    ///     A generation number: <c>00</c> for the first, and the higher ones <c>jb</c> forks when it cannot
-    ///     open the generation it wanted.
+    ///     Generates a generation number: <c>00</c> for the first, and the higher ones <c>jb</c> forks when it
+    ///     cannot open the generation it wanted.
     /// </summary>
     /// <remarks>Non-negative and zero-padded, matching what appears on disk.</remarks>
     private static Gen<string> GenerationNumber()
@@ -60,7 +59,7 @@ internal static class JbNameGenerators
         return Gen.Choose(0, 99).Select(generation => generation.ToString("00"));
     }
 
-    /// <summary>A POSIX-shaped absolute path to a solution file.</summary>
+    /// <summary>Generates a POSIX-shaped absolute path to a solution file.</summary>
     /// <remarks>
     ///     Forward slashes only, so the same generated path is a legal argument on both platforms and no
     ///     property built on it can assert something that is only true on one of them.
@@ -79,12 +78,12 @@ internal static class JbNameGenerators
     }
 
     /// <summary>
-    ///     The directory name <c>jb</c> gives a generation of <paramref name="solutionName" />: the
-    ///     <c>_{name}.{hash}.{generation}</c> shape.
+    ///     Generates the directory name <c>jb</c> gives a generation of <paramref name="solutionName" />, in the
+    ///     <c>_{name}.{hash}.{generation}</c> shape, paired with its hash.
     /// </summary>
     /// <remarks>
-    ///     Composed here so a property can hand the parser a name that is provably well formed rather than one
-    ///     hand-spelled per test.
+    ///     Composed here so a property can hand the parser a name that is well formed by construction rather
+    ///     than one hand-spelled per test.
     /// </remarks>
     internal static Gen<(string DirectoryName, string Hash)> GenerationDirectoryName(string solutionName)
     {
@@ -94,15 +93,13 @@ internal static class JbNameGenerators
     }
 
     /// <summary>
-    ///     <paramref name="name" /> respelt in another case: each <c>A</c>–<c>Z</c> or <c>a</c>–<c>z</c>
-    ///     character independently kept, upper-cased or lower-cased, and every other character left exactly
-    ///     as it is.
+    ///     Generates <paramref name="name" /> respelt in another case: each <c>A</c>–<c>Z</c> or <c>a</c>–<c>z</c>
+    ///     character independently kept, upper-cased or lower-cased, and every other character left as it is.
     /// </summary>
     /// <remarks>
     ///     A non-ASCII letter is left as it is too, because folding one is the mistake the code this feeds must
-    ///     not make. The whole-string variants are unioned in so the identity spelling and the two extremes are
-    ///     drawn on every seed rather than waited for: where a case-insensitive invariant only holds on one
-    ///     platform, identity is what still exercises the assertion on the others.
+    ///     not make. The whole-string variants are unioned in because, where a case-insensitive invariant holds
+    ///     on only one platform, the identity spelling is what still exercises the assertion on the others.
     /// </remarks>
     internal static Gen<string> AsciiCaseVariant(string name)
     {
@@ -118,9 +115,7 @@ internal static class JbNameGenerators
         return Gen.OneOf(perCharacter, whole);
     }
 
-    /// <summary>
-    ///     A non-empty run of the characters a solution file name segment is made of.
-    /// </summary>
+    /// <summary>Generates a non-empty run of the characters a solution file name segment is made of.</summary>
     private static Gen<string> Segment()
     {
         return Gen.Choose(1, 8)
@@ -128,7 +123,7 @@ internal static class JbNameGenerators
             .Select(characters => new string(characters.ToArray()));
     }
 
-    /// <summary>The spellings of one character: itself, and its ASCII case pair where it has one.</summary>
+    /// <summary>Generates one character's spellings: itself, and its ASCII case pair where it has one.</summary>
     private static Gen<char> AsciiCaseVariantsOf(char character)
     {
         if (!char.IsAsciiLetter(character)) return Gen.Constant(character);
@@ -146,8 +141,8 @@ internal static class JbNameGenerators
     }
 
     /// <summary>
-    ///     <paramref name="value" /> with its first ASCII letter in the other case — the smallest respelling
-    ///     there is, and the one a per-character draw is least likely to produce on its own.
+    ///     Returns <paramref name="value" /> with its first ASCII letter in the other case: the smallest
+    ///     respelling there is, which a per-character draw over a long name seldom produces on its own.
     /// </summary>
     private static string FlipFirstAsciiLetter(string value)
     {

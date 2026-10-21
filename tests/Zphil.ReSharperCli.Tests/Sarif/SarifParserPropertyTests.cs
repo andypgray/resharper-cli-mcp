@@ -8,14 +8,14 @@ using Zphil.ReSharperCli.Sarif;
 namespace Zphil.ReSharperCli.Tests.Sarif;
 
 /// <summary>
-///     The parser's one structural promise, over generated reports rather than the fixtures on disk: every
+///     Pins the parser's one structural promise over generated reports rather than the fixtures on disk: every
 ///     result carrying a first location becomes exactly one issue, in document order across every run, and
 ///     every result without one is dropped.
 /// </summary>
 /// <remarks>
-///     The fixtures each pin a single shape; what they cannot show is the shapes <em>interleaved</em> — a
-///     located result after two dropped ones, a run that contributes nothing sitting between two that do — which
-///     is where an off-by-one in the flattening would live.
+///     The fixtures each pin a single shape. What they cannot show is the shapes interleaved, such as a located
+///     result after two dropped ones or a run that contributes nothing between two that do, which is where an
+///     off-by-one in the flattening would live.
 /// </remarks>
 public sealed class SarifParserPropertyTests
 {
@@ -74,11 +74,11 @@ public sealed class SarifParserPropertyTests
             });
     }
 
-    /// <summary>URIs at and past the edge of what <see cref="Uri" /> accepts.</summary>
+    /// <summary>Generates URIs at and past the edge of what <see cref="Uri" /> accepts.</summary>
     /// <remarks>
     ///     The curated shapes are drawn on every seed rather than waited for: an authority-less <c>file://</c>,
     ///     invalid host characters, a malformed IPv6 literal, and an embedded null are the forms that are cheap to
-    ///     hit deliberately and unlikely to be assembled at random.
+    ///     construct and unlikely to be drawn at random.
     /// </remarks>
     private static Gen<string> HostileUri()
     {
@@ -101,7 +101,10 @@ public sealed class SarifParserPropertyTests
         return Gen.OneOf(curated, assembled);
     }
 
-    /// <summary>A single located result at <paramref name="uri" /> — the smallest report that reaches the URI conversion.</summary>
+    /// <summary>
+    ///     Builds a report holding one located result at <paramref name="uri" />, the smallest report that
+    ///     reaches the URI conversion.
+    /// </summary>
     private static string SingleResultReport(string uri)
     {
         Dictionary<string, object?> result = new()
@@ -132,7 +135,7 @@ public sealed class SarifParserPropertyTests
         return JsonSerializer.Serialize(report);
     }
 
-    /// <summary>A report as a list of runs, each a list of result shapes.</summary>
+    /// <summary>Generates a report as a list of runs, each a list of result shapes.</summary>
     /// <remarks>
     ///     Both are bounded rather than left to the generator's size: nesting two unbounded collections would
     ///     build reports of thousands of results per case, which buys nothing an interleaving of a handful does
@@ -152,7 +155,7 @@ public sealed class SarifParserPropertyTests
             .Select(shapes => (IReadOnlyList<ResultShape>)shapes.ToList());
     }
 
-    /// <summary>The SARIF for <paramref name="runs" />, and the rule ids of the results that must survive it.</summary>
+    /// <summary>Builds the SARIF for <paramref name="runs" /> and the rule ids that must survive it.</summary>
     /// <remarks>
     ///     Ids are stamped in document order, so asserting on them asserts on order as well as on membership.
     /// </remarks>
@@ -232,8 +235,8 @@ public sealed class SarifParserPropertyTests
     }
 
     /// <summary>
-    ///     <see cref="ResultShape.Located" />, and the ways a result can fail to carry a usable first location,
-    ///     each of which must drop it.
+    ///     Defines the shapes a generated result takes: <see cref="ResultShape.Located" />, and the ways a result
+    ///     can fail to carry a usable first location, each of which must drop it.
     /// </summary>
     private enum ResultShape
     {

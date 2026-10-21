@@ -7,9 +7,8 @@ using Zphil.ReSharperCli.Tests.TestSupport;
 namespace Zphil.ReSharperCli.Tests.Services;
 
 /// <summary>
-///     Pins <see cref="FilePathList" /> over real files planted under a per-instance temp directory (so the
-///     parallel run stays race-free), because the existing-file guard is the whole reason splitting is safe
-///     for the destructive tool.
+///     Pins <see cref="FilePathList" /> over real files, because the existing-file guard is the whole reason
+///     splitting is safe for the destructive tool.
 /// </summary>
 public sealed class FilePathListTests : IDisposable
 {
@@ -24,11 +23,8 @@ public sealed class FilePathListTests : IDisposable
     public static bool OnWindows => OperatingSystem.IsWindows();
 
     /// <summary>
-    ///     Lists in which no entry needs splitting.
+    ///     Gets lists in which no entry needs splitting.
     /// </summary>
-    /// <remarks>
-    ///     The common path allocates nothing, so the caller's own list comes back rather than a copy of it.
-    /// </remarks>
     public static TheoryData<string[]> NothingToSplit => new()
     {
         new[] { "src/A.cs", "src/**/*.cs" },
@@ -36,7 +32,7 @@ public sealed class FilePathListTests : IDisposable
     };
 
     /// <summary>
-    ///     Entries the path APIs refuse outright, one per way they refuse.
+    ///     Gets entries the path APIs refuse outright, one per way they refuse.
     /// </summary>
     /// <remarks>
     ///     Relative, so the row needs no instance state: <see cref="FilePathList.ResolvesToExistingFile" />
@@ -46,8 +42,8 @@ public sealed class FilePathListTests : IDisposable
     {
         // An embedded null, which Path.GetFullPath throws on as an ArgumentException.
         "src/\0.cs",
-        // An entry past the NT path limit rather than the legacy 260-character one, which the runtime no longer
-        // enforces. Windows raises PathTooLongException, an IOException and not an ArgumentException, so it
+        // An entry past the NT path limit rather than the legacy 260-character one, which the runtime does not
+        // enforce. Windows raises PathTooLongException, an IOException and not an ArgumentException, so it
         // reaches the other catch.
         new string('a', 40_000)
     };
@@ -58,8 +54,7 @@ public sealed class FilePathListTests : IDisposable
     }
 
     // Each row is one facet of the rule: split on "," and ";", trim each fragment, drop the empty ones, and keep
-    // request order with the fragments in the joined entry's place. A Split counterexample found by
-    // FilePathListPropertyTests lands here as a row.
+    // request order with the fragments in the joined entry's place.
     [Theory]
     [InlineData(new[] { "src/A.cs, src/B.cs" }, new[] { "src/A.cs", "src/B.cs" })]
     // A semicolon already reaches jb as its own separator (both tools join files with ";"), so without the split
@@ -67,7 +62,7 @@ public sealed class FilePathListTests : IDisposable
     [InlineData(new[] { "src/A.cs;src/B.cs" }, new[] { "src/A.cs", "src/B.cs" })]
     [InlineData(new[] { "a.cs;b.cs,c.cs" }, new[] { "a.cs", "b.cs", "c.cs" })]
     [InlineData(new[] { "  src/A.cs  ;  src/B.cs  " }, new[] { "src/A.cs", "src/B.cs" })]
-    // A trailing delimiter or a doubled one is exactly what hand-joining produces, and an empty fragment would
+    // A trailing delimiter or a doubled one is what hand-joining produces, and an empty fragment would
     // reach jb as an --include pattern matching nothing.
     [InlineData(new[] { "a.cs,,b.cs," }, new[] { "a.cs", "b.cs" })]
     // Inspect's argument is globs, not paths; splitting must not disturb the wildcards.
@@ -115,7 +110,7 @@ public sealed class FilePathListTests : IDisposable
     public void Split_EntryOfNothingButDelimiters_IsKeptVerbatim()
     {
         // Arrange — splitting this yields no fragments at all. Keeping it lets the caller's own list reach the
-        // existing validation, which names what was actually sent rather than silently dropping the entry.
+        // existing validation, which names what was sent rather than silently dropping the entry.
         string[] files = [" , ; "];
 
         // Act
@@ -160,9 +155,9 @@ public sealed class FilePathListTests : IDisposable
     [Fact(Skip = "Only Windows spells a path with a drive letter.", SkipUnless = nameof(OnWindows))]
     public void ToIncludePattern_TheFieldSpelling_Resolves()
     {
-        // Arrange — a real agent's spelling, verbatim: a lowercase drive letter and forward slashes, which is
-        // how an agent tends to write a Windows path. GetRelativePath compares case-insensitively on Windows,
-        // so the drive letter is not the problem it looks like — being absolute at all is.
+        // Arrange — a lowercase drive letter and forward slashes, which is how an agent tends to write a
+        // Windows path. GetRelativePath compares case-insensitively on Windows, so the drive letter is not the
+        // problem it looks like: being absolute at all is.
         const string solutionDirectory = @"C:\Users\dev\source\repos\app";
         const string entry = "c:/Users/dev/source/repos/app/tests/App.Tests/Foo/BarTests.cs";
 
@@ -227,9 +222,8 @@ public sealed class FilePathListTests : IDisposable
     [Fact]
     public void ToIncludePattern_EntryBeyondTheOsPathLimit_IsKeptRatherThanThrowing()
     {
-        // Arrange — the second way an entry can be refused, and it arrives as a different exception:
-        // Windows maps the length failure to PathTooLongException, which is an IOException and not an
-        // ArgumentException.
+        // Arrange — a refusal that arrives as a different exception: Windows maps the length failure to
+        // PathTooLongException, which is an IOException and not an ArgumentException.
         string tooLong = EntryBeyondTheOsPathLimit();
 
         // Act & Assert — the value is left unasserted on purpose: Windows hands it back verbatim, while
@@ -254,8 +248,8 @@ public sealed class FilePathListTests : IDisposable
     public void ResolvesToExistingFile_EntryTheRuntimeRefuses_IsFalseRatherThanThrowing(string refused)
     {
         // Act & Assert — a refused entry names no file, and this predicate runs before validation has had a
-        // chance to reject anything. It decides whether an entry splits and whether the call is rejected as
-        // missing, so a throw here fails both tools with an unexpected error instead of naming the entry.
+        // chance to reject anything, so a throw here would surface as an unexpected error instead of naming
+        // the entry.
         FilePathList.ResolvesToExistingFile(refused, _solutionDirectory).ShouldBeFalse();
     }
 
@@ -289,8 +283,7 @@ public sealed class FilePathListTests : IDisposable
     }
 
     /// <summary>
-    ///     An entry long enough to pass the NT path limit rather than the legacy 260-character one, which
-    ///     the runtime no longer enforces.
+    ///     Returns an absolute entry under the solution directory, long enough to pass the NT path limit.
     /// </summary>
     private string EntryBeyondTheOsPathLimit()
     {

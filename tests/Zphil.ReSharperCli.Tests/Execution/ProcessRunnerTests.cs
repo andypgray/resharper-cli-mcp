@@ -11,16 +11,13 @@ using Zphil.ReSharperCli.Tests.TestSupport;
 
 namespace Zphil.ReSharperCli.Tests.Execution;
 
-/// <summary>
-///     Exercises <see cref="ProcessRunner" /> against real OS processes: actual exit codes, output capture,
-///     timeouts, and a missing executable.
-/// </summary>
+/// <summary>Exercises <see cref="ProcessRunner" /> against real OS processes.</summary>
 /// <remarks>
-///     Every case here runs through a real <see cref="ChildProcessLifetime" /> over the real environment,
-///     which on Linux means every spawn is genuinely wrapped in <c>setpriv</c>. That is deliberate: the
-///     timeout and missing-executable cases are the regression guard for the two promises the wrapper makes —
-///     that a command that cannot be resolved is left alone, and that a message about a run names the program
-///     its caller asked for — and a lifetime built over an empty <c>PATH</c> would guard neither.
+///     Every case runs through a real <see cref="ChildProcessLifetime" /> over the real environment, so on Linux
+///     every spawn is wrapped in <c>setpriv</c>. That is deliberate, because the timeout and missing-executable
+///     cases guard what the wrapper promises: a command that cannot be resolved is left alone, and a message
+///     about a run names the program its caller asked for. A lifetime built over an empty <c>PATH</c> would
+///     guard neither.
 /// </remarks>
 public sealed class ProcessRunnerTests : IDisposable
 {
@@ -28,19 +25,18 @@ public sealed class ProcessRunnerTests : IDisposable
 
     /// <summary>
     ///     The orphan-drain case's cap: the parent's whole budget to start, write a line to each pipe, launch its
-    ///     orphan and exit. The drain after the exit is bounded by the same cap, so the call returns at it however
-    ///     quickly the parent went, which also makes this how long the case takes.
+    ///     orphan and exit. The call returns at this cap however quickly the parent went, so it is also how long
+    ///     the case takes.
     /// </summary>
     /// <remarks>
-    ///     Ten seconds is over five times the worst start-to-exit time measured on Windows beside three concurrent
-    ///     cold <c>jb</c> runs, a load under which three seconds was once exceeded; it has not been measured on
-    ///     Linux.
+    ///     Several times the parent's worst start-to-exit time measured on a heavily loaded Windows machine; not
+    ///     measured on Linux.
     /// </remarks>
     private static readonly TimeSpan ParentStartBudget = TimeSpan.FromSeconds(10);
 
     /// <summary>
-    ///     How long the orphan holds both pipes: four budgets, so a call that waited for it cannot pass for one
-    ///     that returned at the cap.
+    ///     How long the orphan holds both pipes: several budgets, so a call that waited for it cannot pass for
+    ///     one that returned at the cap.
     /// </summary>
     private static readonly TimeSpan OrphanHoldsPipeFor = ParentStartBudget * 4;
 
@@ -52,7 +48,6 @@ public sealed class ProcessRunnerTests : IDisposable
     /// <summary>Holds the files children print back, deleted whole with the fixture.</summary>
     private readonly DirectoryInfo _scratch = Directory.CreateTempSubdirectory("resharper-cli-lines-");
 
-    /// <summary>Read by <c>SkipUnless</c>.</summary>
     public static bool OnWindows => OperatingSystem.IsWindows();
 
     public void Dispose()
@@ -135,10 +130,8 @@ public sealed class ProcessRunnerTests : IDisposable
             running, "the parent did not start and exit inside its budget: a slow start, not a drain hang");
         stopwatch.Stop();
 
-        // Assert — the parent's real exit code and the line it wrote to each pipe, which a drain cut at the cap
-        // must not throw away. Then a return no earlier than the cap, which is what proves the orphan held a
-        // pipe at all, and a return well before the orphan let go. Both pipes are awaited together, so the timing
-        // cannot say which of them was held.
+        // Assert — both pipes are awaited together, so the timing cannot say which of them was held; each
+        // pipe's own line is what shows its drain kept what was read before the cap.
         ProcessResult result = await running;
         result.ExitCode.ShouldBe(0);
         result.StandardOutput.ShouldContain(
@@ -194,9 +187,9 @@ public sealed class ProcessRunnerTests : IDisposable
     [Fact]
     public async Task RunAsync_ALineLongerThanOneRead_ArrivesWholeRatherThanInPieces()
     {
-        // Arrange — reads come off the pipe in 8192-char chunks, so a line longer than one of them is
-        // guaranteed to straddle a boundary. Without the carry, the observer would see two half-lines and
-        // classify neither.
+        // Arrange — reads come off the pipe ProcessRunner.ReadChunkChars at a time and the payload is longer
+        // than one read, so the line is guaranteed to straddle a boundary. Without the carry, the observer would
+        // see two half-lines and classify neither.
         ProcessRunner runner = Runner();
         var payload = new string('x', 9000);
         (string fileName, string[] arguments) = PrintLinesCommand([$"Analyzing {payload}", "Analyzing B.cs"]);
@@ -205,8 +198,8 @@ public sealed class ProcessRunnerTests : IDisposable
         // Act
         await runner.RunAsync(fileName, arguments, GenerousTimeout, TestContext.Current.CancellationToken, lines.Add);
 
-        // Assert — the long line is bounded rather than unbounded (a stream with no newline at all must not
-        // grow the carry without limit), but it is still one line and still classifies as one file.
+        // Assert — the long line is cut at ProcessRunner.MaxCarriedLineChars (a stream with no newline at all
+        // must not grow the carry without limit), but it is still one line and still classifies as one file.
         List<string> analyzed = lines.Where(line => line.StartsWith("Analyzing ", StringComparison.Ordinal)).ToList();
         analyzed.Count.ShouldBe(2);
         analyzed[0].Length.ShouldBeGreaterThan(8000);
@@ -285,12 +278,12 @@ public sealed class ProcessRunnerTests : IDisposable
     }
 
     /// <summary>
-    ///     A parent that writes <paramref name="standardOutputLine" /> to standard output and
+    ///     Returns a parent command that writes <paramref name="standardOutputLine" /> to standard output and
     ///     <paramref name="standardErrorLine" /> to standard error, then exits at once, leaving a child that holds
     ///     both pipes open for <paramref name="holdFor" />.
     /// </summary>
     /// <remarks>
-    ///     <c>ping</c> waits a second between echoes, so <c>n</c> echoes take <c>n − 1</c> seconds; <c>/d</c>
+    ///     <c>ping</c> waits a second between echoes, so <c>n</c> echoes take <c>n - 1</c> seconds; <c>/d</c>
     ///     keeps a machine's AutoRun commands out of the parent's start budget. The lines go through <c>echo</c>, so
     ///     each has to be plain ASCII ending in a letter: <c>cmd</c> reads a digit before <c>&gt;&amp;2</c> as the
     ///     handle being redirected, and gives <c>% ^ ! "</c> meanings of their own. The <c>cmd</c> line arrives as
@@ -310,16 +303,15 @@ public sealed class ProcessRunnerTests : IDisposable
     }
 
     /// <summary>
-    ///     A child that writes <paramref name="lines" /> to standard output, CRLF-terminated, by printing a
-    ///     file this test wrote.
+    ///     Returns a command whose child writes <paramref name="lines" /> to standard output, CRLF-terminated, by
+    ///     printing a file this test wrote.
     /// </summary>
     /// <remarks>
-    ///     A file rather than a chain of <c>echo</c>s, and the two reasons are the two things worth testing
-    ///     here. <c>cmd</c>'s command line is capped at about 8,191 characters, which is the very length a
-    ///     line has to exceed to straddle a read; and <c>echo x &amp; echo y</c> emits the space before the
-    ///     separator, so what the child wrote would not be what the test asked for. CRLF on every platform is
-    ///     deliberate too — it is what <c>jb</c> writes, and it makes the carriage-return trim a real
-    ///     assertion rather than a Windows-only one.
+    ///     A file rather than a chain of <c>echo</c>s, because <c>echo</c> would defeat the line cases:
+    ///     <c>cmd</c>'s command line is capped at about 8,191 characters, the length a line has to exceed to
+    ///     straddle a read; and <c>echo x &amp; echo y</c> emits the space before the separator, so the child would
+    ///     not write what the test asked for. CRLF on every platform is deliberate: it is what <c>jb</c> writes,
+    ///     and it makes the carriage-return trim an assertion on every platform rather than on Windows alone.
     /// </remarks>
     private (string FileName, string[] Arguments) PrintLinesCommand(IReadOnlyList<string> lines)
     {

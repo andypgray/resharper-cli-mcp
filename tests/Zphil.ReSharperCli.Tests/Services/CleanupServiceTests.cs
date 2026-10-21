@@ -13,9 +13,9 @@ namespace Zphil.ReSharperCli.Tests.Services;
 
 /// <summary>
 ///     Pins <see cref="CleanupService" /> through its structured <see cref="CleanupOutcome" />, over real files
-///     planted under a per-instance temp directory so the parallel run stays race-free. The fake
-///     <see cref="IProcessRunner" /> never touches files, so a test that needs a <c>Changed</c> (or a
-///     deleted-file <c>StatusUnknown</c>) drives the mutation from a side-effecting jb stub.
+///     planted in a temp directory. The fake <see cref="IProcessRunner" /> never touches files, so a test that
+///     needs a <c>Changed</c> (or a deleted-file <c>StatusUnknown</c>) drives the mutation from a
+///     side-effecting jb stub.
 /// </summary>
 public sealed class CleanupServiceTests : IDisposable
 {
@@ -192,8 +192,8 @@ public sealed class CleanupServiceTests : IDisposable
         // Act
         var exception = await Should.ThrowAsync<UserErrorException>(() => _service.RunAsync(_config, ["src/A.cs", "src/B.cs"], CleanupService.DefaultProfile, Ct));
 
-        // Assert — the contradiction is stated outright, the patterns jb was actually given are listed, and
-        // the one remaining cause of a matched-nothing run is named.
+        // Assert — the contradiction is stated outright, the patterns jb was given are listed, and the one
+        // remaining cause of a matched-nothing run is named.
         exception.Message.ShouldStartWith("jb cleanupcode exited with code 3. No file was cleaned up");
         exception.Message.ShouldContain("not as \"nothing needed changing\"");
         exception.Message.ShouldContain("jb reported: No items were found to cleanup");

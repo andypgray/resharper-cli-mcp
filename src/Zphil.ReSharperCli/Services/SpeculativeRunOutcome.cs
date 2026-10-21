@@ -1,20 +1,20 @@
 namespace Zphil.ReSharperCli.Services;
 
 /// <summary>
-///     How a speculative <c>jb</c> run ended, which is one decision: did a <c>jb</c> start, and if it did,
-///     what became of it.
+///     Defines how a speculative <c>jb</c> run ended: whether a <c>jb</c> started, and if it did, what became
+///     of it.
 /// </summary>
 /// <remarks>
 ///     <para>
-///         A pass that never spawned a process and a pass that spent minutes of multi-core work before losing
-///         the cache generation are the same word only to a caller willing to report the second as the first.
+///         A pass that never spawned a process and one that spent minutes of multi-core work before losing the
+///         cache generation are different endings, and a caller summarising a pass must not report the second
+///         as the first: the run lines underneath its summary already say which it was.
 ///     </para>
 ///     <para>
-///         Deliberately carries no <see cref="Execution.ProcessResult" />: <see cref="JbRunner" />'s own
-///         spawn already owns the exit-code-zero predicate, because that is what decides whether the warm
-///         marker is stamped. So naming <see cref="Completed" /> apart from <see cref="Failed" /> here
-///         restates a decision already made rather than adding one, and it leaves the caller a total switch
-///         instead of a null check.
+///         It carries no <see cref="Execution.ProcessResult" />: <see cref="JbRunner" />'s spawn owns the
+///         exit-code-zero predicate that decides whether the warm marker is stamped, so naming
+///         <see cref="Completed" /> apart from <see cref="Failed" /> restates that decision rather than letting
+///         a caller make it again, and leaves the caller a total switch instead of a null check.
 ///     </para>
 /// </remarks>
 internal enum SpeculativeRunOutcome
@@ -45,11 +45,10 @@ internal enum SpeculativeRunOutcome
     ///     A caller the user is waiting on took the cache generation back.
     /// </summary>
     /// <remarks>
-    ///     It covers the two reclaims that land before <c>jb</c> starts as well as the one that kills it
-    ///     mid-run, deliberately: a donor copy can run for minutes before the pre-spawn guard is reached, and
-    ///     <see cref="Execution.JbRunYield" /> records the reclaim at <c>Information</c> either way, so
-    ///     reporting that nothing happened beside that line would be the contradiction this type exists to
-    ///     remove.
+    ///     It covers a reclaim that lands before <c>jb</c> starts as well as one that kills it mid-run: a donor
+    ///     copy can run for minutes before the pre-spawn guard is reached, and
+    ///     <see cref="Execution.JbRunYield" /> records the reclaim at <c>Information</c> either way, so reporting
+    ///     that nothing happened beside that line would contradict it.
     /// </remarks>
     StoodDown
 }

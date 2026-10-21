@@ -125,9 +125,9 @@ public sealed class JbLocatorTests : IDisposable
     [Fact]
     public async Task LocateAsync_FirstCandidateTimesOut_StillProbesTheNextAndReturnsIt()
     {
-        // Arrange — the field shape: two servers starting at once on a busy machine, the PATH probe killed at
-        // the cap, and the next candidate answering inside it. A timeout settles the remedy only once every
-        // candidate has failed, so stopping at the first would turn this recovered call into an error.
+        // Arrange — two servers starting at once on a busy machine: the PATH probe killed at the cap, and the
+        // next candidate answering inside it. A timeout settles the remedy only once every candidate has
+        // failed, so stopping at the first would turn this recovered call into an error.
         Probe("jb").Throws(new ProcessTimeoutException("'jb' timed out after 30 seconds."));
         Probe(DotnetToolsCandidate).Returns(Healthy);
         JbLocator locator = Locator();
@@ -163,9 +163,9 @@ public sealed class JbLocatorTests : IDisposable
     [Fact]
     public async Task LocateAsync_EveryProbeTimesOut_SaysJbIsInstalledAndNamesEachCandidateOnce()
     {
-        // Arrange — the field shape: two servers starting at once, both probes killed at the cap by a busy
-        // machine. Every candidate failed, but a process has to start before it can be killed, so telling
-        // this session to install jb would send it to fix a tool it already has.
+        // Arrange — two servers starting at once, both probes killed at the cap by a busy machine. Every
+        // candidate failed, but a process has to start before it can be killed, so telling this session to
+        // install jb would send it to fix a tool it already has.
         _processRunner
             .AnyRun()
             .Throws(new ProcessTimeoutException("'jb' timed out after 30 seconds."));
@@ -271,8 +271,8 @@ public sealed class JbLocatorTests : IDisposable
     [Fact]
     public async Task LocateAsync_ShimUntouched_ReusesTheProbe()
     {
-        // Arrange — the stat is what keeps the probe off every call: seconds of process start against the
-        // read of one or two files.
+        // Arrange — the stat is what keeps the probe off every call: seconds of process start against a stat
+        // of each candidate's file.
         JbInstalls.PlantGlobalToolShim(_environment.HomeDirectory);
         Probe("jb").Throws(new Win32Exception("The system cannot find the file specified."));
         Probe(DotnetToolsCandidate).Returns(Healthy);
@@ -372,7 +372,7 @@ public sealed class JbLocatorTests : IDisposable
         return new JbLocator(_processRunner, _environment, Logs.Capturing(_logs).CreateLogger<JbLocator>());
     }
 
-    /// <summary>The one probe line about <paramref name="candidate" /> — by property, never by prose.</summary>
+    /// <summary>Returns the one probe line about <paramref name="candidate" />, by property, never by prose.</summary>
     private LogEntry ProbeLineFor(string candidate)
     {
         List<LogEntry> lines = _logs

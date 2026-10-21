@@ -20,8 +20,8 @@ public sealed class InspectScopeNoteTests
     [Fact]
     public void For_NothingMissing_SaysNothing()
     {
-        // The overwhelmingly common calls: no files argument at all, or a scope in which every entry
-        // resolved. Empty rather than blank, so the banner concatenation adds no separator either.
+        // The common calls: no files argument at all, or a scope in which every entry resolved. Empty
+        // rather than blank, so the banner concatenation adds no separator either.
         InspectScopeNote.For([], 0, Root).ShouldBeEmpty();
         InspectScopeNote.For([], 2, Root).ShouldBeEmpty();
     }

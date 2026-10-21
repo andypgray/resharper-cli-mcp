@@ -6,12 +6,10 @@ namespace Zphil.ReSharperCli.Tests.Documentation;
 
 /// <summary>Holds every project in the tree to declaring <c>RestoreLockedMode</c> itself.</summary>
 /// <remarks>
-///     The lock-file policy is explained once in <c>Directory.Build.props</c>, but it cannot be <em>declared</em>
-///     there: OpenSSF Scorecard's Pinned-Dependencies check parses csproj files directly and never imports that
-///     file, and it credits the property all-or-nothing — every tracked csproj setting it pins the whole restore
-///     finding, while some setting it scores exactly as none. So a project added without the property silently
-///     drops the published score rather than breaking a build, which is the failure this test exists to make
-///     loud.
+///     The lock-file policy is explained in <c>Directory.Build.props</c>, which cannot declare the property:
+///     OpenSSF Scorecard's Pinned-Dependencies check reads csproj files only and credits the property
+///     all-or-nothing across them. So a project added without it silently drops the published score rather
+///     than breaking a build, which is the failure this test makes loud.
 /// </remarks>
 public sealed class RestoreLockSiteTests
 {
@@ -29,7 +27,7 @@ public sealed class RestoreLockSiteTests
         // a real omission hide behind a stale copy that still had the property.
         IReadOnlyList<string> projects = RepoRoot.EnumerateCommitted("*.csproj");
 
-        // Assert — the count first, so a broken exclusion cannot pass this test vacuously.
+        // Assert — the count first, so a broken exclusion cannot pass this test by leaving nothing to check.
         projects.Count.ShouldBeGreaterThanOrEqualTo(
             KnownProjectCount,
             $"Expected at least {KnownProjectCount} csproj files under {RepoRoot.Location}; finding fewer "

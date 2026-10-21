@@ -8,8 +8,8 @@ using Zphil.ReSharperCli.Tools;
 namespace Zphil.ReSharperCli.Tests.Tools;
 
 /// <summary>
-///     The per-tool surface <see cref="ResharperTools" /> declares: the names, human titles and four behavior
-///     hints every MCP client and directory listing renders, and the per-tool truncation-hint map,
+///     Pins the per-tool surface <see cref="ResharperTools" /> declares: the names, human titles and four
+///     behavior hints every MCP client and directory listing renders, and the per-tool truncation-hint map,
 ///     <see cref="ResharperTools.TruncationHintFor" />.
 /// </summary>
 /// <remarks>
@@ -30,9 +30,9 @@ public sealed class ResharperToolsSurfaceTests(AdvertisedToolsFixture advertised
     : IClassFixture<AdvertisedToolsFixture>
 {
     /// <summary>
-    ///     One row per advertised tool: its name, its human title, then <c>ReadOnly</c>, <c>Destructive</c>,
-    ///     <c>Idempotent</c> and <c>OpenWorld</c> in the order the <c>[McpServerTool]</c> attribute declares
-    ///     them. Read-only and destructive are the two a client gates auto-approval on.
+    ///     Gets one row per advertised tool: its name, its human title, then <c>ReadOnly</c>,
+    ///     <c>Destructive</c>, <c>Idempotent</c> and <c>OpenWorld</c> in the order the <c>[McpServerTool]</c>
+    ///     attribute declares them. Read-only and destructive are the two a client gates auto-approval on.
     /// </summary>
     public static TheoryData<string, string, bool, bool, bool, bool> AdvertisedTools =>
         new()
@@ -49,9 +49,8 @@ public sealed class ResharperToolsSurfaceTests(AdvertisedToolsFixture advertised
     public void ListTools_AdvertisesExactlyThePinnedTools()
     {
         // Act — the whole set, not containment: a tool this table does not name is as much a change to the
-        // published surface as a missing one, and CoercingToolRegistration discovers tools by attribute
-        // rather than from a list, so nothing else makes adding one a decision. Sorted rather than order-
-        // insensitive because the order tools/list returns is the discovery order, which is not a contract.
+        // published surface as a missing one. Sorted because the order tools/list returns is the discovery
+        // order, which is not a contract.
         IEnumerable<string> names = advertised.Tools
             .Select(tool => tool.Name)
             .Order(StringComparer.Ordinal);
@@ -71,7 +70,7 @@ public sealed class ResharperToolsSurfaceTests(AdvertisedToolsFixture advertised
         bool openWorld)
     {
         // Act — the raw protocol DTO rather than the client wrapper, because that object is what is
-        // serialized onto the wire and therefore exactly what a directory listing renders.
+        // serialized onto the wire and so what a directory listing renders.
         Tool tool = advertised.Tools.Single(advertisedTool => advertisedTool.Name == name).ProtocolTool;
 
         // Assert — the four hints travel together in one annotations object, so a null one loses all four.

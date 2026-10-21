@@ -6,8 +6,8 @@ using Zphil.ReSharperCli.Formatting;
 namespace Zphil.ReSharperCli.Tests.Formatting;
 
 /// <summary>
-///     The single line an MCP progress notification carries, pinned per phase. These strings are the spec:
-///     they are what a caller reads while a run is in flight.
+///     Pins the single line an MCP progress notification carries, per phase. These strings are the spec: they
+///     are what a caller reads while a run is in flight.
 /// </summary>
 public sealed class RunProgressFormatterTests
 {
@@ -82,7 +82,7 @@ public sealed class RunProgressFormatterTests
     }
 
     [Theory]
-    // jb spends its first half-minute loading the solution model without a word. What the cache looked like
+    // jb loads the solution model without a word before its first file line. What the cache looked like
     // going in is the best available predictor of how that silence ends, and it is already in hand.
     [InlineData("cold (none on disk)")]
     // The other half of telling slow from stuck: the elapsed time says how long this run has been going, and
@@ -103,7 +103,7 @@ public sealed class RunProgressFormatterTests
     [InlineData(nameof(JbRunPhase.Inspecting), "inspecting")]
     public void Format_ASweep_CountsFiles(string phaseName, string verb)
     {
-        // The analysis sweep is most of a cold run, so this is the message a caller actually sits watching.
+        // The analysis sweep is most of a cold run, so this is the message a caller sits watching.
         var phase = Enum.Parse<JbRunPhase>(phaseName);
 
         string message = Format(phase, TimeSpan.FromSeconds(200), filesSeen: 402, cap: Cap);
@@ -154,8 +154,8 @@ public sealed class RunProgressFormatterTests
     public void Format_APhaseWithNoClause_ThrowsRatherThanRenderingSomethingEmpty()
     {
         // A phase added to the enum and not to the switch would otherwise reach a caller as a message with a
-        // hole in it, every ten seconds, for the length of the run. The same bargain ResharperTools.CapFor
-        // makes over its own enum.
+        // hole in it, every heartbeat, for the length of the run. The same bargain ResharperTools.CapFor makes
+        // over its own enum.
         Should.Throw<ArgumentOutOfRangeException>(() => Format((JbRunPhase)99, TimeSpan.FromSeconds(5)));
     }
 

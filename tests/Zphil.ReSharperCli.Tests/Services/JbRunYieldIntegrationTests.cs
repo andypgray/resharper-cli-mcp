@@ -9,8 +9,8 @@ using Zphil.ReSharperCli.Tests.TestSupport;
 namespace Zphil.ReSharperCli.Tests.Services;
 
 /// <summary>
-///     <see cref="JbRunYield" /> driven through <see cref="JbRunner" /> and <see cref="CacheResetService" />
-///     together, wired to one shared yield; <see cref="Execution.JbRunYieldTests" /> drives the yield on its own.
+///     Drives <see cref="JbRunYield" /> through a <see cref="JbRunner" /> and a <see cref="CacheResetService" />
+///     wired to one shared yield; <see cref="Execution.JbRunYieldTests" /> drives the yield on its own.
 /// </summary>
 /// <remarks>
 ///     <para>
@@ -70,14 +70,14 @@ public sealed class JbRunYieldIntegrationTests : IDisposable
         Task<SpeculativeRunOutcome> preWarm = _runner.TryRunAsync(_config, WarmUpArguments, Ct);
         await _probe.WaitForNextStartAsync(Ct);
 
-        // Act — the real call cancels it on entry, so the lease frees up and this run gets to start.
+        // Act — the foreground call cancels it on entry, so the lease frees up and this run gets to start.
         Task<ProcessResult> foreground = _runner.RunAsync(_config, ForegroundArguments, Ct);
         await _probe.WaitForNextStartAsync(Ct);
         _probe.ReleaseAll();
 
         // Assert — and the abandoned pre-warm says it stood down rather than that it never ran: nothing went
-        // wrong, but a jb did minutes of work here, and the word for having done none belongs to the pass
-        // below that genuinely did none.
+        // wrong, but a jb did minutes of work here, and the word for having done none belongs to a pass that
+        // never started.
         (await foreground).ExitCode.ShouldBe(0);
         (await preWarm).ShouldBe(SpeculativeRunOutcome.StoodDown);
         _probe.Cancelled.ShouldBe(1);
@@ -119,10 +119,10 @@ public sealed class JbRunYieldIntegrationTests : IDisposable
     [Fact]
     public async Task PreWarm_StartingWhileAForegroundRunIsInFlight_NeverRunsAtAll()
     {
-        // Arrange — the degenerate ordering the trigger permits: a client whose very first message is a tool
-        // call, so the real run passes its cancel point before the pre-warm has anything to hand back. Left
-        // alone, that call would then queue behind a pre-warm started a moment later — the one way pre-warming
-        // could delay a call inside this process.
+        // Arrange — the degenerate ordering the trigger permits: a client whose first message is a tool call,
+        // so the foreground run passes its cancel point before the pre-warm has anything to hand back. Left alone,
+        // that call would then queue behind a pre-warm started a moment later — the one way pre-warming could
+        // delay a call inside this process.
         Task<ProcessResult> foreground = _runner.RunAsync(_config, ForegroundArguments, Ct);
         await _probe.WaitForNextStartAsync(Ct);
 
@@ -131,7 +131,7 @@ public sealed class JbRunYieldIntegrationTests : IDisposable
 
         // Assert — it stands down rather than racing: a real run analyses the same solution into the same
         // cache generation, so while one is in flight there is nothing for a speculative run to buy. And this
-        // is the pass that really did nothing, which is what the word above it has to stay reserved for.
+        // pass did nothing, which is the case NotStarted is reserved for.
         preWarm.ShouldBe(SpeculativeRunOutcome.NotStarted);
         _probe.Runs.ShouldBe(1);
 
@@ -144,7 +144,7 @@ public sealed class JbRunYieldIntegrationTests : IDisposable
     {
         // Arrange — the same ordering a moment later, and the answer is the opposite one. Standing down while
         // a call is in flight is the invariant worth keeping; staying down for the rest of the process, as a
-        // latch would, switches the pre-warm off precisely when a call that has just hit the cap most needs it.
+        // latch would, switches the pre-warm off when a call that has just hit the cap most needs it.
         _probe.ReleaseAll();
         await _runner.RunAsync(_config, ForegroundArguments, Ct);
 
@@ -265,16 +265,15 @@ public sealed class JbRunYieldIntegrationTests : IDisposable
         }
         finally
         {
-            // Released here rather than at scope exit: the reset is queued on this very lock, so awaiting it
-            // while still holding the file would be a deadlock the fixture's cap would take ten seconds to
-            // break.
+            // Released here rather than at scope exit: the reset is queued on this lock, so awaiting it while
+            // still holding the file would be a deadlock only the fixture's cap would break.
             await otherSession.DisposeAsync();
         }
 
         await reset;
 
-        // Assert — the lock cannot be the explanation, so the claim is the only thing left. Rebuilding a
-        // cache while the call to drop it is in flight is the one thing a pre-warm must never do.
+        // Assert — the lock cannot be the explanation, so the claim is the only thing left. A pre-warm must
+        // never rebuild a cache while the call to drop it is in flight.
         preWarm.ShouldBe(SpeculativeRunOutcome.NotStarted);
         _probe.Runs.ShouldBe(0);
     }
@@ -318,7 +317,7 @@ public sealed class JbRunYieldIntegrationTests : IDisposable
         Task<SpeculativeRunOutcome> preWarm = _runner.TryRunAsync(_config, WarmUpArguments, Ct);
         await _probe.WaitForNextStartAsync(Ct);
 
-        // Act — here the atomic exchange is raced by two different *kinds* of caller. Only one can win the
+        // Act — here the atomic exchange is raced by two different kinds of caller. Only one can win the
         // pre-warm's claim; the loser must find nothing rather than trip over a half-cleared field.
         Task<CacheResetOutcome> reset = _reset.RunAsync(_config, Ct);
         Task<ProcessResult> foreground = _runner.RunAsync(_config, ForegroundArguments, Ct);
@@ -336,9 +335,8 @@ public sealed class JbRunYieldIntegrationTests : IDisposable
     [Fact]
     public async Task PreWarmThatAlreadyFinished_IsNotCancelledRetroactivelyByAReset()
     {
-        // Arrange — a pre-warm run to completion. Its source is never disposed, so a caller still holding
-        // the reference could cancel it after the fact; withdrawing the claim as the pass ends is what stops
-        // that, and the invariant has two kinds of caller able to break it.
+        // Arrange — a pre-warm run to completion, then a reset as the later caller. A reset reclaims through
+        // the same published claim a run does, so withdrawing the claim as the pass ends has to stop both.
         _probe.ReleaseAll();
         (await _runner.TryRunAsync(_config, WarmUpArguments, Ct)).ShouldBe(SpeculativeRunOutcome.Completed);
         CancellationToken preWarmToken = _probe.Tokens.ShouldHaveSingleItem();
@@ -374,9 +372,9 @@ public sealed class JbRunYieldIntegrationTests : IDisposable
     }
 
     /// <summary>
-    ///     An <see cref="IProcessRunner" /> that parks each run until the test releases it, counts the ones
-    ///     that were cancelled instead, and keeps the token each run was handed so a test can ask whether it
-    ///     was cancelled after the fact.
+    ///     Stands in for <c>jb</c> as an <see cref="IProcessRunner" /> that parks each run until the test
+    ///     releases it, counts the ones that were cancelled instead, and keeps the token each run was handed
+    ///     so a test can ask whether it was cancelled after the fact.
     /// </summary>
     /// <remarks>
     ///     Cancellation is rethrown rather than swallowed, which is what <see cref="ProcessRunner" /> does once
@@ -395,9 +393,9 @@ public sealed class JbRunYieldIntegrationTests : IDisposable
         public int Cancelled => Volatile.Read(ref _cancelled);
 
         /// <summary>
-        ///     Invoked on the cancelled run's own stack, before it rethrows and therefore before the lease
-        ///     is released — the one moment a test can observe what the world looked like while the
-        ///     abandoned pass still held the cache generation.
+        ///     Gets or sets the callback invoked on the cancelled run's own stack, before it rethrows and so
+        ///     before the lease is released: the moment a test can observe the world while the abandoned pass
+        ///     still holds the cache generation.
         /// </summary>
         public Action? OnCancelled { get; set; }
 
@@ -447,7 +445,7 @@ public sealed class JbRunYieldIntegrationTests : IDisposable
             return _starts.WaitAsync(cancellationToken);
         }
 
-        /// <summary>Lets every parked run — and every later one — complete.</summary>
+        /// <summary>Lets every parked run complete, and every later one too.</summary>
         public void ReleaseAll()
         {
             _release.TrySetResult();

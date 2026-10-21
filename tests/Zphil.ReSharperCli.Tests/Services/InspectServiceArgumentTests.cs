@@ -49,8 +49,8 @@ public sealed class InspectServiceArgumentTests
             ["src/A.cs", "src/B.cs"],
             InspectSeverity.Error);
 
-        // Assert — --include precedes the shared config tail, which inspect and cleanup append through one
-        // helper (jb is flag-order-insensitive, so the order is this server's choice).
+        // Assert — --include precedes the shared config tail (jb is flag-order-insensitive, so the order is
+        // this server's choice).
         arguments.ShouldBe(
         [
             "inspectcode",
@@ -82,7 +82,7 @@ public sealed class InspectServiceArgumentTests
     public void WarmUpSeverity_IsTheResharperInspectDefault()
     {
         // Arrange — read the tool's own declared default rather than restating it, so lowering or raising
-        // that default fails here instead of quietly leaving the pre-warm on the old one.
+        // that default fails here instead of silently leaving the pre-warm on the old one.
         ParameterInfo severityParameter = typeof(ResharperTools)
             .GetMethod(nameof(ResharperTools.InspectAsync))!
             .GetParameters()
@@ -90,7 +90,7 @@ public sealed class InspectServiceArgumentTests
         var toolDefault = (InspectSeverity)severityParameter.DefaultValue!;
 
         // Assert — this is the pin that keeps a pre-warm warming the generation a real call opens. If the
-        // two argument lists ever diverge, the feature silently warms a cache nothing reads and says nothing.
+        // argument lists diverge, the pre-warm warms a cache nothing reads, and nothing says so.
         InspectService.WarmUpSeverity.ShouldBe(toolDefault);
     }
 

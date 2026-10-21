@@ -4,10 +4,7 @@ using Zphil.ReSharperCli.Execution;
 
 namespace Zphil.ReSharperCli.Tests.Execution;
 
-/// <summary>
-///     Pins the <see cref="ReleaseOnce" /> guard itself; each holder's own double-dispose test pins that the
-///     holder releases through it.
-/// </summary>
+/// <summary>Pins the <see cref="ReleaseOnce" /> guard itself, apart from any holder that releases through it.</summary>
 public sealed class ReleaseOnceTests
 {
     [Fact]

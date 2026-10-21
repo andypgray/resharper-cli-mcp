@@ -1,16 +1,18 @@
 namespace Zphil.ReSharperCli.Tests.TestSupport;
 
 /// <summary>
-///     Locates the repository root — the directory holding <c>Zphil.ReSharperCli.slnx</c> — by walking
-///     up from the test assembly's base directory.
+///     Locates the repository root, the directory holding <c>Zphil.ReSharperCli.slnx</c>, by walking up from
+///     the test assembly's base directory.
 /// </summary>
 /// <remarks>
-///     A test reads the <em>source</em> tree directly, both locally and in a CI checkout (the <c>.slnx</c>
-///     always sits above <c>bin/</c>), with no csproj <c>Content</c> copying.
+///     A test reads the source tree directly, both locally and in a CI checkout (the <c>.slnx</c> always sits
+///     above <c>bin/</c>), with no csproj <c>Content</c> copying.
 /// </remarks>
 internal static class RepoRoot
 {
-    /// <summary>The server's project file, relative to the root — where its version, icon and description are declared.</summary>
+    /// <summary>
+    ///     The server's project file, relative to the root: where its version, icon and description are declared.
+    /// </summary>
     public const string ProductCsproj = "src/Zphil.ReSharperCli/Zphil.ReSharperCli.csproj";
 
     private const string SolutionFileName = "Zphil.ReSharperCli.slnx";
@@ -21,10 +23,10 @@ internal static class RepoRoot
     /// </summary>
     private static readonly string[] UncommittedDirectories = ["bin", "obj", "artifacts", ".git"];
 
-    /// <summary>Absolute path to the repository root.</summary>
+    /// <summary>Gets the absolute path to the repository root.</summary>
     public static string Location { get; } = Locate();
 
-    /// <summary>The text of the file at <paramref name="segments" />, relative to the root.</summary>
+    /// <summary>Reads the text of the file at <paramref name="segments" />, relative to the root.</summary>
     public static string ReadText(params string[] segments)
     {
         string[] path = [Location, .. segments];
@@ -32,9 +34,9 @@ internal static class RepoRoot
     }
 
     /// <summary>
-    ///     Every file under the root matching <paramref name="pattern" />, in ordinal order, outside the
-    ///     directories that hold build output or git's store — the working tree's own files rather than copies
-    ///     of them that a build or a release stage left behind.
+    ///     Returns every file under the root matching <paramref name="pattern" />, in ordinal order, outside the
+    ///     directories that hold build output or git's store: the working tree's own files rather than copies of
+    ///     them that a build or a release stage left behind.
     /// </summary>
     public static IReadOnlyList<string> EnumerateCommitted(string pattern)
     {

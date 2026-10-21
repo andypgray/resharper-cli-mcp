@@ -4,21 +4,20 @@ using Zphil.ReSharperCli.Execution;
 namespace Zphil.ReSharperCli.Services;
 
 /// <summary>
-///     Where the report <c>resharper_inspect</c> writes ends up: one directory this server owns, one file per
+///     Writes the report <c>resharper_inspect</c> is asked for: one directory this server owns, one file per
 ///     call, and a prune of anything older than <see cref="RetentionPeriod" /> on the way past.
 /// </summary>
 /// <remarks>
 ///     <para>
-///         The response names the file it wrote, which is the whole point — a solution-wide run's itemised
-///         findings cannot fit a tool response, and the alternative is a raw <c>jb</c> outside the server,
-///         which does not take the run queue's lock and forks a cold cache generation instead.
+///         A solution-wide run's itemised findings cannot fit a tool response, so the response names this
+///         file instead. The alternative is a raw <c>jb</c> outside the server, which takes no run lock and
+///         forks a cold cache generation.
 ///     </para>
 ///     <para>
-///         <paramref name="rootDirectory" /> is injected rather than read from
-///         <see cref="Path.GetTempPath" /> in here, so a test can point it at a directory of its own and the
-///         parallel xUnit run stays off one shared location — <see cref="Directory.CreateTempSubdirectory" />
-///         takes only a prefix and always resolves under the process's temp path, so it cannot honour a root
-///         at all. It is not a third seam: the composition root passes the real temp path.
+///         <paramref name="rootDirectory" /> is injected rather than read from <see cref="Path.GetTempPath" />
+///         in here, so a test can point it at a directory of its own and the parallel xUnit run stays off one
+///         shared location. <see cref="Directory.CreateTempSubdirectory" /> takes only a prefix and always
+///         resolves under the process's temp path, so it cannot honour a root at all.
 ///     </para>
 ///     <para>
 ///         A write that fails is reported, not thrown. By the time this runs, a <c>jb</c> inspection has
@@ -34,21 +33,22 @@ internal sealed class InspectReportWriter(string rootDirectory, ILogger<InspectR
     /// <summary>Matches only the files this class writes, so the prune cannot reach anything else.</summary>
     private const string ReportSearchPattern = "*-inspect-*.md";
 
-    /// <summary>
-    ///     <c>rwx------</c>. A report carries the paths and messages of every finding in the user's source
-    ///     tree, and on Unix the directory it lands in is under a shared <c>/tmp</c>. The SARIF holding the
-    ///     same content already gets this, because <see cref="Directory.CreateTempSubdirectory" /> applies it
-    ///     — <see cref="Directory.CreateDirectory(string)" /> does not, so it is applied here instead of
-    ///     silently dropping to whatever the umask allows.
-    /// </summary>
+    /// <summary><c>rwx------</c>: the report directory is its owner's alone.</summary>
+    /// <remarks>
+    ///     A report carries the paths and messages of every finding in the user's source tree, and on Unix
+    ///     the directory it lands in is under a shared <c>/tmp</c>. The SARIF holding the same content already
+    ///     gets this, because <see cref="Directory.CreateTempSubdirectory" /> applies it;
+    ///     <see cref="Directory.CreateDirectory(string)" /> does not, so it is applied here instead of silently
+    ///     dropping to whatever the umask allows.
+    /// </remarks>
     private const UnixFileMode OwnerOnly = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
 
-    /// <summary>
-    ///     How long a written report survives. There is a real growth to bound — a report is written on every
-    ///     call that asks for one, including the ones that find nothing, so an agent working through a
-    ///     solution leaves a file per call — but it is tens of kilobytes at a time, and pruning one a caller
-    ///     still wanted costs a re-run measured in minutes. Hence generous rather than tight.
-    /// </summary>
+    /// <summary>How long a written report survives.</summary>
+    /// <remarks>
+    ///     Generous rather than tight. A report is written on every call that asks for one, the ones that find
+    ///     nothing included, so there is growth to bound, but each is tens of kilobytes, while pruning one a
+    ///     caller still wanted costs a re-run measured in minutes.
+    /// </remarks>
     internal static readonly TimeSpan RetentionPeriod = TimeSpan.FromDays(7);
 
     /// <summary>
@@ -95,7 +95,7 @@ internal sealed class InspectReportWriter(string rootDirectory, ILogger<InspectR
     }
 
     /// <summary>
-    ///     <c>&lt;SolutionName&gt;-inspect-&lt;8 hex&gt;.md</c>, which is what
+    ///     Names a report <c>&lt;SolutionName&gt;-inspect-&lt;8 hex&gt;.md</c>, the shape
     ///     <see cref="ReportSearchPattern" /> matches.
     /// </summary>
     private static string FileName(string solutionPath)
@@ -106,7 +106,7 @@ internal sealed class InspectReportWriter(string rootDirectory, ILogger<InspectR
         return $"{solutionName}-inspect-{suffix}.md";
     }
 
-    /// <summary>Owner-only where the platform has the concept, and a no-op where it does not.</summary>
+    /// <summary>Restricts the directory to its owner where the platform has Unix file modes, and does nothing elsewhere.</summary>
     private static void RestrictToOwner(string directory)
     {
         if (OperatingSystem.IsWindows()) return;
@@ -119,7 +119,7 @@ internal sealed class InspectReportWriter(string rootDirectory, ILogger<InspectR
     ///     Housekeeping, so it is fenced off twice: each delete is best-effort on its own, because two servers
     ///     can prune one directory at once and a file vanishing between the listing and the delete is ordinary;
     ///     and the sweep as a whole is, because a prune that cannot run must never cost the caller the report
-    ///     it asked for. The listing is materialised for the same reason — deleting out from under a lazy
+    ///     it asked for. The listing is materialised for the same reason: deleting out from under a lazy
     ///     enumerator is the one way this could take the write down with it.
     /// </remarks>
     private void Prune(string directory)
@@ -157,7 +157,7 @@ internal sealed class InspectReportWriter(string rootDirectory, ILogger<InspectR
 }
 
 /// <summary>
-///     Where a report went, and why it did not.
+///     Represents where a report went, and why it did not.
 /// </summary>
 /// <remarks>
 ///     <see cref="Failure" /> is the exception message when the write failed and <see langword="null" /> when

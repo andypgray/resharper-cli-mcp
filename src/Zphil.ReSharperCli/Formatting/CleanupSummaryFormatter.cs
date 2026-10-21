@@ -6,24 +6,19 @@ namespace Zphil.ReSharperCli.Formatting;
 ///     Renders a <see cref="CleanupOutcome" /> as a plain-text summary at a given <see cref="DetailLevel" />.
 /// </summary>
 /// <remarks>
-///     The header is always present and states what this run measured — see <see cref="Header" /> for the
-///     four forms it takes, one per epistemic state the entry list left it in. Lower levels progressively
-///     collapse the lowest-signal categories to trailing counts, so a solution-wide run degrades gracefully
-///     instead of being hard-chopped. Output uses <c>\n</c> line endings and is ASCII-only, matching the other
-///     formatters.
+///     The header is always present and states what this run measured (see <see cref="Header" />). Lower
+///     levels collapse the lowest-signal categories to trailing counts.
 /// </remarks>
 internal static class CleanupSummaryFormatter
 {
     /// <summary>
-    ///     Closes every reduction note, and the truncation footer too. A shrinking report is the one place an
-    ///     agent could read "less was listed" as "less was done", and the whole point of this tool is that it
-    ///     already rewrote the files.
+    ///     The sentence that closes a shrunken cleanup report, however it shrank, so an agent cannot read "less
+    ///     was listed" as "less was done": the files are already rewritten.
     /// </summary>
     internal const string CleanupRanInFull = "The cleanup itself ran in full; only the report shrank.";
 
-    // The categories a level can count rather than list, in the order their counts are emitted, lowest signal last:
-    // as trailing lines at the listing levels and as the one parenthetical Minimal ends with. Collapsed decides
-    // which appear.
+    // In the order their counts are emitted, lowest signal last: as trailing lines at the listing levels and as
+    // the one parenthetical Minimal ends with. Collapsed decides which appear.
     private static readonly CollapsibleCategory[] Collapsible =
     [
         new(CleanupFileStatus.Unchanged, "unchanged", "unchanged"),
@@ -66,7 +61,8 @@ internal static class CleanupSummaryFormatter
     }
 
     /// <summary>
-    ///     The categories <paramref name="level" /> counts rather than lists, in <see cref="Collapsible" /> order.
+    ///     Returns the categories <paramref name="level" /> counts rather than lists, in
+    ///     <see cref="Collapsible" /> order.
     /// </summary>
     /// <remarks>
     ///     Minimal lists none, so at that level this is every non-zero category, and its one line follows the
@@ -80,29 +76,28 @@ internal static class CleanupSummaryFormatter
     }
 
     /// <summary>
-    ///     The header body, without its trailing punctuation — the listing levels append <c>:</c>, Minimal a
-    ///     <c>.</c> — in one of four forms, one per epistemic state the entry list leaves this formatter in.
+    ///     Returns the header body without its trailing punctuation (the listing levels append <c>:</c>, Minimal
+    ///     a <c>.</c>), worded for what the entries let this run measure.
     /// </summary>
     /// <remarks>
     ///     <para>
-    ///         The count is a measurement, over exactly the files whose bytes were hashed both before and after
-    ///         the run. Two kinds of entry fall outside it. A wildcard is never a single file: <c>jb</c> expands
-    ///         a pattern against the solution model, so this server never learns which files it matched. A named
-    ///         file that could not be read before or after the run was never compared, so counting it reports a
-    ///         comparison nobody made: three of them would read <c>0 of 3 file(s) changed on disk</c>.
+    ///         The count is a measurement over the files whose bytes were hashed both before and after the run,
+    ///         and two kinds of entry fall outside it. A wildcard is never a single file: <c>jb</c> expands a
+    ///         pattern against the solution model, so this server never learns which files it matched. A named
+    ///         file that could not be read before or after the run was never compared, so counting it would
+    ///         report a comparison nobody made.
     ///     </para>
     ///     <para>
-    ///         With nothing hashed there is no ratio to state, and the header says why instead.
-    ///         <c>0 of 0 file(s) changed on disk</c> reads as "nothing needed changing" for a run that may have
-    ///         rewritten dozens of files, which is the reading <see cref="CleanupRanInFull" /> exists to prevent
-    ///         — and it cannot, because it rides only in <see cref="DescribeReduction" />, and an all-wildcard
-    ///         run is a few lines that never reduce. When every named file was unreadable, that is the reason
-    ///         given whether or not wildcards came with them, since every level lists or counts the wildcards.
+    ///         With nothing hashed there is no ratio to state, and the header says why instead:
+    ///         <c>0 of 0 file(s) changed on disk</c> would read as "nothing needed changing" for a run that may
+    ///         have rewritten dozens of files. <see cref="CleanupRanInFull" /> cannot correct that reading,
+    ///         because it closes only a reduced or truncated report, and an all-wildcard run is too short to be
+    ///         either. When every named file was unreadable, that is the reason given whether or not wildcards
+    ///         came with them, since every level lists or counts the wildcards.
     ///     </para>
     ///     <para>
-    ///         The partial form adds one word rather than a clause, and the word is "hashed" because it stays
-    ///         accurate whichever kind of entry was left out. Every level already lists or counts both excluded
-    ///         categories, so a header clause would state them twice in two vocabularies.
+    ///         The partial form adds the one word "hashed", which stays accurate whichever kind of entry was left
+    ///         out.
     ///     </para>
     /// </remarks>
     private static string Header(string profile, int changed, int hashed, int unknown, int pattern)
@@ -122,10 +117,10 @@ internal static class CleanupSummaryFormatter
     }
 
     /// <summary>
-    ///     Which categories stopped being listed individually at <paramref name="level" />, phrased for the
-    ///     reduction note.
+    ///     Describes which categories stopped being listed individually at <paramref name="level" />, phrased
+    ///     for the reduction note.
     /// </summary>
-    /// <remarks>Mirrors <see cref="IsListed" /> — keep the two in step.</remarks>
+    /// <remarks>Must agree with <see cref="IsListed" />.</remarks>
     public static string DescribeReduction(DetailLevel level)
     {
         return level switch
@@ -140,8 +135,8 @@ internal static class CleanupSummaryFormatter
     }
 
     /// <summary>
-    ///     Whether an entry of <paramref name="status" /> is listed individually at <paramref name="level" /> (else
-    ///     collapsed to a count).
+    ///     Determines whether an entry of <paramref name="status" /> is listed individually at
+    ///     <paramref name="level" /> rather than collapsed to a count.
     /// </summary>
     private static bool IsListed(CleanupFileStatus status, DetailLevel level)
     {
@@ -166,8 +161,8 @@ internal static class CleanupSummaryFormatter
     }
 
     /// <summary>
-    ///     A status a level can count rather than list, with the noun its count takes on a listing level's trailing
-    ///     line and the shorter one Minimal uses.
+    ///     Represents a status a level can count rather than list, with the noun its count takes on a listing
+    ///     level's trailing line and the shorter one Minimal uses.
     /// </summary>
     private sealed record CollapsibleCategory(CleanupFileStatus Status, string Noun, string MinimalNoun);
 }

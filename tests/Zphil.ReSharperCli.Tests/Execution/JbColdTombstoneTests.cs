@@ -8,8 +8,8 @@ using Zphil.ReSharperCli.Tests.TestSupport;
 namespace Zphil.ReSharperCli.Tests.Execution;
 
 /// <summary>
-///     Pins the failure direction of <see cref="JbColdTombstone" />: every failure mode must read as
-///     <em>reset</em>, because the only thing a "no" permits is refilling a cache the user asked to be rid of.
+///     Pins the failure direction of <see cref="JbColdTombstone" />: every failure mode must read as "reset",
+///     because the only thing a "no" permits is refilling a cache the user asked to be rid of.
 /// </summary>
 public sealed class JbColdTombstoneTests : IDisposable
 {

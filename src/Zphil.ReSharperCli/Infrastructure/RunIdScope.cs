@@ -4,26 +4,26 @@ using Microsoft.Extensions.Logging;
 namespace Zphil.ReSharperCli.Infrastructure;
 
 /// <summary>
-///     The <c>{RunId}</c> column: a short process-local number identifying one unit of work — one tool call,
-///     or one speculative pre-warm pass — so the lines it produced can be stitched back together.
+///     Provides the <c>{RunId}</c> column: a short process-local number identifying one unit of work, a tool
+///     call or a speculative pre-warm pass, so the lines it produced can be stitched back together.
 /// </summary>
 /// <remarks>
 ///     <para>
-///         It exists because the interesting lines of a slow run are written by several classes and two
-///         concurrent callers are ordinary: a pre-warm and a tool call overlap by design, and their
-///         cache-state, queue-wait and run lines interleave in one file with nothing to tell them apart.
-///         <c>{SessionId}</c> already separates processes, so this only has to separate work inside one.
+///         The lines of a slow run are written by several classes, and a pre-warm and a tool call overlap by
+///         design, so their cache-state, queue-wait and run lines interleave in one file with nothing else to
+///         tell them apart. <c>{SessionId}</c> already separates processes, so this only has to separate work
+///         inside one.
 ///     </para>
 ///     <para>
-///         A counter rather than a GUID, because it is read by a person scanning a log file. Four digits
-///         keep the column fixed-width against <see cref="OutsideARun" />, and wrapping past 9999 costs
-///         alignment and nothing else — a session that makes ten thousand tool calls has bigger problems.
+///         A counter rather than a GUID, because it is read by a person scanning a log file. Four digits keep
+///         the column fixed-width against <see cref="OutsideARun" />; past 9999 the id grows a digit, which
+///         costs alignment and nothing else.
 ///     </para>
 ///     <para>
-///         Opened as a logging <em>scope</em>, so every class writing under it needs no parameter: the MEL
-///         scope reaches Serilog's output template through the provider's own enricher, and every logger in
-///         the process shares that provider. It therefore flows across <c>await</c> and into any task
-///         started inside the scope, and — deliberately — not into one started outside it.
+///         Opened as a logging scope, so every class writing under it needs no parameter: the MEL scope reaches
+///         Serilog's output template through the provider's own enricher, and every logger in the process
+///         shares that provider. It therefore flows across <c>await</c> and into any task started inside the
+///         scope, but not into one started outside it.
 ///     </para>
 /// </remarks>
 internal static class RunIdScope
@@ -41,15 +41,15 @@ internal static class RunIdScope
     private static int _counter;
 
     /// <summary>
-    ///     Opens a scope tagging everything logged under it — on this async flow, by any logger in the process
-    ///     — with the next run id.
+    ///     Opens a scope that tags everything logged under it on this async flow, by any logger in the process,
+    ///     with the next run id.
     /// </summary>
     public static IDisposable? Begin(ILogger logger)
     {
         return logger.BeginScope("{" + PropertyName + "}", Next());
     }
 
-    /// <summary>The next id, formatted as the template renders it.</summary>
+    /// <summary>Returns the next id, formatted as the template renders it.</summary>
     internal static string Next()
     {
         return Interlocked.Increment(ref _counter).ToString("D4", CultureInfo.InvariantCulture);

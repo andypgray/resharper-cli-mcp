@@ -3,7 +3,7 @@ using Shouldly;
 namespace Zphil.ReSharperCli.Tests.Contract;
 
 /// <summary>
-///     The check that a cleanup pass rewrote its file, failing with the fixture's account of the pass attached.
+///     Provides the check that a cleanup pass rewrote its file, failing with the fixture's account attached.
 /// </summary>
 /// <remarks>
 ///     <see cref="ShouldlyMethodsAttribute" /> is on the class so a failure quotes the caller's line, which is

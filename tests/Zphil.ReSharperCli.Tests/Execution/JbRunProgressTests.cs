@@ -160,11 +160,13 @@ public sealed class JbRunProgressTests
         progress.OnOutputLine("Analyzing B.cs");
         progress.OnOutputLine("JetBrains Inspect Code 2026.2.1");
 
-        // Assert
+        // Assert — a beat reports the count too, waited for whole: one taken between two of the lines above
+        // carries the phase with a count short of it.
         progress.FilesSeen.ShouldBe(2);
-        JbRunProgressSnapshot latest = await sink.NextAfterAsync(sink.Count, Ct);
-        latest.Phase.ShouldBe(JbRunPhase.Analyzing);
-        latest.FilesSeen.ShouldBe(2);
+        await sink.FirstAsync(
+            snapshot => snapshot is { Phase: JbRunPhase.Analyzing, FilesSeen: 2 },
+            "a beat in the analysis sweep with 2 files seen",
+            Ct);
     }
 
     [Fact]
@@ -184,9 +186,10 @@ public sealed class JbRunProgressTests
 
         // Assert
         progress.FilesSeen.ShouldBe(1);
-        JbRunProgressSnapshot latest = await sink.NextAfterAsync(sink.Count, Ct);
-        latest.Phase.ShouldBe(JbRunPhase.Inspecting);
-        latest.FilesSeen.ShouldBe(1);
+        await sink.FirstAsync(
+            snapshot => snapshot is { Phase: JbRunPhase.Inspecting, FilesSeen: 1 },
+            "a beat in the inspection sweep with 1 file seen",
+            Ct);
     }
 
     [Fact]
@@ -202,9 +205,10 @@ public sealed class JbRunProgressTests
         // Act
         progress.Spawning("warm (14m old marker, _App.123.00)");
 
-        // Assert
-        JbRunProgressSnapshot afterSpawn = await sink.NextAfterAsync(sink.Count, Ct);
-        afterSpawn.Phase.ShouldBe(JbRunPhase.Starting);
+        // Assert — Spawning sets the phase, the cap and the summary together, so the beat that carries the
+        // phase carries the other two.
+        JbRunProgressSnapshot afterSpawn = await sink.FirstAsync(
+            snapshot => snapshot.Phase == JbRunPhase.Starting, "a beat after the spawn", Ct);
         afterSpawn.Cap.ShouldBe(Cap);
         afterSpawn.CacheSummary.ShouldBe("warm (14m old marker, _App.123.00)");
     }
@@ -220,8 +224,8 @@ public sealed class JbRunProgressTests
         progress.Seeding();
 
         // Assert — still no cap, because no jb exists yet; a transplant runs inside the call and before it.
-        JbRunProgressSnapshot seeding = await sink.NextAfterAsync(sink.Count, Ct);
-        seeding.Phase.ShouldBe(JbRunPhase.Seeding);
+        JbRunProgressSnapshot seeding = await sink.FirstAsync(
+            snapshot => snapshot.Phase == JbRunPhase.Seeding, "a beat in the seeding phase", Ct);
         seeding.Cap.ShouldBeNull();
     }
 
@@ -315,14 +319,6 @@ public sealed class JbRunProgressTests
                     _inside--;
                 }
             }
-        }
-
-        /// <summary>Returns the first beat that lands after <paramref name="alreadySeen" /> of them have.</summary>
-        public async Task<JbRunProgressSnapshot> NextAfterAsync(int alreadySeen, CancellationToken cancellationToken)
-        {
-            await WaitForAsync(alreadySeen + 1, cancellationToken);
-
-            return Items[alreadySeen];
         }
     }
 }

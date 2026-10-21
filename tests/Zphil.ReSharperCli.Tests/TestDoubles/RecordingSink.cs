@@ -54,10 +54,22 @@ internal class RecordingSink<T>(TimeSpan patience)
         return WaitUntilAsync(() => Count >= count, $"at least {count} recorded item(s)", cancellationToken);
     }
 
+    /// <summary>Waits for the first recorded item that <paramref name="carries" /> accepts, and returns it.</summary>
+    /// <remarks>
+    ///     The wait for an asserted state, where the next item after a count is not: an item already on its way
+    ///     when the count was read can land after it and carry the state from before the change.
+    /// </remarks>
+    public async Task<T> FirstAsync(Func<T, bool> carries, string awaited, CancellationToken cancellationToken)
+    {
+        await WaitUntilAsync(() => Items.Any(carries), awaited, cancellationToken);
+
+        return Items.First(carries);
+    }
+
     /// <summary>Waits until <paramref name="condition" /> holds.</summary>
     /// <remarks>
     ///     When it still does not hold after the patience, throws a <see cref="TimeoutException" /> naming
-    ///     <paramref name="awaited" /> rather than a bare cancellation.
+    ///     <paramref name="awaited" /> and the last item recorded, which is what says how far it got.
     /// </remarks>
     public async Task WaitUntilAsync(Func<bool> condition, string awaited, CancellationToken cancellationToken)
     {
@@ -71,8 +83,11 @@ internal class RecordingSink<T>(TimeSpan patience)
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
+                IReadOnlyList<T> items = Items;
+                string last = items.Count == 0 ? string.Empty : $", the last {items[^1]}";
+
                 throw new TimeoutException(
-                    $"Still waiting for {awaited} after {patience}, with {Count} item(s) recorded.");
+                    $"Still waiting for {awaited} after {patience}, with {items.Count} item(s) recorded{last}.");
             }
     }
 }

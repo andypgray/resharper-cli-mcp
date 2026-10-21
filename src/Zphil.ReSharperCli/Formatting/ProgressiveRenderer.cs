@@ -35,8 +35,8 @@ internal static class ProgressiveRenderer
     /// <remarks>
     ///     <paramref name="startLevel" /> is a cap, not a pin: levels above it are skipped, and the walk still
     ///     steps below it when a rendering does not fit. <paramref name="describeReduction" /> words each
-    ///     domain's reduction note, a generic message standing in when it is <see langword="null" />, and an
-    ///     empty string from it means nothing was reduced at that level, so no note is emitted.
+    ///     domain's reduction note, and an empty string from it means nothing was reduced at that level, so no
+    ///     note is emitted.
     /// </remarks>
     /// <returns>
     ///     The first rendering that fits, with the level it settled at. A reduced level's
@@ -47,11 +47,9 @@ internal static class ProgressiveRenderer
         T data,
         Func<T, DetailLevel, string> format,
         int maxChars,
-        Func<DetailLevel, string>? describeReduction = null,
+        Func<DetailLevel, string> describeReduction,
         DetailLevel startLevel = DetailLevel.Full)
     {
-        Func<DetailLevel, string> describe = describeReduction ?? DefaultReductionDescription;
-
         string previousOutput = null!;
 
         // Seeded at the cap rather than at Full: nothing above it is ever rendered, so naming Full in the
@@ -74,7 +72,7 @@ internal static class ProgressiveRenderer
             // The reduction note counts toward the budget: a rendering that fits only without its note
             // would be pushed over maxChars by appending it, handing the downstream truncator the mid-chop
             // this renderer exists to prevent.
-            string candidate = AppendReductionNote(output, level, maxChars, describe, startLevel);
+            string candidate = AppendReductionNote(output, level, maxChars, describeReduction, startLevel);
             if (candidate.Length <= maxChars) return new ProgressiveRendering(candidate, level);
 
             previousOutput = output;
@@ -82,12 +80,7 @@ internal static class ProgressiveRenderer
 
         // Nothing fit — return the smallest rendering for the hard-truncation failsafe.
         return new ProgressiveRendering(
-            AppendReductionNote(previousOutput, lastTriedLevel, maxChars, describe, startLevel), lastTriedLevel);
-    }
-
-    private static string DefaultReductionDescription(DetailLevel level)
-    {
-        return "lower-signal detail was collapsed to fit the output budget.";
+            AppendReductionNote(previousOutput, lastTriedLevel, maxChars, describeReduction, startLevel), lastTriedLevel);
     }
 
     /// <summary>

@@ -67,7 +67,7 @@ public sealed class JbWarmMarkerTests : IDisposable
 
         // Assert
         outcome.ShouldBe(StampOutcome.NamedGeneration);
-        JbWarmMarker.TryReadGenerationName(JbWarmMarker.PathFor(SolutionPath, _cacheHome), _cacheHome, NullLogger.Instance)
+        JbWarmMarker.TryReadMarker(JbWarmMarker.PathFor(SolutionPath, _cacheHome), _cacheHome, NullLogger.Instance).GenerationName
             .ShouldBe(Path.GetFileName(generation));
     }
 
@@ -86,7 +86,7 @@ public sealed class JbWarmMarkerTests : IDisposable
         JbWarmMarker.Stamp(SolutionPath, _cacheHome, NullLogger.Instance);
 
         // Assert
-        JbWarmMarker.TryReadGenerationName(JbWarmMarker.PathFor(SolutionPath, _cacheHome), _cacheHome, NullLogger.Instance)
+        JbWarmMarker.TryReadMarker(JbWarmMarker.PathFor(SolutionPath, _cacheHome), _cacheHome, NullLogger.Instance).GenerationName
             .ShouldBe(Path.GetFileName(first));
     }
 
@@ -106,7 +106,7 @@ public sealed class JbWarmMarkerTests : IDisposable
 
         // Every feature that needs a name is told there is none rather than being handed the nearest-looking
         // directory. That is the self-disable, not a degradation.
-        JbWarmMarker.TryReadGenerationName(markerPath, _cacheHome, NullLogger.Instance).ShouldBeNull();
+        JbWarmMarker.TryReadMarker(markerPath, _cacheHome, NullLogger.Instance).GenerationName.ShouldBeNull();
 
         // The build is still recorded, because the debounce asks it of every fresh marker: one that named none
         // would read as another build's, and drift would cost a pre-warm at every session start.
@@ -132,7 +132,7 @@ public sealed class JbWarmMarkerTests : IDisposable
         WarmMarkerContent content = JbWarmMarker.TryReadMarker(markerPath, _cacheHome, NullLogger.Instance);
         content.GenerationName.ShouldBe(Path.GetFileName(generation));
         content.JbVersion.ShouldBe("2026.2.1");
-        JbWarmMarker.TryReadGenerationName(markerPath, _cacheHome, NullLogger.Instance).ShouldBe(Path.GetFileName(generation));
+        JbWarmMarker.TryReadMarker(markerPath, _cacheHome, NullLogger.Instance).GenerationName.ShouldBe(Path.GetFileName(generation));
         JbWarmMarker.TryReadJbVersion(markerPath, NullLogger.Instance).ShouldBe("2026.2.1");
     }
 
@@ -227,14 +227,14 @@ public sealed class JbWarmMarkerTests : IDisposable
     }
 
     [Fact]
-    public void TryReadGenerationName_MarkerThatIsNotThere_IsNullRatherThanThrowing()
+    public void TryReadMarker_MarkerThatIsNotThere_NamesNoGenerationRatherThanThrowing()
     {
         // Assert — nothing has ever warmed this generation, which is an answer and not a fault.
-        JbWarmMarker.TryReadGenerationName(JbWarmMarker.PathFor(SolutionPath, _cacheHome), _cacheHome, NullLogger.Instance).ShouldBeNull();
+        JbWarmMarker.TryReadMarker(JbWarmMarker.PathFor(SolutionPath, _cacheHome), _cacheHome, NullLogger.Instance).GenerationName.ShouldBeNull();
     }
 
     [Fact]
-    public void TryReadGenerationName_GenerationDeletedSinceTheMarkerWasWritten_IsNull()
+    public void TryReadMarker_GenerationDeletedSinceTheMarkerWasWritten_NamesNoGeneration()
     {
         // Arrange — a cache reset, or jb's own stale-cache collection, between the stamp and the read. The
         // name is still true about the past and useless about now.
@@ -243,7 +243,7 @@ public sealed class JbWarmMarkerTests : IDisposable
         Directory.Delete(generation, true);
 
         // Assert
-        JbWarmMarker.TryReadGenerationName(JbWarmMarker.PathFor(SolutionPath, _cacheHome), _cacheHome, NullLogger.Instance).ShouldBeNull();
+        JbWarmMarker.TryReadMarker(JbWarmMarker.PathFor(SolutionPath, _cacheHome), _cacheHome, NullLogger.Instance).GenerationName.ShouldBeNull();
     }
 
     [Theory]
@@ -256,7 +256,7 @@ public sealed class JbWarmMarkerTests : IDisposable
     [InlineData(@"sub\_App.999.00")]
     // A rooted path ignores the cache home entirely.
     [InlineData(@"C:\Windows")]
-    public void TryReadGenerationName_ContentThatIsNotABareDirectoryName_IsRefused(string content)
+    public void TryReadMarker_ContentThatIsNotABareDirectoryName_IsRefusedAsAGenerationName(string content)
     {
         // Arrange — the marker is a file in a shared cache home, so its content is untrusted input to the
         // path a transplant reads from.
@@ -264,7 +264,7 @@ public sealed class JbWarmMarkerTests : IDisposable
         File.WriteAllText(markerPath, content);
 
         // Assert
-        JbWarmMarker.TryReadGenerationName(markerPath, _cacheHome, NullLogger.Instance).ShouldBeNull();
+        JbWarmMarker.TryReadMarker(markerPath, _cacheHome, NullLogger.Instance).GenerationName.ShouldBeNull();
     }
 
     [Fact]

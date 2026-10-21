@@ -198,16 +198,6 @@ internal static class JbWarmMarker
     }
 
     /// <summary>
-    ///     Returns the cache generation directory named by the marker file at
-    ///     <paramref name="markerFilePath" />, or <see langword="null" /> when it names none this server should
-    ///     act on.
-    /// </summary>
-    internal static string? TryReadGenerationName(string markerFilePath, string cacheHome, ILogger logger)
-    {
-        return TryReadMarker(markerFilePath, cacheHome, logger).GenerationName;
-    }
-
-    /// <summary>
     ///     Returns the <c>jb</c> build that left this generation warm, or <see langword="null" /> when the
     ///     marker names none or cannot be read.
     /// </summary>

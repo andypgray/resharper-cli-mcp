@@ -25,14 +25,6 @@ internal static class SarifParser
         return ExtractIssues(report);
     }
 
-    /// <summary>Parses SARIF JSON content into structured issues.</summary>
-    public static List<InspectIssue> Parse(string json)
-    {
-        var report = JsonSerializer.Deserialize<SarifReport>(json, Options);
-
-        return ExtractIssues(report);
-    }
-
     private static List<InspectIssue> ExtractIssues(SarifReport? report)
     {
         // Issues repeat the same file URIs many times over; converting each distinct URI once also lets every

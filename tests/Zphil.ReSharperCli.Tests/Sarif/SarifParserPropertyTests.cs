@@ -4,6 +4,7 @@ using FsCheck.Fluent;
 using FsCheck.Xunit;
 using Shouldly;
 using Zphil.ReSharperCli.Sarif;
+using Zphil.ReSharperCli.Tests.TestSupport;
 
 namespace Zphil.ReSharperCli.Tests.Sarif;
 
@@ -37,7 +38,7 @@ public sealed class SarifParserPropertyTests
                 (string json, IReadOnlyList<string> locatedRuleIds) = BuildReport(runs);
 
                 // Act
-                List<InspectIssue> issues = SarifParser.Parse(json);
+                List<InspectIssue> issues = SarifJson.Parse(json);
 
                 // Assert — rule ids rather than file paths: the ids carry document order, and a path would
                 // drag a platform-dependent LocalPath into an assertion that is not about paths at all.
@@ -60,7 +61,7 @@ public sealed class SarifParserPropertyTests
                 string json = SingleResultReport(uri);
 
                 // Act
-                List<InspectIssue> issues = Should.NotThrow(() => SarifParser.Parse(json));
+                List<InspectIssue> issues = Should.NotThrow(() => SarifJson.Parse(json));
 
                 // Assert — what the file path becomes is deliberately unstated: a parseable file:// URI turns
                 // into a platform-dependent local path, and an unparseable one cannot. What must hold either

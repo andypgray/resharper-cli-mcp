@@ -14,7 +14,7 @@ public sealed class SarifParserTests
         string json = Fixtures.ReadSarif("inspect-sample.json");
 
         // Act
-        List<InspectIssue> issues = SarifParser.Parse(json);
+        List<InspectIssue> issues = SarifJson.Parse(json);
 
         // Assert
         issues.Select(i => i.RuleId).ShouldBe(
@@ -28,7 +28,7 @@ public sealed class SarifParserTests
         string json = Fixtures.ReadSarif("inspect-sample.json");
 
         // Act
-        InspectIssue issue = SarifParser.Parse(json)[0];
+        InspectIssue issue = SarifJson.Parse(json)[0];
 
         // Assert
         issue.Line.ShouldBe(1);
@@ -45,7 +45,7 @@ public sealed class SarifParserTests
         string json = Fixtures.ReadSarif("inspect-sample.json");
 
         // Act
-        InspectIssue issue = SarifParser.Parse(json)[0];
+        InspectIssue issue = SarifJson.Parse(json)[0];
 
         // Assert
         issue.File.ShouldNotStartWith("file://");
@@ -59,7 +59,7 @@ public sealed class SarifParserTests
         string json = Fixtures.ReadSarif("inspect-sample.json");
 
         // Act
-        InspectIssue issue = SarifParser.Parse(json)[2];
+        InspectIssue issue = SarifJson.Parse(json)[2];
 
         // Assert
         issue.Severity.ShouldBe("SUGGESTION");
@@ -73,7 +73,7 @@ public sealed class SarifParserTests
         string json = Fixtures.ReadSarif("plain-path.json");
 
         // Act
-        InspectIssue issue = SarifParser.Parse(json).ShouldHaveSingleItem();
+        InspectIssue issue = SarifJson.Parse(json).ShouldHaveSingleItem();
 
         // Assert
         issue.File.ShouldBe("src/Models/Invoice.cs");
@@ -86,7 +86,7 @@ public sealed class SarifParserTests
         string json = Fixtures.ReadSarif("location-less.json");
 
         // Act
-        InspectIssue issue = SarifParser.Parse(json).ShouldHaveSingleItem();
+        InspectIssue issue = SarifJson.Parse(json).ShouldHaveSingleItem();
 
         // Assert
         issue.RuleId.ShouldBe("UnusedType.Global");
@@ -99,7 +99,7 @@ public sealed class SarifParserTests
         string json = Fixtures.ReadSarif("missing-region.json");
 
         // Act
-        InspectIssue issue = SarifParser.Parse(json).ShouldHaveSingleItem();
+        InspectIssue issue = SarifJson.Parse(json).ShouldHaveSingleItem();
 
         // Assert
         issue.Line.ShouldBe(0);
@@ -113,7 +113,7 @@ public sealed class SarifParserTests
         string json = Fixtures.ReadSarif("empty-runs.json");
 
         // Act
-        List<InspectIssue> issues = SarifParser.Parse(json);
+        List<InspectIssue> issues = SarifJson.Parse(json);
 
         // Assert
         issues.ShouldBeEmpty();
@@ -123,7 +123,7 @@ public sealed class SarifParserTests
     public void Parse_NoRunsProperty_ReturnsNoIssues()
     {
         // Act
-        List<InspectIssue> issues = SarifParser.Parse("{}");
+        List<InspectIssue> issues = SarifJson.Parse("{}");
 
         // Assert
         issues.ShouldBeEmpty();
@@ -136,7 +136,7 @@ public sealed class SarifParserTests
         string json = Fixtures.ReadSarif("multiple-runs.json");
 
         // Act
-        List<InspectIssue> issues = SarifParser.Parse(json);
+        List<InspectIssue> issues = SarifJson.Parse(json);
 
         // Assert
         issues.Count.ShouldBe(2);
@@ -167,7 +167,7 @@ public sealed class SarifParserTests
                      """;
 
         // Act
-        InspectIssue issue = SarifParser.Parse(json).ShouldHaveSingleItem();
+        InspectIssue issue = SarifJson.Parse(json).ShouldHaveSingleItem();
 
         // Assert — the result survives, carrying the URI jb wrote. Anything else discards a whole report
         // over one unparseable path, after the caller has already paid for the run.

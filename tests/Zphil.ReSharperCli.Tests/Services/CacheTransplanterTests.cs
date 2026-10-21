@@ -655,7 +655,7 @@ public sealed class CacheTransplanterTests : IDisposable
     {
         string generationName = Path.GetFileName(generationPath);
         string markerPath = JbWarmMarker.FindAll(_cacheHome)
-            .Single(marker => JbWarmMarker.TryReadGenerationName(marker.MarkerPath, _cacheHome, NullLogger.Instance) == generationName)
+            .Single(marker => JbWarmMarker.TryReadMarker(marker.MarkerPath, _cacheHome, NullLogger.Instance).GenerationName == generationName)
             .MarkerPath;
 
         File.SetLastWriteTimeUtc(markerPath, DateTime.UtcNow - age);

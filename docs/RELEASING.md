@@ -60,7 +60,7 @@ Every version site must agree or the release stops at step 1:
 
 The two `.claude-plugin/plugin.json` fields are one decision, not two: Claude Code ships an installed plugin an update only when its `version` changes, so a pin that moves under a frozen `version` reaches new installs and no existing one.
 
-Two manifests stay off this table on purpose. The root [`plugin.json`](../plugin.json) declares no `version` at all: the Agent Plugins schema makes the field optional, and the launcher beside it in `mcp.json` is what a host installs, so a version there would be another number to keep in step for nothing. [`lhm.plugin.json`](../lhm.plugin.json) does carry a `version`, but it is the LobeHub listing's own rather than the server's, and the format has no launcher field for a package version to sit in — so nothing there tracks a release.
+One manifest stays off this table on purpose. The root [`plugin.json`](../plugin.json) declares no `version` at all: the Agent Plugins schema makes the field optional, and the launcher beside it in `mcp.json` is what a host installs, so a version there would be another number to keep in step for nothing.
 
 `VersionSiteTests` holds this same set on every PR, so a drifted site usually goes red before a tag exists. Check them by hand before tagging:
 

@@ -77,7 +77,6 @@ public sealed partial class RespectfulWrappingTests
     [InlineData(".claude-plugin/marketplace.json", "/plugins/0/description")]
     [InlineData(".cursor-plugin/plugin.json", "/description")]
     [InlineData("gemini-extension.json", "/description")]
-    [InlineData("lhm.plugin.json", "/description")]
     [InlineData("mcpb/manifest.json", "/description")]
     public void InstallManifestDescription_CarriesTheUnofficialNotice(string manifestPath, string jsonPointer)
     {

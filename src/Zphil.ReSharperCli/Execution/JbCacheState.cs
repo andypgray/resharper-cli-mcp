@@ -4,6 +4,28 @@ using Zphil.ReSharperCli.Formatting;
 
 namespace Zphil.ReSharperCli.Execution;
 
+/// <summary>Identifies which of the states a <see cref="JbCacheState" /> describes.</summary>
+internal enum JbCacheKind
+{
+    /// <summary>The cache home could not be read, so nothing is known.</summary>
+    Unreadable,
+
+    /// <summary>No generation on disk, whether or not a reset is what emptied it.</summary>
+    Cold,
+
+    /// <summary>A generation <c>CacheTransplanter</c> had just copied from a sibling checkout.</summary>
+    Seeded,
+
+    /// <summary>A generation no run ever finished against: the remnant of a killed run.</summary>
+    PartBuilt,
+
+    /// <summary>A generation another <c>jb</c> build left warm, which this build rebuilds in place.</summary>
+    Stale,
+
+    /// <summary>A generation this <c>jb</c> build left warm.</summary>
+    Warm
+}
+
 /// <summary>
 ///     Represents what the cache home holds for one solution in the moment before <c>jb</c> opens it, as one
 ///     clause a log line can carry.
@@ -74,32 +96,47 @@ internal sealed record JbCacheState(
     {
         get
         {
-            if (Generations is null) return "cache state unreadable";
-
             string cost = RecordedCost();
+            string directories = Generations is null ? string.Empty : string.Join(", ", Generations);
 
-            if (Generations.Count == 0)
-                return ResetRecorded ? $"cold after a reset (none on disk{cost})" : $"cold (none on disk{cost})";
-
-            string directories = string.Join(", ", Generations);
-
-            // Before the marker check: a seeded generation has no marker either, and only the transplant knows
-            // which of the two this is.
-            if (Seeded) return $"seeded from a sibling checkout ({directories}{cost}), and this run re-keys it";
-
-            if (WarmMarkerAge is not { } age)
-                return $"part-built ({directories}, no warm marker — a run against it was killed)";
-
-            // Ahead of warm, because this generation has every mark of being warm except the one that
-            // decides what it costs: jb validates a cache against its own format and rebuilds it in place,
-            // so a cache another build wrote buys the run nothing.
-            if (WrittenByAnotherJb)
+            return Kind switch
             {
-                string writer = MarkerJbVersion is null ? "an earlier jb" : $"jb {MarkerJbVersion}";
-                return $"stale (cache written by {writer}, this is {CurrentJbVersion}, and jb rebuilds it{cost})";
-            }
+                JbCacheKind.Unreadable => "cache state unreadable",
+                JbCacheKind.Cold when ResetRecorded => $"cold after a reset (none on disk{cost})",
+                JbCacheKind.Cold => $"cold (none on disk{cost})",
+                JbCacheKind.Seeded => $"seeded from a sibling checkout ({directories}{cost}), and this run re-keys it",
+                JbCacheKind.PartBuilt => $"part-built ({directories}, no warm marker — a run against it was killed)",
+                JbCacheKind.Stale => $"stale (cache written by {StaleWriter}, this is {CurrentJbVersion}, and jb rebuilds it{cost})",
+                JbCacheKind.Warm => $"warm ({FormatAge(WarmMarkerAge.GetValueOrDefault())} old marker, {directories}{cost})",
+                _ => throw new ArgumentOutOfRangeException(nameof(Kind), Kind, "Unmapped jb cache kind.")
+            };
+        }
+    }
 
-            return $"warm ({FormatAge(age)} old marker, {directories}{cost})";
+    /// <summary>Gets which state the cache is in.</summary>
+    /// <remarks>
+    ///     <para>
+    ///         The one place the states are told apart, so <see cref="Summary" />, <see cref="CostBand" /> and
+    ///         every reader of a run's cache state agree on which one a reading is.
+    ///     </para>
+    ///     <para>
+    ///         Seeded is decided before the marker check, because a seeded generation has no marker either and
+    ///         only the transplant knows which of the two it is. Stale is decided ahead of warm, because such a
+    ///         generation has every mark of being warm except the one that decides what it costs: <c>jb</c>
+    ///         validates a cache against its own format and rebuilds it in place, so a cache another build wrote
+    ///         buys the run nothing.
+    ///     </para>
+    /// </remarks>
+    internal JbCacheKind Kind
+    {
+        get
+        {
+            if (Generations is null) return JbCacheKind.Unreadable;
+            if (Generations.Count == 0) return JbCacheKind.Cold;
+            if (Seeded) return JbCacheKind.Seeded;
+            if (WarmMarkerAge is null) return JbCacheKind.PartBuilt;
+
+            return WrittenByAnotherJb ? JbCacheKind.Stale : JbCacheKind.Warm;
         }
     }
 
@@ -109,9 +146,8 @@ internal sealed record JbCacheState(
     /// </summary>
     /// <remarks>
     ///     <para>
-    ///         The arms are <see cref="Summary" />'s own, in the same order, and must stay so: a state the
-    ///         summary describes in its own words is a state whose duration only runs described the same way
-    ///         predict.
+    ///         Keyed by <see cref="Kind" />, as <see cref="Summary" /> is: a state the summary describes in its own
+    ///         words is a state whose duration only runs described the same way predict.
     ///     </para>
     ///     <para>
     ///         An unreadable cache home, a part-built generation and a warm one have no band. The first knows
@@ -124,18 +160,16 @@ internal sealed record JbCacheState(
     ///         another build wrote and the run does cold-shaped work.
     ///     </para>
     /// </remarks>
-    internal JbCostBand? CostBand
-    {
-        get
+    internal JbCostBand? CostBand =>
+        Kind switch
         {
-            if (Generations is null) return null;
-            if (Generations.Count == 0) return JbCostBand.Cold;
-            if (Seeded) return JbCostBand.Seeded;
-            if (WarmMarkerAge is null) return null;
+            JbCacheKind.Cold or JbCacheKind.Stale => JbCostBand.Cold,
+            JbCacheKind.Seeded => JbCostBand.Seeded,
+            _ => null
+        };
 
-            return WrittenByAnotherJb ? JbCostBand.Cold : null;
-        }
-    }
+    /// <summary>Gets how a stale summary names the build that wrote the cache.</summary>
+    private string StaleWriter => MarkerJbVersion is null ? "an earlier jb" : $"jb {MarkerJbVersion}";
 
     /// <summary>
     ///     Gets a value indicating whether the build that left this generation warm is not the one about to open

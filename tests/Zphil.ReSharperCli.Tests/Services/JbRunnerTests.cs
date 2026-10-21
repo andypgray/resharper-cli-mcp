@@ -397,6 +397,74 @@ public sealed class JbRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task RunAsync_WarmInspectHitsTheCap_BlamesTheAnalysisRatherThanAColdCache()
+    {
+        // Arrange — a warm cache was building nothing, so the cold-cache diagnosis is wrong and a retry has
+        // nothing to resume. The analysis stays solution-wide, so scoping still cannot shorten it.
+        CacheHomes.PlantWarmDonor(_config.CacheHome, _config.SolutionPath);
+        StubTimeout();
+
+        // Act
+        var exception = await Should.ThrowAsync<UserErrorException>(() => _runner.RunAsync(_config, ["inspectcode", _config.SolutionPath], Ct));
+
+        // Assert
+        exception.Message.ShouldBe(
+            "jb inspectcode timed out after 10 minutes and was stopped.\n"
+            + "That cap is this server's, not jb's own: raise it by setting RESHARPER_MCP_TIMEOUT_SECS (in seconds) "
+            + "in this server's env block in your MCP client config, then restart the server.\n"
+            + "The ReSharper cache was warm, so this was not the slow first run: a warm analysis of this "
+            + "solution takes longer than the cap, and raising the cap is the fix. Scoping the next call with "
+            + "`files` will not help — jb analyses the whole solution whatever the report is narrowed to.");
+    }
+
+    [Fact]
+    public async Task RunAsync_WarmCleanupHitsTheCap_PointsAtTheFileCountRatherThanAColdCache()
+    {
+        // Arrange — a warm cleanup's time grows with the files it rewrites, so narrowing them is the remedy
+        // that works, and the message must not rule it out.
+        CacheHomes.PlantWarmDonor(_config.CacheHome, _config.SolutionPath);
+        StubTimeout();
+
+        // Act
+        var exception = await Should.ThrowAsync<UserErrorException>(() => _runner.RunAsync(_config, [CleanupService.Subcommand, _config.SolutionPath], Ct));
+
+        // Assert
+        exception.Message.ShouldBe(
+            "jb cleanupcode timed out after 10 minutes and was stopped.\n"
+            + "That cap is this server's, not jb's own: raise it by setting RESHARPER_MCP_TIMEOUT_SECS (in seconds) "
+            + "in this server's env block in your MCP client config, then restart the server.\n"
+            + "The ReSharper cache was warm, so this was not the slow first run. A cleanup's time grows with the "
+            + "number of files it rewrites, so narrow `files` to the ones that changed, or split them across "
+            + "several calls, before raising the cap. Files this run reached before it was stopped may already "
+            + "have been rewritten.");
+        exception.Message.ShouldNotContain("cold ReSharper cache");
+        exception.Message.ShouldNotContain("will not help");
+    }
+
+    [Fact]
+    public async Task RunAsync_ColdCleanupHitsTheCap_KeepsTheColdCacheDiagnosisAndWarnsOfRewrittenFiles()
+    {
+        // Arrange — a cold cleanup builds the whole solution's cache before it rewrites anything, so the cold
+        // wording still holds for it: only the warm state changes the advice. The cap can still fall after
+        // the rewriting began, so the caller is told to check the working tree before retrying.
+        StubTimeout();
+
+        // Act
+        var exception = await Should.ThrowAsync<UserErrorException>(() => _runner.RunAsync(_config, [CleanupService.Subcommand, _config.SolutionPath], Ct));
+
+        // Assert
+        exception.Message.ShouldBe(
+            "jb cleanupcode timed out after 10 minutes and was stopped.\n"
+            + "That cap is this server's, not jb's own: raise it by setting RESHARPER_MCP_TIMEOUT_SECS (in seconds) "
+            + "in this server's env block in your MCP client config, then restart the server.\n"
+            + "A run that long is almost always a cold ReSharper cache. "
+            + "Scoping the next call with `files` will not help — jb analyses the whole solution whatever "
+            + "the report is narrowed to. "
+            + "The cache keeps most of what this run built, so a retry resumes rather than starting over. "
+            + "Files this run reached before it was stopped may already have been rewritten.");
+    }
+
+    [Fact]
     public async Task RunAsync_ColdSolutionWithAWarmSibling_SeedsTheCacheBeforeJbStarts()
     {
         // Arrange — the ordering is the contract: a copy landing after jb opened the generation is worse than

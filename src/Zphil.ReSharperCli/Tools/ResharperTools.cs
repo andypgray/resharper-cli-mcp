@@ -39,7 +39,7 @@ internal sealed class ResharperTools(
 
     private const string CleanupDescription =
         "Run ReSharper code cleanup to format files in place, fixing formatting, code style, unused usings, var "
-        + "usage, modifier order and braces. Each call analyses the whole solution whatever the file count, so "
+        + "usage, modifier order and braces. Each call analyses the whole solution before it rewrites anything, so "
         + "make one call per task with every modified file in it.";
 
     private const string ResetCacheDescription =

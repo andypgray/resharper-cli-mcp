@@ -74,6 +74,9 @@ internal sealed class JbRunner(
 
     private const string Speculative = "speculative";
 
+    /// <summary>What a <c>cleanupcode</c> killed at the cap cannot rule out, in every cache state.</summary>
+    private const string RewrittenWarning = "Files this run reached before it was stopped may already have been rewritten.";
+
     /// <summary>
     ///     Whether this server session has already said that <c>jb</c>'s cache-generation naming no longer
     ///     matches what <see cref="JbSolutionCacheHash" /> reproduces.
@@ -397,6 +400,15 @@ internal sealed class JbRunner(
     ///         is this server's nor the variable that moves it.
     ///     </para>
     ///     <para>
+    ///         The cause and the remedy depend on the <paramref name="cache" /> state the run opened. Any state
+    ///         but warm is read as the cold first run, which scoping cannot shorten and a retry resumes. A warm
+    ///         run was building no cache, so it is promised no resumption: a warm <c>inspectcode</c> is a
+    ///         whole-solution analysis that outgrew the cap, which only raising the cap cures, while a warm
+    ///         <c>cleanupcode</c>'s time grows with the files it rewrites, so narrowing them is the first remedy.
+    ///         Every <c>cleanupcode</c> is warned that files may already be rewritten, whatever the cache state:
+    ///         a cold run analyses before it rewrites, but nothing here knows which side of that the cap fell on.
+    ///     </para>
+    ///     <para>
     ///         <paramref name="filesSeen" /> is how many files <c>jb</c> had reported reaching, zero when nothing
     ///         said. That a retry resumes rather than starting over is the one claim here this server cannot
     ///         verify, so the count is offered as evidence for it and withheld when there is none, which is always
@@ -405,13 +417,29 @@ internal sealed class JbRunner(
     ///         just watched.
     ///     </para>
     ///     <para>
-    ///         <paramref name="cache" /> supplies how long the last comparable run of this solution took, which
-    ///         turns the cap into evidence for or against raising it. The figure is left out when no comparable
-    ///         run has finished.
+    ///         <paramref name="cache" /> also supplies how long the last comparable run of this solution took,
+    ///         which turns the cap into evidence for or against raising it. The figure is left out when no
+    ///         comparable run has finished, which a warm state never has.
     ///     </para>
     /// </remarks>
     private string TimedOutMessage(string subcommand, int filesSeen, JbCacheState cache)
     {
+        string cap = $"jb {subcommand} timed out after {DurationFormatter.Format(runTimeout)} and was stopped.\n"
+                     + $"That cap is this server's, not jb's own: raise it by setting {JbRunTimeout.Variable} (in seconds) "
+                     + "in this server's env block in your MCP client config, then restart the server.\n";
+
+        if (cache.Kind == JbCacheKind.Warm)
+            return subcommand == CleanupService.Subcommand
+                ? cap
+                  + "The ReSharper cache was warm, so this was not the slow first run. A cleanup's time grows with the "
+                  + "number of files it rewrites, so narrow `files` to the ones that changed, or split them across "
+                  + "several calls, before raising the cap. "
+                  + RewrittenWarning
+                : cap
+                  + "The ReSharper cache was warm, so this was not the slow first run: a warm analysis of this "
+                  + "solution takes longer than the cap, and raising the cap is the fix. Scoping the next call with "
+                  + "`files` will not help — jb analyses the whole solution whatever the report is narrowed to.";
+
         string reached = filesSeen > 0
             ? $"jb had reached {RunProgressFormatter.Files(filesSeen)} by the time it was stopped, and the cache keeps that work, so a "
               + "retry resumes from there rather than starting over."
@@ -421,14 +449,17 @@ internal sealed class JbRunner(
             ? $"The last {JbCostRecord.Label(quotable.Band)} run of this solution took {DurationFormatter.Format(quotable.Cost)}. "
             : string.Empty;
 
-        return $"jb {subcommand} timed out after {DurationFormatter.Format(runTimeout)} and was stopped.\n"
-               + $"That cap is this server's, not jb's own: raise it by setting {JbRunTimeout.Variable} (in seconds) "
-               + "in this server's env block in your MCP client config, then restart the server.\n"
+        string rewritten = subcommand == CleanupService.Subcommand
+            ? " " + RewrittenWarning
+            : string.Empty;
+
+        return cap
                + "A run that long is almost always a cold ReSharper cache. "
                + recorded
                + "Scoping the next call with `files` will not help — jb analyses the whole solution whatever "
                + "the report is narrowed to. "
-               + reached;
+               + reached
+               + rewritten;
     }
 
     /// <summary>

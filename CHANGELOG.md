@@ -14,7 +14,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for cleanup. Claude Code loads tool schemas on demand and finds a tool by searching its name and
   description, so a request worded that way now reaches the right tool.
 
+- `resharper_cleanup`'s description no longer says a call costs the same whatever the file count, and the
+  README and the setup guide no longer say `files` never changes what a run costs. Every cleanup pays for the
+  solution-wide analysis, and on a warm cache its time then grows with the files it rewrites. Measured over
+  100 warm cleanups of one solution on one machine at 1.7.1, the median was 50 s for one to three files,
+  105 s for 11 to 30 and 160 s for more than 30, and a cleanup of every file in the solution took 779 s. The
+  one-call-per-task rule stands.
+
 ### Fixed
+
+- A run killed at the cap on a warm cache was told that the cause was almost always a cold cache, that
+  scoping the next call would not help, and that a retry would resume. A warm `resharper_inspect` is now
+  told that its analysis outgrew the cap and that raising the cap is the fix. A warm `resharper_cleanup` is
+  told that its time grows with the files it rewrites, to narrow or split `files` before raising the cap.
+  A `resharper_cleanup` killed at the cap on any cache state is now told that files it reached before it was
+  stopped may already have been rewritten. The cold-cache diagnosis is otherwise unchanged.
 
 - A `resharper_cleanup` call that leaves out `files` is refused with
   `Missing required parameter "files" on "resharper_cleanup". Valid: files, profile, solutionPath.` Such a

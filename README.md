@@ -18,7 +18,7 @@ An agent can run `jb` from a shell. It then gets a report file that can list tho
 
 ## Run times
 
-Every run analyses the whole solution, because resolving symbols needs the full solution model. `files` narrows what is reported, not what is analysed. The first run against a solution builds ReSharper's caches and typically takes minutes, then later runs against the same cache are several times faster.
+Every run analyses the whole solution, because resolving symbols needs the full solution model. For inspect, `files` narrows what is reported, not what is analysed. For cleanup, it also sets how many files are rewritten, and on a warm cache a cleanup takes longer the more files it is given. The first run against a solution builds ReSharper's caches and typically takes minutes, then later runs against the same cache are several times faster.
 
 Each run is capped at `RESHARPER_MCP_TIMEOUT_SECS`, defaulting to 10 minutes. If your client's own tool-call timeout is shorter than a cold run, raise that too.
 

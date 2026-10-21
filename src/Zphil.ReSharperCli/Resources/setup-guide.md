@@ -126,12 +126,20 @@ any timeout: a client that resets its own hang detection on progress will now wa
 genuinely hung, so the server's cap becomes the thing that ends such a run. That cap names itself and
 `RESHARPER_MCP_TIMEOUT_SECS` in the message it fails with.
 
-A timeout with nothing else running is almost always the cold run. **Scoping the retry with `files` does
-not help**: `jb` analyses the whole solution whatever the report is narrowed to, so a one-file run is no
-faster than a solution-wide one — often marginally slower. Measured over eight days of ordinary use on
-two solutions on one machine at 1.6.0, a scoped inspect ran to a median of 269 s (n=10) against 272 s
-solution-wide (n=27), and a one-file cleanup to 102 s (n=14) against 113 s for ten files or more (n=19).
-What a killed run does leave behind is a partly-built cache that a retry picks up rather than starting
+A timeout with nothing else running is almost always the cold run. **Scoping an inspect retry with `files`
+does not help**: `jb` analyses the whole solution whatever the report is narrowed to, so a one-file inspect
+is no faster than a solution-wide one. Measured over eight days of ordinary use on two solutions on one
+machine at 1.6.0, a scoped inspect ran to a median of 269 s (n=10) against 272 s solution-wide (n=27).
+
+Cleanup is different once the cache is warm: every call pays for the solution-wide analysis, then its
+time grows with the number of files it rewrites. Measured over 100 warm cleanups of one solution on one
+machine at 1.7.1, between 2026-10-05 and 2026-10-21, the median was 50 s for one to three files, 105 s for
+11 to 30 and 160 s for more than 30, and a cleanup of every file in the solution took 779 s. When a warm
+cleanup hits the cap, narrow `files` to the files that changed, or split them across several calls, before
+raising the cap. The timeout message says which case a run was in, and names the warm cache when there was
+one.
+
+What a killed cold run does leave behind is a partly-built cache that a retry picks up rather than starting
 over — though not from exactly where it stopped, because whatever was in flight when it was killed is
 lost and gets redone. With a warm same-named
 checkout in the cache home, the next call replaces that remnant with a copy of that one instead, which is

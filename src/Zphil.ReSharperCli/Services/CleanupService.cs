@@ -17,6 +17,9 @@ internal sealed class CleanupService(JbRunner jbRunner, ILogger<CleanupService> 
     /// <summary>The profile applied when the caller does not specify one.</summary>
     public const string DefaultProfile = "Built-in: Full Cleanup";
 
+    /// <summary>The <c>jb</c> subcommand this service runs, which <see cref="JbRunner" /> tells apart by name.</summary>
+    internal const string Subcommand = "cleanupcode";
+
     /// <summary>
     ///     Cleans up <paramref name="files" /> in <paramref name="config" />'s solution with
     ///     <paramref name="profile" />, and classifies what changed.
@@ -90,7 +93,7 @@ internal sealed class CleanupService(JbRunner jbRunner, ILogger<CleanupService> 
     {
         List<string> arguments =
         [
-            "cleanupcode",
+            Subcommand,
             config.SolutionPath,
             $"--profile={profile}",
             "--no-build",

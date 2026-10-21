@@ -146,6 +146,22 @@ public sealed class JbCacheStateTests
         band.ShouldBe(expected);
     }
 
+    [Theory]
+    [InlineData("unreadable", "Unreadable")]
+    [InlineData("cold", "Cold")]
+    [InlineData("cold after a reset", "Cold")]
+    [InlineData("seeded", "Seeded")]
+    [InlineData("part-built", "PartBuilt")]
+    [InlineData("stale", "Stale")]
+    [InlineData("stale, no build recorded", "Stale")]
+    [InlineData("warm", "Warm")]
+    public void Kind_NamesTheStateEachSummaryArmDescribes(string arm, string expected)
+    {
+        // Assert — the kind is what a caller branches on in place of the summary's wording, so each arm's
+        // reading has to land on the state its sentence names.
+        ArmNamed(arm).Kind.ToString().ShouldBe(expected);
+    }
+
     private static JbCacheState ArmNamed(string arm)
     {
         return arm switch

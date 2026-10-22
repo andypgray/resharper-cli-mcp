@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- An inspection report's `Generated` line is written in the invariant culture, so it reads the same on every
+  machine. Under th-TH it gave the year in the Buddhist calendar (2569 for 2026), and under da-DK and fi-FI it
+  gave the time as `09.30.15`. The character counts in the detail-reduction and truncation notes and the
+  timestamps in the diagnostic log are also written in the invariant culture. Under da-DK the notes gave the
+  default 25,000-character limit as `25.000`.
+
 ## [1.7.2] - 2026-10-21
 
 ### Changed

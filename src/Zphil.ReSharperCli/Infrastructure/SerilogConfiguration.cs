@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Serilog;
@@ -74,7 +75,10 @@ internal static class SerilogConfiguration
                 // Concurrent server processes write to the same daily file (a shared mutex serialises
                 // writes); the [{SessionId}] field then disambiguates interleaved lines.
                 shared: true,
-                outputTemplate: OutputTemplate)
+                outputTemplate: OutputTemplate,
+                // Invariant, so the timestamp and every value a line renders read the same on every machine:
+                // under th-TH the current culture would write the year in the Buddhist calendar.
+                formatProvider: CultureInfo.InvariantCulture)
             .CreateLogger();
 
         return minimumLevel;

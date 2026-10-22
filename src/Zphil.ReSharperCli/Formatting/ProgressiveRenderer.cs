@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace Zphil.ReSharperCli.Formatting;
 
 /// <summary>
@@ -110,7 +112,7 @@ internal static class ProgressiveRenderer
 
         string lead = level == startLevel
             ? $"Rendered at the requested detail level {level}"
-            : $"Output exceeded the {maxChars:N0} character limit. Reduced to {level}";
+            : string.Create(CultureInfo.InvariantCulture, $"Output exceeded the {maxChars:N0} character limit. Reduced to {level}");
 
         return $"{output}\n\n--- DETAIL REDUCED ---\n{lead}: {description}";
     }

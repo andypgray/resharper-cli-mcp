@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace Zphil.ReSharperCli.Formatting;
 
 /// <summary>
@@ -12,8 +14,9 @@ namespace Zphil.ReSharperCli.Formatting;
 ///         over which scope.
 ///     </para>
 ///     <para>
-///         The timestamp is passed in, so this stays a pure function of its arguments. Output uses <c>\n</c>
-///         line endings only.
+///         The timestamp is passed in, so this stays a pure function of its arguments. It is written in the
+///         invariant culture, because the current one would give a Buddhist-calendar year under th-TH and a
+///         <c>.</c> time separator under da-DK. Output uses <c>\n</c> line endings only.
 ///     </para>
 /// </remarks>
 internal static class InspectReportDocument
@@ -32,7 +35,7 @@ internal static class InspectReportDocument
             $"- Solution: {solutionPath}",
             $"- Minimum severity: {severity}",
             $"- Scope: {DescribeScope(scope)}",
-            $"- Generated: {generatedAt.UtcDateTime:yyyy-MM-dd HH:mm:ss} UTC",
+            $"- Generated: {generatedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)} UTC",
             "",
             ""
         ];

@@ -2,6 +2,7 @@ using Shouldly;
 using Xunit;
 using Zphil.ReSharperCli.Formatting;
 using Zphil.ReSharperCli.Pipeline;
+using Zphil.ReSharperCli.Tests.TestSupport;
 
 namespace Zphil.ReSharperCli.Tests.Pipeline;
 
@@ -74,19 +75,23 @@ public sealed class ResponseTruncatorTests
         result.ShouldStartWith("abcdefgh\n\n--- RESPONSE TRUNCATED ---");
     }
 
-    [Fact]
-    public void TruncateIfNeeded_TextExceedsLimit_FooterReportsSizeAndOmittedCount()
+    [Theory]
+    [InlineData("", 50, 20, "Output was 50 characters, limit is 20", "30 characters omitted")]
+    [InlineData("da-DK", 30_000, 25_000, "Output was 30,000 characters, limit is 25,000", "5,000 characters omitted")]
+    public void TruncateIfNeeded_TextExceedsLimit_FooterReportsSizeAndOmittedCount(
+        string culture, int length, int maxChars, string sizes, string omitted)
     {
-        // Arrange
-        string text = new('x', 50);
+        // Arrange — the counts are grouped with ',' under every culture, including da-DK, which groups with '.'.
+        using var scope = new CultureScope(culture);
+        string text = new('x', length);
 
         // Act
-        string result = ResponseTruncator.TruncateIfNeeded(text, "", 20);
+        string result = ResponseTruncator.TruncateIfNeeded(text, "", maxChars);
 
         // Assert
         result.ShouldContain("--- RESPONSE TRUNCATED ---");
-        result.ShouldContain("Output was 50 characters, limit is 20");
-        result.ShouldContain("30 characters omitted");
+        result.ShouldContain(sizes);
+        result.ShouldContain(omitted);
         result.ShouldContain("The results above are incomplete.");
     }
 

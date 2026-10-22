@@ -1,6 +1,7 @@
 using Shouldly;
 using Xunit;
 using Zphil.ReSharperCli.Execution;
+using Zphil.ReSharperCli.Tests.TestSupport;
 
 namespace Zphil.ReSharperCli.Tests.Execution;
 
@@ -54,12 +55,16 @@ public sealed class JbRunTimeoutTests
     }
 
     [Theory]
-    [InlineData("30")]
-    [InlineData("0.5")]
-    public void Resolve_BelowTheFloor_IsRaisedToOneMinute(string envValue)
+    [InlineData("30", "")]
+    [InlineData("0.5", "")]
+    [InlineData("0.5", "da-DK")]
+    public void Resolve_BelowTheFloor_IsRaisedToOneMinute(string envValue, string culture)
     {
         // A cap under a minute would kill warm runs that were never in trouble, so it reads as a mistake
-        // rather than as an instruction to make the server useless.
+        // rather than as an instruction to make the server useless. Under da-DK, where '.' groups thousands,
+        // "0.5" is still half a second.
+        using var scope = new CultureScope(culture);
+
         JbRunTimeout.Resolve(envValue).ShouldBe(TimeSpan.FromSeconds(60));
     }
 
@@ -73,12 +78,17 @@ public sealed class JbRunTimeoutTests
         JbRunTimeout.Resolve(envValue).ShouldBe(TimeSpan.FromHours(24));
     }
 
-    [Fact]
-    public void Resolve_ThousandsSeparator_FallsBackRatherThanGuessingWhichNumberWasMeant()
+    [Theory]
+    [InlineData("")]
+    [InlineData("da-DK")]
+    public void Resolve_ThousandsSeparator_FallsBackRatherThanGuessingWhichNumberWasMeant(string culture)
     {
         // Parsed invariantly and without thousands grouping, which matters most at this scale: "1,200" is a
         // plausible way to write 1200 seconds, and a parser that accepted it under one culture and read it
-        // as 1.2 under another would hand two machines different caps from the same config.
+        // as 1.2 under another would hand two machines different caps from the same config. da-DK is a
+        // culture that reads ',' as the decimal point.
+        using var scope = new CultureScope(culture);
+
         JbRunTimeout.Resolve("1,200").ShouldBe(JbRunTimeout.Default);
     }
 }

@@ -1,3 +1,4 @@
+using System.Globalization;
 using Zphil.ReSharperCli.Formatting;
 using Zphil.ReSharperCli.Infrastructure;
 
@@ -79,6 +80,8 @@ internal static class ResponseTruncator
         int droppedChars = text.Length - cutPoint;
         string suffix = hint.Length > 0 ? $" {hint}" : "";
 
-        return $"{truncated}\n\n--- RESPONSE TRUNCATED ---\nOutput was {text.Length:N0} characters, limit is {maxChars:N0} ({droppedChars:N0} characters omitted).\nThe results above are incomplete.{suffix}";
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"{truncated}\n\n--- RESPONSE TRUNCATED ---\nOutput was {text.Length:N0} characters, limit is {maxChars:N0} ({droppedChars:N0} characters omitted).\nThe results above are incomplete.{suffix}");
     }
 }

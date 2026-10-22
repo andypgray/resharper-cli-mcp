@@ -1,6 +1,7 @@
 using Shouldly;
 using Xunit;
 using Zphil.ReSharperCli.Formatting;
+using Zphil.ReSharperCli.Tests.TestSupport;
 
 namespace Zphil.ReSharperCli.Tests.Formatting;
 
@@ -22,11 +23,20 @@ public sealed class ProgressiveRendererTests
         rendering.Text.ShouldBe(output);
     }
 
-    [Fact]
-    public void Render_FitsAtHigh_AppendsTheReductionNote()
+    [Theory]
+    [InlineData("", 400, "400")]
+    [InlineData("da-DK", 25_000, "25,000")]
+    public void Render_FitsAtHigh_AppendsTheReductionNote(string culture, int maxChars, string limit)
     {
+        // Arrange — the limit is grouped with ',' under every culture, including da-DK, which groups with '.'.
+        using var scope = new CultureScope(culture);
+
         // Act — Full is too large; High plus its reduction note fits.
-        ProgressiveRendering rendering = ProgressiveRenderer.Render("input", FullOverflows, 400, Collapsed);
+        ProgressiveRendering rendering = ProgressiveRenderer.Render(
+            "input",
+            (_, level) => level == DetailLevel.Full ? new string('x', maxChars + 1) : new string('y', 50),
+            maxChars,
+            Collapsed);
 
         // Assert — the whole note, layout and description included: the budget it names and the level it
         // settled at are what a caller reads to decide whether to narrow the scan.
@@ -34,7 +44,7 @@ public sealed class ProgressiveRendererTests
         rendering.Text.ShouldBe(
             new string('y', 50)
             + "\n\n--- DETAIL REDUCED ---\n"
-            + "Output exceeded the 400 character limit. Reduced to High: "
+            + $"Output exceeded the {limit} character limit. Reduced to High: "
             + "detail was collapsed.");
     }
 

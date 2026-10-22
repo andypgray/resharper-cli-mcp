@@ -2,6 +2,7 @@ using Shouldly;
 using Xunit;
 using Zphil.ReSharperCli.Formatting;
 using Zphil.ReSharperCli.Sarif;
+using Zphil.ReSharperCli.Tests.TestSupport;
 
 namespace Zphil.ReSharperCli.Tests.Formatting;
 
@@ -18,11 +19,16 @@ public sealed class InspectReportDocumentTests
     /// <summary>The body as the tool renders it once and shares between the response and the report.</summary>
     private static readonly string FullListing = IssueMarkdownFormatter.Format(Issues, DetailLevel.Full);
 
-    [Fact]
-    public void Compose_CarriesTheProvenanceARunCannotBeReconstructedWithout()
+    [Theory]
+    [InlineData("")]
+    [InlineData("th-TH")]
+    [InlineData("da-DK")]
+    public void Compose_CarriesTheProvenanceARunCannotBeReconstructedWithout(string culture)
     {
         // Arrange — a report is read minutes or days later, often by an agent that did not make the call, and
-        // the formatter's own header says only how many issues there were.
+        // the formatter's own header says only how many issues there were. The header reads the same under
+        // every culture: th-TH counts years in the Buddhist calendar, and da-DK separates the time with '.'.
+        using var scope = new CultureScope(culture);
 
         // Act
         string document = InspectReportDocument.Compose(

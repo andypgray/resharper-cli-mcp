@@ -1,5 +1,4 @@
 using System.Text;
-using System.Text.RegularExpressions;
 using Shouldly;
 using Xunit;
 using Zphil.ReSharperCli.Tests.TestSupport;
@@ -26,26 +25,20 @@ namespace Zphil.ReSharperCli.Tests.Documentation;
 ///         travelling with every description is what keeps the disclaimer from depending on which file won.
 ///     </para>
 /// </remarks>
-public sealed partial class RespectfulWrappingTests
+public sealed class RespectfulWrappingTests
 {
     private const string Disclaimer = "not affiliated with or endorsed by JetBrains";
     private const int RegistryDescriptionMaxLength = 100;
 
-    [GeneratedRegex(@"<Description>(?<text>.*?)</Description>", RegexOptions.Singleline)]
-    private static partial Regex CsprojDescription();
-
     [Fact]
     public void NuGetPackageDescription_CarriesTheUnofficialNotice()
     {
-        // Arrange
-        string csproj = RepoRoot.ReadText(RepoRoot.ProductCsproj);
-
         // Act
-        Match match = CsprojDescription().Match(csproj);
+        string description = ProductCsprojAssertions.ShouldDeclareCsprojElement(
+            "Description", "The csproj must declare a <Description> for the NuGet package.");
 
         // Assert
-        match.Success.ShouldBeTrue("The csproj must declare a <Description> for the NuGet package.");
-        match.Groups["text"].Value.ShouldContain(Disclaimer);
+        description.ShouldContain(Disclaimer, Case.Sensitive);
     }
 
     [Fact]
@@ -55,13 +48,15 @@ public sealed partial class RespectfulWrappingTests
         string readme = RepoRoot.ReadText("README.md");
 
         // Act — the first prose block, skipping the title, the mcp-name comment, and the badge row.
-        string openingParagraph = readme
+        string? openingParagraph = readme
             .ReplaceLineEndings("\n")
             .Split("\n\n", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .First(IsProse);
+            .FirstOrDefault(IsProse);
 
         // Assert
-        openingParagraph.ShouldContain(Disclaimer);
+        openingParagraph
+            .ShouldNotBeNull("README.md has no prose block after its title, its mcp-name comment and its badge row.")
+            .ShouldContain(Disclaimer, Case.Sensitive);
     }
 
     /// <summary>
@@ -100,7 +95,7 @@ public sealed partial class RespectfulWrappingTests
         string description = RepoManifest.ReadString(".mcp/server.json", "/description")!;
 
         // Assert
-        description.ShouldContain(Disclaimer);
+        description.ShouldContain(Disclaimer, Case.Sensitive);
 
         // The registry rejects descriptions over 100 characters and counts them as ASCII, so a stray em
         // dash or curly quote would both inflate the count and be miscounted. Assert ASCII first.

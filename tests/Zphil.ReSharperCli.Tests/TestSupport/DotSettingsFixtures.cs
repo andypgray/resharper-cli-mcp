@@ -67,14 +67,15 @@ internal static class DotSettingsFixtures
 
     /// <summary>Returns a settings file broken past what discarding comments can rescue.</summary>
     /// <remarks>
-    ///     An unclosed element on line 3, behind an illegal comment so the lenient retry is the pass that
-    ///     gives up.
+    ///     An unclosed element on line 3, behind an illegal comment that spans the line break above it, so the
+    ///     lenient retry is the pass that gives up and only a stripper that keeps the comment's newline reports
+    ///     line 3.
     /// </remarks>
     public static string Unparseable()
     {
         return $"""
-                {Header}
-                	<!-- broken -- beyond repair -->
+                {Header}<!-- broken -- beyond
+                	repair -->
                 	<s:String x:Key="/Default/CodeStyle/CodeCleanup/SilentCleanupProfile/@EntryValue">Never Read
                 </wpf:ResourceDictionary>
                 """;

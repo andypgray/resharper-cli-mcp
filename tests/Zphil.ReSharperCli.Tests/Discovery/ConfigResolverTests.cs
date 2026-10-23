@@ -36,14 +36,15 @@ public sealed class ConfigResolverTests : IDisposable
     [Fact]
     public async Task ResolveAsync_SolutionOverrideExists_UsesResolvedOverride()
     {
-        // Arrange
+        // Arrange — the relative form, resolved against the working directory; an absolute override would come
+        // back unchanged whether or not it was resolved.
         string overridePath = _environment.PlantSolution("Explicit.sln");
 
         // Act
-        ResolvedConfig config = await _resolver.ResolveAsync(overridePath, Ct);
+        ResolvedConfig config = await _resolver.ResolveAsync("Explicit.sln", Ct);
 
         // Assert
-        config.SolutionPath.ShouldBe(Path.GetFullPath(overridePath));
+        config.SolutionPath.ShouldBe(overridePath);
     }
 
     [Fact]
@@ -148,13 +149,13 @@ public sealed class ConfigResolverTests : IDisposable
     public async Task ResolveAsync_SingleSolutionInCurrentDirectory_UsesIt(string fileName)
     {
         // Arrange
-        _environment.PlantSolution(fileName);
+        string planted = _environment.PlantSolution(fileName);
 
         // Act
         ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
 
         // Assert
-        config.SolutionPath.ShouldEndWith(fileName);
+        config.SolutionPath.ShouldBe(planted);
     }
 
     [Fact]
@@ -173,14 +174,14 @@ public sealed class ConfigResolverTests : IDisposable
     public async Task ResolveAsync_DirectoryNamedLikeSolutionAlongsideRealSolution_ResolvesTheRealFile()
     {
         // Arrange
-        _environment.PlantSolution("App.sln");
+        string real = _environment.PlantSolution("App.sln");
         Directory.CreateDirectory(Path.Combine(_environment.CurrentDirectory, "Fake.sln"));
 
         // Act
         ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
 
         // Assert
-        config.SolutionPath.ShouldEndWith("App.sln");
+        config.SolutionPath.ShouldBe(real);
     }
 
     [Fact]
@@ -221,15 +222,17 @@ public sealed class ConfigResolverTests : IDisposable
     [Fact]
     public async Task ResolveAsync_AdjacentDotSettingsExists_IsPreferred()
     {
-        // Arrange
+        // Arrange — the shared layer is planted too, so there is something for the adjacent file to be preferred
+        // over.
         _environment.PlantSolution("App.sln");
-        DotSettingsFixtures.PlantBeside(_environment.CurrentDirectory, string.Empty);
+        string adjacent = DotSettingsFixtures.PlantBeside(_environment.CurrentDirectory, string.Empty);
+        WriteSharedGlobalSettings();
 
         // Act
         ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
 
         // Assert
-        config.SettingsPath.ShouldBe(config.SolutionPath + ".DotSettings");
+        config.SettingsPath.ShouldBe(adjacent);
     }
 
     [Fact]
@@ -270,8 +273,9 @@ public sealed class ConfigResolverTests : IDisposable
     [Fact]
     public async Task ResolveAsync_JbSettingsPathNamesAFileJbCannotDiscover_UsesItAsACustomLayer()
     {
-        // Arrange
+        // Arrange — an adjacent file is planted too, so the env path has a layer below it to outrank.
         _environment.PlantSolution("App.sln");
+        DotSettingsFixtures.PlantBeside(_environment.CurrentDirectory, string.Empty);
         string settings = Path.Combine(_environment.CreateTempDirectory(), "Custom.DotSettings");
         File.WriteAllText(settings, string.Empty);
         _environment.SetVariable("JB_SETTINGS_PATH", settings);
@@ -322,14 +326,14 @@ public sealed class ConfigResolverTests : IDisposable
         // Arrange — hardening: what the env var names is what jb would discover anyway, so passing it
         // as --settings would demote the project layers as the discovered branch would.
         _environment.PlantSolution("App.sln");
-        DotSettingsFixtures.PlantBeside(_environment.CurrentDirectory, string.Empty);
-        _environment.SetVariable("JB_SETTINGS_PATH", Path.Combine(_environment.CurrentDirectory, "App.sln.DotSettings"));
+        string adjacent = DotSettingsFixtures.PlantBeside(_environment.CurrentDirectory, string.Empty);
+        _environment.SetVariable("JB_SETTINGS_PATH", adjacent);
 
         // Act
         ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
 
         // Assert
-        config.SettingsPath.ShouldBe(config.SolutionPath + ".DotSettings");
+        config.SettingsPath.ShouldBe(adjacent);
         config.SettingsPathIsCustomLayer.ShouldBeFalse();
     }
 
@@ -432,9 +436,7 @@ public sealed class ConfigResolverTests : IDisposable
 
         // Assert — the value as set, matching the log line and what the user has to go and fix.
         config.SettingsPath.ShouldBeNull();
-        config.Warnings.ShouldNotBeNull();
-        config.Warnings.MissingSettingsPath.ShouldBe(missing);
-        config.Warnings.SettingsRead.ShouldBeNull();
+        config.Warnings.ShouldBe(new ConfigWarnings(missing, null));
     }
 
     [Fact]
@@ -443,7 +445,7 @@ public sealed class ConfigResolverTests : IDisposable
         // Arrange — a bad env path does not stop the chain, so the run is configured by a file the user did
         // not name. Silently substituting one settings file for another is still worth saying out loud.
         _environment.PlantSolution("App.sln");
-        DotSettingsFixtures.PlantBeside(_environment.CurrentDirectory, DotSettingsFixtures.Declaring("House: Keep Named Arguments"));
+        string adjacent = DotSettingsFixtures.PlantBeside(_environment.CurrentDirectory, DotSettingsFixtures.Declaring("House: Keep Named Arguments"));
         string missing = Path.Combine(_environment.CurrentDirectory, "missing.DotSettings");
         _environment.SetVariable("JB_SETTINGS_PATH", missing);
 
@@ -451,7 +453,7 @@ public sealed class ConfigResolverTests : IDisposable
         ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
 
         // Assert
-        config.SettingsPath.ShouldBe(config.SolutionPath + ".DotSettings");
+        config.SettingsPath.ShouldBe(adjacent);
         config.CleanupProfile.ShouldBe("House: Keep Named Arguments");
         config.Warnings.ShouldNotBeNull();
         config.Warnings.MissingSettingsPath.ShouldBe(missing);
@@ -468,9 +470,7 @@ public sealed class ConfigResolverTests : IDisposable
         ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
 
         // Assert — the ordinary case must stay silent; a banner on every call would train an agent to skip it.
-        config.Warnings.ShouldNotBeNull();
-        config.Warnings.MissingSettingsPath.ShouldBeNull();
-        config.Warnings.SettingsRead.ShouldBeNull();
+        config.Warnings.ShouldBe(new ConfigWarnings(null, null));
     }
 
     [Theory]
@@ -572,14 +572,14 @@ public sealed class ConfigResolverTests : IDisposable
         ResolvedConfig before = await _resolver.ResolveAsync(null, Ct);
         before.CleanupProfile.ShouldBeNull();
 
-        DotSettingsFixtures.PlantBeside(_environment.CurrentDirectory, DotSettingsFixtures.Declaring("House: Keep Named Arguments"));
+        string adjacent = DotSettingsFixtures.PlantBeside(_environment.CurrentDirectory, DotSettingsFixtures.Declaring("House: Keep Named Arguments"));
 
         // Act
         ResolvedConfig after = await _resolver.ResolveAsync(null, Ct);
 
         // Assert
         after.CleanupProfile.ShouldBe("House: Keep Named Arguments");
-        after.SettingsPath.ShouldBe(after.SolutionPath + ".DotSettings");
+        after.SettingsPath.ShouldBe(adjacent);
     }
 
     [Fact]
@@ -603,7 +603,7 @@ public sealed class ConfigResolverTests : IDisposable
     public async Task ResolveAsync_DifferentCurrentDirectory_ResolvesTheOtherSolution()
     {
         // Arrange
-        _environment.PlantSolution("First.sln");
+        string firstSolution = _environment.PlantSolution("First.sln");
         ResolvedConfig first = await _resolver.ResolveAsync(null, Ct);
 
         string secondSolution = _environment.CreateCheckout("Second.sln");
@@ -613,8 +613,8 @@ public sealed class ConfigResolverTests : IDisposable
         ResolvedConfig second = await _resolver.ResolveAsync(null, Ct);
 
         // Assert
-        first.SolutionPath.ShouldEndWith("First.sln");
-        second.SolutionPath.ShouldEndWith("Second.sln");
+        first.SolutionPath.ShouldBe(firstSolution);
+        second.SolutionPath.ShouldBe(secondSolution);
     }
 
     private string WriteSharedGlobalSettings()

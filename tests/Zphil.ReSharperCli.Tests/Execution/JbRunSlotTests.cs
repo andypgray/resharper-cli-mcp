@@ -64,8 +64,8 @@ public sealed class JbRunSlotTests
         Task<IDisposable> queued = _slot.TakeAsync("cleanupcode", OtherSolutionPath, cancelled.Token);
         await cancelled.CancelAsync();
 
-        // Assert
-        await Should.ThrowAsync<OperationCanceledException>(() => queued);
+        // Assert — bounded, so a wait the cancellation never reached reds as a timeout instead of hanging the run.
+        await Should.ThrowAsync<OperationCanceledException>(() => queued.WaitAsync(Generous, Ct));
     }
 
     [Fact]
@@ -105,8 +105,8 @@ public sealed class JbRunSlotTests
         first.Dispose();
         first.Dispose();
 
-        // Act
-        IDisposable second = await _slot.TakeAsync(Subcommand, SolutionPath, Ct);
+        // Act — bounded, so a release that stopped releasing reds as a timeout instead of hanging the run.
+        IDisposable second = await _slot.TakeAsync(Subcommand, SolutionPath, Ct).WaitAsync(Generous, Ct);
 
         // Assert — the next caller is still queued behind the live holder rather than let in by the double
         // release.
@@ -165,10 +165,6 @@ public sealed class JbRunSlotTests
     private async Task ShouldAdmitTheNextCallerOnlyAfter(IDisposable holder)
     {
         Task<IDisposable> queued = _slot.TakeAsync("cleanupcode", OtherSolutionPath, Ct);
-        await Task.Delay(HeldFor, Ct);
-        queued.IsCompleted.ShouldBeFalse();
-
-        holder.Dispose();
-        (await queued.WaitAsync(Generous, Ct)).Dispose();
+        await queued.ShouldBeAdmittedOnlyAfter(holder, HeldFor, Generous, Ct);
     }
 }

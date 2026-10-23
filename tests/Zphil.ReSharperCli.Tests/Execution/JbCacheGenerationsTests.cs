@@ -19,6 +19,8 @@ public sealed class JbCacheGenerationsTests : IDisposable
 {
     private readonly FakeEnvironment _environment = new();
 
+    public static bool OnWindows => OperatingSystem.IsWindows();
+
     public void Dispose()
     {
         _environment.Dispose();
@@ -58,16 +60,25 @@ public sealed class JbCacheGenerationsTests : IDisposable
         JbCacheGenerations.MatchHash(directoryName, solutionName).ShouldBeNull();
     }
 
+    [Fact(Skip = "Only Windows reads two spellings of a name as one.", SkipUnless = nameof(OnWindows))]
+    public void MatchHash_OnWindows_ASolutionNameSpeltInAnotherCase_ReturnsTheHash()
+    {
+        // Assert — NTFS reads both spellings as one file, so jb's directory for this solution is this solution's.
+        JbCacheGenerations.MatchHash("_app.core.400500600.00", "App.Core").ShouldBe("400500600");
+    }
+
     [Fact]
     public void Find_CacheHomeWithSeveralSolutions_ReturnsOnlyThisSolutionsGenerations()
     {
-        // Arrange — one solution's two generations, a same-prefixed sibling solution, an unrelated solution,
-        // and a sidecar of the server's own, which is a file rather than a directory.
+        // Arrange — one solution's two generations, a same-prefixed sibling solution and an unrelated solution;
+        // a file named like one of this solution's generations, which a generation is not, since jb writes only
+        // directories; and a sidecar of the server's own, which no generation parser reads.
         string cacheHome = _environment.CreateTempDirectory();
         CacheHomes.PlantGeneration(cacheHome, "_App.100200300.00");
         CacheHomes.PlantGeneration(cacheHome, "_App.100200300.01");
         CacheHomes.PlantGeneration(cacheHome, "_App.Core.400500600.00");
         CacheHomes.PlantGeneration(cacheHome, "_Other.99.00");
+        File.WriteAllText(Path.Combine(cacheHome, "_App.100200300.02"), string.Empty);
         File.WriteAllText(Path.Combine(cacheHome, ".resharper-cli-mcp-abc.lock"), string.Empty);
 
         // Act
@@ -92,8 +103,8 @@ public sealed class JbCacheGenerationsTests : IDisposable
         // Act
         List<JbCacheGeneration> generations = JbCacheGenerations.Find(cacheHome, "App");
 
-        // Assert
-        generations.Select(generation => generation.Hash).Distinct().Count().ShouldBe(2);
+        // Assert — in ordinal order, since the order Find returns is not this test's claim.
+        generations.Select(generation => generation.Hash).Order(StringComparer.Ordinal).ShouldBe(["-1749040816", "1344362500"]);
     }
 
     [Fact]

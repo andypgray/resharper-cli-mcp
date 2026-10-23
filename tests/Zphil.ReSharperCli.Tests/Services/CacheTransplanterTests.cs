@@ -493,7 +493,7 @@ public sealed class CacheTransplanterTests : IDisposable
     {
         // Arrange — a cache home no path API will accept. This runs on the way into a call the user made, and
         // has no claim on failing one.
-        ResolvedConfig config = WorktreeConfig() with { CacheHome = _cacheHome + "\0invalid" };
+        ResolvedConfig config = WorktreeConfig() with { CacheHome = CacheHomes.UnaddressableCacheHome(_cacheHome) };
 
         // Act & Assert
         (await Transplanter().TryTransplantAsync(config, Ct)).ShouldBeFalse();

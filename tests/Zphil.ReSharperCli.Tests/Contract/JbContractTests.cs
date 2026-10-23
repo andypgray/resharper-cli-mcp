@@ -65,11 +65,7 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
     {
         // Act
         ProcessResult probe = JbContractFixture.VersionProbe;
-        List<string> versions = probe.StandardOutput
-            .Split('\n')
-            .Where(line => line.StartsWith(VersionPrefix, StringComparison.Ordinal))
-            .Select(line => line[VersionPrefix.Length..].Trim())
-            .ToList();
+        List<string> versions = VersionLineValues();
 
         // Assert — JbLocator reads the version off a line starting "Version:", falling back to the whole
         // trimmed output. The fallback would swallow a banner reshuffle silently, reporting a paragraph as a
@@ -86,10 +82,13 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
         JbInstallation installation = fixture.Installation;
 
         // Assert — the discovery path a real call takes lands on the same jb, and reads the same version out
-        // of it. An empty version here is how a candidate that "worked" but said nothing would look.
+        // of it. An empty version here is how a candidate that "worked" but said nothing would look, and a
+        // version that is not the banner's "Version:" line is how the whole-output fallback would.
         installation.ExecutablePath.ShouldNotBeNullOrWhiteSpace();
         installation.Version.ShouldNotBeNullOrWhiteSpace();
-        JbContractFixture.VersionProbe.StandardOutput.ShouldContain(installation.Version);
+        List<string> versions = VersionLineValues();
+        versions.ShouldNotBeEmpty();
+        installation.Version.ShouldBe(versions[0]);
     }
 
     [Fact(Skip = NoJb, SkipUnless = nameof(JbIsInstalled))]
@@ -148,7 +147,7 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
         // default path being gone.
         run.Outcome.Profile.ShouldBe(CleanupService.DefaultProfile);
         run.ShouldHaveRewrittenTheFile();
-        run.Outcome.Entries.ShouldAllBe(entry => entry.Status == CleanupFileStatus.Changed);
+        run.Outcome.Entries.ShouldHaveSingleItem().Status.ShouldBe(CleanupFileStatus.Changed);
     }
 
     [Fact(Skip = NoJb, SkipUnless = nameof(JbIsInstalled))]
@@ -427,5 +426,15 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
         string[] parts = version.Split('.');
 
         return parts.Length >= 2 ? $"{parts[0]}.{parts[1]}" : version;
+    }
+
+    /// <summary>Returns the value of every line of the version probe's banner that starts "Version:".</summary>
+    private static List<string> VersionLineValues()
+    {
+        return JbContractFixture.VersionProbe.StandardOutput
+            .Split('\n')
+            .Where(line => line.StartsWith(VersionPrefix, StringComparison.Ordinal))
+            .Select(line => line[VersionPrefix.Length..].Trim())
+            .ToList();
     }
 }

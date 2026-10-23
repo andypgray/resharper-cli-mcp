@@ -60,8 +60,17 @@ internal static class CacheHomes
     /// </remarks>
     public static FileStream HoldLockFile(string cacheHome, string solutionPath)
     {
-        string lockFilePath = JbRunLock.LockFilePathFor(cacheHome, JbSidecar.ComputeKey(solutionPath, cacheHome));
+        string lockFilePath = RunLockPathFor(cacheHome, solutionPath);
         return new FileStream(lockFilePath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+    }
+
+    /// <summary>
+    ///     Returns where the run-lock file for <paramref name="solutionPath" /> sits under
+    ///     <paramref name="cacheHome" />, held or not.
+    /// </summary>
+    public static string RunLockPathFor(string cacheHome, string solutionPath)
+    {
+        return JbRunLock.LockFilePathFor(cacheHome, JbSidecar.ComputeKey(solutionPath, cacheHome));
     }
 
     /// <summary>
@@ -97,6 +106,15 @@ internal static class CacheHomes
         string blocked = Path.Combine(environment.CreateTempDirectory(), "not-a-directory");
         File.WriteAllText(blocked, string.Empty);
         return blocked;
+    }
+
+    /// <summary>
+    ///     Returns a cache home no path API will accept, so not even the key derived from it can be computed.
+    /// </summary>
+    /// <remarks>For pinning that a cache-home side effect skips or degrades instead of throwing.</remarks>
+    public static string UnaddressableCacheHome(string cacheHome)
+    {
+        return cacheHome + "\0invalid";
     }
 
     /// <summary>

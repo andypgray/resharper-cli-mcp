@@ -103,18 +103,21 @@ public sealed class JbRunProgressTests
     [Fact]
     public async Task DisposeAsync_NothingBeatsAfterIt()
     {
-        // Arrange — a sink that dawdles, so disposal reliably overlaps a beat that is already in flight
-        // rather than only ever one that has not started.
-        Sink sink = new() { Dawdle = TimeSpan.FromMilliseconds(30) };
-        JbRunProgress progress = Build(sink);
+        // Arrange — a sink that dawdles for longer than the interval, so disposal reliably overlaps a beat that
+        // is already in flight rather than only ever one that has not started.
+        Sink sink = new() { Dawdle = TimeSpan.FromMilliseconds(100) };
+        await using JbRunProgress progress = Build(sink);
         await sink.WaitForAsync(2, Ct);
 
-        // Act
+        // Act — the using owns the timer only if the wait above throws; a second dispose is a no-op.
+        // ReSharper disable once DisposeOnUsingVariable
         await progress.DisposeAsync();
         int atDisposal = sink.Count;
 
-        // Assert — the flag stops a beat that has not started and the awaited timer disposal waits out one
-        // that has, so the count cannot move again however long we watch.
+        // Assert — the awaited timer disposal waits out a beat that has started, so none is still inside the
+        // sink when it returns; and the flag stops a beat that has not, so the count cannot move again however
+        // long we watch.
+        sink.BeatsInside.ShouldBe(0, "DisposeAsync returned while a beat was still inside the sink");
         await Task.Delay(Brisk * 10, Ct);
         sink.Count.ShouldBe(atDisposal);
     }
@@ -292,6 +295,18 @@ public sealed class JbRunProgressTests
                 lock (_beats)
                 {
                     return _maxInside;
+                }
+            }
+        }
+
+        /// <summary>Gets how many beats are inside this sink right now.</summary>
+        public int BeatsInside
+        {
+            get
+            {
+                lock (_beats)
+                {
+                    return _inside;
                 }
             }
         }

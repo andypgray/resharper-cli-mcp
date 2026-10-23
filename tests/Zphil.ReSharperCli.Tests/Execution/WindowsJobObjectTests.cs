@@ -28,7 +28,7 @@ public sealed class WindowsJobObjectTests
     {
         // Arrange — a child that would otherwise outlive this test by minutes, which is what makes its exit
         // attributable to the job rather than to it having finished anyway.
-        var job = WindowsJobObject.Create();
+        using var job = WindowsJobObject.Create();
         using Process child = StartLongLivedProcess();
 
         try
@@ -36,7 +36,9 @@ public sealed class WindowsJobObjectTests
             job.TryAssign(child).ShouldBeTrue();
             child.HasExited.ShouldBeFalse();
 
-            // Act — closing the last handle, which the OS does on the server's behalf when it is killed.
+            // Act — closing the last handle, which the OS does on the server's behalf when it is killed. The using
+            // owns the handle only if an assertion before this line fails.
+            // ReSharper disable once DisposeOnUsingVariable
             job.Dispose();
 
             // Assert

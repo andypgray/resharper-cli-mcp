@@ -188,7 +188,7 @@ public sealed class ProcessRunnerTests : IDisposable
     {
         // Arrange — reads come off the pipe ProcessRunner.ReadChunkChars at a time and the payload is longer
         // than one read, so the line is guaranteed to straddle a boundary. Without the carry, the observer would
-        // see two half-lines and classify neither.
+        // see the line's tail handed over as a line of its own.
         ProcessRunner runner = Runner();
         var payload = new string('x', 9000);
         (string fileName, string[] arguments) = PrintLinesCommand([$"Analyzing {payload}", "Analyzing B.cs"]);
@@ -198,11 +198,11 @@ public sealed class ProcessRunnerTests : IDisposable
         await runner.RunAsync(fileName, arguments, GenerousTimeout, TestContext.Current.CancellationToken, lines.Add);
 
         // Assert — the long line is cut at ProcessRunner.MaxCarriedLineChars (a stream with no newline at all
-        // must not grow the carry without limit), but it is still one line and still classifies as one file.
-        List<string> analyzed = lines.Where(line => line.StartsWith("Analyzing ", StringComparison.Ordinal)).ToList();
-        analyzed.Count.ShouldBe(2);
-        analyzed[0].Length.ShouldBeGreaterThan(8000);
-        analyzed[1].ShouldBe("Analyzing B.cs");
+        // must not grow the carry without limit), but it is still one line: a tail handed over as a line of its
+        // own carries no prefix.
+        lines.Select(line => line.StartsWith("Analyzing ", StringComparison.Ordinal)).ShouldBe([true, true]);
+        lines[0].Length.ShouldBeGreaterThan(8000);
+        lines[1].ShouldBe("Analyzing B.cs");
     }
 
     [Fact]

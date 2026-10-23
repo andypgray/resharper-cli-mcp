@@ -1,5 +1,4 @@
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using Shouldly;
 using Xunit;
 using Zphil.ReSharperCli.Tests.TestSupport;
@@ -15,7 +14,7 @@ namespace Zphil.ReSharperCli.Tests.Documentation;
 ///     rather than at the release. A dnx pin and its manifest <c>version</c> move together: the pin decides what
 ///     a new install runs, and only a changed manifest <c>version</c> carries the pin to an existing one.
 /// </remarks>
-public sealed partial class VersionSiteTests
+public sealed class VersionSiteTests
 {
     private const string PackageId = "Zphil.ReSharperCli";
     private const string PinPrefix = $"{PackageId}@";
@@ -43,9 +42,6 @@ public sealed partial class VersionSiteTests
         + "compares a newer download against, and mcpb/pack.sh names the archive from the csproj. A field "
         + "that does not follow the csproj <Version> ships a file called one version declaring another.";
 
-    [GeneratedRegex(@"<Version>(?<version>[^<]+)</Version>")]
-    private static partial Regex CsprojVersion();
-
     [Theory]
     [InlineData(".mcp/server.json", "/version", RegistryRationale)]
     [InlineData(".mcp/server.json", "/packages/0/version", RegistryRationale)]
@@ -56,7 +52,7 @@ public sealed partial class VersionSiteTests
     public void ManifestVersionField_MatchesTheCsprojVersion(string manifestPath, string jsonPointer, string because)
     {
         // Arrange
-        string declaredVersion = DeclaredCsprojVersion();
+        string declaredVersion = ShouldDeclareCsprojVersion();
 
         // Act
         string? version = RepoManifest.ReadString(manifestPath, jsonPointer);
@@ -72,7 +68,7 @@ public sealed partial class VersionSiteTests
     public void DnxLauncher_PinsThePackageToTheCsprojVersion(string manifestPath)
     {
         // Arrange
-        string declaredVersion = DeclaredCsprojVersion();
+        string declaredVersion = ShouldDeclareCsprojVersion();
         JsonElement servers = RepoManifest.Read(manifestPath, "/mcpServers");
 
         // Act
@@ -109,16 +105,13 @@ public sealed partial class VersionSiteTests
     }
 
     /// <summary>
-    ///     Reads the <c>&lt;Version&gt;</c> the csproj declares, the one number every site here is measured against.
+    ///     Asserts the csproj declares a <c>&lt;Version&gt;</c>, the one number every site here is measured
+    ///     against, and returns it.
     /// </summary>
-    private static string DeclaredCsprojVersion()
+    private static string ShouldDeclareCsprojVersion()
     {
-        string csproj = RepoRoot.ReadText(RepoRoot.ProductCsproj);
-        Match declaredVersion = CsprojVersion().Match(csproj);
-        declaredVersion.Success.ShouldBeTrue(
-            "The csproj must declare a <Version> for the version sites to agree with.");
-
-        return declaredVersion.Groups["version"].Value;
+        return ProductCsprojAssertions.ShouldDeclareCsprojElement(
+            "Version", "The csproj must declare a <Version> for the version sites to agree with.");
     }
 
     /// <summary>Returns every string in every server's <c>args</c> array.</summary>

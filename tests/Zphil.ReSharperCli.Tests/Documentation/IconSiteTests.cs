@@ -20,9 +20,6 @@ public sealed partial class IconSiteTests
     /// <summary>The registry rejects an icon source over this length, which rules a base64 data URI out of that channel.</summary>
     private const int RegistryIconSourceMaxLength = 255;
 
-    [GeneratedRegex(@"<PackageIcon>(?<file>[^<]+)</PackageIcon>")]
-    private static partial Regex PackageIconElement();
-
     [GeneratedRegex(@"<None\s+Include=""(?<include>[^""]*assets[^""]+)""\s+Pack=""true""\s+PackagePath=""(?<path>[^""]+)""")]
     private static partial Regex PackedAssetItem();
 
@@ -37,15 +34,14 @@ public sealed partial class IconSiteTests
         string csproj = Csproj();
 
         // Act
-        Match declared = PackageIconElement().Match(csproj);
         Match packed = PackedAssetItem().Match(csproj);
 
         // Assert — <PackageIcon> is a path *inside* the package, so it only resolves if a Pack item puts
         // the file there. The two are written apart in the csproj and are one fact.
-        declared.Success.ShouldBeTrue("The csproj must declare a <PackageIcon> for nuget.org to render one.");
+        string iconFile = ProductCsprojAssertions.ShouldDeclareCsprojElement(
+            "PackageIcon", "The csproj must declare a <PackageIcon> for nuget.org to render one.");
         packed.Success.ShouldBeTrue("The csproj must pack the icon file the <PackageIcon> names.");
 
-        string iconFile = declared.Groups["file"].Value;
         packed.Groups["include"].Value.ShouldEndWith(
             iconFile,
             Case.Sensitive,

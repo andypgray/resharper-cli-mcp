@@ -33,13 +33,16 @@ public sealed class RestoreLockSiteTests
             $"Expected at least {KnownProjectCount} csproj files under {RepoRoot.Location}; finding fewer "
             + "means the enumeration stopped meaning the set git tracks, and the check below proves nothing.");
 
-        foreach (string project in projects)
-            File.ReadAllText(project).ShouldContain(
-                Declaration,
-                Case.Sensitive,
-                $"{Path.GetRelativePath(RepoRoot.Location, project)} must declare {Declaration} under a "
-                + "'$(CI)' == 'true' PropertyGroup. Scorecard's Pinned-Dependencies check reads csproj files "
-                + "only and credits this all-or-nothing, so one project missing it scores the same as none "
-                + "of them having it. Directory.Build.props explains the policy; it cannot declare it.");
+        // Then every project missing the declaration at once, so one red names them all.
+        List<string> missing = projects
+            .Where(project => !File.ReadAllText(project).Contains(Declaration, StringComparison.Ordinal))
+            .Select(project => Path.GetRelativePath(RepoRoot.Location, project))
+            .ToList();
+
+        missing.ShouldBeEmpty(
+            $"Each must declare {Declaration} under a '$(CI)' == 'true' PropertyGroup. Scorecard's "
+            + "Pinned-Dependencies check reads csproj files only and credits this all-or-nothing, so one project "
+            + "missing it scores the same as none of them having it. Directory.Build.props explains the policy; "
+            + "it cannot declare it.");
     }
 }

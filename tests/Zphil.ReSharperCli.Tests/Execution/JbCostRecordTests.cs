@@ -167,7 +167,7 @@ public sealed class JbCostRecordTests : IDisposable
     public void TryRead_PathNoFileApiWillAccept_ReportsNoFigureInsteadOfThrowing()
     {
         // Arrange — a path where even the key cannot be derived.
-        string invalid = _cacheHome + "\0invalid";
+        string invalid = CacheHomes.UnaddressableCacheHome(_cacheHome);
 
         // Assert
         Should.NotThrow(() => JbCostRecord.Stamp(SolutionPath, invalid, JbCostBand.Cold, TimeSpan.FromSeconds(497), NullLogger.Instance));
@@ -236,7 +236,7 @@ public sealed class JbCostRecordTests : IDisposable
         // each other silently. The file is keyed by these tokens, so both are correctness rather than tidiness.
         JbCostBand[] bands = Enum.GetValues<JbCostBand>();
 
-        bands.Select(JbCostRecord.Label).Distinct().Count().ShouldBe(bands.Length);
+        bands.Select(JbCostRecord.Label).ShouldBeUnique();
     }
 
     private TimeSpan? Read(JbCostBand band)

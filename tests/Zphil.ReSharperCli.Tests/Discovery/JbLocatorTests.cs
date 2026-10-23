@@ -156,7 +156,7 @@ public sealed class JbLocatorTests : IDisposable
         // Assert
         exception.Message.ShouldStartWith("JetBrains ReSharper CLI tools not found.");
         exception.Message.ShouldContain("dotnet tool install JetBrains.ReSharper.GlobalTools -g");
-        exception.Message.ShouldContain("jb:");
+        exception.Message.Split('\n').ShouldContain(line => line.StartsWith("  jb: ", StringComparison.Ordinal));
         exception.Message.ShouldContain(DotnetToolsCandidate);
     }
 
@@ -183,7 +183,7 @@ public sealed class JbLocatorTests : IDisposable
             + "At least one candidate started and was killed after 30 seconds without reporting one, "
             + "so jb is installed and installing it again will not help.\n"
             + "A probe that slow is usually a machine busy at startup rather than a broken install, so retry the call.");
-        ProbeLineFor("jb").Property("ProbeOutcome").ShouldBe("timed out after 30 seconds");
+        ShouldHaveOneProbeLineFor("jb").Property("ProbeOutcome").ShouldBe("timed out after 30 seconds");
     }
 
     [Fact]
@@ -319,7 +319,7 @@ public sealed class JbLocatorTests : IDisposable
         await LoggingLocator().LocateAsync(Ct);
 
         // Assert
-        LogEntry failed = ProbeLineFor("jb");
+        LogEntry failed = ShouldHaveOneProbeLineFor("jb");
         failed.Level.ShouldBe(LogLevel.Debug);
         failed.Property("ProbeOutcome").ShouldBe("The system cannot find the file specified.");
         failed.Property("ElapsedMs").ShouldNotBeNull();
@@ -336,7 +336,7 @@ public sealed class JbLocatorTests : IDisposable
 
         // Assert — the candidate that ends the loop is a line as well, so the probe's whole cost adds up from
         // the log rather than being inferred from the failures alone.
-        LogEntry succeeded = ProbeLineFor("jb");
+        LogEntry succeeded = ShouldHaveOneProbeLineFor("jb");
         succeeded.Property("ProbeOutcome").ShouldBe("reported version 2026.1.2");
         succeeded.Property("ElapsedMs").ShouldNotBeNull();
     }
@@ -346,11 +346,19 @@ public sealed class JbLocatorTests : IDisposable
     {
         // Arrange — cancellation is the one ending that is not a candidate's fault. Read as a failure it
         // would be logged as one and the loop would go on probing after the call the probe serves has gone.
-        Probe("jb").Throws(new OperationCanceledException());
+        // The stub runs inside the awaited call below, before the using disposes the source.
+        using var caller = CancellationTokenSource.CreateLinkedTokenSource(Ct);
+        // ReSharper disable AccessToDisposedClosure
+        Probe("jb").Throws(_ =>
+        {
+            caller.Cancel();
+            return new OperationCanceledException(caller.Token);
+        });
+        // ReSharper restore AccessToDisposedClosure
         Probe(DotnetToolsCandidate).Returns(Healthy);
 
         // Act
-        await Should.ThrowAsync<OperationCanceledException>(() => LoggingLocator().LocateAsync(Ct));
+        await Should.ThrowAsync<OperationCanceledException>(() => LoggingLocator().LocateAsync(caller.Token));
 
         // Assert
         await _processRunner.DidNotReceive().AnyRunOf(DotnetToolsCandidate);
@@ -372,8 +380,11 @@ public sealed class JbLocatorTests : IDisposable
         return new JbLocator(_processRunner, _environment, Logs.For<JbLocator>(_logs));
     }
 
-    /// <summary>Returns the one probe line about <paramref name="candidate" />, by property, never by prose.</summary>
-    private LogEntry ProbeLineFor(string candidate)
+    /// <summary>
+    ///     Asserts there is exactly one probe line about <paramref name="candidate" />, by property, never by
+    ///     prose, and returns it.
+    /// </summary>
+    private LogEntry ShouldHaveOneProbeLineFor(string candidate)
     {
         List<LogEntry> lines = _logs
             .WithProperty("Candidate")

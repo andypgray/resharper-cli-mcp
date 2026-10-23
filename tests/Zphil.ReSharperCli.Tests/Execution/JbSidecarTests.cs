@@ -2,6 +2,7 @@ using Shouldly;
 using Xunit;
 using Zphil.ReSharperCli.Execution;
 using Zphil.ReSharperCli.Tests.TestDoubles;
+using Zphil.ReSharperCli.Tests.TestSupport;
 
 namespace Zphil.ReSharperCli.Tests.Execution;
 
@@ -21,9 +22,19 @@ public sealed class JbSidecarTests : IDisposable
         _cacheHome = _environment.CreateTempDirectory();
     }
 
+    public static bool OnWindows => OperatingSystem.IsWindows();
+
     public void Dispose()
     {
         _environment.Dispose();
+    }
+
+    [Fact(Skip = "Only Windows folds a key's case.", SkipUnless = nameof(OnWindows))]
+    public void ComputeKey_OnWindows_TwoSpellingsOfOnePath_ShareOneKey()
+    {
+        // Assert — NTFS reads both spellings as one solution, so they must share one lock rather than fork it.
+        JbSidecar.ComputeKey(SolutionPath.ToUpperInvariant(), _cacheHome.ToUpperInvariant())
+            .ShouldBe(JbSidecar.ComputeKey(SolutionPath, _cacheHome));
     }
 
     [Fact]
@@ -72,7 +83,7 @@ public sealed class JbSidecarTests : IDisposable
         // the lock it sits beside.
         string[] sidecars =
         [
-            JbRunLock.LockFilePathFor(_cacheHome, JbSidecar.ComputeKey(SolutionPath, _cacheHome)),
+            CacheHomes.RunLockPathFor(_cacheHome, SolutionPath),
             JbWarmMarker.PathFor(SolutionPath, _cacheHome),
             JbColdTombstone.PathFor(SolutionPath, _cacheHome),
             JbCostRecord.PathFor(SolutionPath, _cacheHome)

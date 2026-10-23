@@ -33,6 +33,8 @@ public sealed class JbWarmMarkerTests : IDisposable
         _cacheHome = _environment.CreateTempDirectory();
     }
 
+    public static bool OnWindows => OperatingSystem.IsWindows();
+
     public void Dispose()
     {
         _environment.Dispose();
@@ -125,14 +127,13 @@ public sealed class JbWarmMarkerTests : IDisposable
         // Act
         StampOutcome outcome = JbWarmMarker.Stamp(SolutionPath, _cacheHome, NullLogger.Instance, "2026.2.1");
 
-        // Assert — through the content reader and through both single-field readers: each has to read its own
-        // line of a full marker, since a marker written by this build is read by every other feature here.
+        // Assert — through the content reader and through the build's single-field reader: each has to read its
+        // own line of a full marker, since a marker written by this build is read by every other feature here.
         outcome.ShouldBe(StampOutcome.NamedGeneration);
         string markerPath = JbWarmMarker.PathFor(SolutionPath, _cacheHome);
         WarmMarkerContent content = JbWarmMarker.TryReadMarker(markerPath, _cacheHome, NullLogger.Instance);
         content.GenerationName.ShouldBe(Path.GetFileName(generation));
         content.JbVersion.ShouldBe("2026.2.1");
-        JbWarmMarker.TryReadMarker(markerPath, _cacheHome, NullLogger.Instance).GenerationName.ShouldBe(Path.GetFileName(generation));
         JbWarmMarker.TryReadJbVersion(markerPath, NullLogger.Instance).ShouldBe("2026.2.1");
     }
 
@@ -198,15 +199,16 @@ public sealed class JbWarmMarkerTests : IDisposable
         string firstGeneration = CacheHomes.PlantWarmDonor(_cacheHome, first);
         string secondGeneration = CacheHomes.PlantWarmDonor(_cacheHome, second);
         string legacyGeneration = CacheHomes.PlantWarmDonorFromAnEarlierBuild(_cacheHome, legacy);
+        CacheHomes.PlantGeneration(_cacheHome, "_App.999.00"); // on disk, never stamped by a run
 
         // Act
         Dictionary<string, string?> recorded = JbWarmMarker.FindRecordedSolutionPaths(_cacheHome, NullLogger.Instance);
 
         // Assert — a marker with no path is present and maps to null, which is a different answer from a
         // generation no successful run ever stamped: that one is absent altogether.
-        recorded[Path.GetFileName(firstGeneration)].ShouldBe(first);
-        recorded[Path.GetFileName(secondGeneration)].ShouldBe(second);
-        recorded[Path.GetFileName(legacyGeneration)].ShouldBeNull();
+        recorded.ShouldContainKeyAndValue(Path.GetFileName(firstGeneration), first);
+        recorded.ShouldContainKeyAndValue(Path.GetFileName(secondGeneration), second);
+        recorded.ShouldContainKeyAndValue(Path.GetFileName(legacyGeneration), null);
         recorded.ShouldNotContainKey("_App.999.00");
     }
 
@@ -215,7 +217,7 @@ public sealed class JbWarmMarkerTests : IDisposable
     {
         // Assert — a report that cannot attribute is still a correct report, and this runs inside a call that
         // has already deleted directories.
-        JbWarmMarker.FindRecordedSolutionPaths(_cacheHome + "\0invalid", NullLogger.Instance).ShouldBeEmpty();
+        JbWarmMarker.FindRecordedSolutionPaths(CacheHomes.UnaddressableCacheHome(_cacheHome), NullLogger.Instance).ShouldBeEmpty();
     }
 
     [Fact]
@@ -253,18 +255,19 @@ public sealed class JbWarmMarkerTests : IDisposable
     [InlineData(".")]
     [InlineData("../_App.999.00")]
     [InlineData("sub/_App.999.00")]
+    public void TryReadMarker_ContentThatIsNotABareDirectoryName_IsRefusedAsAGenerationName(string content)
+    {
+        ShouldRefuseAsAGenerationName(content);
+    }
+
+    [Theory(Skip = "Off Windows a backslash and a drive letter are ordinary characters in a bare name.", SkipUnless = nameof(OnWindows))]
+    // A backslash separates a path on Windows only.
     [InlineData(@"sub\_App.999.00")]
     // A rooted path ignores the cache home entirely.
     [InlineData(@"C:\Windows")]
-    public void TryReadMarker_ContentThatIsNotABareDirectoryName_IsRefusedAsAGenerationName(string content)
+    public void TryReadMarker_OnWindows_ContentThatIsNotABareDirectoryName_IsRefusedAsAGenerationName(string content)
     {
-        // Arrange — the marker is a file in a shared cache home, so its content is untrusted input to the
-        // path a transplant reads from.
-        string markerPath = JbWarmMarker.PathFor(SolutionPath, _cacheHome);
-        File.WriteAllText(markerPath, content);
-
-        // Assert
-        JbWarmMarker.TryReadMarker(markerPath, _cacheHome, NullLogger.Instance).GenerationName.ShouldBeNull();
+        ShouldRefuseAsAGenerationName(content);
     }
 
     [Fact]
@@ -303,7 +306,7 @@ public sealed class JbWarmMarkerTests : IDisposable
     public void Exists_KeyThatCannotBeDerived_ReportsProtected()
     {
         // Arrange
-        string invalid = _cacheHome + "\0invalid";
+        string invalid = CacheHomes.UnaddressableCacheHome(_cacheHome);
 
         // Assert — this one reader fails the opposite way to the rest of the class, and deliberately: a
         // caller only wants a false so it can delete a directory, so an unanswerable question has to read as
@@ -357,7 +360,7 @@ public sealed class JbWarmMarkerTests : IDisposable
     public void IsFreshWithin_PathNoFileApiWillAccept_ReportsStaleInsteadOfThrowing()
     {
         // Arrange
-        string invalid = _cacheHome + "\0invalid";
+        string invalid = CacheHomes.UnaddressableCacheHome(_cacheHome);
 
         // Assert — every entry point, including the one a cache reset calls once it has already deleted
         // directories, where throwing would fail a call whose work is done.
@@ -376,5 +379,27 @@ public sealed class JbWarmMarkerTests : IDisposable
         // Assert
         JbWarmMarker.IsFreshWithin("/repo/Other.sln", _cacheHome, OneHour, NullLogger.Instance).ShouldBeFalse();
         JbWarmMarker.IsFreshWithin(SolutionPath, _environment.CreateTempDirectory(), OneHour, NullLogger.Instance).ShouldBeFalse();
+    }
+
+    /// <summary>
+    ///     Asserts that a marker holding <paramref name="content" /> names no generation, with every directory
+    ///     the content could resolve to planted, so the refusal is the bare-name guard's rather than a missing
+    ///     directory's.
+    /// </summary>
+    /// <remarks>
+    ///     The marker is a file in a shared cache home, so its content is untrusted input to the path a transplant
+    ///     reads from. The cache home sits one level down so that <c>..</c> resolves to a directory this test owns.
+    /// </remarks>
+    private void ShouldRefuseAsAGenerationName(string content)
+    {
+        // Arrange
+        string cacheHome = Path.Combine(_environment.CreateTempDirectory(), "cache");
+        CacheHomes.PlantGeneration(cacheHome, Path.Combine("sub", "_App.999.00"));
+        CacheHomes.PlantGeneration(cacheHome, Path.Combine("..", "_App.999.00"));
+        string markerPath = JbWarmMarker.PathFor(SolutionPath, cacheHome);
+        File.WriteAllText(markerPath, content);
+
+        // Assert
+        JbWarmMarker.TryReadMarker(markerPath, cacheHome, NullLogger.Instance).GenerationName.ShouldBeNull();
     }
 }

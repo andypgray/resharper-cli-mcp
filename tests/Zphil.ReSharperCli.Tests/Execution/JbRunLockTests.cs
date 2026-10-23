@@ -41,22 +41,23 @@ public sealed class JbRunLockTests : IDisposable
         _environment.Dispose();
     }
 
-    [Fact]
-    public async Task AcquireAsync_SecondCallerInSameProcess_WaitsUntilTheFirstReleases()
+    [Theory]
+    [InlineData(true)]
+    // Over a cache home the lock file cannot be opened in, the in-process semaphore is the only thing that can
+    // hold the second caller off; with the file there, the first caller's exclusive handle does it either way.
+    [InlineData(false)]
+    public async Task AcquireAsync_SecondCallerInSameProcess_WaitsUntilTheFirstReleases(bool lockFileUsable)
     {
         // Arrange
         JbRunLock runLock = JbRunners.Lock();
-        IDisposable first = await runLock.AcquireAsync(SolutionPath, _cacheHome, Ct);
+        string cacheHome = lockFileUsable ? _cacheHome : CacheHomes.BlockedCacheHome(_environment);
+        using IDisposable first = await runLock.AcquireAsync(SolutionPath, cacheHome, Ct);
 
         // Act
-        Task<IDisposable> second = runLock.AcquireAsync(SolutionPath, _cacheHome, Ct);
-        await Task.Delay(TimeSpan.FromMilliseconds(200), Ct);
-        bool completedWhileHeld = second.IsCompleted;
-        first.Dispose();
+        Task<IDisposable> second = runLock.AcquireAsync(SolutionPath, cacheHome, Ct);
 
         // Assert
-        completedWhileHeld.ShouldBeFalse();
-        (await second.WaitAsync(Generous, Ct)).Dispose();
+        await second.ShouldBeAdmittedOnlyAfter(first, TimeSpan.FromMilliseconds(200), Generous, Ct);
     }
 
     [Fact]
@@ -65,17 +66,13 @@ public sealed class JbRunLockTests : IDisposable
         // Arrange — a handle taken outside this JbRunLock instance, standing in for another server process.
         // Without the file half of the lock this test fails: the in-process semaphore is uncontended here.
         JbRunLock runLock = JbRunners.Lock();
-        FileStream otherProcess = OpenLockFileExclusively();
+        await using FileStream otherProcess = OpenLockFileExclusively();
 
         // Act
         Task<IDisposable> queued = runLock.AcquireAsync(SolutionPath, _cacheHome, Ct);
-        await Task.Delay(TimeSpan.FromMilliseconds(400), Ct);
-        bool completedWhileHeld = queued.IsCompleted;
-        await otherProcess.DisposeAsync();
 
         // Assert
-        completedWhileHeld.ShouldBeFalse();
-        (await queued.WaitAsync(Generous, Ct)).Dispose();
+        await queued.ShouldBeAdmittedOnlyAfter(otherProcess, TimeSpan.FromMilliseconds(400), Generous, Ct);
     }
 
     [Fact]
@@ -164,7 +161,7 @@ public sealed class JbRunLockTests : IDisposable
     {
         // Arrange — a cache home no path API will accept, so even the lock's key cannot be derived.
         JbRunLock runLock = JbRunners.Lock(ShortWait);
-        string invalid = _cacheHome + "\0invalid";
+        string invalid = CacheHomes.UnaddressableCacheHome(_cacheHome);
         var waited = Stopwatch.StartNew();
 
         // Act
@@ -250,12 +247,14 @@ public sealed class JbRunLockTests : IDisposable
         JbRunLock runLock = JbRunners.Lock();
 
         // Act
-        IDisposable? lease = runLock.TryAcquire(SolutionPath, _cacheHome);
+        using IDisposable? lease = runLock.TryAcquire(SolutionPath, _cacheHome);
 
         // Assert — a lease that did not take the *file* would let another server process onto the cache
         // generation, which is the failure this lock exists to prevent.
         lease.ShouldNotBeNull();
         Should.Throw<IOException>(() => OpenLockFileExclusively().Dispose());
+        // The release is what the next line checks; the using owns the lease only if a line before it throws.
+        // ReSharper disable once DisposeOnUsingVariable
         lease.Dispose();
         OpenLockFileExclusively().Dispose();
     }
@@ -301,7 +300,7 @@ public sealed class JbRunLockTests : IDisposable
         JbRunLock runLock = JbRunners.Lock(ShortWait);
 
         // Act & Assert
-        runLock.TryAcquire(SolutionPath, _cacheHome + "\0invalid").ShouldBeNull();
+        runLock.TryAcquire(SolutionPath, CacheHomes.UnaddressableCacheHome(_cacheHome)).ShouldBeNull();
     }
 
     [Fact]
@@ -329,8 +328,9 @@ public sealed class JbRunLockTests : IDisposable
     public async Task TryAcquireByKeyAsync_TheSameGenerationAsAPathedCaller_ContendsWithIt()
     {
         // Arrange — the key-addressed entry point exists for a caller holding only a cache home and a sidecar
-        // file name. If it did not land on the same gate and the same lock file as the pathed ones, it would
-        // serialize against nothing and copy from a generation a live jb was writing.
+        // file name. If it did not land on the same lock file as the pathed ones, it would serialize against
+        // nothing and copy from a generation a live jb was writing. Only the file half shows here: this entry
+        // point answers null whenever the file half is unusable, so the shared gate cannot be observed through it.
         JbRunLock runLock = JbRunners.Lock(ShortWait);
         using IDisposable pathed = await runLock.AcquireAsync(SolutionPath, _cacheHome, Ct);
 
@@ -366,21 +366,24 @@ public sealed class JbRunLockTests : IDisposable
         // Arrange — the reason it waits at all rather than trying once: a donor is normally free within a
         // moment, and the run it was busy with is what made it worth copying.
         JbRunLock runLock = JbRunners.Lock();
-        FileStream otherProcess = OpenLockFileExclusively();
+        // The release mid-patience is the scenario, and it is awaited below before the using disposes the stream,
+        // which owns the handle only if the release never runs.
+        await using FileStream otherProcess = OpenLockFileExclusively();
+        // ReSharper disable AccessToDisposedClosure, DisposeOnUsingVariable
         Task release = Task.Run(async () =>
         {
             await Task.Delay(TimeSpan.FromMilliseconds(200), Ct);
             await otherProcess.DisposeAsync();
         }, Ct);
+        // ReSharper restore AccessToDisposedClosure, DisposeOnUsingVariable
 
         // Act
-        IDisposable? lease = await runLock.TryAcquireByKeyAsync(
+        using IDisposable? lease = await runLock.TryAcquireByKeyAsync(
             _cacheHome, JbSidecar.ComputeKey(SolutionPath, _cacheHome), Generous, Ct);
 
         // Assert
         await release;
         lease.ShouldNotBeNull();
-        lease.Dispose();
     }
 
     [Fact]
@@ -409,12 +412,12 @@ public sealed class JbRunLockTests : IDisposable
         JbRunLock runLock = JbRunners.Lock(ShortWait);
 
         // Act & Assert
-        (await runLock.TryAcquireByKeyAsync(_cacheHome + "\0invalid", "abc123", ShortWait, Ct)).ShouldBeNull();
+        (await runLock.TryAcquireByKeyAsync(CacheHomes.UnaddressableCacheHome(_cacheHome), "abc123", ShortWait, Ct)).ShouldBeNull();
     }
 
     private string LockFilePath()
     {
-        return JbRunLock.LockFilePathFor(_cacheHome, JbSidecar.ComputeKey(SolutionPath, _cacheHome));
+        return CacheHomes.RunLockPathFor(_cacheHome, SolutionPath);
     }
 
     /// <summary>Holds the lock file the way another server process would: exclusively, until disposed.</summary>

@@ -69,7 +69,7 @@ public sealed class JbColdTombstoneTests : IDisposable
     {
         // Arrange — the safe degradation here is towards reset: a question that could not be answered must not
         // be read as permission to seed.
-        string invalid = _cacheHome + "\0invalid";
+        string invalid = CacheHomes.UnaddressableCacheHome(_cacheHome);
 
         // Assert — including the discharge, which runs at the end of a jb run that has already succeeded.
         Should.NotThrow(() => JbColdTombstone.Write(SolutionPath, invalid, NullLogger.Instance));

@@ -502,6 +502,10 @@ public sealed class JbContractFixture : IAsyncLifetime
     private static void ReplaceIncludeWith(List<string> arguments, string absolutePath)
     {
         int index = arguments.FindIndex(argument => argument.StartsWith("--include=", StringComparison.Ordinal));
+        if (index < 0)
+            throw new InvalidOperationException(
+                $"No --include= argument to leave absolute in: {string.Join(' ', arguments)}");
+
         arguments[index] = $"--include={absolutePath}";
     }
 

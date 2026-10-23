@@ -103,7 +103,7 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
         // declares a solution-level .DotSettings, which jb mounts itself, so the flag must stay off.
         fixture.Config.SettingsPath.ShouldNotBeNull();
         fixture.Config.SettingsPathIsCustomLayer.ShouldBeFalse();
-        fixture.Config.Warnings.ShouldBe(ConfigWarnings.None);
+        fixture.Config.Warnings.ShouldBe(new ConfigWarnings(null, null));
     }
 
     [Fact(Skip = NoJb, SkipUnless = nameof(JbIsInstalled))]

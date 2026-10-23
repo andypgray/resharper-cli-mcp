@@ -17,6 +17,7 @@ public sealed class JbRunSlotTests
     private const string Subcommand = "inspectcode";
     private const string SolutionPath = "/repo/App.sln";
     private const string OtherSolutionPath = "/elsewhere/Other.sln";
+    private const string EarlierSolutionPath = "/before/Earlier.sln";
 
     private static readonly TimeSpan Generous = TimeSpan.FromSeconds(10);
 
@@ -38,7 +39,6 @@ public sealed class JbRunSlotTests
 
         // Assert — the bound costs an uncontended call nothing, which is the ordinary case.
         waited.Elapsed.ShouldBeLessThan(HeldFor);
-        _slot.Holder.ShouldBe(new JbRunSlotHolder(Subcommand, SolutionPath));
     }
 
     [Fact]
@@ -50,23 +50,6 @@ public sealed class JbRunSlotTests
 
         // Act / Assert
         await ShouldAdmitTheNextCallerOnlyAfter(first);
-    }
-
-    [Fact]
-    public async Task TakeAsync_AfterTheHolderReleases_NamesTheNewHolder()
-    {
-        // Arrange — the holder is read for a log line naming what a caller queued behind, so it has to
-        // follow the handover rather than only the first taker.
-        IDisposable first = await _slot.TakeAsync(Subcommand, SolutionPath, Ct);
-        first.Dispose();
-
-        // Act
-        IDisposable second = await _slot.TakeAsync("cleanupcode", OtherSolutionPath, Ct);
-
-        // Assert — and a released slot names nobody, so a wait that was never served cannot blame a run.
-        _slot.Holder.ShouldBe(new JbRunSlotHolder("cleanupcode", OtherSolutionPath));
-        second.Dispose();
-        _slot.Holder.ShouldBeNull();
     }
 
     [Fact]
@@ -137,6 +120,10 @@ public sealed class JbRunSlotTests
         // another solution, and read from outside, such a wait looks like a slow run.
         CapturingLoggerProvider logs = new();
         JbRunSlot slot = JbRunners.Slot(Logs.Capturing(logs));
+
+        // An earlier run takes the slot and lets go first, so the line has to follow the handover rather than
+        // name the first taker.
+        (await slot.TakeAsync(Subcommand, EarlierSolutionPath, Ct)).Dispose();
         IDisposable held = await slot.TakeAsync("cleanupcode", OtherSolutionPath, Ct);
 
         // Act
@@ -145,7 +132,8 @@ public sealed class JbRunSlotTests
         held.Dispose();
         (await queued.WaitAsync(Generous, Ct)).Dispose();
 
-        // Assert — the holder named is the run that was ahead, not the one that got in.
+        // Assert — the holder named is the run that was ahead: not an earlier one that let go, and not the one
+        // that got in.
         LogEntry waited = logs.WithProperty("HolderSubcommand").ShouldHaveSingleItem();
         waited.Level.ShouldBe(LogLevel.Information);
         waited.Property("HolderSubcommand").ShouldBe("cleanupcode");

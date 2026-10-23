@@ -14,11 +14,7 @@ namespace Zphil.ReSharperCli.Discovery;
 ///     <c>jb</c> was still given the file and only this server's own profile lookup failed, so cleanup fell
 ///     back to a broader profile.
 /// </remarks>
-internal sealed record ConfigWarnings(string? MissingSettingsPath, SettingsReadFailure? SettingsRead)
-{
-    /// <summary>Nothing to report: the one spelling of "no warnings", so consumers never meet a null.</summary>
-    public static readonly ConfigWarnings None = new(null, null);
-}
+internal sealed record ConfigWarnings(string? MissingSettingsPath, SettingsReadFailure? SettingsRead);
 
 /// <summary>Represents everything needed to shell out to <c>jb</c>.</summary>
 /// <remarks>

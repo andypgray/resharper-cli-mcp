@@ -30,7 +30,7 @@ public sealed class ConfigWarningBannerTests
     public void ForInspect_NoWarningsRecordedAtAll_IsEmpty()
     {
         // Act
-        string banner = ConfigWarningBanner.ForInspect(ConfigWarnings.None);
+        string banner = ConfigWarningBanner.ForInspect(new ConfigWarnings(null, null));
 
         // Assert
         banner.ShouldBe("");

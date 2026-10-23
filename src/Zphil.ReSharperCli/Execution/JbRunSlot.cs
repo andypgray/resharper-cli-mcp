@@ -47,7 +47,7 @@ internal sealed class JbRunSlot(ILogger<JbRunSlot> logger)
     ///     Written under no lock: only the holder writes it, and it is read for a log line rather than for a
     ///     decision, so a read that races a handover names one of the two runs involved.
     /// </remarks>
-    internal JbRunSlotHolder? Holder { get; private set; }
+    private JbRunSlotHolder? Holder { get; set; }
 
     /// <summary>
     ///     Waits for this server's <c>jb</c> slot, then returns the handle whose disposal releases it.

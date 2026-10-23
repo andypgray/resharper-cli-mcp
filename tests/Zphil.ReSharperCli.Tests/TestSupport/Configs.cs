@@ -43,7 +43,7 @@ internal static class Configs
             extensions,
             extensionSource,
             "jb",
-            ConfigWarnings.None,
+            new ConfigWarnings(null, null),
             jbVersion);
     }
 }

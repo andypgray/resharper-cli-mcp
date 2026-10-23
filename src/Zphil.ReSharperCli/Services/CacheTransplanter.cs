@@ -40,6 +40,7 @@ namespace Zphil.ReSharperCli.Services;
 internal sealed class CacheTransplanter(
     JbRunLock runLock,
     ILogger<CacheTransplanter> logger,
+    // A seam: a parameter so a test of a busy donor need not wait out the production patience.
     TimeSpan? donorLockPatience = null)
 {
     /// <summary>

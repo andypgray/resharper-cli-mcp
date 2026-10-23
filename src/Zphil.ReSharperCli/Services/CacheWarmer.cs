@@ -89,6 +89,7 @@ internal sealed class CacheWarmer(
     ///     Never reset when a pass begins, so it always names a real outcome rather than briefly reading as
     ///     "not run".
     /// </remarks>
+    // A seam: a pass reports to no caller, so this is how a test learns how one ended without reading its log line.
     internal WarmUpOutcome Outcome { get; private set; } = WarmUpOutcome.NotRun;
 
     /// <summary>
@@ -99,6 +100,8 @@ internal sealed class CacheWarmer(
     ///     Republished when a pass starts, so a caller awaiting it after a re-arm waits for that pass rather
     ///     than sailing past on the previous one's completed task.
     /// </remarks>
+    // A seam: a pass is fire-and-forget, so awaiting this is how a test sees one settle rather than sleeping past it.
+    // StopAsync drains through the completion source itself.
     internal Task Finished
     {
         get

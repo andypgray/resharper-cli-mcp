@@ -111,10 +111,10 @@ public sealed class InspectReportWriterTests : IDisposable
     [Fact]
     public void WriteMarkdown_AnExpiredReportItCannotDelete_StillWritesTheNewOne()
     {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "Only Windows refuses to delete a file held open, which is the failure the prune has to swallow.");
+
         // Arrange — the guarantee the prune's swallow exists for: housekeeping must never cost the caller
-        // the report it asked for. An expired file held open is the portable way to make one delete fail on
-        // Windows; where the platform allows deleting an open file the delete succeeds, and the assertion
-        // below is the same either way.
+        // the report it asked for. An expired file held open is how a delete is made to fail on Windows.
         string directory = ReportsDirectory();
         string expired = WriteExisting(directory, "Old-inspect-cccccccc.md");
         Expire(expired);
@@ -144,8 +144,7 @@ public sealed class InspectReportWriterTests : IDisposable
         // Assert
         outcome.Failure.ShouldNotBeNullOrWhiteSpace();
         outcome.Path.ShouldEndWith(".md"); // still names the file it meant to write
-        logs.Warnings.Count.ShouldBe(1);
-        logs.Warnings[0].Message.ShouldContain(outcome.Path);
+        logs.Warnings.ShouldHaveSingleItem().Message.ShouldContain(outcome.Path);
     }
 
     private InspectReportWriter Writer(CapturingLoggerProvider? logs = null)

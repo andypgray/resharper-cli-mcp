@@ -132,8 +132,9 @@ internal static class CacheHomes
     ///     two-line shape that adds the build.
     /// </summary>
     /// <remarks>
-    ///     <see cref="JbWarmMarker.Stamp" /> never writes either shape, but a cache home can still hold markers
-    ///     an earlier build of this server wrote in them, so every reader of a marker has to read both.
+    ///     <see cref="JbWarmMarker.Stamp" /> never writes either shape, nor the empty one
+    ///     <see cref="PlantEmptyWarmMarker" /> plants, but a cache home can still hold markers an earlier build of
+    ///     this server wrote in them, so every reader of a marker has to read all three.
     /// </remarks>
     public static string PlantWarmDonorFromAnEarlierBuild(string cacheHome, string solutionPath, string? jbVersion = null)
     {
@@ -142,6 +143,24 @@ internal static class CacheHomes
         string content = jbVersion is null ? name : $"{name}\n{jbVersion}";
         File.WriteAllText(JbWarmMarker.PathFor(solutionPath, cacheHome), content);
         return generation;
+    }
+
+    /// <summary>
+    ///     Writes an empty warm marker for <paramref name="solutionPath" />: the record of a run that succeeded,
+    ///     naming no generation and no build, as the earliest builds of this server wrote one.
+    /// </summary>
+    public static void PlantEmptyWarmMarker(string cacheHome, string solutionPath)
+    {
+        File.WriteAllText(JbWarmMarker.PathFor(solutionPath, cacheHome), string.Empty);
+    }
+
+    /// <summary>
+    ///     Moves the write time of <paramref name="solutionPath" />'s warm marker <paramref name="age" /> into
+    ///     the past, as if its last successful run were that long ago.
+    /// </summary>
+    public static void BackDateWarmMarker(string cacheHome, string solutionPath, TimeSpan age)
+    {
+        File.SetLastWriteTimeUtc(JbWarmMarker.PathFor(solutionPath, cacheHome), DateTime.UtcNow - age);
     }
 
     /// <summary>

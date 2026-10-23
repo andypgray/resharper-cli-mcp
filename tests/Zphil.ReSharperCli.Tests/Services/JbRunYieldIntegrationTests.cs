@@ -22,7 +22,8 @@ namespace Zphil.ReSharperCli.Tests.Services;
 ///     </para>
 ///     <para>
 ///         The <see cref="YieldProbe" /> stands in for <c>jb</c> and makes every one of these assertions an
-///         observation rather than a timing guess. No sleeps.
+///         observation rather than a timing guess. The one sleep is <see cref="ReapWindow" />, a watch for a run
+///         or a delete that must not happen, which raises no event to wait on.
 ///     </para>
 /// </remarks>
 public sealed class JbRunYieldIntegrationTests : IDisposable
@@ -32,6 +33,9 @@ public sealed class JbRunYieldIntegrationTests : IDisposable
     ///     instead of hanging them out to the production cap.
     /// </summary>
     private static readonly TimeSpan Cap = TimeSpan.FromSeconds(10);
+
+    /// <summary>How long a test watches for a run that must not happen while a killed pass is reaped.</summary>
+    private static readonly TimeSpan ReapWindow = TimeSpan.FromMilliseconds(200);
 
     private static readonly string[] WarmUpArguments = ["inspectcode", "/sln/App.sln"];
     private static readonly string[] ForegroundArguments = ["inspectcode", "/sln/App.sln", "--include=src/A.cs"];
@@ -183,22 +187,24 @@ public sealed class JbRunYieldIntegrationTests : IDisposable
         // Arrange — the precedence is process-wide, so a call against one solution reclaims from a pre-warm
         // of another. The bound on jb processes is too, which is what makes the wait below a wait rather
         // than a second run beside the dying one.
+        _probe.HoldReap = true;
         Task<SpeculativeRunOutcome> preWarm = _runner.TryRunAsync(_config, WarmUpArguments, Ct);
         await _probe.WaitForNextStartAsync(Ct);
-
-        var startedWhenCancelled = 0;
-        _probe.OnCancelled = () => startedWhenCancelled = _probe.Runs;
 
         // Act
         ResolvedConfig other = Configs.Bare(_environment.CreateSolutionPath("Other.sln"), _cacheHome);
         Task<ProcessResult> foreground = _runner.RunAsync(other, ForegroundArguments, Ct);
+        await _probe.Dying.WaitAsync(Ct);
+
+        // Assert — while the killed pass is being reaped, the foreground run waits instead of running beside
+        // it. The lock cannot be the explanation: two solutions are two cache generations, and it lets both
+        // through uncontended. A negative window, since a run that never starts raises no event.
+        await Task.Delay(ReapWindow, Ct);
+        _probe.Runs.ShouldBe(1);
+
+        _probe.Reap();
         await _probe.WaitForNextStartAsync(Ct);
         _probe.ReleaseAll();
-
-        // Assert — one run had started when the pass was killed, so the foreground one waited for the reap
-        // instead of running beside it. The lock cannot be the explanation: two solutions are two cache
-        // generations, and it lets both through uncontended.
-        startedWhenCancelled.ShouldBe(1);
         (await foreground).ExitCode.ShouldBe(0);
         (await preWarm).ShouldBe(SpeculativeRunOutcome.StoodDown);
         _probe.Cancelled.ShouldBe(1);
@@ -352,21 +358,24 @@ public sealed class JbRunYieldIntegrationTests : IDisposable
     public async Task Reset_CancellingAPreWarm_StillWaitsForItToLetGoBeforeDeleting()
     {
         // Arrange — the safety half: yielding must shorten the wait without shortening it to nothing. The
-        // hook fires while the abandoned pass still holds the lease, which is the one moment at which a
-        // reset that had skipped the queue rather than jumping it would already have deleted the generation
-        // out from under a live jb.
+        // abandoned pass is held in its reap, still holding the lease, which is the one stretch in which a
+        // reset that had skipped the queue rather than jumping it would delete the generation out from under
+        // a live jb.
         string generation = CacheHomes.PlantGenerationFor(_cacheHome, _config.SolutionPath);
-        var stillThereWhenCancelled = false;
-        _probe.OnCancelled = () => stillThereWhenCancelled = Directory.Exists(generation);
-
+        _probe.HoldReap = true;
         Task<SpeculativeRunOutcome> preWarm = _runner.TryRunAsync(_config, WarmUpArguments, Ct);
         await _probe.WaitForNextStartAsync(Ct);
 
         // Act
-        CacheResetOutcome outcome = await _reset.RunAsync(_config, Ct);
+        Task<CacheResetOutcome> reset = _reset.RunAsync(_config, Ct);
+        await _probe.Dying.WaitAsync(Ct);
 
-        // Assert
-        stillThereWhenCancelled.ShouldBeTrue();
+        // Assert — a negative window, since a delete that has not happened raises no event.
+        await Task.Delay(ReapWindow, Ct);
+        Directory.Exists(generation).ShouldBeTrue();
+
+        _probe.Reap();
+        CacheResetOutcome outcome = await reset;
         outcome.Dropped.ShouldBe([Path.GetFileName(generation)]);
         (await preWarm).ShouldBe(SpeculativeRunOutcome.StoodDown);
     }
@@ -382,6 +391,8 @@ public sealed class JbRunYieldIntegrationTests : IDisposable
     /// </remarks>
     private sealed class YieldProbe : IProcessRunner
     {
+        private readonly TaskCompletionSource _dying = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _reaped = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly SemaphoreSlim _starts = new(0);
         private readonly List<CancellationToken> _tokens = [];
@@ -393,11 +404,18 @@ public sealed class JbRunYieldIntegrationTests : IDisposable
         public int Cancelled => Volatile.Read(ref _cancelled);
 
         /// <summary>
-        ///     Gets or sets the callback invoked on the cancelled run's own stack, before it rethrows and so
-        ///     before the lease is released: the moment a test can observe the world while the abandoned pass
-        ///     still holds the cache generation.
+        ///     Gets or sets a value indicating whether a cancelled run is held in its reap until <see cref="Reap" />,
+        ///     still holding the slot and the lease, as a killed <c>jb</c> tree holds them until
+        ///     <see cref="ProcessRunner" /> has waited it out.
         /// </summary>
-        public Action? OnCancelled { get; set; }
+        /// <remarks>
+        ///     Without the hold, the cancelled run unwinds inline on the canceller's own stack, so the world a test
+        ///     reads afterwards is the same whether or not the canceller then waited for it.
+        /// </remarks>
+        public bool HoldReap { get; set; }
+
+        /// <summary>Gets a task that completes once a cancelled run is held in its reap.</summary>
+        public Task Dying => _dying.Task;
 
         public IReadOnlyList<CancellationToken> Tokens
         {
@@ -432,7 +450,12 @@ public sealed class JbRunYieldIntegrationTests : IDisposable
             catch (OperationCanceledException)
             {
                 Interlocked.Increment(ref _cancelled);
-                OnCancelled?.Invoke();
+                if (HoldReap)
+                {
+                    _dying.TrySetResult();
+                    await _reaped.Task;
+                }
+
                 throw;
             }
 
@@ -445,10 +468,17 @@ public sealed class JbRunYieldIntegrationTests : IDisposable
             return _starts.WaitAsync(cancellationToken);
         }
 
-        /// <summary>Lets every parked run complete, and every later one too.</summary>
+        /// <summary>Lets a run held in its reap finish dying.</summary>
+        public void Reap()
+        {
+            _reaped.TrySetResult();
+        }
+
+        /// <summary>Lets every parked run complete, and every later one too, and lets any held reap finish.</summary>
         public void ReleaseAll()
         {
             _release.TrySetResult();
+            Reap();
         }
     }
 }

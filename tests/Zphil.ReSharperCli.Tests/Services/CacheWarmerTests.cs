@@ -41,6 +41,7 @@ public sealed class CacheWarmerTests : IDisposable
 
     public void Dispose()
     {
+        _probe.ReleaseAll();
         _loggerFactory.Dispose();
         _environment.Dispose();
     }
@@ -61,7 +62,7 @@ public sealed class CacheWarmerTests : IDisposable
         IReadOnlyList<string> arguments = _probe.Runs.ShouldHaveSingleItem();
         arguments[0].ShouldBe("inspectcode");
         arguments.ShouldContain(_solutionPath);
-        arguments.Any(argument => argument.StartsWith("--include", StringComparison.Ordinal)).ShouldBeFalse();
+        arguments.ShouldNotContain(argument => argument.StartsWith("--include", StringComparison.Ordinal));
 
         // ...and the debounce closes the loop, so the next session start finds this generation warm.
         JbWarmMarker.IsFreshWithin(_solutionPath, _cacheHome, CacheWarmer.RecentlyWarmWindow, NullLogger.Instance).ShouldBeTrue();
@@ -154,7 +155,7 @@ public sealed class CacheWarmerTests : IDisposable
 
         // Assert
         warmer.Outcome.ShouldBe(WarmUpOutcome.Warmed);
-        _probe.Runs.Count.ShouldBe(1);
+        _probe.Runs.ShouldHaveSingleItem();
     }
 
     [Fact]
@@ -163,7 +164,7 @@ public sealed class CacheWarmerTests : IDisposable
         // Arrange — what a server from before builds were recorded left behind, drifted or not. It names no
         // build, so it reads as another build's: one pass that may be redundant, after which the marker this
         // pass stamps names the build and the window holds again.
-        File.WriteAllText(JbWarmMarker.PathFor(_solutionPath, _cacheHome), string.Empty);
+        CacheHomes.PlantEmptyWarmMarker(_cacheHome, _solutionPath);
         using CacheWarmer warmer = BuildWarmer();
 
         // Act
@@ -174,7 +175,7 @@ public sealed class CacheWarmerTests : IDisposable
 
         // Assert
         warmer.Outcome.ShouldBe(WarmUpOutcome.AlreadyWarm);
-        _probe.Runs.Count.ShouldBe(1);
+        _probe.Runs.ShouldHaveSingleItem();
     }
 
     [Fact]
@@ -195,7 +196,7 @@ public sealed class CacheWarmerTests : IDisposable
 
         // Assert
         warmer.Outcome.ShouldBe(WarmUpOutcome.Warmed);
-        _probe.Runs.Count.ShouldBe(1);
+        _probe.Runs.ShouldHaveSingleItem();
     }
 
     [Fact]
@@ -219,7 +220,7 @@ public sealed class CacheWarmerTests : IDisposable
 
         // Assert
         warmer.Outcome.ShouldBe(WarmUpOutcome.Warmed);
-        _probe.Runs.Count.ShouldBe(1);
+        _probe.Runs.ShouldHaveSingleItem();
     }
 
     [Fact]
@@ -256,7 +257,7 @@ public sealed class CacheWarmerTests : IDisposable
 
         // Assert
         warmer.Outcome.ShouldBe(WarmUpOutcome.Warmed);
-        _probe.Runs.Count.ShouldBe(1);
+        _probe.Runs.ShouldHaveSingleItem();
         _logs.Warnings.ShouldBeEmpty();
     }
 
@@ -292,9 +293,7 @@ public sealed class CacheWarmerTests : IDisposable
         // Arrange — a marker this build stamped, so its age alone decides. It is aged against the shipped window
         // itself, which pins the real threshold rather than an injectable stand-in for it.
         JbWarmMarker.Stamp(_solutionPath, _cacheHome, NullLogger.Instance, JbStubs.Version);
-        File.SetLastWriteTimeUtc(
-            JbWarmMarker.PathFor(_solutionPath, _cacheHome),
-            DateTime.UtcNow - CacheWarmer.RecentlyWarmWindow - TimeSpan.FromMinutes(1));
+        CacheHomes.BackDateWarmMarker(_cacheHome, _solutionPath, CacheWarmer.RecentlyWarmWindow + TimeSpan.FromMinutes(1));
         using CacheWarmer warmer = BuildWarmer();
 
         // Act
@@ -303,7 +302,7 @@ public sealed class CacheWarmerTests : IDisposable
 
         // Assert
         warmer.Outcome.ShouldBe(WarmUpOutcome.Warmed);
-        _probe.Runs.Count.ShouldBe(1);
+        _probe.Runs.ShouldHaveSingleItem();
     }
 
     [Fact]
@@ -338,9 +337,12 @@ public sealed class CacheWarmerTests : IDisposable
         warmer.Start();
 
         // Assert — the first pass is still running, and there is still only one.
-        _probe.Runs.Count.ShouldBe(1);
+        _probe.Runs.ShouldHaveSingleItem();
 
+        // A second pass would never reach the probe: it skips at the run slot the first one holds, and says so
+        // in an outcome line of its own. One pass, so one outcome: the parked one, stood down by the drain.
         await warmer.StopAsync(Ct).WaitAsync(Generous, Ct);
+        ShouldHaveSingleOutcomeLine().Property("Outcome").ShouldBe(WarmUpOutcome.Cancelled);
     }
 
     [Fact]
@@ -360,7 +362,7 @@ public sealed class CacheWarmerTests : IDisposable
         // Assert — both halves in one test: the second pass ran, and it decided for *itself* not to spend a
         // jb. The debounce is what stops the repeat work, not an inability to start.
         warmer.Outcome.ShouldBe(WarmUpOutcome.AlreadyWarm);
-        _probe.Runs.Count.ShouldBe(1);
+        _probe.Runs.ShouldHaveSingleItem();
     }
 
     [Fact]
@@ -414,22 +416,27 @@ public sealed class CacheWarmerTests : IDisposable
     {
         // Arrange — the interleaving the lock exists for, repeated enough to catch it. Unguarded, Start can
         // claim the slot while StopAsync reads the *previous* pass's already-settled task, drains instantly
-        // and returns, leaving Start to spawn a jb after shutdown. Each attempt gets its own warmer, so each
-        // one is a fresh race rather than a re-run against a closed door.
-        for (var attempt = 0; attempt < 100; attempt++)
+        // and returns, leaving Start to run a pass after shutdown. Each attempt settles one pass on a warmer of
+        // its own first, so a previous pass's settled task is there to be misread, and Start has to replace it.
+        for (var attempt = 0; attempt < 1000; attempt++)
         {
             using CacheWarmer warmer = BuildWarmer();
+            warmer.Start();
+            await warmer.Finished.WaitAsync(Generous, Ct);
 
-            // Act — both awaited below before the using disposes, so the capture outlives nothing.
-            // ReSharper disable once AccessToDisposedClosure
+            // Act — all awaited below before the using disposes, so the capture outlives nothing.
+            // ReSharper disable AccessToDisposedClosure
             Task starting = Task.Run(() => warmer.Start(), Ct);
             Task stopping = warmer.StopAsync(Ct);
+
+            // Read at the instant the drain returns: whichever side won, no pass may still be running then.
+            Task<bool> settledWhenDrained = stopping.ContinueWith(
+                _ => warmer.Finished.IsCompleted, Ct, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+            // ReSharper restore AccessToDisposedClosure
             await Task.WhenAll(starting, stopping).WaitAsync(Generous, Ct);
 
-            // Assert — whatever the race decided, nothing may start once the drain has returned.
-            int callsAtShutdown = _probe.Calls;
-            await Task.Delay(TimeSpan.FromMilliseconds(5), Ct);
-            _probe.Calls.ShouldBe(callsAtShutdown, $"a pass started after shutdown on attempt {attempt}");
+            // Assert
+            (await settledWhenDrained).ShouldBeTrue($"the drain returned with a pass still running on attempt {attempt}");
         }
     }
 
@@ -483,7 +490,7 @@ public sealed class CacheWarmerTests : IDisposable
         await _probe.Started.WaitAsync(Generous, Ct);
 
         // Act — a call the user made, which takes the cache generation back on entry.
-        using CancellationTokenSource callerGivesUp = new();
+        using var callerGivesUp = CancellationTokenSource.CreateLinkedTokenSource(Ct);
         Task<ProcessResult> foreground = graph.Runner.RunAsync(
             Configs.Bare(_solutionPath, _cacheHome), ["inspectcode", _solutionPath], callerGivesUp.Token);
         await warmer.Finished.WaitAsync(Generous, Ct);
@@ -585,7 +592,7 @@ public sealed class CacheWarmerTests : IDisposable
         await warmer.Finished.WaitAsync(Generous, Ct);
 
         // Assert
-        LogEntry finished = OutcomeLine();
+        LogEntry finished = ShouldHaveSingleOutcomeLine();
         finished.Level.ShouldBe(LogLevel.Information);
         finished.Property("Outcome").ShouldBe(WarmUpOutcome.Warmed);
         finished.Property("SolutionPath").ShouldBe(_solutionPath);
@@ -606,7 +613,7 @@ public sealed class CacheWarmerTests : IDisposable
         await warmer.Finished.WaitAsync(Generous, Ct);
 
         // Assert
-        LogEntry finished = OutcomeLine();
+        LogEntry finished = ShouldHaveSingleOutcomeLine();
         finished.Level.ShouldBe(LogLevel.Information);
         finished.Property("Outcome").ShouldBe(WarmUpOutcome.NoTarget);
         finished.Property("SolutionPath").ShouldBe("no target");
@@ -624,7 +631,7 @@ public sealed class CacheWarmerTests : IDisposable
         await warmer.Finished.WaitAsync(Generous, Ct);
 
         // Assert
-        LogEntry finished = OutcomeLine();
+        LogEntry finished = ShouldHaveSingleOutcomeLine();
         finished.Level.ShouldBe(LogLevel.Debug);
         finished.Property("Outcome").ShouldBe(WarmUpOutcome.Disabled);
     }
@@ -640,19 +647,20 @@ public sealed class CacheWarmerTests : IDisposable
         warmer.Start();
         await warmer.Finished.WaitAsync(Generous, Ct);
 
-        // Assert — every line the pass caused, its start and outcome lines among them, carries the same id.
-        IReadOnlyList<LogEntry> mine = _logs.Entries
-            .Where(entry => entry.ScopeValue(RunIdScope.PropertyName) is not null)
-            .ToList();
+        // Assert — every line the pass caused carries the same id, the resolution's and the run's among them.
+        IReadOnlyList<LogEntry> entries = _logs.Entries;
+        entries.ShouldAllBe(entry => entry.ScopeValue(RunIdScope.PropertyName) != null);
+        entries.Select(entry => entry.ScopeValue(RunIdScope.PropertyName)).Distinct().ShouldHaveSingleItem();
 
-        mine.Count.ShouldBeGreaterThanOrEqualTo(2);
-        mine.Select(entry => entry.ScopeValue(RunIdScope.PropertyName)).Distinct().ShouldHaveSingleItem();
+        List<string> categories = entries.Select(entry => entry.Category).ToList();
+        categories.ShouldContain(typeof(ConfigResolver).FullName!);
+        categories.ShouldContain(typeof(JbRunner).FullName!);
     }
 
-    /// <summary>Returns the one line saying how the pass settled.</summary>
-    private LogEntry OutcomeLine()
+    /// <summary>Asserts that exactly one line says how the pass settled, and returns it.</summary>
+    private LogEntry ShouldHaveSingleOutcomeLine()
     {
-        return _logs.WithProperty("Outcome").ShouldHaveSingleItem();
+        return _logs.ShouldHaveSingleLineWith("Outcome");
     }
 
     private CacheWarmer BuildWarmer()
@@ -666,13 +674,14 @@ public sealed class CacheWarmerTests : IDisposable
     /// </summary>
     /// <remarks>
     ///     The lock is private to the returned warmer, so a test that needs the cache generation held takes the
-    ///     lock file instead.
+    ///     lock file instead. Every class in the graph logs to the capture, so a claim about the pass's warnings
+    ///     covers the whole of what the pass logged.
     /// </remarks>
     private WarmerGraph BuildGraph()
     {
-        JbLocator jbLocator = new(_probe, _environment, NullLogger<JbLocator>.Instance);
-        ConfigResolver configResolver = new(jbLocator, _environment, NullLogger<ConfigResolver>.Instance);
-        JbRunner jbRunner = JbRunners.Create(_probe);
+        JbLocator jbLocator = new(_probe, _environment, _loggerFactory.CreateLogger<JbLocator>());
+        ConfigResolver configResolver = new(jbLocator, _environment, _loggerFactory.CreateLogger<ConfigResolver>());
+        JbRunner jbRunner = JbRunners.Create(_probe, logs: _loggerFactory);
         InspectService inspectService = new(jbRunner);
         ILogger<CacheWarmer> logger = _loggerFactory.CreateLogger<CacheWarmer>();
         CacheWarmer warmer = new(configResolver, inspectService, jbRunner, _environment, logger);
@@ -693,6 +702,7 @@ public sealed class CacheWarmerTests : IDisposable
     {
         private readonly List<IReadOnlyList<string>> _runs = [];
         private readonly TaskCompletionSource _started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly CancellationTokenSource _teardown = new();
         private int _calls;
 
         /// <summary>Gets or sets the exit code every non-probe run reports.</summary>
@@ -762,13 +772,26 @@ public sealed class CacheWarmerTests : IDisposable
 
             if (Fault is not null && runNumber <= FaultUntilRun) throw Fault;
 
-            if (BlockUntilCancelled) await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            if (BlockUntilCancelled)
+            {
+                using var parked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _teardown.Token);
+                await Task.Delay(Timeout.InfiniteTimeSpan, parked.Token);
+            }
 
             JbStubs.WriteEmptySarifIfRequested(arguments);
 
             return ExitCode == 0
                 ? JbStubs.Succeed(arguments)
                 : new ProcessResult(ExitCode, string.Empty, string.Empty);
+        }
+
+        /// <summary>
+        ///     Cancels every parked run, so a test that failed before its own drain leaves no run holding the slot,
+        ///     the lease and the lock file open in the temp cache home.
+        /// </summary>
+        public void ReleaseAll()
+        {
+            _teardown.Cancel();
         }
     }
 }

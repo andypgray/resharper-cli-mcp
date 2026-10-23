@@ -134,7 +134,7 @@ public sealed class JbRunSlotTests
 
         // Assert — the holder named is the run that was ahead: not an earlier one that let go, and not the one
         // that got in.
-        LogEntry waited = logs.WithProperty("HolderSubcommand").ShouldHaveSingleItem();
+        LogEntry waited = logs.ShouldHaveSingleLineWith("HolderSubcommand");
         waited.Level.ShouldBe(LogLevel.Information);
         waited.Property("HolderSubcommand").ShouldBe("cleanupcode");
         waited.Property("HolderSolutionPath").ShouldBe(OtherSolutionPath);
@@ -152,7 +152,7 @@ public sealed class JbRunSlotTests
         using IDisposable taken = await slot.TakeAsync(Subcommand, SolutionPath, Ct);
 
         // Assert
-        LogEntry took = logs.WithProperty("WaitedMs").ShouldHaveSingleItem();
+        LogEntry took = logs.ShouldHaveSingleLineWith("WaitedMs");
         took.Level.ShouldBe(LogLevel.Debug);
         logs.WithProperty("HolderSubcommand").ShouldBeEmpty();
     }

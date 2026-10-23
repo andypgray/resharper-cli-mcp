@@ -48,7 +48,7 @@ public sealed class ServerLifecycleTests : IDisposable
         await Lifecycle(cap, LogEventLevel.Information).StartAsync(Ct);
 
         // Assert
-        LogEntry started = _logs.WithProperty("ProcessId").ShouldHaveSingleItem();
+        LogEntry started = _logs.ShouldHaveSingleLineWith("ProcessId");
         started.Level.ShouldBe(LogLevel.Information);
         started.Property("Version").ShouldBe(ServerVersion.Informational);
         started.Property("ProcessId").ShouldBe(Environment.ProcessId);
@@ -72,7 +72,7 @@ public sealed class ServerLifecycleTests : IDisposable
         await lifecycle.StartAsync(Ct);
 
         // Assert
-        _logs.WithProperty("OrphanGuard").ShouldHaveSingleItem().Property("OrphanGuard").ShouldBe(_childLifetime!.Guarantee);
+        _logs.ShouldHaveSingleLineWith("OrphanGuard").Property("OrphanGuard").ShouldBe(_childLifetime!.Guarantee);
     }
 
     [Fact]
@@ -86,7 +86,7 @@ public sealed class ServerLifecycleTests : IDisposable
         await Lifecycle().StartAsync(Ct);
 
         // Assert
-        _logs.WithProperty("PreWarm").ShouldHaveSingleItem().Property("PreWarm").ShouldBe("off");
+        _logs.ShouldHaveSingleLineWith("PreWarm").Property("PreWarm").ShouldBe("off");
     }
 
     [Fact]
@@ -101,7 +101,7 @@ public sealed class ServerLifecycleTests : IDisposable
 
         // Assert — the replacement for the quieted Hosting shutdown lines, and the bracket that makes a
         // session's span readable at a glance.
-        LogEntry stopping = _logs.WithProperty("Uptime").ShouldHaveSingleItem();
+        LogEntry stopping = _logs.ShouldHaveSingleLineWith("Uptime");
         stopping.Level.ShouldBe(LogLevel.Information);
         stopping.Property("Uptime").ShouldNotBeNull();
     }

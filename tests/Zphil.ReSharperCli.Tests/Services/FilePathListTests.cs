@@ -32,7 +32,7 @@ public sealed class FilePathListTests : IDisposable
     };
 
     /// <summary>
-    ///     Gets entries the path APIs refuse outright, one per way they refuse.
+    ///     Gets entries the path APIs refuse outright on every platform.
     /// </summary>
     /// <remarks>
     ///     Relative, so the row needs no instance state: <see cref="FilePathList.ResolvesToExistingFile" />
@@ -41,11 +41,7 @@ public sealed class FilePathListTests : IDisposable
     public static TheoryData<string> EntriesTheRuntimeRefuses => new()
     {
         // An embedded null, which Path.GetFullPath throws on as an ArgumentException.
-        "src/\0.cs",
-        // An entry past the NT path limit rather than the legacy 260-character one, which the runtime does not
-        // enforce. Windows raises PathTooLongException, an IOException and not an ArgumentException, so it
-        // reaches the other catch.
-        new string('a', 40_000)
+        "src/\0.cs"
     };
 
     public void Dispose()
@@ -219,16 +215,18 @@ public sealed class FilePathListTests : IDisposable
         pattern.ShouldBe(malformed);
     }
 
-    [Fact]
+    [Fact(Skip = "Only Windows refuses a path past its length limit; elsewhere the entry relativises like any other.", SkipUnless = nameof(OnWindows))]
     public void ToIncludePattern_EntryBeyondTheOsPathLimit_IsKeptRatherThanThrowing()
     {
         // Arrange — a refusal that arrives as a different exception: Windows maps the length failure to
         // PathTooLongException, which is an IOException and not an ArgumentException.
         string tooLong = EntryBeyondTheOsPathLimit();
 
-        // Act & Assert — the value is left unasserted on purpose: Windows hands it back verbatim, while
-        // Unix's managed GetFullPath has no length to fail on and relativises it like any other path.
-        Should.NotThrow(() => FilePathList.ToIncludePattern(tooLong, _solutionDirectory));
+        // Act
+        string pattern = FilePathList.ToIncludePattern(tooLong, _solutionDirectory);
+
+        // Assert — handed back verbatim, as an entry it cannot re-spell is.
+        pattern.ShouldBe(tooLong);
     }
 
     [Fact]
@@ -251,6 +249,18 @@ public sealed class FilePathListTests : IDisposable
         // chance to reject anything, so a throw here would surface as an unexpected error instead of naming
         // the entry.
         FilePathList.ResolvesToExistingFile(refused, _solutionDirectory).ShouldBeFalse();
+    }
+
+    [Fact(Skip = "Only Windows refuses a path past its length limit; elsewhere the entry resolves like any other.", SkipUnless = nameof(OnWindows))]
+    public void ResolvesToExistingFile_EntryPastTheWindowsPathLimit_IsFalseRatherThanThrowing()
+    {
+        // Arrange — past the NT path limit rather than the legacy 260-character one, which the runtime does not
+        // enforce. Windows raises PathTooLongException, an IOException and not an ArgumentException, so it
+        // reaches the other catch.
+        string tooLong = new('a', 40_000);
+
+        // Act & Assert
+        FilePathList.ResolvesToExistingFile(tooLong, _solutionDirectory).ShouldBeFalse();
     }
 
     [Fact]

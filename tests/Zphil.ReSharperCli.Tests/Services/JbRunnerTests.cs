@@ -251,6 +251,7 @@ public sealed class JbRunnerTests : IDisposable
         // Arrange — a reset promises the next run is cold, and this is that run: the cache it just built is
         // this solution's own, so the promise is kept and there is nothing left to hold anything back from.
         JbColdTombstone.Write(_config.SolutionPath, _config.CacheHome, NullLogger.Instance);
+        JbColdTombstone.Exists(_config.SolutionPath, _config.CacheHome, NullLogger.Instance).ShouldBeTrue();
         StubExit(0, string.Empty);
 
         // Act
@@ -428,7 +429,9 @@ public sealed class JbRunnerTests : IDisposable
         // Act
         var exception = await Should.ThrowAsync<UserErrorException>(() => _runner.RunAsync(_config, [CleanupService.Subcommand, _config.SolutionPath], Ct));
 
-        // Assert
+        // Assert — the cold-cache advice first, so a leak of it reds by name before the whole-string diff.
+        exception.Message.ShouldNotContain("cold ReSharper cache");
+        exception.Message.ShouldNotContain("will not help");
         exception.Message.ShouldBe(
             "jb cleanupcode timed out after 10 minutes and was stopped.\n"
             + "That cap is this server's, not jb's own: raise it by setting RESHARPER_MCP_TIMEOUT_SECS (in seconds) "
@@ -437,8 +440,6 @@ public sealed class JbRunnerTests : IDisposable
             + "number of files it rewrites, so narrow `files` to the ones that changed, or split them across "
             + "several calls, before raising the cap. Files this run reached before it was stopped may already "
             + "have been rewritten.");
-        exception.Message.ShouldNotContain("cold ReSharper cache");
-        exception.Message.ShouldNotContain("will not help");
     }
 
     [Fact]
@@ -585,14 +586,24 @@ public sealed class JbRunnerTests : IDisposable
         // Arrange — a jb killed on the caller's own token, which is how host shutdown reaches a pre-warm.
         // The runner sees the same OperationCanceledException either way, so only the caller's token tells
         // "I was shut down" apart from "a foreground run reclaimed the cache".
+        // Cancelled from inside the run, so the cancellation meets a jb in flight rather than the guard before
+        // the spawn.
+        using var callerCancelled = CancellationTokenSource.CreateLinkedTokenSource(Ct);
         _processRunner
             .AnyRunOf("jb")
-            .ThrowsAsync(new OperationCanceledException());
-        using CancellationTokenSource callerCancelled = new();
-        await callerCancelled.CancelAsync();
+            .Returns(callInfo =>
+            {
+                // The run is awaited below before the using disposes, so the capture outlives nothing.
+                // ReSharper disable once AccessToDisposedClosure
+                callerCancelled.Cancel();
+                callInfo.Token().ThrowIfCancellationRequested();
+
+                return JbStubs.Success;
+            });
 
         // Act & Assert
         await Should.ThrowAsync<OperationCanceledException>(() => _runner.TryRunAsync(_config, ["inspectcode", _config.SolutionPath], callerCancelled.Token));
+        await _processRunner.Received(1).AnyRunOf("jb");
     }
 
     [Fact]
@@ -667,7 +678,7 @@ public sealed class JbRunnerTests : IDisposable
             lease?.Dispose();
 
             StubExit(0, string.Empty);
-            speculative = _runner.TryRunAsync(timedOut, ["inspectcode", timedOut.SolutionPath], CancellationToken.None);
+            speculative = _runner.TryRunAsync(timedOut, ["inspectcode", timedOut.SolutionPath], Ct);
         };
 
         // Act

@@ -75,7 +75,7 @@ public sealed class InspectServiceArgumentTests
         List<string> arguments = InspectService.BuildArguments(Configs.Bare(SolutionPath, CacheHome), OutputFile, [], InspectSeverity.Warning);
 
         // Assert
-        arguments.Any(a => a.StartsWith("--include", StringComparison.Ordinal)).ShouldBeFalse();
+        arguments.ShouldNotContain(argument => argument.StartsWith("--include", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -120,6 +120,6 @@ public sealed class InspectServiceArgumentTests
         captured.ShouldNotBeNull();
         string outputFile = JbStubs.OutputPathOf(captured).ShouldNotBeNull();
         captured.ShouldBe(InspectService.BuildArguments(config, outputFile, null, InspectService.WarmUpSeverity));
-        captured.Any(argument => argument.StartsWith("--include", StringComparison.Ordinal)).ShouldBeFalse();
+        captured.ShouldNotContain(argument => argument.StartsWith("--include", StringComparison.Ordinal));
     }
 }

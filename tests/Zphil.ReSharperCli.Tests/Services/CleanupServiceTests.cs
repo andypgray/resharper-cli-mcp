@@ -66,7 +66,12 @@ public sealed class CleanupServiceTests : IDisposable
         // Arrange — jb re-writes the file with byte-identical content (a new mtime, same bytes). Content
         // hashing must call this Unchanged; a (length, mtime) heuristic would wrongly report Changed.
         string path = SolutionFiles.Plant(_solutionDirectory, "src/A.cs", "same bytes");
-        StubJbRunning(() => File.WriteAllText(path, "same bytes"));
+        StubJbRunning(() =>
+        {
+            DateTime planted = File.GetLastWriteTimeUtc(path);
+            File.WriteAllText(path, "same bytes");
+            File.SetLastWriteTimeUtc(path, planted + TimeSpan.FromMinutes(1));
+        });
 
         // Act
         CleanupOutcome outcome = await _service.RunAsync(_config, ["src/A.cs"], CleanupService.DefaultProfile, Ct);
@@ -102,10 +107,7 @@ public sealed class CleanupServiceTests : IDisposable
             _config, ["src/A.cs", "src/**/*.cs"], CleanupService.DefaultProfile, Ct);
 
         // Assert — request order preserved; the wildcard is Pattern (outside the hashed count).
-        outcome.Entries.Count.ShouldBe(2);
-        outcome.Entries[0].Status.ShouldBe(CleanupFileStatus.Changed);
-        outcome.Entries[1].Display.ShouldBe("src/**/*.cs");
-        outcome.Entries[1].Status.ShouldBe(CleanupFileStatus.Pattern);
+        outcome.Entries.ShouldBe([new CleanupEntry("src/A.cs", CleanupFileStatus.Changed), new CleanupEntry("src/**/*.cs", CleanupFileStatus.Pattern)]);
     }
 
     [Fact]

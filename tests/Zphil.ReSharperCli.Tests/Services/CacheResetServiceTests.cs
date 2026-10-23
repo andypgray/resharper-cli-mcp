@@ -129,6 +129,7 @@ public sealed class CacheResetServiceTests : IDisposable
         // the next call quote the seeding premium at a caller about to build the cache from nothing.
         CacheHomes.PlantWarmDonor(_cacheHome, _config.SolutionPath);
         JbCostRecord.Stamp(_config.SolutionPath, _cacheHome, JbCostBand.Seeded, TimeSpan.FromSeconds(456), NullLogger.Instance);
+        JbCostRecord.TryRead(_config.SolutionPath, _cacheHome, JbCostBand.Seeded, NullLogger.Instance).ShouldBe(TimeSpan.FromSeconds(456));
 
         // Act
         await _service.RunAsync(_config, Ct);
@@ -180,6 +181,7 @@ public sealed class CacheResetServiceTests : IDisposable
         // happen, and leaving it would hold back the seeding of a worktree re-created at that path.
         ResolvedConfig removed = RemovedCheckout();
         JbColdTombstone.Write(removed.SolutionPath, _cacheHome, NullLogger.Instance);
+        JbColdTombstone.Exists(removed.SolutionPath, _cacheHome, NullLogger.Instance).ShouldBeTrue();
 
         // Act
         await _service.RunAsync(removed, Ct);
@@ -306,12 +308,16 @@ public sealed class CacheResetServiceTests : IDisposable
     {
         // Arrange — the generation made undeletable, which is what a jb this server does not know about looks
         // like from here. A partly-deleted cache jb rebuilds is a better outcome than a call that throws
-        // having already removed most of one, so the failure is reported and the tool stays idempotent.
+        // having already removed most of one, so the failure is reported and the tool stays idempotent. The
+        // retries make these deletes slow, and the brisk interval is what makes that testable: the deletes are
+        // outside the reporter's scope, so however long they take, nothing beats over them.
         string ours = CacheHomes.PlantGenerationFor(_cacheHome, _config.SolutionPath);
         using IDisposable held = CacheHomes.BlockDeletionOf(ours);
+        RecordingSink<string> lines = new(Generous);
+        CacheResetService service = JbRunners.StandaloneReset(TimeSpan.FromSeconds(1), heartbeat: Brisk);
 
         // Act
-        CacheResetOutcome outcome = await _service.RunAsync(_config, Ct);
+        CacheResetOutcome outcome = await service.RunAsync(_config, Ct, lines.Record);
 
         // Assert — named, carrying the filesystem's own reason; fitting it onto the report's one line is the
         // formatter's job.
@@ -319,6 +325,11 @@ public sealed class CacheResetServiceTests : IDisposable
         CacheResetFailure failure = outcome.Failures.ShouldHaveSingleItem();
         failure.Name.ShouldBe(Path.GetFileName(ours));
         failure.Reason.ShouldNotBeEmpty();
+
+        // At most the immediate first beat, which disposal can outrun under load.
+        IReadOnlyList<string> beats = lines.Items;
+        beats.ShouldAllBe(line => line == Starting);
+        beats.Skip(1).ShouldBeEmpty();
     }
 
     [Fact]
@@ -354,10 +365,7 @@ public sealed class CacheResetServiceTests : IDisposable
         Task<CacheResetOutcome> reset = service.RunAsync(_config, Ct, lines.Record);
         try
         {
-            await lines.WaitUntilAsync(
-                () => lines.Items.Any(line => line.Contains("waiting for another run")),
-                "a beat naming the queue wait",
-                Ct);
+            await lines.FirstAsync(line => line.Contains("waiting for another run"), "a beat naming the queue wait", Ct);
         }
         finally
         {
@@ -395,20 +403,18 @@ public sealed class CacheResetServiceTests : IDisposable
         Task<CacheResetOutcome> refused = service.RunAsync(_config, Ct, lines.Record);
         await lines.WaitForAsync(1, Ct);
         await Should.ThrowAsync<UserErrorException>(() => refused);
-        int atFailure = lines.Count;
+        IReadOnlyList<string> atFailure = lines.Items;
 
         // Assert — many would-be beats fit in this delay at the interval above, and none of them land.
         await Task.Delay(Brisk * 10, Ct);
-        lines.Count.ShouldBe(atFailure);
+        lines.Items.ShouldBe(atFailure);
     }
 
     [Fact]
     public async Task RunAsync_UncontendedCall_SaysOnlyStarting()
     {
         // Arrange — an uncontended acquire is sub-millisecond, so the immediate first beat is the only one
-        // that can fit, and it must not blame another session for a wait that never happened. The brisk
-        // interval is what makes the other half of the claim testable: the deletes are outside the
-        // reporter's scope, so however long they take, nothing beats over them.
+        // that can fit, and it must not blame another session for a wait that never happened.
         RecordingSink<string> lines = new(Generous);
         CacheHomes.PlantGenerationFor(_cacheHome, _config.SolutionPath);
         CacheResetService service = JbRunners.StandaloneReset(TimeSpan.FromSeconds(1), heartbeat: Brisk);
@@ -421,8 +427,9 @@ public sealed class CacheResetServiceTests : IDisposable
         // beat is queued on the thread pool and disposal can outrun it under load; the pin is that nothing
         // other than "starting" is reachable on this path.
         outcome.Dropped.ShouldHaveSingleItem();
-        lines.Items.ShouldAllBe(line => line == Starting);
-        lines.Count.ShouldBeLessThanOrEqualTo(1);
+        IReadOnlyList<string> beats = lines.Items;
+        beats.ShouldAllBe(line => line == Starting);
+        beats.Skip(1).ShouldBeEmpty();
     }
 
     /// <summary>
@@ -445,7 +452,7 @@ public sealed class CacheResetServiceTests : IDisposable
         await service.RunAsync(_config, Ct);
 
         // Assert
-        LogEntry reported = logs.WithProperty("Dropped").ShouldHaveSingleItem();
+        LogEntry reported = logs.ShouldHaveSingleLineWith("Dropped");
         reported.Level.ShouldBe(LogLevel.Information);
         reported.Property("SolutionPath").ShouldBe(_config.SolutionPath);
         reported.Property("Dropped").ShouldBe(new List<string> { Path.GetFileName(ours) });
@@ -469,7 +476,7 @@ public sealed class CacheResetServiceTests : IDisposable
         await service.RunAsync(removed, Ct);
 
         // Assert
-        LogEntry reported = logs.WithProperty("Dropped").ShouldHaveSingleItem();
+        LogEntry reported = logs.ShouldHaveSingleLineWith("Dropped");
         reported.Property("SolutionFileExists").ShouldBe(false);
         reported.Property("Consequence")
             .ShouldBe("the solution file does not exist, so this reclaimed the cache of a removed checkout");

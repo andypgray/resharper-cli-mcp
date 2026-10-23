@@ -60,7 +60,7 @@ public sealed class JbRunnerLoggingTests : IDisposable
         await Runner().RunAsync(Config, ["inspectcode", _solutionPath], Ct);
 
         // Assert — the opening line names the run and how long it queued for the generation...
-        LogEntry starting = StartingLine();
+        LogEntry starting = ShouldHaveSingleStartingLine();
         starting.Level.ShouldBe(LogLevel.Information);
         starting.Property("Subcommand").ShouldBe("inspectcode");
         starting.Property("SolutionPath").ShouldBe(_solutionPath);
@@ -68,7 +68,7 @@ public sealed class JbRunnerLoggingTests : IDisposable
         starting.Property("QueueWaitMs").ShouldNotBeNull();
 
         // ...and the closing line the outcome and the wall clock.
-        LogEntry exited = ExitLine();
+        LogEntry exited = ShouldHaveSingleExitLine();
         exited.Level.ShouldBe(LogLevel.Information);
         exited.Property("Subcommand").ShouldBe("inspectcode");
         exited.Property("ExitCode").ShouldBe(0);
@@ -85,8 +85,10 @@ public sealed class JbRunnerLoggingTests : IDisposable
         // Act
         await Should.ThrowAsync<UserErrorException>(() => Runner().RunAsync(Config, ["cleanupcode", _solutionPath], Ct));
 
-        // Assert
-        ExitLine().Property("ExitCode").ShouldBe(3);
+        // Assert — at Information like a clean exit: a jb that reported failure is an outcome, not an incident.
+        LogEntry exited = ShouldHaveSingleExitLine();
+        exited.Level.ShouldBe(LogLevel.Information);
+        exited.Property("ExitCode").ShouldBe(3);
     }
 
     [Fact]
@@ -99,7 +101,7 @@ public sealed class JbRunnerLoggingTests : IDisposable
         await Runner().RunAsync(Config, ["inspectcode", _solutionPath], Ct);
 
         // Assert
-        StartingLine().Property("CacheState").ShouldBe("cold (none on disk)");
+        ShouldHaveSingleStartingLine().Property("CacheState").ShouldBe("cold (none on disk)");
     }
 
     [Fact]
@@ -113,7 +115,7 @@ public sealed class JbRunnerLoggingTests : IDisposable
         await Runner().RunAsync(Config, ["inspectcode", _solutionPath], Ct);
 
         // Assert — warm, with the marker's age and the directory jb is about to open.
-        var state = StartingLine().Property("CacheState").ShouldBeOfType<string>();
+        var state = ShouldHaveSingleStartingLine().Property("CacheState").ShouldBeOfType<string>();
         state.ShouldStartWith("warm (");
         state.ShouldContain(Path.GetFileName(generation));
     }
@@ -133,7 +135,7 @@ public sealed class JbRunnerLoggingTests : IDisposable
         // Assert — read from disk alone this is indistinguishable from the remnant a killed run leaves, because
         // a seed stamps no marker; only a run that succeeds stamps one. Only the transplant knows, so only it
         // can say.
-        StartingLine().Property("CacheState").ShouldBeOfType<string>().ShouldStartWith("seeded from a sibling checkout (");
+        ShouldHaveSingleStartingLine().Property("CacheState").ShouldBeOfType<string>().ShouldStartWith("seeded from a sibling checkout (");
     }
 
     [Fact]
@@ -149,7 +151,7 @@ public sealed class JbRunnerLoggingTests : IDisposable
         await Runner().RunAsync(Configs.Bare(_solutionPath, _cacheHome, "2026.2.1"), ["inspectcode", _solutionPath], Ct);
 
         // Assert
-        StartingLine().Property("CacheState")
+        ShouldHaveSingleStartingLine().Property("CacheState")
             .ShouldBe("stale (cache written by jb 2026.2.0.2, this is 2026.2.1, and jb rebuilds it)");
     }
 
@@ -165,7 +167,7 @@ public sealed class JbRunnerLoggingTests : IDisposable
         await Runner().RunAsync(Config, ["inspectcode", _solutionPath], Ct);
 
         // Assert
-        StartingLine().Property("CacheState").ShouldBeOfType<string>().ShouldStartWith("part-built (");
+        ShouldHaveSingleStartingLine().Property("CacheState").ShouldBeOfType<string>().ShouldStartWith("part-built (");
     }
 
     [Fact]
@@ -180,7 +182,7 @@ public sealed class JbRunnerLoggingTests : IDisposable
         await Runner().RunAsync(Config, ["inspectcode", _solutionPath], Ct);
 
         // Assert
-        StartingLine().Property("CacheState").ShouldBe("cold after a reset (none on disk)");
+        ShouldHaveSingleStartingLine().Property("CacheState").ShouldBe("cold after a reset (none on disk)");
     }
 
     [Fact]
@@ -197,10 +199,9 @@ public sealed class JbRunnerLoggingTests : IDisposable
         // Assert — the first run has nothing to quote and reads as a plain cold line; the second carries the
         // figure, keyed by the band. A stubbed run finishes in microseconds, which rounds and clamps to one
         // second on both sides of the record.
-        IReadOnlyList<LogEntry> opened = _logs.WithProperty("CacheState");
-        opened.Count.ShouldBe(2);
-        opened[0].Property("CacheState").ShouldBe("cold (none on disk)");
-        opened[1].Property("CacheState").ShouldBe("cold (none on disk; the last cold run took 1 second)");
+        _logs.WithProperty("CacheState")
+            .Select(entry => entry.Property("CacheState"))
+            .ShouldBe(new object?[] { "cold (none on disk)", "cold (none on disk; the last cold run took 1 second)" });
     }
 
     [Fact]
@@ -244,7 +245,7 @@ public sealed class JbRunnerLoggingTests : IDisposable
         // Assert — no exit code to report, so the cap is reported instead, at the same level, and identified
         // by RunCap alone. It carries the count as well as the message does: a UserErrorException is never
         // logged, so without it the only record of how far a killed run got dies with the response.
-        LogEntry killed = _logs.WithProperty("RunCap").ShouldHaveSingleItem();
+        LogEntry killed = _logs.ShouldHaveSingleLineWith("RunCap");
         killed.Level.ShouldBe(LogLevel.Information);
         killed.Property("Subcommand").ShouldBe("inspectcode");
         killed.Property("ElapsedMs").ShouldNotBeNull();
@@ -275,7 +276,7 @@ public sealed class JbRunnerLoggingTests : IDisposable
 
         // Assert — no exit code and no cap to report, so the run's end is a line of its own, at the same level,
         // carrying neither CacheState nor ExitCode nor RunCap, so it reads as none of the other three.
-        LogEntry cancelled = _logs.WithProperty("ElapsedMs").ShouldHaveSingleItem();
+        LogEntry cancelled = _logs.ShouldHaveSingleLineWith("ElapsedMs");
         cancelled.Level.ShouldBe(LogLevel.Information);
         cancelled.Property("Subcommand").ShouldBe("inspectcode");
         cancelled.Property("CacheState").ShouldBeNull();
@@ -294,18 +295,22 @@ public sealed class JbRunnerLoggingTests : IDisposable
         await Runner().TryRunAsync(Config, ["inspectcode", _solutionPath], Ct);
 
         // Assert
-        StartingLine().Property("RunKind").ShouldBe("speculative");
+        ShouldHaveSingleStartingLine().Property("RunKind").ShouldBe("speculative");
     }
 
-    /// <summary>Returns the opening line, identified by the property only it carries.</summary>
-    private LogEntry StartingLine()
+    /// <summary>
+    ///     Asserts that exactly one opening line was written, identified by the property only it carries, and
+    ///     returns it.
+    /// </summary>
+    private LogEntry ShouldHaveSingleStartingLine()
     {
-        return _logs.WithProperty("CacheState").ShouldHaveSingleItem();
+        return _logs.ShouldHaveSingleLineWith("CacheState");
     }
 
-    private LogEntry ExitLine()
+    /// <summary>Asserts that exactly one exit line was written, and returns it.</summary>
+    private LogEntry ShouldHaveSingleExitLine()
     {
-        return _logs.WithProperty("ExitCode").ShouldHaveSingleItem();
+        return _logs.ShouldHaveSingleLineWith("ExitCode");
     }
 
     private JbRunner Runner()

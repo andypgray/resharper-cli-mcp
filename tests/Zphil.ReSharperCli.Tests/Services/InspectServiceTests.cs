@@ -41,8 +41,9 @@ public sealed class InspectServiceTests : IDisposable
         string? outputPath = null;
         StubRun(callInfo =>
         {
-            outputPath = JbStubs.OutputPathOf(callInfo.Arguments())!;
-            File.WriteAllText(outputPath, sarif);
+            IReadOnlyList<string> arguments = callInfo.Arguments();
+            outputPath = JbStubs.OutputPathOf(arguments);
+            JbStubs.WriteSarifIfRequested(arguments, sarif);
             return JbStubs.Success;
         });
 
@@ -51,8 +52,8 @@ public sealed class InspectServiceTests : IDisposable
 
         // Assert
         issues.Count.ShouldBe(3);
-        outputPath.ShouldNotBeNull();
-        Directory.Exists(Path.GetDirectoryName(outputPath!)).ShouldBeFalse();
+        string reportPath = outputPath.ShouldNotBeNull();
+        Directory.Exists(Path.GetDirectoryName(reportPath)).ShouldBeFalse($"the temp directory around {reportPath} should be gone");
     }
 
     [Fact]
@@ -62,7 +63,7 @@ public sealed class InspectServiceTests : IDisposable
         string? outputPath = null;
         StubRun(callInfo =>
         {
-            outputPath = JbStubs.OutputPathOf(callInfo.Arguments())!;
+            outputPath = JbStubs.OutputPathOf(callInfo.Arguments());
             return new ProcessResult(5, string.Empty, "boom: analysis failed");
         });
 
@@ -70,10 +71,10 @@ public sealed class InspectServiceTests : IDisposable
         var exception = await Should.ThrowAsync<UserErrorException>(() => _service.RunAsync(_config, null, InspectSeverity.Warning, Ct));
 
         // Assert
-        exception.Message.ShouldContain("5");
+        exception.Message.ShouldContain("exited with code 5.");
         exception.Message.ShouldContain("boom: analysis failed");
-        outputPath.ShouldNotBeNull();
-        Directory.Exists(Path.GetDirectoryName(outputPath!)).ShouldBeFalse();
+        string reportPath = outputPath.ShouldNotBeNull();
+        Directory.Exists(Path.GetDirectoryName(reportPath)).ShouldBeFalse($"the temp directory around {reportPath} should be gone");
     }
 
     [Fact]

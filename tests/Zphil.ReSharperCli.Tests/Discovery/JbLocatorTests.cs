@@ -263,7 +263,7 @@ public sealed class JbLocatorTests : IDisposable
         // Assert — and the line saying why names the build the change replaced.
         installation.Version.ShouldBe("2026.2.3.1");
         await _processRunner.Received(2).AnyRunOf(DotnetToolsCandidate);
-        LogEntry reprobe = _logs.WithProperty("JbVersion").ShouldHaveSingleItem();
+        LogEntry reprobe = _logs.ShouldHaveSingleLineWith("JbVersion");
         reprobe.Level.ShouldBe(LogLevel.Debug);
         reprobe.Property("JbVersion").ShouldBe("2026.2.1");
     }

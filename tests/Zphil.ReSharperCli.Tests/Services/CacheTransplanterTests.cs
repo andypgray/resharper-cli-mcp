@@ -53,7 +53,7 @@ public sealed class CacheTransplanterTests : IDisposable
         File.WriteAllText(Path.Combine(donor, "Db", "000001.log"), "leveldb");
 
         // Act
-        bool seeded = await Transplanter().TryTransplantAsync(ConfigFor(_worktreeSolution), Ct);
+        bool seeded = await Transplanter().TryTransplantAsync(WorktreeConfig(), Ct);
 
         // Assert — planted under the name jb will look for, byte for byte, with the donor untouched.
         seeded.ShouldBeTrue();
@@ -70,10 +70,10 @@ public sealed class CacheTransplanterTests : IDisposable
         // Arrange — the copy is unvalidated until jb opens it. Stamping the target's marker here would both
         // suppress a pre-warm and advertise the copy as a donor, on the strength of nothing having run.
         CacheHomes.PlantWarmDonor(_cacheHome, _mainSolution);
-        ResolvedConfig config = ConfigFor(_worktreeSolution);
+        ResolvedConfig config = WorktreeConfig();
 
         // Act
-        await Transplanter().TryTransplantAsync(config, Ct);
+        (await Transplanter().TryTransplantAsync(config, Ct)).ShouldBeTrue();
 
         // Assert
         JbWarmMarker.IsFreshWithin(config.SolutionPath, _cacheHome, TimeSpan.FromHours(1), NullLogger.Instance).ShouldBeFalse();
@@ -90,7 +90,7 @@ public sealed class CacheTransplanterTests : IDisposable
         File.WriteAllText(Path.Combine(existing, "Db", "CURRENT"), "this solution's own");
 
         // Act
-        bool seeded = await Transplanter().TryTransplantAsync(ConfigFor(_worktreeSolution), Ct);
+        bool seeded = await Transplanter().TryTransplantAsync(WorktreeConfig(), Ct);
 
         // Assert
         seeded.ShouldBeFalse();
@@ -109,7 +109,7 @@ public sealed class CacheTransplanterTests : IDisposable
         File.WriteAllText(Path.Combine(husk, "Db", "CURRENT"), "part-built");
 
         // Act
-        bool seeded = await Transplanter().TryTransplantAsync(ConfigFor(_worktreeSolution), Ct);
+        bool seeded = await Transplanter().TryTransplantAsync(WorktreeConfig(), Ct);
 
         // Assert
         seeded.ShouldBeTrue();
@@ -129,10 +129,10 @@ public sealed class CacheTransplanterTests : IDisposable
         CacheHomes.PlantWarmDonor(_cacheHome, _mainSolution);
         string existing = CacheHomes.PlantGenerationFor(_cacheHome, _worktreeSolution);
         File.WriteAllText(Path.Combine(existing, "Db", "CURRENT"), "warmed by an older build");
-        await File.WriteAllTextAsync(JbWarmMarker.PathFor(_worktreeSolution, _cacheHome), string.Empty, Ct);
+        CacheHomes.PlantEmptyWarmMarker(_cacheHome, _worktreeSolution);
 
         // Act
-        bool seeded = await Transplanter().TryTransplantAsync(ConfigFor(_worktreeSolution), Ct);
+        bool seeded = await Transplanter().TryTransplantAsync(WorktreeConfig(), Ct);
 
         // Assert
         seeded.ShouldBeFalse();
@@ -146,7 +146,7 @@ public sealed class CacheTransplanterTests : IDisposable
         // part way through looks exactly like the husk above. The tombstone is what tells them apart, and it
         // outranks the replacement path: the user asked for cold.
         CacheHomes.PlantWarmDonor(_cacheHome, _mainSolution);
-        ResolvedConfig config = ConfigFor(_worktreeSolution);
+        ResolvedConfig config = WorktreeConfig();
         CacheResetService reset = JbRunners.StandaloneReset(TimeSpan.FromSeconds(1));
         await reset.RunAsync(config, Ct);
         string husk = CacheHomes.PlantGenerationFor(_cacheHome, _worktreeSolution);
@@ -167,7 +167,7 @@ public sealed class CacheTransplanterTests : IDisposable
         // for a cold rebuild must not be handed a copy of the sibling index instead. The reset leaves no
         // generation at all, so the tombstone is the only thing declining here.
         CacheHomes.PlantWarmDonor(_cacheHome, _mainSolution);
-        ResolvedConfig config = ConfigFor(_worktreeSolution);
+        ResolvedConfig config = WorktreeConfig();
         CacheHomes.PlantGenerationFor(_cacheHome, _worktreeSolution);
         CacheResetService reset = JbRunners.StandaloneReset(TimeSpan.FromSeconds(1));
         await reset.RunAsync(config, Ct);
@@ -184,7 +184,7 @@ public sealed class CacheTransplanterTests : IDisposable
     public async Task TryTransplantAsync_NothingElseInTheCacheHome_DeclinesQuietly()
     {
         // Arrange & Act — the first run on a machine. There is nothing to copy, and that is not a fault.
-        bool seeded = await Transplanter().TryTransplantAsync(ConfigFor(_worktreeSolution), Ct);
+        bool seeded = await Transplanter().TryTransplantAsync(WorktreeConfig(), Ct);
 
         // Assert
         seeded.ShouldBeFalse();
@@ -199,7 +199,7 @@ public sealed class CacheTransplanterTests : IDisposable
         CacheHomes.PlantGenerationFor(_cacheHome, _mainSolution);
 
         // Act & Assert
-        (await Transplanter().TryTransplantAsync(ConfigFor(_worktreeSolution), Ct)).ShouldBeFalse();
+        (await Transplanter().TryTransplantAsync(WorktreeConfig(), Ct)).ShouldBeFalse();
     }
 
     [Fact]
@@ -208,10 +208,10 @@ public sealed class CacheTransplanterTests : IDisposable
         // Arrange — an empty marker on the donor, as an older build of this server wrote one: warm, and silent
         // about what it warmed, so seeding declines rather than guess which generation to copy.
         CacheHomes.PlantGenerationFor(_cacheHome, _mainSolution);
-        File.WriteAllText(JbWarmMarker.PathFor(_mainSolution, _cacheHome), string.Empty);
+        CacheHomes.PlantEmptyWarmMarker(_cacheHome, _mainSolution);
 
         // Act & Assert
-        (await Transplanter().TryTransplantAsync(ConfigFor(_worktreeSolution), Ct)).ShouldBeFalse();
+        (await Transplanter().TryTransplantAsync(WorktreeConfig(), Ct)).ShouldBeFalse();
     }
 
     [Fact]
@@ -219,11 +219,16 @@ public sealed class CacheTransplanterTests : IDisposable
     {
         // Arrange — the cache was cleared out from under the marker, by a reset elsewhere or by jb's own
         // clean-up of generations nothing has used for a while.
+        CapturingLoggerProvider logs = new();
         string donor = CacheHomes.PlantWarmDonor(_cacheHome, _mainSolution);
         Directory.Delete(donor, true);
 
-        // Act & Assert
-        (await Transplanter().TryTransplantAsync(ConfigFor(_worktreeSolution), Ct)).ShouldBeFalse();
+        // Act
+        bool seeded = await Transplanter(logs).TryTransplantAsync(WorktreeConfig(), Ct);
+
+        // Assert — declined for want of a donor, not after taking the gone one and failing to copy it.
+        seeded.ShouldBeFalse();
+        ShouldHaveSingleDecline(logs).Property("DeclineReason").ShouldBe("no warm cache of another copy of this solution to copy");
     }
 
     [Theory]
@@ -239,7 +244,7 @@ public sealed class CacheTransplanterTests : IDisposable
         CacheHomes.PlantWarmDonor(_cacheHome, _mainSolution, donorJbVersion);
 
         // Act & Assert
-        (await Transplanter().TryTransplantAsync(ConfigFor(_worktreeSolution, "2026.2.1"), Ct)).ShouldBeFalse();
+        (await Transplanter().TryTransplantAsync(WorktreeConfig("2026.2.1"), Ct)).ShouldBeFalse();
     }
 
     [Fact]
@@ -250,7 +255,7 @@ public sealed class CacheTransplanterTests : IDisposable
         CacheHomes.PlantWarmDonor(_cacheHome, _mainSolution, "2026.2.1");
 
         // Act
-        bool seeded = await Transplanter().TryTransplantAsync(ConfigFor(_worktreeSolution, "2026.2.1"), Ct);
+        bool seeded = await Transplanter().TryTransplantAsync(WorktreeConfig("2026.2.1"), Ct);
 
         // Assert
         seeded.ShouldBeTrue();
@@ -264,7 +269,7 @@ public sealed class CacheTransplanterTests : IDisposable
         CacheHomes.PlantWarmDonor(_cacheHome, _environment.CreateSolutionPath("Other.sln"));
 
         // Act & Assert
-        (await Transplanter().TryTransplantAsync(ConfigFor(_worktreeSolution), Ct)).ShouldBeFalse();
+        (await Transplanter().TryTransplantAsync(WorktreeConfig(), Ct)).ShouldBeFalse();
     }
 
     [Fact]
@@ -272,14 +277,15 @@ public sealed class CacheTransplanterTests : IDisposable
     {
         // Arrange — several checkouts of one repository, analysed at different times. The freshest cache is
         // the closest to this worktree's code, so it is the one worth the copy.
-        string stale = CacheHomes.PlantWarmDonor(_cacheHome, _environment.CreateSolutionPath("App.sln"));
+        string staleSolution = _environment.CreateSolutionPath("App.sln");
+        string stale = CacheHomes.PlantWarmDonor(_cacheHome, staleSolution);
         File.WriteAllText(Path.Combine(stale, "Db", "CURRENT"), "stale");
         string fresh = CacheHomes.PlantWarmDonor(_cacheHome, _mainSolution);
         File.WriteAllText(Path.Combine(fresh, "Db", "CURRENT"), "fresh");
-        AgeMarker(stale, TimeSpan.FromHours(2));
+        CacheHomes.BackDateWarmMarker(_cacheHome, staleSolution, TimeSpan.FromHours(2));
 
         // Act
-        await Transplanter().TryTransplantAsync(ConfigFor(_worktreeSolution), Ct);
+        await Transplanter().TryTransplantAsync(WorktreeConfig(), Ct);
 
         // Assert
         string target = TargetPath();
@@ -295,7 +301,7 @@ public sealed class CacheTransplanterTests : IDisposable
         await using FileStream held = CacheHomes.HoldLockFile(_cacheHome, _mainSolution);
 
         // Act
-        bool seeded = await Transplanter().TryTransplantAsync(ConfigFor(_worktreeSolution), Ct);
+        bool seeded = await Transplanter().TryTransplantAsync(WorktreeConfig(), Ct);
 
         // Assert
         seeded.ShouldBeFalse();
@@ -319,7 +325,7 @@ public sealed class CacheTransplanterTests : IDisposable
     {
         // Act — cancellation is how a foreground call reclaims a cache generation, so it arrives mid-copy by
         // design rather than by accident.
-        await TransplantCancelledMidCopyAsync();
+        await ShouldThrowWhenCancelledMidCopyAsync();
 
         // Assert — cancellation is the one thing this reports by throwing, and it takes the partial copy with
         // it: neither a generation jb could open nor a stray tree nothing would ever clean up.
@@ -336,7 +342,7 @@ public sealed class CacheTransplanterTests : IDisposable
         await File.WriteAllTextAsync(TargetPath(), string.Empty, Ct);
 
         // Act
-        bool seeded = await Transplanter().TryTransplantAsync(ConfigFor(_worktreeSolution), Ct);
+        bool seeded = await Transplanter().TryTransplantAsync(WorktreeConfig(), Ct);
 
         // Assert — the call it was speeding up carries on, and the half-made copy does not outlive it.
         seeded.ShouldBeFalse();
@@ -354,7 +360,7 @@ public sealed class CacheTransplanterTests : IDisposable
         File.WriteAllText(Path.Combine(leftover, "Db", "CURRENT"), "abandoned");
 
         // Act
-        bool seeded = await Transplanter().TryTransplantAsync(ConfigFor(_worktreeSolution), Ct);
+        bool seeded = await Transplanter().TryTransplantAsync(WorktreeConfig(), Ct);
 
         // Assert
         seeded.ShouldBeTrue();
@@ -373,7 +379,7 @@ public sealed class CacheTransplanterTests : IDisposable
         await File.WriteAllTextAsync(Path.Combine(husk, "Db", "CURRENT"), "part-built", Ct);
 
         // Act
-        await TransplantCancelledMidCopyAsync();
+        await ShouldThrowWhenCancelledMidCopyAsync();
 
         // Assert — the remnant is exactly as it was, because the delete only ever happens after the whole
         // copy is standing beside it. Cancellation can cost the copy and nothing else.
@@ -392,7 +398,7 @@ public sealed class CacheTransplanterTests : IDisposable
         await File.WriteAllTextAsync(InProgressPath(), string.Empty, Ct);
 
         // Act
-        bool seeded = await Transplanter().TryTransplantAsync(ConfigFor(_worktreeSolution), Ct);
+        bool seeded = await Transplanter().TryTransplantAsync(WorktreeConfig(), Ct);
 
         // Assert — declined, and the run about to start still has the remnant to resume.
         seeded.ShouldBeFalse();
@@ -412,7 +418,7 @@ public sealed class CacheTransplanterTests : IDisposable
         using (CacheHomes.BlockDeletionOf(husk))
         {
             // Act
-            seeded = await Transplanter().TryTransplantAsync(ConfigFor(_worktreeSolution), Ct);
+            seeded = await Transplanter().TryTransplantAsync(WorktreeConfig(), Ct);
         }
 
         // Assert — read once the hold is released, since on Windows it is the file itself being held. The
@@ -432,7 +438,7 @@ public sealed class CacheTransplanterTests : IDisposable
         string fork = CacheHomes.PlantFork(_cacheHome, husk);
 
         // Act
-        bool seeded = await Transplanter().TryTransplantAsync(ConfigFor(_worktreeSolution), Ct);
+        bool seeded = await Transplanter().TryTransplantAsync(WorktreeConfig(), Ct);
 
         // Assert — the copy lands in the generation jb opens, and the fork goes with the remnant it was
         // forked from rather than being left to describe a cache that no longer exists.
@@ -454,7 +460,7 @@ public sealed class CacheTransplanterTests : IDisposable
         using (CacheHomes.BlockDeletionOf(fork))
         {
             // Act
-            seeded = await Transplanter().TryTransplantAsync(ConfigFor(_worktreeSolution), Ct);
+            seeded = await Transplanter().TryTransplantAsync(WorktreeConfig(), Ct);
         }
 
         // Assert — seeded regardless, with the fork left where a cache reset reclaims it.
@@ -471,7 +477,7 @@ public sealed class CacheTransplanterTests : IDisposable
         // remnant and then be locked out of it for ever.
         CacheHomes.PlantWarmDonor(_cacheHome, _mainSolution);
         CacheHomes.PlantGenerationFor(_cacheHome, _worktreeSolution);
-        ResolvedConfig config = ConfigFor(_worktreeSolution);
+        ResolvedConfig config = WorktreeConfig();
 
         // Act
         (await Transplanter().TryTransplantAsync(config, Ct)).ShouldBeTrue();
@@ -487,7 +493,7 @@ public sealed class CacheTransplanterTests : IDisposable
     {
         // Arrange — a cache home no path API will accept. This runs on the way into a call the user made, and
         // has no claim on failing one.
-        ResolvedConfig config = ConfigFor(_worktreeSolution) with { CacheHome = _cacheHome + "\0invalid" };
+        ResolvedConfig config = WorktreeConfig() with { CacheHome = _cacheHome + "\0invalid" };
 
         // Act & Assert
         (await Transplanter().TryTransplantAsync(config, Ct)).ShouldBeFalse();
@@ -510,10 +516,10 @@ public sealed class CacheTransplanterTests : IDisposable
         CapturingLoggerProvider logs = new();
 
         // Act
-        await Transplanter(logs).TryTransplantAsync(ConfigFor(_worktreeSolution), Ct);
+        await Transplanter(logs).TryTransplantAsync(WorktreeConfig(), Ct);
 
         // Assert
-        LogEntry decline = Decline(logs);
+        LogEntry decline = ShouldHaveSingleDecline(logs);
         decline.Level.ShouldBe(LogLevel.Information);
         decline.Property("DeclineReason").ShouldBe("no warm cache of another copy of this solution to copy");
     }
@@ -527,10 +533,10 @@ public sealed class CacheTransplanterTests : IDisposable
         JbColdTombstone.Write(_worktreeSolution, _cacheHome, NullLogger.Instance);
 
         // Act
-        await Transplanter(logs).TryTransplantAsync(ConfigFor(_worktreeSolution), Ct);
+        await Transplanter(logs).TryTransplantAsync(WorktreeConfig(), Ct);
 
         // Assert
-        LogEntry decline = Decline(logs);
+        LogEntry decline = ShouldHaveSingleDecline(logs);
         decline.Level.ShouldBe(LogLevel.Information);
         decline.Property("DeclineReason").ShouldBe("its cache was reset on purpose");
     }
@@ -544,10 +550,10 @@ public sealed class CacheTransplanterTests : IDisposable
         await using FileStream held = CacheHomes.HoldLockFile(_cacheHome, _mainSolution);
 
         // Act
-        await Transplanter(logs).TryTransplantAsync(ConfigFor(_worktreeSolution), Ct);
+        await Transplanter(logs).TryTransplantAsync(WorktreeConfig(), Ct);
 
         // Assert
-        LogEntry decline = Decline(logs);
+        LogEntry decline = ShouldHaveSingleDecline(logs);
         decline.Level.ShouldBe(LogLevel.Information);
         decline.Property("DeclineReason").ShouldBe($"the donor {Path.GetFileName(donor)} is in use elsewhere");
     }
@@ -562,10 +568,10 @@ public sealed class CacheTransplanterTests : IDisposable
         CacheHomes.PlantWarmDonor(_cacheHome, _worktreeSolution);
 
         // Act
-        await Transplanter(logs).TryTransplantAsync(ConfigFor(_worktreeSolution), Ct);
+        await Transplanter(logs).TryTransplantAsync(WorktreeConfig(), Ct);
 
         // Assert
-        LogEntry decline = Decline(logs);
+        LogEntry decline = ShouldHaveSingleDecline(logs);
         decline.Level.ShouldBe(LogLevel.Debug);
         decline.Property("DeclineReason").ShouldBe("a run against it already succeeded");
     }
@@ -580,20 +586,20 @@ public sealed class CacheTransplanterTests : IDisposable
         File.WriteAllText(Path.Combine(donor, "Db", "000001.log"), "leveldb");
 
         // Act
-        await Transplanter(logs).TryTransplantAsync(ConfigFor(_worktreeSolution), Ct);
+        await Transplanter(logs).TryTransplantAsync(WorktreeConfig(), Ct);
 
         // Assert — 5 bytes of "cache" plus 7 of "leveldb", and a recorded duration.
-        LogEntry seeded = logs.WithProperty("DonorBytes").ShouldHaveSingleItem();
+        LogEntry seeded = logs.ShouldHaveSingleLineWith("DonorBytes");
         seeded.Level.ShouldBe(LogLevel.Information);
         seeded.Property("DonorFiles").ShouldBe(2);
         seeded.Property("DonorBytes").ShouldBe(12L);
         seeded.Property("CopiedMs").ShouldNotBeNull();
     }
 
-    /// <summary>Returns the one decline line this transplant wrote, whatever level it chose.</summary>
-    private static LogEntry Decline(CapturingLoggerProvider logs)
+    /// <summary>Asserts that this transplant wrote exactly one decline line, whatever level it chose, and returns it.</summary>
+    private static LogEntry ShouldHaveSingleDecline(CapturingLoggerProvider logs)
     {
-        return logs.WithProperty("DeclineReason").ShouldHaveSingleItem();
+        return logs.ShouldHaveSingleLineWith("DeclineReason");
     }
 
     private CacheTransplanter Transplanter(CapturingLoggerProvider? logs = null)
@@ -614,16 +620,16 @@ public sealed class CacheTransplanterTests : IDisposable
 
     /// <summary>
     ///     Seeds the worktree from a donor big enough that the copy is still running when it is cancelled,
-    ///     cancels it as soon as there is a partial copy to abandon, and returns once it has thrown.
+    ///     cancels it as soon as there is a partial copy to abandon, and asserts that it then throws.
     /// </summary>
-    private async Task TransplantCancelledMidCopyAsync()
+    private async Task ShouldThrowWhenCancelledMidCopyAsync()
     {
         string donor = CacheHomes.PlantWarmDonor(_cacheHome, _mainSolution);
         for (var index = 0; index < 2000; index++)
             await File.WriteAllTextAsync(Path.Combine(donor, "Db", $"{index:D5}.ldb"), "x", Ct);
 
         string inProgress = InProgressPath();
-        using CancellationTokenSource cancelling = new();
+        using var cancelling = CancellationTokenSource.CreateLinkedTokenSource(Ct);
 
         // The token rather than its source: a struct copy, so the running copy cannot end up reading a source
         // this method has already disposed on its way out.
@@ -632,7 +638,7 @@ public sealed class CacheTransplanterTests : IDisposable
         // On the pool, because the copy itself is synchronous: called directly, the whole copy could run on
         // this thread before a task came back to cancel.
         Task<bool> transplant = Task.Run(
-            () => Transplanter().TryTransplantAsync(ConfigFor(_worktreeSolution), reclaimed), Ct);
+            () => Transplanter().TryTransplantAsync(WorktreeConfig(), reclaimed), Ct);
 
         while (!Directory.Exists(inProgress) && !transplant.IsCompleted) await Task.Delay(1, Ct);
         await cancelling.CancelAsync();
@@ -641,23 +647,11 @@ public sealed class CacheTransplanterTests : IDisposable
     }
 
     /// <summary>
-    ///     Returns a config for <paramref name="solutionPath" /> naming no <c>jb</c> version unless
-    ///     <paramref name="jbVersion" /> gives one, which takes the donor's own build out of the decision for
-    ///     every test not about builds.
+    ///     Returns the worktree's config, naming no <c>jb</c> version unless <paramref name="jbVersion" /> gives
+    ///     one, which takes the donor's own build out of the decision for every test not about builds.
     /// </summary>
-    private ResolvedConfig ConfigFor(string solutionPath, string? jbVersion = null)
+    private ResolvedConfig WorktreeConfig(string? jbVersion = null)
     {
-        return Configs.Bare(solutionPath, _cacheHome, jbVersion);
-    }
-
-    /// <summary>Back-dates the warm marker that names <paramref name="generationPath" />.</summary>
-    private void AgeMarker(string generationPath, TimeSpan age)
-    {
-        string generationName = Path.GetFileName(generationPath);
-        string markerPath = JbWarmMarker.FindAll(_cacheHome)
-            .Single(marker => JbWarmMarker.TryReadMarker(marker.MarkerPath, _cacheHome, NullLogger.Instance).GenerationName == generationName)
-            .MarkerPath;
-
-        File.SetLastWriteTimeUtc(markerPath, DateTime.UtcNow - age);
+        return Configs.Bare(_worktreeSolution, _cacheHome, jbVersion);
     }
 }

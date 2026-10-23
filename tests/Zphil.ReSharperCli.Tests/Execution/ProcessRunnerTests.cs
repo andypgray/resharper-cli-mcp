@@ -253,7 +253,7 @@ public sealed class ProcessRunnerTests : IDisposable
 
         // Assert — a child bound to the job dies with this server however it dies. Without the line, the one
         // question a field log cannot answer is whether a particular spawn was covered.
-        LogEntry spawned = logs.WithProperty("OrphanGuard").ShouldHaveSingleItem();
+        LogEntry spawned = logs.ShouldHaveSingleLineWith("OrphanGuard");
         spawned.Property("OrphanGuard").ShouldBe(ChildProcessLifetime.KillOnJobClose);
         spawned.Property("ChildFileName").ShouldBe(fileName);
     }

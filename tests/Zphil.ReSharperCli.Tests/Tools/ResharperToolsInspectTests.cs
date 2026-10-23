@@ -178,7 +178,7 @@ public sealed class ResharperToolsInspectTests : IDisposable
 
         // Assert — no --settings: the pin that the project layer is left able to win.
         inspectArguments.ShouldNotBeNull();
-        inspectArguments.Any(a => a.StartsWith("--settings", StringComparison.Ordinal)).ShouldBeFalse();
+        inspectArguments.ShouldNotContain(argument => argument.StartsWith("--settings", StringComparison.Ordinal));
     }
 
     [Fact]

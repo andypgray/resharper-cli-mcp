@@ -279,7 +279,7 @@ public sealed class JbWarmMarkerTests : IDisposable
     public void Exists_EmptyMarker_IsTrue()
     {
         // Arrange
-        File.WriteAllText(JbWarmMarker.PathFor(SolutionPath, _cacheHome), string.Empty);
+        CacheHomes.PlantEmptyWarmMarker(_cacheHome, SolutionPath);
 
         // Assert — existence is the whole statement, so a marker this server cannot read a name out of
         // still protects the cache it was written for.
@@ -316,7 +316,7 @@ public sealed class JbWarmMarkerTests : IDisposable
     {
         // Arrange — age the marker rather than the test: no sleeping, and the real window stays pinned.
         JbWarmMarker.Stamp(SolutionPath, _cacheHome, NullLogger.Instance);
-        File.SetLastWriteTimeUtc(JbWarmMarker.PathFor(SolutionPath, _cacheHome), DateTime.UtcNow - TimeSpan.FromHours(2));
+        CacheHomes.BackDateWarmMarker(_cacheHome, SolutionPath, TimeSpan.FromHours(2));
 
         // Assert
         JbWarmMarker.IsFreshWithin(SolutionPath, _cacheHome, OneHour, NullLogger.Instance).ShouldBeFalse();

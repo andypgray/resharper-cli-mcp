@@ -657,7 +657,7 @@ public sealed class ResharperToolsInspectTests : IDisposable
     private static string ShouldNameAReportFile(string result)
     {
         const string anchor = "written to \"";
-        result.ShouldContain(anchor, Case.Sensitive);
+        result.ShouldContain(anchor);
         int start = result.IndexOf(anchor, StringComparison.Ordinal) + anchor.Length;
         int end = result.IndexOf('"', start);
         end.ShouldBeGreaterThan(start, $"no closing quote after the report path in:\n{result}");

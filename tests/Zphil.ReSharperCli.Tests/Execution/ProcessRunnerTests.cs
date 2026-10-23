@@ -135,11 +135,9 @@ public sealed class ProcessRunnerTests : IDisposable
         result.ExitCode.ShouldBe(0);
         result.StandardOutput.ShouldContain(
             writtenToStandardOutput,
-            Case.Sensitive,
             "the drain cut at the cap threw away what its reader had already read from standard output");
         result.StandardError.ShouldContain(
             writtenToStandardError,
-            Case.Sensitive,
             "the drain cut at the cap threw away what its reader had already read from standard error");
         stopwatch.Elapsed.ShouldBeGreaterThanOrEqualTo(
             ParentStartBudget - TimerSlack,

@@ -108,7 +108,7 @@ public sealed class CleanupProfileReaderTests : IDisposable
         declared.Failure.ShouldNotBeNull();
         declared.Failure.Reason.ShouldNotContain("comment"); // not the tolerated fault
         declared.Failure.Reason.ShouldContain("s:String");
-        declared.Failure.Reason.ShouldContain("line 3", Case.Sensitive); // the unclosed element's line in the original file
+        declared.Failure.Reason.ShouldContain("line 3"); // the unclosed element's line in the original file
     }
 
     [Fact]

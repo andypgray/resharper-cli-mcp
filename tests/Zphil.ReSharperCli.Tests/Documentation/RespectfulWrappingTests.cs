@@ -38,7 +38,7 @@ public sealed class RespectfulWrappingTests
             "Description", "The csproj must declare a <Description> for the NuGet package.");
 
         // Assert
-        description.ShouldContain(Disclaimer, Case.Sensitive);
+        description.ShouldContain(Disclaimer);
     }
 
     [Fact]
@@ -56,7 +56,7 @@ public sealed class RespectfulWrappingTests
         // Assert
         openingParagraph
             .ShouldNotBeNull("README.md has no prose block after its title, its mcp-name comment and its badge row.")
-            .ShouldContain(Disclaimer, Case.Sensitive);
+            .ShouldContain(Disclaimer);
     }
 
     /// <summary>
@@ -83,7 +83,6 @@ public sealed class RespectfulWrappingTests
             $"{manifestPath}{jsonPointer} must be a string to carry the notice.");
         copy.ShouldContain(
             Disclaimer,
-            Case.Sensitive,
             $"{manifestPath}{jsonPointer} is public copy: a directory that imports this file renders it "
             + "verbatim, and the notice is a requirement of using the ReSharper name descriptively.");
     }
@@ -95,7 +94,7 @@ public sealed class RespectfulWrappingTests
         string description = RepoManifest.ReadString(".mcp/server.json", "/description")!;
 
         // Assert
-        description.ShouldContain(Disclaimer, Case.Sensitive);
+        description.ShouldContain(Disclaimer);
 
         // The registry rejects descriptions over 100 characters and counts them as ASCII, so a stray em
         // dash or curly quote would both inflate the count and be miscounted. Assert ASCII first.

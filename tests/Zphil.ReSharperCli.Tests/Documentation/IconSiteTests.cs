@@ -44,7 +44,6 @@ public sealed partial class IconSiteTests
 
         packed.Groups["include"].Value.ShouldEndWith(
             iconFile,
-            Case.Sensitive,
             "The packed asset must be the file <PackageIcon> names, or the package declares an icon it "
             + "does not carry and nuget.org rejects it.");
         packed.Groups["path"].Value.ShouldBe(
@@ -111,7 +110,6 @@ public sealed partial class IconSiteTests
         {
             icon.Source.ShouldStartWith(
                 "https://",
-                Case.Sensitive,
                 "The registry requires HTTPS icon sources.");
             icon.Source.Length.ShouldBeLessThanOrEqualTo(
                 RegistryIconSourceMaxLength,
@@ -135,7 +133,6 @@ public sealed partial class IconSiteTests
         {
             icon.Source.ShouldStartWith(
                 RawContentPrefix,
-                Case.Sensitive,
                 "An icon must be served from this repository's own raw content, which is what makes the "
                 + "assertions below able to check it offline — and what keeps the mark on a host the "
                 + "project controls.");

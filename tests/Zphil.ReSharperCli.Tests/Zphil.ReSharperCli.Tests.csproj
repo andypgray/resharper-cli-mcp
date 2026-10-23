@@ -30,8 +30,8 @@
          still puts [Property] in the FsCheck.Xunit namespace. FsCheck itself is referenced directly rather
          than left transitive so Dependabot tracks the version the property tests are written against. -->
     <ItemGroup>
-        <PackageReference Include="FsCheck" Version="3.4.0" />
-        <PackageReference Include="FsCheck.Xunit.v3" Version="3.4.0" />
+        <PackageReference Include="FsCheck" Version="3.6.0" />
+        <PackageReference Include="FsCheck.Xunit.v3" Version="3.6.0" />
         <PackageReference Include="Microsoft.Testing.Extensions.CodeCoverage" Version="18.12.0" />
         <PackageReference Include="NSubstitute" Version="6.2.0" />
         <PackageReference Include="Shouldly" Version="4.3.0" />

@@ -1,5 +1,4 @@
 using NSubstitute;
-using NSubstitute.Core;
 using Shouldly;
 using Xunit;
 using Zphil.ReSharperCli.Execution;
@@ -18,12 +17,13 @@ public sealed class ResharperToolsResetCacheTests : IDisposable
     private readonly string _cacheHome;
     private readonly FakeEnvironment _environment = new();
     private readonly IProcessRunner _processRunner = Substitute.For<IProcessRunner>();
+    private readonly string _solutionPath;
 
     public ResharperToolsResetCacheTests()
     {
         _cacheHome = _environment.CreateTempDirectory();
         _environment.SetVariable("JB_CACHE_HOME", _cacheHome);
-        _environment.PlantSolution("App.sln");
+        _solutionPath = _environment.PlantSolution("App.sln");
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -37,9 +37,9 @@ public sealed class ResharperToolsResetCacheTests : IDisposable
     public async Task ResetCacheAsync_SolutionWithACachedGeneration_DropsItAndReportsTheColdNextCall()
     {
         // Arrange — end to end through the tool method, discovery included.
-        string ours = CacheHomes.PlantGenerationFor(_cacheHome, Path.Combine(_environment.CurrentDirectory, "App.sln"));
+        string ours = CacheHomes.PlantGenerationFor(_cacheHome, _solutionPath);
         CacheHomes.PlantGeneration(_cacheHome, "_Other.99.00");
-        StubJb();
+        JbStubs.AnswerAsHealthyJb(_processRunner);
         ResharperTools tools = Tools();
 
         // Act
@@ -62,8 +62,8 @@ public sealed class ResharperToolsResetCacheTests : IDisposable
         // in the hash, so this also pins that the reclaim stays inside the path it was given.
         string removed = _environment.CreateSolutionPath("App.sln");
         string theirs = CacheHomes.PlantGenerationFor(_cacheHome, removed);
-        string live = CacheHomes.PlantGenerationFor(_cacheHome, Path.Combine(_environment.CurrentDirectory, "App.sln"));
-        StubJb();
+        string live = CacheHomes.PlantGenerationFor(_cacheHome, _solutionPath);
+        JbStubs.AnswerAsHealthyJb(_processRunner);
         ResharperTools tools = Tools();
 
         // Act
@@ -82,40 +82,20 @@ public sealed class ResharperToolsResetCacheTests : IDisposable
     {
         // Arrange — a reset is a directory delete, not an analysis. Spending a cold jb run here would double
         // the cost of the situation the tool exists to get out of.
-        StubJb();
+        JbStubs.AnswerAsHealthyJb(_processRunner);
         ResharperTools tools = Tools();
 
         // Act
         await tools.ResetCacheAsync(cancellationToken: Ct);
 
         // Assert — the version probe (which is itself an "inspectcode" invocation) and nothing else.
-        await _processRunner.Received(1).AnyRunWith(args => args != null && args.Contains("--version"));
-        await _processRunner.DidNotReceive().AnyRunWith(args => args != null && !args.Contains("--version"));
+        await _processRunner.Received(1).AnyRunWith(args => args != null && JbStubs.IsVersionProbe(args));
+        await _processRunner.DidNotReceive().AnyRunWith(args => args != null && !JbStubs.IsVersionProbe(args));
     }
 
     /// <summary>Builds the tool methods over this class's environment and process runner.</summary>
     private ResharperTools Tools()
     {
         return ToolHarness.Build(_processRunner, _environment);
-    }
-
-    /// <summary>
-    ///     Answers the version probe and succeeds every other run the way a healthy jb does, leaving its cache
-    ///     generation behind — so a test that sees a run it did not expect sees it succeed, not throw.
-    /// </summary>
-    private void StubJb()
-    {
-        _processRunner
-            .AnyRun()
-            .Returns(Route);
-
-        return;
-
-        static ProcessResult Route(CallInfo callInfo)
-        {
-            IReadOnlyList<string> arguments = callInfo.Arguments();
-
-            return JbStubs.IsVersionProbe(arguments) ? JbStubs.VersionProbeAnswer : JbStubs.Succeed(arguments);
-        }
     }
 }

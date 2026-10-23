@@ -1,24 +1,27 @@
 using System.Text.Json;
 using ModelContextProtocol.Client;
-using ModelContextProtocol.Protocol;
 
 namespace Zphil.ReSharperCli.Tests.TestSupport;
 
 /// <summary>
-///     Provides readers over what a client sees of this server: an advertised tool's input schema and a call's
-///     text result.
+///     Provides readers over an advertised tool's input schema, as a client sees it over a real
+///     <c>tools/list</c>.
 /// </summary>
 /// <remarks>
-///     One spelling each, so every test that reads the surface over a real <c>tools/list</c> or
-///     <c>tools/call</c> walks a schema the same way.
+///     One spelling each, so every test that reads the surface walks a schema the same way.
 /// </remarks>
 internal static class ToolSchemas
 {
     /// <summary>Returns the schema of the parameter called <paramref name="propertyName" />.</summary>
-    /// <remarks>Throws when the tool has no such parameter.</remarks>
+    /// <remarks>Throws, naming the tool and what it does advertise, when the tool has no such parameter.</remarks>
     public static JsonElement PropertySchema(this McpClientTool tool, string propertyName)
     {
-        return tool.JsonSchema.GetProperty("properties").GetProperty(propertyName);
+        if (tool.JsonSchema.TryGetProperty("properties", out JsonElement properties)
+            && properties.TryGetProperty(propertyName, out JsonElement schema))
+            return schema;
+
+        throw new KeyNotFoundException(
+            $"{tool.Name} advertises no parameter \"{propertyName}\"; it advertises [{string.Join(", ", tool.PropertyNames())}].");
     }
 
     /// <summary>Returns every parameter name the tool advertises, or empty when its schema lists none.</summary>
@@ -32,7 +35,9 @@ internal static class ToolSchemas
     /// <summary>Returns the values in a parameter's <c>enum</c> array, in declaration order.</summary>
     public static IReadOnlyList<string> EnumValues(this McpClientTool tool, string propertyName)
     {
-        JsonElement values = tool.PropertySchema(propertyName).GetProperty("enum");
+        JsonElement schema = tool.PropertySchema(propertyName);
+        if (!schema.TryGetProperty("enum", out JsonElement values))
+            throw new KeyNotFoundException($"{tool.Name}.{propertyName} advertises no enum array: {schema}");
 
         return values.EnumerateArray().Select(element => element.GetString()!).ToList();
     }
@@ -45,11 +50,5 @@ internal static class ToolSchemas
             return [];
 
         return required.EnumerateArray().Select(element => element.GetString()!).ToList();
-    }
-
-    /// <summary>Returns the text of the first text block, where every tool here puts its whole answer.</summary>
-    public static string Text(this CallToolResult result)
-    {
-        return result.Content.OfType<TextContentBlock>().First().Text;
     }
 }

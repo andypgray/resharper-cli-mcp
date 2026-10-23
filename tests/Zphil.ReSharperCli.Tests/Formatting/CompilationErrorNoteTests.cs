@@ -3,6 +3,7 @@ using Xunit;
 using Zphil.ReSharperCli.Formatting;
 using Zphil.ReSharperCli.Resources;
 using Zphil.ReSharperCli.Sarif;
+using Zphil.ReSharperCli.Tests.TestSupport;
 using Zphil.ReSharperCli.Tools;
 
 namespace Zphil.ReSharperCli.Tests.Formatting;
@@ -53,12 +54,10 @@ public sealed class CompilationErrorNoteTests
         string note = NoteForOneError();
 
         note.ShouldContain("never built or never restored, every unrestored package reference reports here");
-        note.IndexOf("unrestored package", StringComparison.Ordinal)
-            .ShouldBeLessThan(note.IndexOf("stale", StringComparison.Ordinal));
+        note.ShouldContainInOrder("unrestored package", "stale");
         note.ShouldContain("If the build succeeds and an inspect still reports them");
         note.ShouldContain("costs the next call a cold analysis");
-        note.IndexOf("If the build succeeds", StringComparison.Ordinal)
-            .ShouldBeLessThan(note.IndexOf(ResharperTools.ResetCacheToolName, StringComparison.Ordinal));
+        note.ShouldContainInOrder("If the build succeeds", ResharperTools.ResetCacheToolName);
     }
 
     [Fact]

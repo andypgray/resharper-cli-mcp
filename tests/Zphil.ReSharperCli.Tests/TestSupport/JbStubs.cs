@@ -1,3 +1,4 @@
+using NSubstitute;
 using Zphil.ReSharperCli.Discovery;
 using Zphil.ReSharperCli.Execution;
 using Zphil.ReSharperCli.Sarif;
@@ -32,10 +33,10 @@ internal static class JbStubs
         return new ProcessResult(0, $"Version: {version}", string.Empty);
     }
 
-    /// <summary>Determines whether this spawn is discovery's <c>--version</c> probe rather than a run.</summary>
+    /// <summary>Determines whether this spawn is discovery's version probe rather than a run.</summary>
     public static bool IsVersionProbe(IReadOnlyList<string> arguments)
     {
-        return arguments.Contains("--version");
+        return arguments.SequenceEqual(JbLocator.ProbeArguments);
     }
 
     /// <summary>
@@ -49,6 +50,29 @@ internal static class JbStubs
     public static bool IsRunOf(IReadOnlyList<string> arguments, string subcommand)
     {
         return arguments.Count > 0 && arguments[0] == subcommand && !IsVersionProbe(arguments);
+    }
+
+    /// <summary>
+    ///     Arranges <paramref name="runner" /> to answer every spawn as a healthy <c>jb</c> does: the version probe
+    ///     with <see cref="VersionProbeAnswer" />, and any other run by handing its arguments to
+    ///     <paramref name="onRun" /> and answering it with <see cref="Succeed" />, which writes
+    ///     <paramref name="sarif" /> where the run asked for a report.
+    /// </summary>
+    public static void AnswerAsHealthyJb(
+        IProcessRunner runner,
+        string? sarif = null,
+        Action<IReadOnlyList<string>>? onRun = null)
+    {
+        runner
+            .AnyRun()
+            .Returns(callInfo =>
+            {
+                IReadOnlyList<string> arguments = callInfo.Arguments();
+                if (IsVersionProbe(arguments)) return VersionProbeAnswer;
+
+                onRun?.Invoke(arguments);
+                return Succeed(arguments, sarif);
+            });
     }
 
     /// <summary>

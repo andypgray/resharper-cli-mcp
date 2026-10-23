@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Zphil.ReSharperCli.Tests.TestDoubles;
@@ -32,6 +33,10 @@ internal static class Logs
         builder.ClearProviders();
         builder.SetMinimumLevel(LogLevel.Trace);
         builder.AddProvider(provider);
+
+        // A host built from the default configuration adds filter rules from any Logging section, a developer's
+        // Logging__LogLevel__Default included, and a rule outranks the minimum level for every category it names.
+        builder.Services.Configure<LoggerFilterOptions>(options => options.Rules.Clear());
     }
 
     /// <summary>

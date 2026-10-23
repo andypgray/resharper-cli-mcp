@@ -60,7 +60,7 @@ public sealed class WireLogTests
         log.Append(Encoding.UTF8.GetBytes(ToolResultFrame));
 
         // Assert
-        log.Frames.Count.ShouldBe(1);
+        log.Frames.ShouldHaveSingleItem();
         log.ToolResultIndex.ShouldBe(-1);
 
         // Act

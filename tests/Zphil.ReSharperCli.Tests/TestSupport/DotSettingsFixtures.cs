@@ -11,13 +11,13 @@ internal static class DotSettingsFixtures
         """<wpf:ResourceDictionary xml:space="preserve" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:s="clr-namespace:System;assembly=mscorlib" xmlns:wpf="http://schemas.microsoft.com/winfx/2006/xaml/presentation">""";
 
     /// <summary>
-    ///     Writes <paramref name="content" /> as the settings file beside the solution called
-    ///     <paramref name="solutionFileName" /> in <paramref name="directory" /> (the
-    ///     <c>{solution}.DotSettings</c> layer <c>jb</c> and the resolver both find by name) and returns its path.
+    ///     Writes <paramref name="content" /> as the settings file beside <c>App.sln</c> in
+    ///     <paramref name="directory" /> (the <c>{solution}.DotSettings</c> layer <c>jb</c> and the resolver both
+    ///     find by name) and returns its path.
     /// </summary>
-    public static string PlantBeside(string directory, string content, string solutionFileName = "App.sln")
+    public static string PlantBeside(string directory, string content)
     {
-        string path = Path.Combine(directory, solutionFileName + ".DotSettings");
+        string path = Path.Combine(directory, "App.sln.DotSettings");
         File.WriteAllText(path, content);
         return path;
     }

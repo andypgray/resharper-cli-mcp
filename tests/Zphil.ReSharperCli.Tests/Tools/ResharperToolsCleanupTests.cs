@@ -1,5 +1,4 @@
 using NSubstitute;
-using NSubstitute.Core;
 using Shouldly;
 using Xunit;
 using Zphil.ReSharperCli.Execution;
@@ -63,7 +62,7 @@ public sealed class ResharperToolsCleanupTests : IDisposable
         // and after: a small batch renders at DetailLevel.Full, classifying each entry.
         SolutionFiles.Plant(_environment.CurrentDirectory, "src/A.cs");
         SolutionFiles.Plant(_environment.CurrentDirectory, "src/B.cs");
-        StubJb();
+        JbStubs.AnswerAsHealthyJb(_processRunner);
         ResharperTools tools = Tools();
 
         // Act
@@ -82,7 +81,7 @@ public sealed class ResharperToolsCleanupTests : IDisposable
         // Arrange — "0 of 0 file(s) changed on disk" reads as "nothing changed" while jb has rewritten
         // whatever the globs matched. Nothing here is measurable, so nothing here is claimed.
         SolutionFiles.Plant(_environment.CurrentDirectory, "src/A.cs");
-        StubJb();
+        JbStubs.AnswerAsHealthyJb(_processRunner);
         ResharperTools tools = Tools();
 
         // Act
@@ -102,7 +101,7 @@ public sealed class ResharperToolsCleanupTests : IDisposable
         SolutionFiles.Plant(_environment.CurrentDirectory, "src/A.cs");
         SolutionFiles.Plant(_environment.CurrentDirectory, "src/B.cs");
         List<string>? cleanupArguments = null;
-        StubJb(args => cleanupArguments = [.. args]);
+        JbStubs.AnswerAsHealthyJb(_processRunner, onRun: args => cleanupArguments = [.. args]);
         ResharperTools tools = Tools();
 
         // Act
@@ -131,7 +130,7 @@ public sealed class ResharperToolsCleanupTests : IDisposable
             Path.Combine(_environment.CurrentDirectory, "src", "B.cs")
         ];
         List<string>? cleanupArguments = null;
-        StubJb(args => cleanupArguments = [.. args]);
+        JbStubs.AnswerAsHealthyJb(_processRunner, onRun: args => cleanupArguments = [.. args]);
         ResharperTools tools = Tools();
 
         // Act
@@ -170,7 +169,7 @@ public sealed class ResharperToolsCleanupTests : IDisposable
         // Arrange — splitting must not blur which path is wrong: the error names the fragment that does not
         // exist, not the joined string the caller sent, and nothing is rewritten.
         SolutionFiles.Plant(_environment.CurrentDirectory, "src/A.cs");
-        StubJb();
+        JbStubs.AnswerAsHealthyJb(_processRunner);
         ResharperTools tools = Tools();
 
         // Act
@@ -192,14 +191,17 @@ public sealed class ResharperToolsCleanupTests : IDisposable
         // Arrange
         DotSettingsFixtures.PlantBeside(_environment.CurrentDirectory, DotSettingsFixtures.Declaring("House: Keep Named Arguments"));
         SolutionFiles.Plant(_environment.CurrentDirectory, "src/A.cs");
-        StubJb();
+        List<string>? cleanupArguments = null;
+        JbStubs.AnswerAsHealthyJb(_processRunner, onRun: args => cleanupArguments = [.. args]);
         ResharperTools tools = Tools();
 
         // Act
         string result = await tools.CleanupAsync(["src/A.cs"], profile, cancellationToken: Ct);
 
-        // Assert
+        // Assert — the profile jb was given, not only the one the summary names.
         result.ShouldStartWith($"Cleanup completed with profile \"{expected}\".");
+        cleanupArguments.ShouldNotBeNull();
+        cleanupArguments.ShouldContain($"--profile={expected}");
     }
 
     [Fact]
@@ -207,7 +209,7 @@ public sealed class ResharperToolsCleanupTests : IDisposable
     {
         // Arrange — the end of the chain, kept out of the theory above because it plants no settings file.
         SolutionFiles.Plant(_environment.CurrentDirectory, "src/A.cs");
-        StubJb();
+        JbStubs.AnswerAsHealthyJb(_processRunner);
         ResharperTools tools = Tools();
 
         // Act
@@ -224,15 +226,18 @@ public sealed class ResharperToolsCleanupTests : IDisposable
         // resolves no profile at all and silently cleans up with Full Cleanup instead.
         DotSettingsFixtures.PlantBeside(_environment.CurrentDirectory, DotSettingsFixtures.DeclaringBehindIllegalComment("House: Keep Named Arguments"));
         SolutionFiles.Plant(_environment.CurrentDirectory, "src/A.cs");
-        StubJb();
+        List<string>? cleanupArguments = null;
+        JbStubs.AnswerAsHealthyJb(_processRunner, onRun: args => cleanupArguments = [.. args]);
         ResharperTools tools = Tools();
 
         // Act
         string result = await tools.CleanupAsync(["src/A.cs"], cancellationToken: Ct);
 
-        // Assert — recovered, so the caller gets the profile and no warning about it.
+        // Assert — recovered, so jb runs the declared profile, the caller is told so, and no warning follows.
         result.ShouldStartWith("Cleanup completed with profile \"House: Keep Named Arguments\".");
         result.ShouldNotContain("WARNING:");
+        cleanupArguments.ShouldNotBeNull();
+        cleanupArguments.ShouldContain("--profile=House: Keep Named Arguments");
     }
 
     [Fact]
@@ -243,7 +248,7 @@ public sealed class ResharperToolsCleanupTests : IDisposable
         // rather than leaving it in a log nobody reads.
         DotSettingsFixtures.PlantBeside(_environment.CurrentDirectory, DotSettingsFixtures.Unparseable());
         SolutionFiles.Plant(_environment.CurrentDirectory, "src/A.cs");
-        StubJb();
+        JbStubs.AnswerAsHealthyJb(_processRunner);
         ResharperTools tools = Tools();
 
         // Act
@@ -263,7 +268,7 @@ public sealed class ResharperToolsCleanupTests : IDisposable
         string missing = Path.Combine(_environment.CurrentDirectory, "missing.DotSettings");
         _environment.SetVariable("JB_SETTINGS_PATH", missing);
         SolutionFiles.Plant(_environment.CurrentDirectory, "src/A.cs");
-        StubJb();
+        JbStubs.AnswerAsHealthyJb(_processRunner);
         ResharperTools tools = Tools();
 
         // Act
@@ -285,7 +290,7 @@ public sealed class ResharperToolsCleanupTests : IDisposable
         string[] files = [.. Enumerable.Range(0, 20).Select(i => $"src/very/long/path/to/File{i:D3}.cs")];
         foreach (string file in files) SolutionFiles.Plant(_environment.CurrentDirectory, file);
 
-        StubJb();
+        JbStubs.AnswerAsHealthyJb(_processRunner);
         ResharperTools tools = Tools();
 
         // Act
@@ -334,32 +339,7 @@ public sealed class ResharperToolsCleanupTests : IDisposable
     }
 
     /// <summary>
-    ///     Routes the single process-runner substitute by jb sub-command: the version probe, or a
-    ///     <c>cleanupcode</c> run, handed to <paramref name="onCleanup" />. Every run succeeds the way a
-    ///     healthy one does, leaving its cache generation behind.
-    /// </summary>
-    private void StubJb(Action<IReadOnlyList<string>>? onCleanup = null)
-    {
-        _processRunner
-            .AnyRun()
-            .Returns(Route);
-
-        return;
-
-        ProcessResult Route(CallInfo callInfo)
-        {
-            IReadOnlyList<string> arguments = callInfo.Arguments();
-
-            if (JbStubs.IsVersionProbe(arguments)) return JbStubs.VersionProbeAnswer;
-
-            if (JbStubs.IsRunOf(arguments, "cleanupcode")) onCleanup?.Invoke(arguments);
-
-            return JbStubs.Succeed(arguments);
-        }
-    }
-
-    /// <summary>
-    ///     Stubs jb as <see cref="StubJb" /> does, except that a <c>cleanupcode</c> run exits with
+    ///     Stubs jb as <see cref="JbStubs.AnswerAsHealthyJb" /> does, except that a <c>cleanupcode</c> run exits with
     ///     <paramref name="exitCode" /> and <paramref name="standardError" />. The version probe still succeeds,
     ///     or discovery would fail before cleanup ever ran.
     /// </summary>

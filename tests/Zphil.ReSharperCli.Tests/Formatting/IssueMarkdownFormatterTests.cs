@@ -3,6 +3,7 @@ using Shouldly;
 using Xunit;
 using Zphil.ReSharperCli.Formatting;
 using Zphil.ReSharperCli.Sarif;
+using Zphil.ReSharperCli.Tests.TestSupport;
 
 namespace Zphil.ReSharperCli.Tests.Formatting;
 
@@ -65,11 +66,9 @@ public sealed class IssueMarkdownFormatterTests
         string result = IssueMarkdownFormatter.Format(issues, DetailLevel.Full);
 
         // Assert
-        result.IndexOf("### First.cs", StringComparison.Ordinal)
-            .ShouldBeLessThan(result.IndexOf("### Second.cs", StringComparison.Ordinal));
+        result.ShouldContainInOrder("### First.cs", "### Second.cs");
         // Both First.cs issues are collected before the Second.cs heading begins.
-        result.IndexOf("`R3`", StringComparison.Ordinal)
-            .ShouldBeLessThan(result.IndexOf("### Second.cs", StringComparison.Ordinal));
+        result.ShouldContainInOrder("`R3`", "### Second.cs");
     }
 
     [Fact]

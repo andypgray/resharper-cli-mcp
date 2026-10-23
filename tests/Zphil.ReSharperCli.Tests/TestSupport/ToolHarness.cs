@@ -1,9 +1,9 @@
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Zphil.ReSharperCli.Discovery;
 using Zphil.ReSharperCli.Execution;
 using Zphil.ReSharperCli.Infrastructure;
 using Zphil.ReSharperCli.Services;
+using Zphil.ReSharperCli.Tests.TestDoubles;
 using Zphil.ReSharperCli.Tools;
 
 namespace Zphil.ReSharperCli.Tests.TestSupport;
@@ -17,33 +17,31 @@ internal static class ToolHarness
 {
     /// <summary>Builds the tools over the given seams.</summary>
     /// <remarks>
-    ///     <paramref name="logs" /> is wired through the whole graph when a test means to assert on what it
-    ///     logged; omitted, every class logs to a <see cref="NullLogger{T}" />. <paramref name="reportRoot" /> is
-    ///     where <see cref="InspectReportWriter" /> puts the files it writes. The real temp path is a safe default
-    ///     because nothing is written unless a call passes <c>report</c>; a test that passes <c>report</c> should
-    ///     pass a root of its own, such as <c>FakeEnvironment.CreateTempDirectory()</c>, which is deleted with the
-    ///     environment.
+    ///     Every class logs to a <see cref="NullLogger{T}" />; a test that asserts on what the graph logged uses
+    ///     <see cref="McpPipelineHarness.Logs" />. <paramref name="reportRoot" /> is where
+    ///     <see cref="InspectReportWriter" /> puts the files it writes, defaulting to a temp directory of
+    ///     <paramref name="environment" />'s own, so a report is deleted with the environment and never lands
+    ///     in, or prunes, the directory the real server writes to.
     /// </remarks>
     public static ResharperTools Build(
         IProcessRunner processRunner,
-        IEnvironment environment,
-        ILoggerFactory? logs = null,
+        FakeEnvironment environment,
         string? reportRoot = null)
     {
-        JbLocator jbLocator = new(processRunner, environment, Logs.For<JbLocator>(logs));
-        ConfigResolver configResolver = new(jbLocator, environment, Logs.For<ConfigResolver>(logs));
+        JbLocator jbLocator = new(processRunner, environment, NullLogger<JbLocator>.Instance);
+        ConfigResolver configResolver = new(jbLocator, environment, NullLogger<ConfigResolver>.Instance);
 
         // One lock and one yield for the whole graph, shared by the runner and the reset as the composition
         // root shares them.
-        JbRunLock runLock = JbRunners.Lock(logs: logs);
-        JbRunYield runYield = JbRunners.Yield(logs);
-        JbRunner jbRunner = JbRunners.Create(processRunner, runLock, runYield, logs: logs);
+        JbRunLock runLock = JbRunners.Lock();
+        JbRunYield runYield = JbRunners.Yield();
+        JbRunner jbRunner = JbRunners.Create(processRunner, runLock, runYield);
 
         InspectService inspectService = new(jbRunner);
-        CleanupService cleanupService = new(jbRunner, Logs.For<CleanupService>(logs));
-        CacheResetService cacheResetService = JbRunners.Reset(runLock, runYield, logs);
+        CleanupService cleanupService = new(jbRunner, NullLogger<CleanupService>.Instance);
+        CacheResetService cacheResetService = JbRunners.Reset(runLock, runYield);
         InspectReportWriter reportWriter = new(
-            reportRoot ?? Path.GetTempPath(), Logs.For<InspectReportWriter>(logs));
+            reportRoot ?? environment.CreateTempDirectory(), NullLogger<InspectReportWriter>.Instance);
         return new ResharperTools(
             configResolver,
             inspectService,
@@ -51,6 +49,6 @@ internal static class ToolHarness
             cacheResetService,
             reportWriter,
             environment,
-            Logs.For<ResharperTools>(logs));
+            NullLogger<ResharperTools>.Instance);
     }
 }

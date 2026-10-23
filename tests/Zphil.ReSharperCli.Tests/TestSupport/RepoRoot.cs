@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 namespace Zphil.ReSharperCli.Tests.TestSupport;
 
 /// <summary>
@@ -17,12 +19,6 @@ internal static class RepoRoot
 
     private const string SolutionFileName = "Zphil.ReSharperCli.slnx";
 
-    /// <summary>
-    ///     Directory names whose contents are never committed: build output, the release staging tree, and
-    ///     git's own store. Matched case-insensitively, as a case-insensitive file system would.
-    /// </summary>
-    private static readonly string[] UncommittedDirectories = ["bin", "obj", "artifacts", ".git"];
-
     /// <summary>Gets the absolute path to the repository root.</summary>
     public static string Location { get; } = Locate();
 
@@ -34,25 +30,42 @@ internal static class RepoRoot
     }
 
     /// <summary>
-    ///     Returns every file under the root matching <paramref name="pattern" />, in ordinal order, outside the
-    ///     directories that hold build output or git's store: the working tree's own files rather than copies of
-    ///     them that a build or a release stage left behind.
+    ///     Returns the absolute path of every file git tracks under the root whose path matches the git pathspec
+    ///     <paramref name="pattern" />, in ordinal order: the set a CI checkout holds, rather than whatever build
+    ///     output, release staging or gitignored local files the working tree has beside it.
     /// </summary>
+    /// <remarks>
+    ///     Asks <c>git ls-files</c>, so it needs git on <c>PATH</c> and a checkout rather than a source archive,
+    ///     and throws with git's own error when either is missing. A tracked file deleted from the working tree
+    ///     is left out, because a caller reads every path it is given.
+    /// </remarks>
     public static IReadOnlyList<string> EnumerateCommitted(string pattern)
     {
-        return Directory
-            .EnumerateFiles(Location, pattern, SearchOption.AllDirectories)
-            .Where(path => !IsUnderUncommittedDirectory(path))
+        ProcessStartInfo startInfo = new("git")
+        {
+            WorkingDirectory = Location,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false
+        };
+        foreach (string argument in new[] { "ls-files", "-z", "--", pattern }) startInfo.ArgumentList.Add(argument);
+
+        using Process git = Process.Start(startInfo)
+                            ?? throw new InvalidOperationException("git ls-files could not be started.");
+        Task<string> standardError = git.StandardError.ReadToEndAsync();
+        string standardOutput = git.StandardOutput.ReadToEnd();
+        git.WaitForExit();
+
+        if (git.ExitCode != 0)
+            throw new InvalidOperationException(
+                $"git ls-files -- {pattern} exited {git.ExitCode} in {Location}: {standardError.Result.Trim()}");
+
+        return standardOutput
+            .Split('\0', StringSplitOptions.RemoveEmptyEntries)
+            .Select(relativePath => Path.GetFullPath(Path.Combine(Location, relativePath)))
+            .Where(File.Exists)
             .OrderBy(path => path, StringComparer.Ordinal)
             .ToList();
-    }
-
-    private static bool IsUnderUncommittedDirectory(string path)
-    {
-        string relativePath = Path.GetRelativePath(Location, path);
-        string[] segments = relativePath.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-
-        return segments.Any(segment => UncommittedDirectories.Contains(segment, StringComparer.OrdinalIgnoreCase));
     }
 
     private static string Locate()

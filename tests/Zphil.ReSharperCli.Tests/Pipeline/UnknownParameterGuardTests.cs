@@ -35,7 +35,7 @@ public sealed class UnknownParameterGuardTests(AdvertisedToolsFixture advertised
         // the SDK binds each argument by its parameter's exact name, so a casing slip binds nothing either. Each
         // call also omits the required "files", so these rows pin that an unknown key is reported first.
         string? message = UnknownParameterGuard.Validate(
-            ToolNamed("resharper_cleanup"),
+            ShouldAdvertiseTool("resharper_cleanup"),
             new Dictionary<string, JsonElement> { [key] = DummyValue });
 
         // Assert
@@ -47,7 +47,7 @@ public sealed class UnknownParameterGuardTests(AdvertisedToolsFixture advertised
     {
         // Act — a representative subset of resharper_inspect's real parameters.
         string? message = UnknownParameterGuard.Validate(
-            ToolNamed("resharper_inspect"),
+            ShouldAdvertiseTool("resharper_inspect"),
             new Dictionary<string, JsonElement>
             {
                 ["solutionPath"] = DummyValue,
@@ -62,14 +62,14 @@ public sealed class UnknownParameterGuardTests(AdvertisedToolsFixture advertised
     [Fact]
     public void Validate_NullArgumentsOnInspect_ReturnsNull()
     {
-        UnknownParameterGuard.Validate(ToolNamed("resharper_inspect"), null).ShouldBeNull();
+        UnknownParameterGuard.Validate(ShouldAdvertiseTool("resharper_inspect"), null).ShouldBeNull();
     }
 
     [Fact]
     public void Validate_EmptyArgumentsOnInspect_ReturnsNull()
     {
         UnknownParameterGuard.Validate(
-            ToolNamed("resharper_inspect"),
+            ShouldAdvertiseTool("resharper_inspect"),
             new Dictionary<string, JsonElement>()).ShouldBeNull();
     }
 
@@ -79,7 +79,7 @@ public sealed class UnknownParameterGuardTests(AdvertisedToolsFixture advertised
     {
         // Act
         string? message = UnknownParameterGuard.Validate(
-            ToolNamed("resharper_cleanup"),
+            ShouldAdvertiseTool("resharper_cleanup"),
             keys?.ToDictionary(key => key, _ => DummyValue));
 
         // Assert
@@ -91,16 +91,19 @@ public sealed class UnknownParameterGuardTests(AdvertisedToolsFixture advertised
     {
         // Act — the key is present, so the tool's own empty-list error answers it, not the guard.
         string? message = UnknownParameterGuard.Validate(
-            ToolNamed("resharper_cleanup"),
+            ShouldAdvertiseTool("resharper_cleanup"),
             new Dictionary<string, JsonElement> { ["files"] = DummyValue });
 
         // Assert
         message.ShouldBeNull();
     }
 
-    /// <summary>Returns the advertised tool named <paramref name="name" />, as the guard is handed it.</summary>
-    private Tool ToolNamed(string name)
+    /// <summary>
+    ///     Returns the advertised tool named <paramref name="name" />, as the guard is handed it, asserting there is
+    ///     exactly one.
+    /// </summary>
+    private Tool ShouldAdvertiseTool(string name)
     {
-        return advertised.Tools.Single(tool => tool.Name == name).ProtocolTool;
+        return advertised.Tools.ShouldAdvertise(name).ProtocolTool;
     }
 }

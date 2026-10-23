@@ -2,10 +2,8 @@ using System.Text.Json;
 using ModelContextProtocol;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
-using NSubstitute;
 using Shouldly;
 using Xunit;
-using Zphil.ReSharperCli.Execution;
 using Zphil.ReSharperCli.Tests.TestSupport;
 
 namespace Zphil.ReSharperCli.Tests.Pipeline;
@@ -43,8 +41,8 @@ public sealed class CoercionIntegrationTests(AdvertisedToolsFixture advertised)
     public void ListTools_FilesParameter_AdvertisesArrayOfStringsRequiredByCleanupAndNotByInspect()
     {
         // Arrange
-        McpClientTool cleanup = advertised.Tools.Single(tool => tool.Name == "resharper_cleanup");
-        McpClientTool inspect = advertised.Tools.Single(tool => tool.Name == "resharper_inspect");
+        McpClientTool cleanup = advertised.Tools.ShouldAdvertise("resharper_cleanup");
+        McpClientTool inspect = advertised.Tools.ShouldAdvertise("resharper_inspect");
 
         // Act
         JsonElement files = cleanup.PropertySchema("files");
@@ -63,7 +61,7 @@ public sealed class CoercionIntegrationTests(AdvertisedToolsFixture advertised)
     public void ListTools_InspectEnumParameter_AdvertisesStringWithItsValues(string parameter, string[] values)
     {
         // Arrange
-        McpClientTool inspect = advertised.Tools.Single(tool => tool.Name == "resharper_inspect");
+        McpClientTool inspect = advertised.Tools.ShouldAdvertise("resharper_inspect");
 
         // Act
         JsonElement schema = inspect.PropertySchema(parameter);
@@ -81,8 +79,8 @@ public sealed class CoercionIntegrationTests(AdvertisedToolsFixture advertised)
         // Arrange — this project's exporter erases every string?/string parameter to a bare {} under
         // StringCoercerFactory, so the scalar-string reinjection is what puts the type back. Assert that a
         // representative one on each tool advertises a plain "string" (not {}, and not a ["string","null"] union).
-        McpClientTool inspect = advertised.Tools.Single(tool => tool.Name == "resharper_inspect");
-        McpClientTool cleanup = advertised.Tools.Single(tool => tool.Name == "resharper_cleanup");
+        McpClientTool inspect = advertised.Tools.ShouldAdvertise("resharper_inspect");
+        McpClientTool cleanup = advertised.Tools.ShouldAdvertise("resharper_cleanup");
 
         // Act — inspect.solutionPath (nullable, no default) and cleanup.profile (a real default).
         JsonElement solutionPath = inspect.PropertySchema("solutionPath");
@@ -101,7 +99,7 @@ public sealed class CoercionIntegrationTests(AdvertisedToolsFixture advertised)
         harness.Environment.PlantSolution("App.sln");
         SolutionFiles.Plant(harness.Environment.CurrentDirectory, "src/A.cs");
         List<string>? cleanupArguments = null;
-        RouteJb(harness.ProcessRunner, arguments => cleanupArguments = [.. arguments]);
+        JbStubs.AnswerAsHealthyJb(harness.ProcessRunner, onRun: arguments => cleanupArguments = [.. arguments]);
 
         // Act
         CallToolResult result = await harness.Client.CallToolAsync(
@@ -110,7 +108,7 @@ public sealed class CoercionIntegrationTests(AdvertisedToolsFixture advertised)
             cancellationToken: Ct);
 
         // Assert — succeeds, and the single file reached jb's --include.
-        result.IsError.ShouldNotBe(true);
+        result.ShouldHaveSucceeded();
         cleanupArguments.ShouldNotBeNull();
         cleanupArguments.ShouldContain("--include=src/A.cs");
     }
@@ -124,7 +122,7 @@ public sealed class CoercionIntegrationTests(AdvertisedToolsFixture advertised)
         SolutionFiles.Plant(harness.Environment.CurrentDirectory, "src/A.cs");
         SolutionFiles.Plant(harness.Environment.CurrentDirectory, "src/B.cs");
         List<string>? cleanupArguments = null;
-        RouteJb(harness.ProcessRunner, arguments => cleanupArguments = [.. arguments]);
+        JbStubs.AnswerAsHealthyJb(harness.ProcessRunner, onRun: arguments => cleanupArguments = [.. arguments]);
 
         // Act
         CallToolResult result = await harness.Client.CallToolAsync(
@@ -133,7 +131,7 @@ public sealed class CoercionIntegrationTests(AdvertisedToolsFixture advertised)
             cancellationToken: Ct);
 
         // Assert — both files reached jb.
-        result.IsError.ShouldNotBe(true);
+        result.ShouldHaveSucceeded();
         cleanupArguments.ShouldNotBeNull();
         cleanupArguments.ShouldContain("--include=src/A.cs;src/B.cs");
     }
@@ -146,10 +144,10 @@ public sealed class CoercionIntegrationTests(AdvertisedToolsFixture advertised)
         harness.Environment.PlantSolution("App.sln");
         string expectedSolution = Path.GetFullPath("App.sln", harness.Environment.CurrentDirectory);
         List<string>? inspectArguments = null;
-        RouteJb(
+        JbStubs.AnswerAsHealthyJb(
             harness.ProcessRunner,
-            arguments => inspectArguments = [.. arguments],
-            Fixtures.ReadSarif("inspect-sample.json"));
+            Fixtures.ReadSarif("inspect-sample.json"),
+            arguments => inspectArguments = [.. arguments]);
 
         // Act
         CallToolResult result = await harness.Client.CallToolAsync(
@@ -158,7 +156,7 @@ public sealed class CoercionIntegrationTests(AdvertisedToolsFixture advertised)
             cancellationToken: Ct);
 
         // Assert — the unwrapped scalar resolved to the solution and reached jb.
-        result.IsError.ShouldNotBe(true);
+        result.ShouldHaveSucceeded();
         inspectArguments.ShouldNotBeNull();
         inspectArguments.ShouldContain(expectedSolution);
     }
@@ -177,7 +175,7 @@ public sealed class CoercionIntegrationTests(AdvertisedToolsFixture advertised)
         // Arrange — the coercer throws inside the SDK argument binder, which wraps it in JsonException(s).
         await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
         harness.Environment.PlantSolution("App.sln");
-        RouteJb(harness.ProcessRunner);
+        JbStubs.AnswerAsHealthyJb(harness.ProcessRunner);
 
         // Act
         CallToolResult result = await harness.Client.CallToolAsync(
@@ -186,8 +184,7 @@ public sealed class CoercionIntegrationTests(AdvertisedToolsFixture advertised)
             cancellationToken: Ct);
 
         // Assert — the friendly valid-values message surfaced, and FindUserError kept it out of the log.
-        result.IsError.ShouldBe(true);
-        string text = result.Text();
+        string text = result.ShouldHaveFailed();
         text.ShouldContain(invalidValue);
         text.ShouldContain($"Valid values: {validValues}");
         harness.Logs.Warnings.ShouldBeEmpty();
@@ -210,8 +207,7 @@ public sealed class CoercionIntegrationTests(AdvertisedToolsFixture advertised)
             cancellationToken: Ct);
 
         // Assert — the guard names the key and the spelling that binds, ahead of the binder, and logs nothing.
-        result.IsError.ShouldBe(true);
-        result.Text().ShouldBe($"Unknown parameter \"{key}\" on \"resharper_cleanup\". Valid: files, profile, solutionPath.");
+        result.ShouldHaveFailed().ShouldBe($"Unknown parameter \"{key}\" on \"resharper_cleanup\". Valid: files, profile, solutionPath.");
         harness.Logs.Warnings.ShouldBeEmpty();
     }
 
@@ -231,8 +227,7 @@ public sealed class CoercionIntegrationTests(AdvertisedToolsFixture advertised)
             cancellationToken: Ct);
 
         // Assert
-        result.IsError.ShouldBe(true);
-        result.Text().ShouldBe("Missing required parameter \"files\" on \"resharper_cleanup\". Valid: files, profile, solutionPath.");
+        result.ShouldHaveFailed().ShouldBe("Missing required parameter \"files\" on \"resharper_cleanup\". Valid: files, profile, solutionPath.");
         harness.Logs.Warnings.ShouldBeEmpty();
     }
 
@@ -269,10 +264,10 @@ public sealed class CoercionIntegrationTests(AdvertisedToolsFixture advertised)
         await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
         harness.Environment.PlantSolution("App.sln");
         List<string>? inspectArguments = null;
-        RouteJb(
+        JbStubs.AnswerAsHealthyJb(
             harness.ProcessRunner,
-            arguments => inspectArguments = [.. arguments],
-            Fixtures.ReadSarif("inspect-sample.json"));
+            Fixtures.ReadSarif("inspect-sample.json"),
+            arguments => inspectArguments = [.. arguments]);
 
         // Act
         CallToolResult result = await harness.Client.CallToolAsync(
@@ -282,33 +277,8 @@ public sealed class CoercionIntegrationTests(AdvertisedToolsFixture advertised)
 
         // Assert — refused before jb ran. The harness leaves the pre-warm off, so the capture can only see
         // this call.
-        result.IsError.ShouldBe(true);
-        result.Text().ShouldStartWith("Unknown parameter \"Severity\" on \"resharper_inspect\". Valid: ");
+        result.ShouldHaveFailed().ShouldStartWith("Unknown parameter \"Severity\" on \"resharper_inspect\". Valid: ");
         inspectArguments.ShouldBeNull();
         harness.Logs.Warnings.ShouldBeEmpty();
-    }
-
-    /// <summary>
-    ///     Routes the process-runner substitute by jb sub-command: the version probe succeeds, and the
-    ///     inspectcode/cleanupcode run is handed to <paramref name="onCommand" /> for argument capture, then
-    ///     answered by <see cref="JbStubs.Succeed" /> with <paramref name="inspectSarif" /> as its report.
-    /// </summary>
-    private static void RouteJb(
-        IProcessRunner processRunner,
-        Action<IReadOnlyList<string>>? onCommand = null,
-        string? inspectSarif = null)
-    {
-        processRunner
-            .AnyRun()
-            .Returns(callInfo =>
-            {
-                IReadOnlyList<string> arguments = callInfo.Arguments();
-
-                if (JbStubs.IsVersionProbe(arguments)) return JbStubs.VersionProbeAnswer;
-
-                onCommand?.Invoke(arguments);
-
-                return JbStubs.Succeed(arguments, inspectSarif);
-            });
     }
 }

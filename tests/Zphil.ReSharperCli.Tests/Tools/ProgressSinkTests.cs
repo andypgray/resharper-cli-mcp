@@ -48,7 +48,6 @@ public sealed class ProgressSinkTests
         // promises more. The values are read in the order the sends started, so this fails if a later number
         // reached one first.
         IReadOnlyList<int> written = sends.Items.Select(sent => sent.Value).ToList();
-        written.Count.ShouldBe(lines);
         written.ShouldBe(Enumerable.Range(1, lines));
     }
 
@@ -62,16 +61,24 @@ public sealed class ProgressSinkTests
 
         await using ProgressSink sink = new(sends.SendAsync, NullLogger.Instance);
 
-        // Act
-        sink.Send("first");
-        await sends.WaitForAsync(1, Ct);
-        sink.Send("second");
+        try
+        {
+            // Act
+            sink.Send("first");
+            await sends.WaitForAsync(1, Ct);
+            sink.Send("second");
 
-        // Assert — the second send has not started, let alone taken a number, while the first is in flight.
-        await Task.Delay(TimeSpan.FromMilliseconds(50), Ct);
-        sends.Count.ShouldBe(1);
+            // Assert — the second send has not started, let alone taken a number, while the first is in flight.
+            await Task.Delay(TimeSpan.FromMilliseconds(50), Ct);
+            sends.Items.ShouldHaveSingleItem();
+        }
+        finally
+        {
+            // Released before the sink's disposal drains the chain, which waits on the held send: without it, a
+            // red above would wait for that send forever instead of being reported.
+            release.TrySetResult();
+        }
 
-        release.SetResult();
         await sends.WaitForAsync(2, Ct);
         sends.Items.Select(sent => (sent.Value, sent.Message))
             .ShouldBe([(1, "first"), (2, "second")]);
@@ -150,16 +157,19 @@ public sealed class ProgressSinkTests
     {
         // Arrange — the heartbeat above the sink still has to run, because it is what leaves JbRunProgress with
         // a file count for the timeout message even for a client that never asked to watch.
+        var server = Substitute.For<McpServer>();
         RequestContext<CallToolRequestParams> context =
-            Dispatched(new CallToolRequestParams { Name = "resharper_inspect" });
+            Dispatched(new CallToolRequestParams { Name = "resharper_inspect" }, server);
 
         // Act
         ProgressSink? sink = ProgressSink.For(context, NullLogger.Instance);
 
-        // Assert — a sink, not a null one, and one that swallows rather than throwing on a missing token.
+        // Assert — a sink, not a null one, and one that swallows rather than throwing on a missing token. The
+        // drain runs any send the line started, so nothing reaching the server after it means nothing was sent.
         sink.ShouldNotBeNull();
         sink.Send("nobody is listening");
         await sink.DisposeAsync();
+        await server.DidNotReceive().SendMessageAsync(Arg.Any<JsonRpcMessage>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -180,12 +190,14 @@ public sealed class ProgressSinkTests
 
     /// <summary>
     ///     Builds a request context of the shape the SDK binds into a tool method, carrying
-    ///     <paramref name="parameters" />.
+    ///     <paramref name="parameters" />, on <paramref name="server" /> or a fresh substitute.
     /// </summary>
-    private static RequestContext<CallToolRequestParams> Dispatched(CallToolRequestParams parameters)
+    private static RequestContext<CallToolRequestParams> Dispatched(
+        CallToolRequestParams parameters,
+        McpServer? server = null)
     {
         return new RequestContext<CallToolRequestParams>(
-            Substitute.For<McpServer>(), new JsonRpcRequest { Method = "tools/call" }, parameters);
+            server ?? Substitute.For<McpServer>(), new JsonRpcRequest { Method = "tools/call" }, parameters);
     }
 
     /// <summary>Represents one send; <paramref name="Value" /> is the <c>progress</c> counter the sink assigned.</summary>

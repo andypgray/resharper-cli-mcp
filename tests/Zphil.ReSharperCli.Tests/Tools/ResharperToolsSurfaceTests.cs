@@ -54,9 +54,12 @@ public sealed class ResharperToolsSurfaceTests(AdvertisedToolsFixture advertised
         IEnumerable<string> names = advertised.Tools
             .Select(tool => tool.Name)
             .Order(StringComparer.Ordinal);
+        IEnumerable<string> pinned = AdvertisedTools
+            .Select(row => row.Data.Item1)
+            .Order(StringComparer.Ordinal);
 
         // Assert
-        names.ShouldBe(["resharper_cleanup", "resharper_inspect", "resharper_reset_cache"]);
+        names.ShouldBe(pinned);
     }
 
     [Theory]
@@ -71,7 +74,7 @@ public sealed class ResharperToolsSurfaceTests(AdvertisedToolsFixture advertised
     {
         // Act — the raw protocol DTO rather than the client wrapper, because that object is what is
         // serialized onto the wire and so what a directory listing renders.
-        Tool tool = advertised.Tools.Single(advertisedTool => advertisedTool.Name == name).ProtocolTool;
+        Tool tool = advertised.Tools.ShouldAdvertise(name).ProtocolTool;
 
         // Assert — the four hints travel together in one annotations object, so a null one loses all four.
         tool.Title.ShouldBe(title);

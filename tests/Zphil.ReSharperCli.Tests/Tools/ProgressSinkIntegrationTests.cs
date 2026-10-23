@@ -52,27 +52,31 @@ public sealed class ProgressSinkIntegrationTests
 
         // Act — the SDK puts a token in the request _meta exactly when a progress handler is supplied. The
         // run is held open until a beat has named the streamed files, so the release cannot outrun the
-        // heartbeat however brisk the harness has made it.
+        // heartbeat however brisk the harness has made it. Two beats, so the heartbeat is repeating rather
+        // than the client having heard a single opening message.
         Task<CallToolResult> call = harness.Client
             .CallToolAsync(ResharperTools.InspectToolName, progress: recorder, cancellationToken: Ct)
             .AsTask();
 
-        await recorder.WaitUntilAsync(
-            () => recorder.Count >= 2 && recorder.Messages.Any(message => message.Contains("analyzing 2 files")),
-            "a repeat beat naming the analysed files",
-            Ct);
-        release.SetResult();
+        try
+        {
+            await recorder.WaitUntilAsync(
+                () => recorder.Count >= 2 && recorder.Messages.Any(message => message.Contains("analyzing 2 files")),
+                "a repeat beat naming the analysed files",
+                Ct);
+        }
+        finally
+        {
+            // In a finally, so a failed wait does not leave the stubbed jb parked on its run lease.
+            release.SetResult();
+        }
+
         CallToolResult result = await call.WaitAsync(Generous, Ct);
-        IReadOnlyList<ProgressNotificationValue> atCompletion = recorder.Items;
+        IReadOnlyList<Heard> atCompletion = recorder.Items;
 
-        // Assert — the run advanced more than once, so the heartbeat is repeating rather than the client
-        // having heard a single opening message.
-        result.IsError.ShouldNotBe(true);
-        atCompletion.Count.ShouldBeGreaterThanOrEqualTo(2);
-
-        // Every message names the run, which is what makes a stuck one tellable from a slow one.
+        // Assert — every message names the run, which is what makes a stuck one tellable from a slow one.
+        result.ShouldHaveSucceeded();
         recorder.Messages.ShouldAllBe(message => message.Contains("inspectcode on App.slnx: "));
-        recorder.Messages.ShouldContain(message => message.Contains("analyzing 2 files"));
 
         // Monotonic, the one thing the protocol asks of `progress`, and read off the wire. ProgressSink numbers
         // a notification inside a chain where each send awaits the one before it, so the wire can be held to
@@ -85,10 +89,10 @@ public sealed class ProgressSinkIntegrationTests
 
         // No `total`, because elapsed-against-cap renders as a filling bar meaning "budget consumed" rather
         // than "work done".
-        atCompletion.ShouldAllBe(value => value.Total == null);
+        atCompletion.ShouldAllBe(heard => heard.Total == null);
 
         // Order-free, and about the client rather than the server: nothing was delivered twice.
-        atCompletion.Select(value => value.Progress).Distinct().Count().ShouldBe(atCompletion.Count);
+        atCompletion.Select(heard => heard.Progress).ShouldBeUnique();
 
         // And nothing reported after the result went out, also off the wire. What puts the last frame ahead of
         // the result is the sink's drain, which the tool method awaits before its answer is serialized. The
@@ -122,8 +126,8 @@ public sealed class ProgressSinkIntegrationTests
 
         try
         {
-            await recorder.WaitUntilAsync(
-                () => recorder.Messages.Any(message => message.Contains("waiting for another run")),
+            await recorder.FirstAsync(
+                heard => heard.Message.Contains("waiting for another run"),
                 "a beat naming the queue wait",
                 Ct);
         }
@@ -143,9 +147,8 @@ public sealed class ProgressSinkIntegrationTests
 
         // Assert — the wait reached the client, labelled as this tool's own work rather than as a jb
         // subcommand, and with no cap in it, since a reset spends none of the run budget.
-        result.IsError.ShouldNotBe(true);
+        result.ShouldHaveSucceeded();
         recorder.Messages.ShouldAllBe(message => message.Contains("cache reset on App.slnx: "));
-        recorder.Messages.ShouldContain(message => message.Contains("waiting for another run"));
         recorder.Messages.ShouldAllBe(message => !message.Contains("cap"));
 
         // The counter, off the wire and held to the same contiguous-from-one contract as the run above, behind
@@ -183,19 +186,21 @@ public sealed class ProgressSinkIntegrationTests
         // to reach the server, so "this one is the holder" has to be observed rather than assumed. A beat
         // naming its analysed files is proof its jb is running and the slot is taken.
         Task<CallToolResult> held = Call(harness, first, holding);
-        await holding.WaitUntilAsync(
-            () => holding.Messages.Any(message => message.Contains("analyzing 2 files")),
-            "the first call's run to be under way and holding the slot",
-            Ct);
-
-        Task<CallToolResult> queued = Call(harness, second, waiting);
+        Task<CallToolResult> queued;
 
         try
         {
+            await holding.FirstAsync(
+                heard => heard.Message.Contains("analyzing 2 files"),
+                "the first call's run to be under way and holding the slot",
+                Ct);
+
+            queued = Call(harness, second, waiting);
+
             // The wait has to outlast JbRunLock.NotableWait before a beat names the run ahead, so this waits
             // it out rather than settling for the immediate "starting".
-            await waiting.WaitUntilAsync(
-                () => waiting.Messages.Any(message => message.Contains("waiting for this server's other jb run")),
+            await waiting.FirstAsync(
+                heard => heard.Message.Contains("waiting for this server's other jb run"),
                 "a beat naming the wait for this server's other run",
                 Ct);
         }
@@ -211,10 +216,9 @@ public sealed class ProgressSinkIntegrationTests
 
         // Assert — both calls got what they came for, in order, and the second's messages are about its own
         // solution rather than the one it waited behind.
-        heldResult.IsError.ShouldNotBe(true);
-        queuedResult.IsError.ShouldNotBe(true);
+        heldResult.ShouldHaveSucceeded();
+        queuedResult.ShouldHaveSucceeded();
         waiting.Messages.ShouldAllBe(message => message.Contains("inspectcode on Second.slnx: "));
-        waiting.Messages.ShouldContain(message => message.Contains("waiting for this server's other jb run"));
 
         // No cap in that clause: nothing is armed while a call waits for the slot, so charging the wait
         // against the run budget would send a caller to raise the one number that was not the problem.
@@ -243,16 +247,16 @@ public sealed class ProgressSinkIntegrationTests
 
         // Assert — both names the parameter could carry, so a rename cannot silently start advertising it and
         // leave a pin passing on a name it no longer uses.
-        result.IsError.ShouldNotBe(true);
+        result.ShouldHaveSucceeded();
         harness.Logs.Warnings.ShouldBeEmpty();
 
-        foreach (McpClientTool tool in tools)
-        {
-            IReadOnlyList<string> properties = tool.PropertyNames();
+        IReadOnlyList<string> progressParameters = tools
+            .SelectMany(tool => tool.PropertyNames()
+                .Where(property => property is "progress" or "context")
+                .Select(property => $"{tool.Name}.{property}"))
+            .ToList();
 
-            properties.ShouldNotContain("progress");
-            properties.ShouldNotContain("context");
-        }
+        progressParameters.ShouldBeEmpty();
     }
 
     [Fact]
@@ -347,14 +351,17 @@ public sealed class ProgressSinkIntegrationTests
         });
     }
 
+    /// <summary>Represents one notification as the client heard it, in a form a failure message prints.</summary>
+    private sealed record Heard(float Progress, float? Total, string Message);
+
     /// <summary>Records the client end of the channel: everything the server sent, in arrival order.</summary>
-    private sealed class Recorder() : RecordingSink<ProgressNotificationValue>(Generous), IProgress<ProgressNotificationValue>
+    private sealed class Recorder() : RecordingSink<Heard>(Generous), IProgress<ProgressNotificationValue>
     {
-        public IReadOnlyList<string> Messages => Items.Select(value => value.Message ?? "").ToList();
+        public IReadOnlyList<string> Messages => Items.Select(heard => heard.Message).ToList();
 
         public void Report(ProgressNotificationValue value)
         {
-            Record(value);
+            Record(new Heard(value.Progress, value.Total, value.Message ?? ""));
         }
     }
 }

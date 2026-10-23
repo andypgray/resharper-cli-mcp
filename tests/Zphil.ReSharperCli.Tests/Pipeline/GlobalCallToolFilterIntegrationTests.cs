@@ -36,8 +36,7 @@ public sealed class GlobalCallToolFilterIntegrationTests
             cancellationToken: Ct);
 
         // Assert — surfaced as an error result with the exact message, and the filter stayed silent.
-        result.IsError.ShouldBe(true);
-        result.Text().ShouldBe("At least one file must be specified.");
+        result.ShouldHaveFailed().ShouldBe("At least one file must be specified.");
         harness.Logs.Warnings.ShouldBeEmpty();
     }
 
@@ -54,7 +53,7 @@ public sealed class GlobalCallToolFilterIntegrationTests
         CallToolResult result = await harness.Client.CallToolAsync("resharper_inspect", cancellationToken: Ct);
 
         // Assert — surfaced as an error, and logged exactly once as a warning that names the tool.
-        result.IsError.ShouldBe(true);
+        result.ShouldHaveFailed();
         LogEntry warning = harness.Logs.Warnings.ShouldHaveSingleItem();
         warning.Message.ShouldContain("resharper_inspect");
         warning.Category.ShouldBe(typeof(GlobalCallToolFilter).FullName);
@@ -78,8 +77,7 @@ public sealed class GlobalCallToolFilterIntegrationTests
         CallToolResult result = await harness.Client.CallToolAsync("resharper_inspect", cancellationToken: Ct);
 
         // Assert — a successful result, truncated, carrying the inspect-only narrowing hint, unlogged.
-        result.IsError.ShouldNotBe(true);
-        string text = result.Text();
+        string text = result.ShouldHaveSucceeded();
         text.ShouldStartWith("Found 3 issue(s) across 2 file(s)."); // Minimal's header, cut at the cap not mid-word
         text.ShouldContain("--- RESPONSE TRUNCATED ---");
         text.ShouldContain("Narrow the scan");
@@ -103,8 +101,7 @@ public sealed class GlobalCallToolFilterIntegrationTests
         CallToolResult result = await harness.Client.CallToolAsync("resharper_inspect", cancellationToken: Ct);
 
         // Assert — reduced, not chopped: every issue still counted, every file still named, nothing logged.
-        result.IsError.ShouldNotBe(true);
-        string text = result.Text();
+        string text = result.ShouldHaveSucceeded();
         text.ShouldStartWith("Found 26 issue(s) across 2 file(s):");
         text.ShouldContain("--- DETAIL REDUCED ---");
         text.ShouldContain("x12, lines 13-24");
@@ -129,7 +126,7 @@ public sealed class GlobalCallToolFilterIntegrationTests
 
         // Assert — the id the filter opened the scope with reached both ends of the call: the config
         // resolution, and JbRunner several constructor hops down, neither of which has a parameter for it.
-        result.IsError.ShouldNotBe(true);
+        result.ShouldHaveSucceeded();
         IReadOnlyList<LogEntry> filterLines = LinesFrom(harness, typeof(GlobalCallToolFilter));
         filterLines.ShouldNotBeEmpty();
 

@@ -111,17 +111,7 @@ public sealed class PreWarmTriggerTests
     private static void ArrangeWarmableSolution(FakeEnvironment environment, IProcessRunner processRunner)
     {
         PlantSolution(environment);
-
-        processRunner
-            .AnyRun()
-            .Returns(call =>
-            {
-                IReadOnlyList<string> arguments = call.Arguments();
-
-                if (JbStubs.IsVersionProbe(arguments)) return JbStubs.VersionProbeAnswer;
-
-                return JbStubs.Succeed(arguments);
-            });
+        JbStubs.AnswerAsHealthyJb(processRunner);
     }
 
     /// <summary>

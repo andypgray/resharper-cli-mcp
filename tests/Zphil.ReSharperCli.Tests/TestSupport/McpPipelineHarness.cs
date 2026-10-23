@@ -90,13 +90,15 @@ internal sealed class McpPipelineHarness : IAsyncDisposable
     {
         // Order matters: closing the client sends EOF, which ends the single-session server's RunAsync and
         // starts host shutdown. The stop is bounded so a stuck one cannot hang the suite.
-        await Client.DisposeAsync();
-
-        using CancellationTokenSource stopTimeout = new(TimeSpan.FromSeconds(30));
-        await _host.StopAsync(stopTimeout.Token);
-        _host.Dispose();
-
-        Environment.Dispose();
+        try
+        {
+            await Client.DisposeAsync();
+            await StopAsync(_host);
+        }
+        finally
+        {
+            Environment.Dispose();
+        }
     }
 
     /// <summary>
@@ -126,74 +128,102 @@ internal sealed class McpPipelineHarness : IAsyncDisposable
         IProcessRunner? processRunner = null)
     {
         FakeEnvironment environment = new();
-        processRunner ??= Substitute.For<IProcessRunner>();
-        CapturingLoggerProvider logs = new();
+        IHost? host = null;
+        try
+        {
+            processRunner ??= Substitute.For<IProcessRunner>();
+            CapturingLoggerProvider logs = new();
 
-        if (!preWarm) environment.SetVariable(CacheWarmer.EnableVariable, "off");
+            if (!preWarm) environment.SetVariable(CacheWarmer.EnableVariable, "off");
 
-        // Created before WithStreamServerTransport, which constructs the server transport eagerly at
-        // registration.
-        Pipe clientToServer = new();
-        Pipe serverToClient = new();
-        WireLog wire = new();
+            // Created before WithStreamServerTransport, which constructs the server transport eagerly at
+            // registration.
+            Pipe clientToServer = new();
+            Pipe serverToClient = new();
+            WireLog wire = new();
 
-        HostApplicationBuilder builder = Host.CreateApplicationBuilder();
+            HostApplicationBuilder builder = Host.CreateApplicationBuilder();
 
-        builder.Logging.CaptureInto(logs);
+            builder.Logging.CaptureInto(logs);
 
-        // The Program.cs service graph, with the two seams faked.
-        builder.Services.AddSingleton<IEnvironment>(environment);
-        builder.Services.AddSingleton(processRunner);
-        builder.Services.AddSingleton<JbLocator>();
-        builder.Services.AddSingleton<ConfigResolver>();
+            // The Program.cs service graph, with the two seams faked.
+            builder.Services.AddSingleton<IEnvironment>(environment);
+            builder.Services.AddSingleton(processRunner);
+            builder.Services.AddSingleton<JbLocator>();
+            builder.Services.AddSingleton<ConfigResolver>();
 
-        // The lock and the runner take the run cap, a value rather than a service, so the composition root
-        // builds both by factory; the loggers come from the host's own factory, so everything the graph
-        // writes reaches the capturing provider above.
-        builder.Services.AddSingleton(provider => JbRunners.Lock(logs: provider.GetRequiredService<ILoggerFactory>()));
-        builder.Services.AddSingleton<JbRunYield>();
-        builder.Services.AddSingleton(provider => JbRunners.Create(
-            processRunner,
-            provider.GetRequiredService<JbRunLock>(),
-            provider.GetRequiredService<JbRunYield>(),
-            logs: provider.GetRequiredService<ILoggerFactory>(),
-            heartbeat: BriskHeartbeat));
-        builder.Services.AddSingleton<InspectService>();
-        builder.Services.AddSingleton<CleanupService>();
+            // The lock and the runner take the run cap, a value rather than a service, so the composition root
+            // builds both by factory; the loggers come from the host's own factory, so everything the graph
+            // writes reaches the capturing provider above.
+            builder.Services.AddSingleton(provider => JbRunners.Lock(logs: provider.GetRequiredService<ILoggerFactory>()));
+            builder.Services.AddSingleton<JbRunYield>();
+            builder.Services.AddSingleton(provider => JbRunners.Create(
+                processRunner,
+                provider.GetRequiredService<JbRunLock>(),
+                provider.GetRequiredService<JbRunYield>(),
+                logs: provider.GetRequiredService<ILoggerFactory>(),
+                heartbeat: BriskHeartbeat));
+            builder.Services.AddSingleton<InspectService>();
+            builder.Services.AddSingleton<CleanupService>();
 
-        // By factory for the heartbeat alone: a reset reports the wait it is serving out, so registered by
-        // type it would beat at the production interval and a test watching one would sit out a whole beat.
-        builder.Services.AddSingleton(provider => JbRunners.Reset(
-            provider.GetRequiredService<JbRunLock>(),
-            provider.GetRequiredService<JbRunYield>(),
-            provider.GetRequiredService<ILoggerFactory>(),
-            BriskHeartbeat));
+            // By factory for the heartbeat alone: a reset reports the wait it is serving out, so registered by
+            // type it would beat at the production interval and a test watching one would sit out a whole beat.
+            builder.Services.AddSingleton(provider => JbRunners.Reset(
+                provider.GetRequiredService<JbRunLock>(),
+                provider.GetRequiredService<JbRunYield>(),
+                provider.GetRequiredService<ILoggerFactory>(),
+                BriskHeartbeat));
 
-        // The writer must be registered whether or not a test asks for a report: CoercingToolRegistration
-        // activates ResharperTools per tools/call, so a missing registration surfaces as every call returning
-        // an error result rather than as anything a build would catch. Its root is a temp directory of this
-        // harness's own, deleted with the environment.
-        builder.Services.AddSingleton(provider => new InspectReportWriter(
-            environment.CreateTempDirectory(),
-            provider.GetRequiredService<ILogger<InspectReportWriter>>()));
-        builder.Services.AddSingleton<CacheWarmer>();
-        builder.Services.AddHostedService(provider => provider.GetRequiredService<CacheWarmer>());
+            // The writer must be registered whether or not a test asks for a report: CoercingToolRegistration
+            // activates ResharperTools per tools/call, so a missing registration surfaces as every call returning
+            // an error result rather than as anything a build would catch. Its root is a temp directory of this
+            // harness's own, deleted with the environment.
+            string reportRoot = environment.CreateTempDirectory();
+            builder.Services.AddSingleton(provider => new InspectReportWriter(
+                reportRoot,
+                provider.GetRequiredService<ILogger<InspectReportWriter>>()));
+            builder.Services.AddSingleton<CacheWarmer>();
+            builder.Services.AddHostedService(provider => provider.GetRequiredService<CacheWarmer>());
 
-        builder.Services
-            .AddResharperMcpServer()
-            .WithStreamServerTransport(
-                clientToServer.Reader.AsStream(), new WireTapStream(serverToClient.Writer.AsStream(), wire));
+            builder.Services
+                .AddResharperMcpServer()
+                .WithStreamServerTransport(
+                    clientToServer.Reader.AsStream(), new WireTapStream(serverToClient.Writer.AsStream(), wire));
 
-        IHost host = builder.Build();
+            host = builder.Build();
 
-        arrange?.Invoke(environment, processRunner);
+            arrange?.Invoke(environment, processRunner);
 
-        await host.StartAsync(cancellationToken);
+            await host.StartAsync(cancellationToken);
 
-        StreamClientTransport clientTransport = new(clientToServer.Writer.AsStream(), serverToClient.Reader.AsStream());
-        var client = await McpClient.CreateAsync(clientTransport, cancellationToken: cancellationToken);
+            StreamClientTransport clientTransport = new(clientToServer.Writer.AsStream(), serverToClient.Reader.AsStream());
+            var client = await McpClient.CreateAsync(clientTransport, cancellationToken: cancellationToken);
 
-        return new McpPipelineHarness(
-            host, client, environment, processRunner, logs, host.Services.GetRequiredService<CacheWarmer>(), wire);
+            return new McpPipelineHarness(
+                host, client, environment, processRunner, logs, host.Services.GetRequiredService<CacheWarmer>(), wire);
+        }
+        catch
+        {
+            // Handed back on a throw as on success: a failed start would otherwise leave the environment's temp
+            // directories behind and, once the host has started, a server reading a pipe nobody completes.
+            try
+            {
+                if (host is not null) await StopAsync(host);
+            }
+            finally
+            {
+                environment.Dispose();
+            }
+
+            throw;
+        }
+    }
+
+    /// <summary>Stops <paramref name="host" />, bounded so a stuck stop cannot hang the suite, and disposes it.</summary>
+    private static async Task StopAsync(IHost host)
+    {
+        using CancellationTokenSource stopTimeout = new(TimeSpan.FromSeconds(30));
+        await host.StopAsync(stopTimeout.Token);
+        host.Dispose();
     }
 }

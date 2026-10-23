@@ -1,6 +1,5 @@
 using System.Text.Json;
 using NSubstitute;
-using NSubstitute.Core;
 using Shouldly;
 using Xunit;
 using Zphil.ReSharperCli.Execution;
@@ -38,7 +37,7 @@ public sealed class ResharperToolsInspectTests : IDisposable
     {
         // Arrange
         string sarif = Fixtures.ReadSarif("inspect-sample.json");
-        StubJb(sarif);
+        JbStubs.AnswerAsHealthyJb(_processRunner, sarif);
         ResharperTools tools = Tools();
 
         // Act
@@ -61,7 +60,8 @@ public sealed class ResharperToolsInspectTests : IDisposable
     {
         // Arrange
         List<string>? inspectArguments = null;
-        StubJb(
+        JbStubs.AnswerAsHealthyJb(
+            _processRunner,
             Fixtures.ReadSarif("inspect-sample.json"),
             args => inspectArguments = [.. args]);
         ResharperTools tools = Tools();
@@ -81,7 +81,8 @@ public sealed class ResharperToolsInspectTests : IDisposable
         // Arrange — jb's --include matches relative paths only, so an absolute path passed through verbatim
         // would match nothing.
         List<string>? inspectArguments = null;
-        StubJb(
+        JbStubs.AnswerAsHealthyJb(
+            _processRunner,
             Fixtures.ReadSarif("inspect-sample.json"),
             args => inspectArguments = [.. args]);
         ResharperTools tools = Tools();
@@ -100,7 +101,8 @@ public sealed class ResharperToolsInspectTests : IDisposable
         // Arrange — several globs joined into one array element. Unsplit, the joined string reaches jb as one
         // pattern that matches nothing, so the scan never looks at the files asked for.
         List<string>? inspectArguments = null;
-        StubJb(
+        JbStubs.AnswerAsHealthyJb(
+            _processRunner,
             Fixtures.ReadSarif("inspect-sample.json"),
             args => inspectArguments = [.. args]);
         ResharperTools tools = Tools();
@@ -120,7 +122,7 @@ public sealed class ResharperToolsInspectTests : IDisposable
         // mounts on its own) and its parser accepts it, so inspection severities are unaffected; only this
         // server's own profile lookup failed. Warning here would report a consequence that does not exist.
         DotSettingsFixtures.PlantBeside(_environment.CurrentDirectory, DotSettingsFixtures.Unparseable());
-        StubJb(Fixtures.ReadSarif("inspect-sample.json"));
+        JbStubs.AnswerAsHealthyJb(_processRunner, Fixtures.ReadSarif("inspect-sample.json"));
         ResharperTools tools = Tools();
 
         // Act
@@ -141,7 +143,7 @@ public sealed class ResharperToolsInspectTests : IDisposable
         // that ran unconfigured.
         string missing = Path.Combine(_environment.CurrentDirectory, "missing.DotSettings");
         _environment.SetVariable("JB_SETTINGS_PATH", missing);
-        StubJb(Fixtures.ReadSarif("empty-runs.json"));
+        JbStubs.AnswerAsHealthyJb(_processRunner, Fixtures.ReadSarif("empty-runs.json"));
         ResharperTools tools = Tools();
 
         // Act
@@ -165,7 +167,8 @@ public sealed class ResharperToolsInspectTests : IDisposable
         SolutionFiles.Plant(_environment.CurrentDirectory, "Proj/Proj.csproj");
         SolutionFiles.Plant(_environment.CurrentDirectory, "Proj/Proj.csproj.DotSettings", DotSettingsFixtures.SettingSeverity("MethodHasAsyncOverload", "DO_NOT_SHOW"));
         List<string>? inspectArguments = null;
-        StubJb(
+        JbStubs.AnswerAsHealthyJb(
+            _processRunner,
             Fixtures.ReadSarif("empty-runs.json"),
             args => inspectArguments = [.. args]);
         ResharperTools tools = Tools();
@@ -184,7 +187,7 @@ public sealed class ResharperToolsInspectTests : IDisposable
         // Arrange — inspect is read-only, and a files scope buys no time, so failing the call would charge a
         // full second run for what a note gives away free. Without the note the result is bare, and the scan
         // silently covers less than asked.
-        StubJb(Fixtures.ReadSarif("empty-runs.json"));
+        JbStubs.AnswerAsHealthyJb(_processRunner, Fixtures.ReadSarif("empty-runs.json"));
         ResharperTools tools = Tools();
 
         // Act
@@ -204,7 +207,8 @@ public sealed class ResharperToolsInspectTests : IDisposable
         // never has.
         SolutionFiles.Plant(_environment.CurrentDirectory, "src/A.cs");
         List<string>? inspectArguments = null;
-        StubJb(
+        JbStubs.AnswerAsHealthyJb(
+            _processRunner,
             Fixtures.ReadSarif("inspect-sample.json"),
             args => inspectArguments = [.. args]);
         ResharperTools tools = Tools();
@@ -227,7 +231,7 @@ public sealed class ResharperToolsInspectTests : IDisposable
         // Arrange — the default-path pin. The scope note may not move a byte of what a well-formed scoped
         // call already gets, which is what makes it free to add.
         SolutionFiles.Plant(_environment.CurrentDirectory, "src/A.cs");
-        StubJb(Fixtures.ReadSarif("inspect-sample.json"));
+        JbStubs.AnswerAsHealthyJb(_processRunner, Fixtures.ReadSarif("inspect-sample.json"));
         ResharperTools tools = Tools();
 
         // Act
@@ -248,15 +252,14 @@ public sealed class ResharperToolsInspectTests : IDisposable
         // about what came back.
         string cacheHome = _environment.CreateTempDirectory();
         _environment.SetVariable("JB_CACHE_HOME", cacheHome);
-        StubJb(Fixtures.ReadSarif("inspect-phantom-errors.json"));
+        JbStubs.AnswerAsHealthyJb(_processRunner, Fixtures.ReadSarif("inspect-phantom-errors.json"));
         ResharperTools tools = Tools();
 
         // Act
         string result = await tools.InspectAsync(["src/Typo.cs"], cancellationToken: Ct);
 
         // Assert
-        result.IndexOf("files entry(s) named no file", StringComparison.Ordinal)
-            .ShouldBeLessThan(result.IndexOf("are compilation errors", StringComparison.Ordinal));
+        result.ShouldContainInOrder("files entry(s) named no file", "are compilation errors");
     }
 
     [Fact]
@@ -266,7 +269,7 @@ public sealed class ResharperToolsInspectTests : IDisposable
         // banner inside the tool method, or it exists and nobody ever sees it.
         string cacheHome = _environment.CreateTempDirectory();
         _environment.SetVariable("JB_CACHE_HOME", cacheHome);
-        StubJb(Fixtures.ReadSarif("inspect-phantom-errors.json"));
+        JbStubs.AnswerAsHealthyJb(_processRunner, Fixtures.ReadSarif("inspect-phantom-errors.json"));
         ResharperTools tools = Tools();
 
         // Act
@@ -289,7 +292,7 @@ public sealed class ResharperToolsInspectTests : IDisposable
         _environment.SetVariable("MAX_MCP_OUTPUT_TOKENS", "300"); // 750 characters
         string cacheHome = _environment.CreateTempDirectory();
         _environment.SetVariable("JB_CACHE_HOME", cacheHome);
-        StubJb(ManyIssuesSarif(200));
+        JbStubs.AnswerAsHealthyJb(_processRunner, ManyIssuesSarif(200));
         ResharperTools tools = Tools();
 
         // Act
@@ -313,7 +316,7 @@ public sealed class ResharperToolsInspectTests : IDisposable
         // Arrange — the default. Nothing about a response without the parameter may change, which is what
         // makes the report free for every caller that does not want one.
         string reportRoot = _environment.CreateTempDirectory();
-        StubJb(Fixtures.ReadSarif("inspect-sample.json"));
+        JbStubs.AnswerAsHealthyJb(_processRunner, Fixtures.ReadSarif("inspect-sample.json"));
         ResharperTools tools = Tools(reportRoot);
 
         // Act
@@ -330,7 +333,7 @@ public sealed class ResharperToolsInspectTests : IDisposable
     {
         // Arrange
         string reportRoot = _environment.CreateTempDirectory();
-        StubJb(Fixtures.ReadSarif("inspect-sample.json"));
+        JbStubs.AnswerAsHealthyJb(_processRunner, Fixtures.ReadSarif("inspect-sample.json"));
         ResharperTools tools = Tools(reportRoot);
 
         // Act
@@ -339,13 +342,17 @@ public sealed class ResharperToolsInspectTests : IDisposable
         // Assert — the note leads, and the path it names holds the provenance a file read later cannot
         // reconstruct plus the Full listing.
         result.ShouldStartWith("FULL REPORT: all 3 issue(s)");
-        string reportPath = PathFromNote(result);
-        File.Exists(reportPath).ShouldBeTrue();
+        string reportPath = ShouldNameAReportFile(result);
         string document = File.ReadAllText(reportPath);
         document.ShouldStartWith("# ReSharper inspection report\n");
         document.ShouldContain("- Minimum severity: SUGGESTION");
         document.ShouldContain("- Scope: whole solution");
         document.ShouldContain("Found 3 issue(s)");
+
+        // Every level opens with the count, so only the messages show the listing is the Full one.
+        document.ShouldContain("Using directive is not required by the code and can be safely removed");
+        document.ShouldContain("Field 'unusedField' is never used");
+        document.ShouldContain("Method 'Total' is never used");
     }
 
     [Fact]
@@ -354,7 +361,7 @@ public sealed class ResharperToolsInspectTests : IDisposable
         // Arrange — "a report was asked for, so the response names a file that exists" is a contract a caller
         // can script against; one that sometimes yields no file is not.
         string reportRoot = _environment.CreateTempDirectory();
-        StubJb(Fixtures.ReadSarif("empty-runs.json"));
+        JbStubs.AnswerAsHealthyJb(_processRunner, Fixtures.ReadSarif("empty-runs.json"));
         ResharperTools tools = Tools(reportRoot);
 
         // Act
@@ -365,7 +372,7 @@ public sealed class ResharperToolsInspectTests : IDisposable
         // of health for this solution at this severity over this scope.
         result.ShouldStartWith("FULL REPORT: no issues found; the run and its scope were written to");
         result.ShouldEndWith("No issues found.");
-        string document = File.ReadAllText(PathFromNote(result));
+        string document = File.ReadAllText(ShouldNameAReportFile(result));
         document.ShouldContain("No issues found.");
         document.ShouldContain("- Scope: whole solution");
     }
@@ -378,7 +385,7 @@ public sealed class ResharperToolsInspectTests : IDisposable
         // vanishes when it matters.
         _environment.SetVariable("MAX_MCP_OUTPUT_TOKENS", "300"); // 750 characters
         string reportRoot = _environment.CreateTempDirectory();
-        StubJb(ManyIssuesSarif(200));
+        JbStubs.AnswerAsHealthyJb(_processRunner, ManyIssuesSarif(200));
         ResharperTools tools = Tools(reportRoot);
 
         // Act
@@ -388,14 +395,13 @@ public sealed class ResharperToolsInspectTests : IDisposable
         // report note is the last of them, sitting immediately above the listing it refers to.
         result.ShouldStartWith("NOTE: 1 of these issue(s) are compilation errors");
         result.ShouldContain("FULL REPORT: all 201 issue(s)");
-        result.IndexOf("FULL REPORT", StringComparison.Ordinal)
-            .ShouldBeLessThan(result.IndexOf("Found 201 issue(s)", StringComparison.Ordinal));
+        result.ShouldContainInOrder("FULL REPORT", "Found 201 issue(s)");
         result.ShouldContain("totals, severity counts, and the top rules only.");
 
         // Having written the file, the reduction note does not go on to suggest writing one.
         result.ShouldNotContain(IssueMarkdownFormatter.FullReportHint);
 
-        string document = File.ReadAllText(PathFromNote(result));
+        string document = File.ReadAllText(ShouldNameAReportFile(result));
         document.ShouldContain("File000.cs");
         document.ShouldContain("File199.cs");
         result.ShouldNotContain("File199.cs"); // the response could not carry what the file does
@@ -406,7 +412,7 @@ public sealed class ResharperToolsInspectTests : IDisposable
     {
         // Arrange — 3 issues render at Full well inside the default 25,000-character budget, so nothing
         // about this response is the budget's doing.
-        StubJb(Fixtures.ReadSarif("inspect-sample.json"));
+        JbStubs.AnswerAsHealthyJb(_processRunner, Fixtures.ReadSarif("inspect-sample.json"));
         ResharperTools tools = Tools();
 
         // Act
@@ -427,7 +433,7 @@ public sealed class ResharperToolsInspectTests : IDisposable
         // Arrange — a cap is not a floor. 201 issues do not roll up inside 750 characters, so the ladder
         // keeps stepping and the note has to stop claiming the level was the caller's choice.
         _environment.SetVariable("MAX_MCP_OUTPUT_TOKENS", "300"); // 750 characters
-        StubJb(ManyIssuesSarif(200));
+        JbStubs.AnswerAsHealthyJb(_processRunner, ManyIssuesSarif(200));
         ResharperTools tools = Tools();
 
         // Act
@@ -444,7 +450,7 @@ public sealed class ResharperToolsInspectTests : IDisposable
     {
         // Arrange — the default-path pin. The detail parameter may not move a byte of what a caller that omits
         // it gets, which is what makes it free to add.
-        StubJb(Fixtures.ReadSarif("inspect-sample.json"));
+        JbStubs.AnswerAsHealthyJb(_processRunner, Fixtures.ReadSarif("inspect-sample.json"));
         ResharperTools tools = Tools();
 
         // Act
@@ -463,7 +469,7 @@ public sealed class ResharperToolsInspectTests : IDisposable
         // doing alone. The note is asserted against the enum member's own name, which is also what pins
         // the tool-facing enum and the formatting ladder to the same spellings. Full is the no-cap
         // default and comes back verbatim with nothing to announce, which DetailFull_IsByteIdentical pins.
-        StubJb(Fixtures.ReadSarif("inspect-sample.json"));
+        JbStubs.AnswerAsHealthyJb(_processRunner, Fixtures.ReadSarif("inspect-sample.json"));
         ResharperTools tools = Tools();
         IEnumerable<InspectDetail> cappingDetails = Enum.GetValues<InspectDetail>()
             .Where(detail => detail != InspectDetail.Full);
@@ -484,7 +490,7 @@ public sealed class ResharperToolsInspectTests : IDisposable
         // call: a cheap verdict in the response while every finding stays reachable in the file. Neither
         // parameter delivers it alone.
         string reportRoot = _environment.CreateTempDirectory();
-        StubJb(ManyIssuesSarif(200));
+        JbStubs.AnswerAsHealthyJb(_processRunner, ManyIssuesSarif(200));
         ResharperTools tools = Tools(reportRoot);
 
         // Act
@@ -500,7 +506,7 @@ public sealed class ResharperToolsInspectTests : IDisposable
         result.ShouldNotContain(IssueMarkdownFormatter.FullReportHint);
         result.ShouldNotContain(IssueMarkdownFormatter.NarrowingHint);
 
-        string document = File.ReadAllText(PathFromNote(result));
+        string document = File.ReadAllText(ShouldNameAReportFile(result));
         document.ShouldContain("File000.cs");
         document.ShouldContain("File199.cs");
     }
@@ -511,7 +517,7 @@ public sealed class ResharperToolsInspectTests : IDisposable
         // Arrange — a zero-issue run at a capped level. The formatter answers "No issues found." at every
         // level, so passing detail reduces nothing, and a note here would describe a collapse of a listing that
         // never existed and offer a report file for findings there are none of.
-        StubJb(Fixtures.ReadSarif("empty-runs.json"));
+        JbStubs.AnswerAsHealthyJb(_processRunner, Fixtures.ReadSarif("empty-runs.json"));
         ResharperTools tools = Tools();
 
         // Act
@@ -527,7 +533,7 @@ public sealed class ResharperToolsInspectTests : IDisposable
         // Arrange — the same run with a report asked for. The file is still written and still named; what
         // goes is the claim that the listing below was rendered to fit a budget.
         string reportRoot = _environment.CreateTempDirectory();
-        StubJb(Fixtures.ReadSarif("empty-runs.json"));
+        JbStubs.AnswerAsHealthyJb(_processRunner, Fixtures.ReadSarif("empty-runs.json"));
         ResharperTools tools = Tools(reportRoot);
 
         // Act
@@ -538,7 +544,7 @@ public sealed class ResharperToolsInspectTests : IDisposable
         result.ShouldStartWith("FULL REPORT: no issues found; the run and its scope were written to");
         result.ShouldEndWith("No issues found.");
         result.ShouldNotContain("--- DETAIL REDUCED ---");
-        File.Exists(PathFromNote(result)).ShouldBeTrue();
+        ShouldNameAReportFile(result);
     }
 
     [Fact]
@@ -547,14 +553,14 @@ public sealed class ResharperToolsInspectTests : IDisposable
         // Arrange — unreachable through the binder, which rejects anything not a member by name. It is
         // reachable by a member added to InspectDetail and not to the mapping, and the reason the two enums
         // are mapped by hand is that such a gap must not silently resolve to a plausible-looking level.
-        StubJb(Fixtures.ReadSarif("inspect-sample.json"));
+        JbStubs.AnswerAsHealthyJb(_processRunner, Fixtures.ReadSarif("inspect-sample.json"));
         ResharperTools tools = Tools();
 
         // Act
         await Should.ThrowAsync<ArgumentOutOfRangeException>(() => tools.InspectAsync(detail: (InspectDetail)99, cancellationToken: Ct));
 
         // Assert — and it fails ahead of the analysis, so a bad argument never costs the minutes a run does.
-        await _processRunner.DidNotReceive().AnyRunWith(args => args != null && args.Count > 0 && args[0] == "inspectcode");
+        await _processRunner.DidNotReceive().AnyRunWith(args => args != null && JbStubs.IsRunOf(args, "inspectcode"));
     }
 
     [Fact]
@@ -563,7 +569,7 @@ public sealed class ResharperToolsInspectTests : IDisposable
         // Arrange — the relaxation is the reset's alone. An analysis tool handed a path with no file on it
         // has nothing to analyse, and letting it through would trade a clear error for a jb failure.
         using FakeEnvironment environment = new();
-        StubJb();
+        JbStubs.AnswerAsHealthyJb(_processRunner);
         ResharperTools tools = ToolHarness.Build(_processRunner, environment);
         string missing = environment.CreateSolutionPath("Gone.sln");
 
@@ -579,7 +585,7 @@ public sealed class ResharperToolsInspectTests : IDisposable
     {
         // Arrange — the working directory is an empty temp dir, so discovery finds no solution.
         using FakeEnvironment environment = new();
-        StubJb();
+        JbStubs.AnswerAsHealthyJb(_processRunner);
         ResharperTools tools = ToolHarness.Build(_processRunner, environment);
 
         // Act
@@ -592,33 +598,7 @@ public sealed class ResharperToolsInspectTests : IDisposable
     /// <summary>Builds the tool methods over this class's environment and process runner.</summary>
     private ResharperTools Tools(string? reportRoot = null)
     {
-        return ToolHarness.Build(_processRunner, _environment, reportRoot: reportRoot);
-    }
-
-    /// <summary>
-    ///     Routes the single process-runner substitute by jb sub-command: the version probe, or an
-    ///     <c>inspectcode</c> run, which writes <paramref name="inspectSarif" /> to its <c>-o=</c> path. Every
-    ///     run succeeds the way a healthy one does, leaving its cache generation behind.
-    /// </summary>
-    private void StubJb(string inspectSarif = "", Action<IReadOnlyList<string>>? onInspect = null)
-    {
-        _processRunner
-            .AnyRun()
-            .Returns(Route);
-
-        return;
-
-        ProcessResult Route(CallInfo callInfo)
-        {
-            IReadOnlyList<string> arguments = callInfo.Arguments();
-
-            if (JbStubs.IsVersionProbe(arguments)) return JbStubs.VersionProbeAnswer;
-
-            if (!JbStubs.IsRunOf(arguments, "inspectcode")) return JbStubs.Succeed(arguments);
-
-            onInspect?.Invoke(arguments);
-            return JbStubs.Succeed(arguments, inspectSarif);
-        }
+        return ToolHarness.Build(_processRunner, _environment, reportRoot);
     }
 
     /// <summary>
@@ -666,17 +646,24 @@ public sealed class ResharperToolsInspectTests : IDisposable
         }
     }
 
-    /// <summary>Reads the report path out of the response's preamble, the way an agent would.</summary>
+    /// <summary>
+    ///     Reads the report path out of the response's preamble, the way an agent would, and asserts the file is
+    ///     there.
+    /// </summary>
     /// <remarks>
     ///     Anchored on the report note's own wording rather than on the first quotation mark in the response:
     ///     the compilation-error note leads when it applies, and it quotes the cache home.
     /// </remarks>
-    private static string PathFromNote(string result)
+    private static string ShouldNameAReportFile(string result)
     {
         const string anchor = "written to \"";
+        result.ShouldContain(anchor, Case.Sensitive);
         int start = result.IndexOf(anchor, StringComparison.Ordinal) + anchor.Length;
         int end = result.IndexOf('"', start);
+        end.ShouldBeGreaterThan(start, $"no closing quote after the report path in:\n{result}");
 
-        return result[start..end];
+        string path = result[start..end];
+        File.Exists(path).ShouldBeTrue($"the response names \"{path}\", which does not exist");
+        return path;
     }
 }

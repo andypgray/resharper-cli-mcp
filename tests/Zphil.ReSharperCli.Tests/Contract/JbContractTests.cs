@@ -175,7 +175,7 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
         // file it named was rewritten. Its own report echoes the caller's absolute path back untranslated,
         // which is the half a unit test cannot check.
         pattern.ShouldBe("Misformatted.cs");
-        fixture.DeclaredProfileCleanup.Outcome.Entries.Single().Display.ShouldBe(absolute);
+        fixture.DeclaredProfileCleanup.Outcome.Entries.ShouldHaveSingleItem().Display.ShouldBe(absolute);
         fixture.DeclaredProfileCleanup.ShouldHaveRewrittenTheFile();
     }
 
@@ -201,8 +201,7 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
             ResharperTools.InspectToolName, cancellationToken: Ct);
 
         // Assert — everything the other checks assert one layer at a time has to hold at once for this to.
-        result.IsError.ShouldNotBe(true);
-        string text = result.Text();
+        string text = result.ShouldHaveSucceeded();
         text.ShouldContain("Unused.cs");
         harness.Logs.Warnings.ShouldBeEmpty();
     }

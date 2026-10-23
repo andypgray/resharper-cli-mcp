@@ -117,7 +117,8 @@ public sealed class ServerLifecycleTests : IDisposable
         await lifecycle.StartAsync(Ct);
         await lifecycle.StopAsync(Ct);
 
-        // Assert
+        // Assert — lines were written, so the claim below is about them rather than about an empty capture.
+        _logs.Entries.ShouldNotBeEmpty();
         _logs.Entries.ShouldAllBe(entry => entry.ScopeValue(RunIdScope.PropertyName) == null);
     }
 
@@ -138,6 +139,6 @@ public sealed class ServerLifecycleTests : IDisposable
             _childLifetime,
             cap ?? JbRunTimeout.Default,
             logLevel,
-            Logs.Capturing(_logs).CreateLogger<ServerLifecycle>());
+            Logs.For<ServerLifecycle>(_logs));
     }
 }

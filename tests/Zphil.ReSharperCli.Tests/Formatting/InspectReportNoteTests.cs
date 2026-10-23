@@ -52,11 +52,11 @@ public sealed class InspectReportNoteTests
 
         // Assert — what the file does hold is the provenance header: solution, severity, scope, timestamp.
         // A dated clean bill of health, which is worth naming.
+        note.ShouldNotContain("all 0 issue(s)");
+        note.ShouldNotContain("rendered to fit the response budget");
         note.ShouldBe(
             "FULL REPORT: no issues found; the run and its scope were written to "
             + $"\"{ReportPath}\".\n\n");
-        note.ShouldNotContain("all 0 issue(s)");
-        note.ShouldNotContain("rendered to fit the response budget");
     }
 
     [Fact]

@@ -211,7 +211,7 @@ public sealed class GlobalCallToolFilterIntegrationTests
         // Assert — the request fails rather than answering, which is the correct protocol outcome, and the
         // cancellation reached all the way down: jb is stopped rather than left running behind an
         // abandoned call.
-        (await Should.ThrowAsync<OperationCanceledException>(() => call)).ShouldNotBeNull();
+        await Should.ThrowAsync<OperationCanceledException>(() => call);
         (await stopped.Task.WaitAsync(Generous, Ct)).ShouldBeTrue();
 
         // And the one warning it costs is the SDK's own — it wraps every request handler in a catch that

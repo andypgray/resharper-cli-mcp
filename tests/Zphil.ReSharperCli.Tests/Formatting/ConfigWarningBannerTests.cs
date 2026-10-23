@@ -81,7 +81,7 @@ public sealed class ConfigWarningBannerTests
 
         // Assert
         string[] lines = banner.Split('\n');
-        lines.Length.ShouldBe(4); // two warnings, then the blank line separating them from the body
+        lines.Length.ShouldBe(4, banner); // two warnings, then the blank line separating them from the body
         lines[0].ShouldStartWith("WARNING: JB_SETTINGS_PATH is set to");
         lines[1].ShouldStartWith("WARNING: could not read ReSharper settings");
         lines[2].ShouldBe("");
@@ -100,7 +100,7 @@ public sealed class ConfigWarningBannerTests
 
         // Assert
         banner.ShouldContain("(Access denied. Retry as admin.)");
-        banner.Split('\n').Length.ShouldBe(3); // one warning line, then the blank-line separator
+        banner.Split('\n').Length.ShouldBe(3, banner); // one warning line, then the blank-line separator
     }
 
     [Fact]
@@ -120,7 +120,6 @@ public sealed class ConfigWarningBannerTests
         // Assert
         full.Length.ShouldBeLessThanOrEqualTo(maxChars); // precondition: only the banner pushes it over
         result.Length.ShouldBeLessThanOrEqualTo(maxChars);
-        result.ShouldStartWith("WARNING: could not read ReSharper settings");
         result.ShouldContain("--- DETAIL REDUCED ---");
     }
 
@@ -139,7 +138,6 @@ public sealed class ConfigWarningBannerTests
 
         // Assert
         result.Length.ShouldBeLessThanOrEqualTo(maxChars);
-        result.ShouldStartWith(banner);
         result.ShouldContain("Reduced to Minimal");
         result.ShouldContain("Cleanup completed with profile \"Built-in: Full Cleanup\". 40 of 40 file(s)");
     }

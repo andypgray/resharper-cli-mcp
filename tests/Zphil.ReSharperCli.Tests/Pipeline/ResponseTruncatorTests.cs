@@ -106,8 +106,8 @@ public sealed class ResponseTruncatorTests
 
         // Assert — the verbatim spec, plus the shared-const relationship: the same remedy reaches an agent
         // from a truncation footer and from a progressive-reduction note, in one spelling.
-        result.ShouldEndWith("Narrow the scan with the files parameter or raise severity.");
         result.ShouldEndWith(IssueMarkdownFormatter.NarrowingHint);
+        result.ShouldEndWith("Narrow the scan with the files parameter or raise severity.");
     }
 
     [Fact]

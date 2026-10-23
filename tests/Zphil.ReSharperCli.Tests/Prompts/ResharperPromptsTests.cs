@@ -57,9 +57,9 @@ public sealed class ResharperPromptsTests
         // Assert — the commitments.
         text.ShouldContain("does not infer"); // honesty
         text.ShouldContain("not affiliated with or endorsed by JetBrains"); // respectful wrapping
-        text.ShouldContain("Detect Code Style Settings"); // prefer the official IDE detector
-        text.ShouldContain(".editorconfig"); // editorconfig-first
-        text.ShouldContain("resharper_inspect"); // the validation loop
+        text.ShouldContain("use JetBrains' own Detect Code Style Settings"); // prefer the official IDE detector
+        text.ShouldContain("Write `.editorconfig` first"); // editorconfig-first
+        text.ShouldContain("Run `resharper_inspect` with a `files` glob"); // the validation loop
         text.ShouldContain("do not guess"); // resolve conflicts with the user
 
         // Assert — the executing agent needs the specs, so the links to them must not be dropped.

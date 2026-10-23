@@ -19,6 +19,9 @@ public sealed class InspectReportDocumentTests
     /// <summary>The body as the tool renders it once and shares between the response and the report.</summary>
     private static readonly string FullListing = IssueMarkdownFormatter.Format(Issues, DetailLevel.Full);
 
+    /// <summary>Both ways a run can be unscoped: no files argument at all, and one that split to nothing.</summary>
+    public static TheoryData<string[]?> UnscopedRuns => new() { (string[]?)null, { [] } };
+
     [Theory]
     [InlineData("")]
     [InlineData("th-TH")]
@@ -42,17 +45,15 @@ public sealed class InspectReportDocumentTests
         document.ShouldContain("- Generated: 2026-08-24 09:30:15 UTC");
     }
 
-    [Fact]
-    public void Compose_AnUnscopedRun_SaysSoRatherThanLeavingTheLineBlank()
+    [Theory]
+    [MemberData(nameof(UnscopedRuns))]
+    public void Compose_AnUnscopedRun_SaysSoRatherThanLeavingTheLineBlank(string[]? scope)
     {
-        // Arrange — "no scope" and "scope I failed to record" read identically on an empty value. Both ways
-        // a run can be unscoped reach here: no files argument at all, and one that split to nothing.
-        IReadOnlyList<string>[] unscoped = [null!, []];
+        // Act — "no scope" and "scope I failed to record" read identically on an empty value.
+        string document = InspectReportDocument.Compose(FullListing, "/repo/App.slnx", "WARNING", scope!, GeneratedAt);
 
-        // Act / Assert
-        foreach (IReadOnlyList<string> scope in unscoped)
-            InspectReportDocument.Compose(FullListing, "/repo/App.slnx", "WARNING", scope, GeneratedAt)
-                .ShouldContain("- Scope: whole solution");
+        // Assert
+        document.ShouldContain("- Scope: whole solution");
     }
 
     [Fact]

@@ -140,10 +140,14 @@ public sealed class CacheResetFormatterTests
         string result = CacheResetFormatter.Format(outcome);
 
         // Assert
-        result.ShouldContain("Dropped 1 ReSharper cache generation(s)");
-        result.ShouldContain("  - _App.123.01: Access to the path is denied.");
-        result.ShouldEndWith(
-            "The next inspect or cleanup against this solution rebuilds the cache from cold, which can take minutes.");
+        result.ShouldBe(
+            $"Dropped 1 ReSharper cache generation(s) for \"{SolutionPath}\" under \"{CacheHome}\":\n"
+            + "  - _App.123.00\n"
+            + "Could not drop 1 generation(s):\n"
+            + "  - _App.123.01: Access to the path is denied.\n"
+            + "A generation that will not delete is usually one another jb still has open. Retry once it has "
+            + "finished; this tool is safe to run again.\n"
+            + "The next inspect or cleanup against this solution rebuilds the cache from cold, which can take minutes.");
     }
 
     [Fact]

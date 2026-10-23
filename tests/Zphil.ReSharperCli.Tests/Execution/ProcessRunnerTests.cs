@@ -1,6 +1,5 @@
 using System.ComponentModel;
 using System.Diagnostics;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
 using Xunit;
@@ -244,7 +243,7 @@ public sealed class ProcessRunnerTests : IDisposable
         // Arrange — its own lifetime, because the line naming the binding is written by the lifetime rather
         // than by the runner.
         CapturingLoggerProvider logs = new();
-        using ChildProcessLifetime lifetime = new(new SystemEnvironment(), Logs.Capturing(logs).CreateLogger<ChildProcessLifetime>());
+        using ChildProcessLifetime lifetime = new(new SystemEnvironment(), Logs.For<ChildProcessLifetime>(logs));
         ProcessRunner runner = new(lifetime, NullLogger<ProcessRunner>.Instance);
         (string fileName, string[] arguments) = ExitWithCodeCommand(0);
 

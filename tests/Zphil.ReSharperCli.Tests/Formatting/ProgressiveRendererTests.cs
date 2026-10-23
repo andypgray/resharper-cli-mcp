@@ -86,21 +86,24 @@ public sealed class ProgressiveRendererTests
     [Fact]
     public void Render_SkipsByteIdenticalLevels_ReportsCorrectLevel()
     {
-        // Arrange — Full/High/Medium produce identical (too-large) output; Low is smaller and fits.
-        var large = new string('x', 1000);
-        var small = new string('y', 50);
-
-        // Act
+        // Act — Medium renders what High rendered, and only its shorter note would let it fit: High's 300
+        // characters plus its 100-character description miss the budget, where the same 300 under Medium's
+        // one-word description would not. Skipped, Medium cannot claim a reduction that removed nothing from
+        // the response, so Low is where the walk settles.
         ProgressiveRendering rendering = ProgressiveRenderer.Render(
             "input",
-            (_, level) => level >= DetailLevel.Low ? small : large,
+            (_, level) => level switch
+            {
+                DetailLevel.Full => new string('x', 1000),
+                DetailLevel.High or DetailLevel.Medium => new string('h', 300),
+                _ => new string('y', 50)
+            },
             400,
-            Collapsed);
+            level => level == DetailLevel.High ? new string('d', 100) : "short.");
 
-        // Assert — reports Low, not High or Medium (which were byte-identical to Full).
+        // Assert
         rendering.Level.ShouldBe(DetailLevel.Low);
-        rendering.Text.ShouldContain("Reduced to Low");
-        rendering.Text.ShouldNotContain("Reduced to High");
+        rendering.Text.ShouldStartWith(new string('y', 50));
         rendering.Text.ShouldNotContain("Reduced to Medium");
     }
 
@@ -192,8 +195,8 @@ public sealed class ProgressiveRendererTests
 
         // Assert — no note with an empty tail either: the whole marker goes, because an agent matches on it to
         // know the response is a reduction.
-        result.ShouldBe("No issues found.");
         result.ShouldNotContain("DETAIL REDUCED");
+        result.ShouldBe("No issues found.");
     }
 
     [Fact]
@@ -205,8 +208,8 @@ public sealed class ProgressiveRendererTests
             "input", (_, _) => new string('x', 200), 100, _ => "").Text;
 
         // Assert
-        result.ShouldBe(new string('x', 200));
         result.ShouldNotContain("DETAIL REDUCED");
+        result.ShouldBe(new string('x', 200));
     }
 
     [Fact]
@@ -277,8 +280,8 @@ public sealed class ProgressiveRendererTests
 
         // Assert — Full is returned verbatim whether or not it was asked for. That is what keeps the
         // requested-level lead unreachable on the default path, and the default response byte-identical.
-        result.ShouldBe(output);
         result.ShouldNotContain("DETAIL REDUCED");
+        result.ShouldBe(output);
     }
 
     [Fact]

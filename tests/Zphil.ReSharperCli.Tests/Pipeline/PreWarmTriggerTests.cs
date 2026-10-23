@@ -94,7 +94,16 @@ public sealed class PreWarmTriggerTests
             true,
             (environment, processRunner) => ArrangeJbThatNeverFinishes(environment, processRunner, started));
         CacheWarmer warmer = harness.Warmer;
-        await started.Task.WaitAsync(Generous, Ct);
+        try
+        {
+            await started.Task.WaitAsync(Generous, Ct);
+        }
+        catch
+        {
+            // The disposal in the act is what this test observes; until it runs, nothing else owns the harness.
+            await harness.DisposeAsync();
+            throw;
+        }
 
         // Act — the real shutdown sequence: the client closes, the server's session ends, the host stops,
         // and the hosted services drain.

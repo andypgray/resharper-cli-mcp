@@ -39,8 +39,7 @@ public sealed class ResharperResourcesTests
         IList<McpClientResource> resources = await harness.Client.ListResourcesAsync(cancellationToken: Ct);
 
         // Assert
-        resources.Select(resource => resource.Uri).ShouldContain(uri);
-        resources.Select(resource => resource.Name).ShouldContain(name);
+        resources.Select(resource => (resource.Uri, resource.Name)).ShouldContain((uri, name));
     }
 
     [Theory]
@@ -68,9 +67,9 @@ public sealed class ResharperResourcesTests
         string text = ResharperResources.ConfigurationGuide();
 
         // Assert
-        text.ShouldContain("DO_NOT_SHOW"); // inspect-axis suppression that does NOT stop cleanup
-        text.ShouldContain("positional"); // the binary argument-style gotcha with no leave-alone value
-        text.ShouldContain(".editorconfig"); // jb auto-honors it from the tree
+        text.ShouldContain("but cleanup still changes my code"); // inspect-axis suppression that does NOT stop cleanup
+        text.ShouldContain("with no neutral \"leave alone\" value"); // the binary argument-style gotcha with no leave-alone value
+        text.ShouldContain("applies `.editorconfig` from the source tree, with no flag"); // jb auto-honors it from the tree
         text.ShouldContain("InspectionSeverities"); // the DotSettings severity key shape
         text.ShouldContain("resharper_cleanup"); // the style axis
         text.ShouldContain(ResharperResources.SetupGuideUri); // the onward cross-link to the setup guide
@@ -97,7 +96,7 @@ public sealed class ResharperResourcesTests
         text.ShouldContain(
             $"Clamped to {(int)JbRunTimeout.Floor.TotalSeconds}…{JbRunTimeout.Ceiling.TotalSeconds.ToString("N0", CultureInfo.InvariantCulture)}");
 
-        text.ShouldContain("queue"); // why a concurrent call waits rather than forking a cold cache
+        text.ShouldContain("Only one `jb` at a time may use a solution's cache"); // why a concurrent call waits rather than forking a cold cache
         text.ShouldContain("25,000"); // the output cap when the client sets no budget
         text.ShouldContain("DETAIL REDUCED"); // the marker an agent sees on an over-budget result
 
@@ -115,7 +114,7 @@ public sealed class ResharperResourcesTests
         text.ShouldContain("CSharpErrors"); // the rule that identifies a stale solution-wide index
         text.ShouldContain("`jb` does not restore them"); // and the cheaper origin, which a reset makes worse
         text.ShouldContain(ResharperTools.ResetCacheToolName); // and the tool that clears it
-        text.ShouldContain("worktree"); // the always-cold case, and the only place the seeding is described
+        text.ShouldContain("keys a cache generation by the solution's **absolute path**"); // the always-cold case, and the only place the seeding is described
         text.ShouldContain("Running `jb` yourself"); // how far the queue reaches: a jb the server never spawned is outside it
 
         // The other way a fork appears, a client killing the server outright, and the values the startup line

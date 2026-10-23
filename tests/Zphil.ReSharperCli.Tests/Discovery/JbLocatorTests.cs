@@ -369,7 +369,7 @@ public sealed class JbLocatorTests : IDisposable
 
     private JbLocator LoggingLocator()
     {
-        return new JbLocator(_processRunner, _environment, Logs.Capturing(_logs).CreateLogger<JbLocator>());
+        return new JbLocator(_processRunner, _environment, Logs.For<JbLocator>(_logs));
     }
 
     /// <summary>Returns the one probe line about <paramref name="candidate" />, by property, never by prose.</summary>

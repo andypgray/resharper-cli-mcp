@@ -22,13 +22,21 @@ public sealed class IssueMarkdownFormatterTests
 
     private const string NullReferenceMessage = "Possible 'System.NullReferenceException'";
 
+    /// <summary>
+    ///     Every level a reduction can settle at, which is every level but Full, derived from the enum so a level
+    ///     added later is covered without an edit. Names, because the enum is internal.
+    /// </summary>
+    public static TheoryData<string> ReducibleLevels =>
+        new(Enum.GetNames<DetailLevel>().Where(name => name != nameof(DetailLevel.Full)));
+
     [Fact]
     public void Format_NoIssues_ReturnsTheSameLiteralAtEveryLevel()
     {
         // Act / Assert — a loop over the enum rather than rows, so a level added later is covered without an
         // edit.
-        foreach (DetailLevel level in Enum.GetValues<DetailLevel>())
-            IssueMarkdownFormatter.Format([], level).ShouldBe("No issues found.");
+        DetailLevels.RenderEach(level => IssueMarkdownFormatter.Format([], level))
+            .Where(rendering => rendering.Value != "No issues found.")
+            .ShouldBeEmpty();
     }
 
     [Fact]
@@ -57,30 +65,27 @@ public sealed class IssueMarkdownFormatterTests
         // Arrange
         List<InspectIssue> issues =
         [
-            new("First.cs", 1, null, "WARNING", "R1", "m1"),
-            new("Second.cs", 2, null, "WARNING", "R2", "m2"),
-            new("First.cs", 3, null, "WARNING", "R3", "m3")
+            new("B.cs", 1, null, "WARNING", "R1", "m1"),
+            new("A.cs", 2, null, "WARNING", "R2", "m2"),
+            new("B.cs", 3, null, "WARNING", "R3", "m3")
         ];
 
         // Act
         string result = IssueMarkdownFormatter.Format(issues, DetailLevel.Full);
 
-        // Assert
-        result.ShouldContainInOrder("### First.cs", "### Second.cs");
-        // Both First.cs issues are collected before the Second.cs heading begins.
-        result.ShouldContainInOrder("`R3`", "### Second.cs");
+        // Assert — B.cs is seen first but sorts last, so a listing ordered by name rather than first sight
+        // reds here. Both B.cs issues are collected before the A.cs heading begins.
+        result.ShouldContainInOrder("### B.cs", "`R3`", "### A.cs");
     }
 
     [Fact]
     public void Format_EveryLevel_IsLineFeedOnlyAndAscii()
     {
         // Act / Assert — StringBuilder.AppendLine would emit \r\n here on Windows; every level joins with \n.
-        foreach (DetailLevel level in Enum.GetValues<DetailLevel>())
-        {
-            string result = IssueMarkdownFormatter.Format(Mixed(), level);
-            result.ShouldNotContain("\r\n");
-            Ascii.IsValid(result).ShouldBeTrue(); // no em dash or other non-ASCII sneaking in
-        }
+        IReadOnlyDictionary<DetailLevel, string> renderings =
+            DetailLevels.RenderEach(level => IssueMarkdownFormatter.Format(Mixed(), level));
+        renderings.Where(rendering => rendering.Value.Contains("\r\n")).ShouldBeEmpty();
+        renderings.Where(rendering => !Ascii.IsValid(rendering.Value)).ShouldBeEmpty(); // no em dash or other non-ASCII sneaking in
     }
 
     [Fact]
@@ -88,9 +93,9 @@ public sealed class IssueMarkdownFormatterTests
     {
         // Act / Assert — the header is invariant at every level (Minimal swaps the ':' for a '.'), so a
         // caller can anchor on it without knowing which level fired.
-        foreach (DetailLevel level in Enum.GetValues<DetailLevel>())
-            IssueMarkdownFormatter.Format(Mixed(), level)
-                .ShouldStartWith("Found 11 issue(s) across 3 file(s)");
+        DetailLevels.RenderEach(level => IssueMarkdownFormatter.Format(Mixed(), level))
+            .Where(rendering => !rendering.Value.StartsWith("Found 11 issue(s) across 3 file(s)", StringComparison.Ordinal))
+            .ShouldBeEmpty();
     }
 
     [Fact]
@@ -345,10 +350,7 @@ public sealed class IssueMarkdownFormatterTests
     }
 
     [Theory]
-    [InlineData(nameof(DetailLevel.High))]
-    [InlineData(nameof(DetailLevel.Medium))]
-    [InlineData(nameof(DetailLevel.Low))]
-    [InlineData(nameof(DetailLevel.Minimal))]
+    [MemberData(nameof(ReducibleLevels))]
     public void DescribeReduction_AReportAlreadyWritten_OffersNoReportAtAnyLevel(string levelName)
     {
         // Arrange — InspectReportNote has already named the file in the banner. Telling a caller to do what
@@ -402,8 +404,9 @@ public sealed class IssueMarkdownFormatterTests
         // never existed, and close with an offer to write the findings to a file when there are none. An
         // empty description is this directory's idiom for "nothing to say", and the renderer reads it as "no
         // reduction happened".
-        foreach (DetailLevel level in Enum.GetValues<DetailLevel>())
-            IssueMarkdownFormatter.DescribeReduction(level, 0, false, false).ShouldBeEmpty();
+        DetailLevels.RenderEach(level => IssueMarkdownFormatter.DescribeReduction(level, 0, false, false))
+            .Where(note => note.Value.Length > 0)
+            .ShouldBeEmpty();
     }
 
     [Fact]

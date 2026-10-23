@@ -149,7 +149,7 @@ public sealed class SerilogConfigurationTests
         // Assert — the scope wins inside, and the default is back once it closes.
         inside.ShouldNotBe(RunIdScope.OutsideARun);
         inside.Length.ShouldBe(RunIdScope.OutsideARun.Length);
-        RunIdOf(sink.Events.Last()).ShouldBe(RunIdScope.OutsideARun);
+        sink.Events.Select(RunIdOf).ShouldBe([inside, RunIdScope.OutsideARun]);
     }
 
     [Fact]

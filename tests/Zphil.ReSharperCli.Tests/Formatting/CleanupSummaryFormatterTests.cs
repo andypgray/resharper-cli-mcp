@@ -272,8 +272,9 @@ public sealed class CleanupSummaryFormatterTests
         CleanupOutcome outcome = AllWildcards();
 
         // Act / Assert
-        foreach (DetailLevel level in Enum.GetValues<DetailLevel>())
-            CleanupSummaryFormatter.Format(outcome, level).ShouldNotContain("0 of 0");
+        DetailLevels.RenderEach(level => CleanupSummaryFormatter.Format(outcome, level))
+            .Where(summary => summary.Value.Contains("0 of 0", StringComparison.OrdinalIgnoreCase))
+            .ShouldBeEmpty();
     }
 
     /// <summary>
@@ -330,8 +331,9 @@ public sealed class CleanupSummaryFormatterTests
         CleanupOutcome outcome = NoneReadable();
 
         // Act / Assert
-        foreach (DetailLevel level in Enum.GetValues<DetailLevel>())
-            CleanupSummaryFormatter.Format(outcome, level).ShouldNotContain("0 of");
+        DetailLevels.RenderEach(level => CleanupSummaryFormatter.Format(outcome, level))
+            .Where(summary => summary.Value.Contains("0 of", StringComparison.OrdinalIgnoreCase))
+            .ShouldBeEmpty();
     }
 
     [Fact]
@@ -375,8 +377,8 @@ public sealed class CleanupSummaryFormatterTests
     {
         // A shrinking report is the one place an agent could read "fewer files listed" as "fewer files
         // cleaned". A loop over the enum rather than rows, so a level added later is covered without an edit.
-        foreach (DetailLevel level in Enum.GetValues<DetailLevel>())
-            CleanupSummaryFormatter.DescribeReduction(level)
-                .ShouldEndWith("The cleanup itself ran in full; only the report shrank.");
+        DetailLevels.RenderEach(CleanupSummaryFormatter.DescribeReduction)
+            .Where(note => !note.Value.EndsWith("The cleanup itself ran in full; only the report shrank.", StringComparison.Ordinal))
+            .ShouldBeEmpty();
     }
 }

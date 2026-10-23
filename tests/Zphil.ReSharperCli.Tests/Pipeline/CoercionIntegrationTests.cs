@@ -139,10 +139,10 @@ public sealed class CoercionIntegrationTests(AdvertisedToolsFixture advertised)
     [Fact]
     public async Task CallTool_InspectSolutionPathAsSingleElementArray_UnwrapsToScalar()
     {
-        // Arrange — a single-element array where solutionPath : string? is advertised. Must be unwrapped.
+        // Arrange — a single-element array where solutionPath : string? is advertised. Must be unwrapped. The
+        // solution sits outside the working directory, so discovery cannot find it if the argument is dropped.
         await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
-        harness.Environment.PlantSolution("App.sln");
-        string expectedSolution = Path.GetFullPath("App.sln", harness.Environment.CurrentDirectory);
+        string expectedSolution = harness.Environment.CreateCheckout("App.sln");
         List<string>? inspectArguments = null;
         JbStubs.AnswerAsHealthyJb(
             harness.ProcessRunner,
@@ -152,7 +152,7 @@ public sealed class CoercionIntegrationTests(AdvertisedToolsFixture advertised)
         // Act
         CallToolResult result = await harness.Client.CallToolAsync(
             "resharper_inspect",
-            new Dictionary<string, object?> { ["solutionPath"] = new[] { "App.sln" } },
+            new Dictionary<string, object?> { ["solutionPath"] = new[] { expectedSolution } },
             cancellationToken: Ct);
 
         // Assert — the unwrapped scalar resolved to the solution and reached jb.

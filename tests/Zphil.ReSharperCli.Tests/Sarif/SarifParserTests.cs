@@ -53,6 +53,31 @@ public sealed class SarifParserTests
     }
 
     [Fact]
+    public void Parse_PercentEncodedFileUri_ConvertsToTheDecodedWindowsPath()
+    {
+        // A checkout under a directory whose name has a space is where a path left percent-encoded, or read
+        // off the URI without converting it, would reach every heading the listing prints.
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "The local path pinned here is a Windows path.");
+
+        // Arrange
+        const string json = """
+                            {
+                              "runs": [ { "results": [ {
+                                "ruleId": "R",
+                                "level": "warning",
+                                "locations": [ { "physicalLocation": { "artifactLocation": { "uri": "file:///C:/work/My%20App/Home.cs" } } } ]
+                              } ] } ]
+                            }
+                            """;
+
+        // Act
+        InspectIssue issue = SarifJson.Parse(json).ShouldHaveSingleItem();
+
+        // Assert
+        issue.File.ShouldBe(@"C:\work\My App\Home.cs");
+    }
+
+    [Fact]
     public void Parse_NoteLevel_MapsToSuggestion()
     {
         // Arrange
@@ -139,7 +164,6 @@ public sealed class SarifParserTests
         List<InspectIssue> issues = SarifJson.Parse(json);
 
         // Assert
-        issues.Count.ShouldBe(2);
         issues.Select(i => i.RuleId).ShouldBe(["RedundantUsingDirective", "UnusedType.Global"]);
     }
 

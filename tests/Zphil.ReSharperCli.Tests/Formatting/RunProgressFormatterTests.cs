@@ -133,7 +133,7 @@ public sealed class RunProgressFormatterTests
         // Zero is reachable: the phase announcement arrives ahead of the first file line.
         string message = Format(JbRunPhase.Analyzing, TimeSpan.FromSeconds(5), filesSeen: filesSeen, cap: Cap);
 
-        message.ShouldContain(expected);
+        message.ShouldBe($"inspectcode on App.slnx: {expected} — 5 seconds, cap 10 minutes");
     }
 
     [Fact]

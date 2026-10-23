@@ -9,8 +9,6 @@ using Zphil.ReSharperCli.Discovery;
 using Zphil.ReSharperCli.Execution;
 using Zphil.ReSharperCli.Infrastructure;
 using Zphil.ReSharperCli.Pipeline;
-using Zphil.ReSharperCli.Prompts;
-using Zphil.ReSharperCli.Resources;
 using Zphil.ReSharperCli.Services;
 using Zphil.ReSharperCli.Tests.TestDoubles;
 
@@ -182,16 +180,7 @@ internal sealed class McpPipelineHarness : IAsyncDisposable
         builder.Services.AddHostedService(provider => provider.GetRequiredService<CacheWarmer>());
 
         builder.Services
-            .AddMcpServer(options =>
-            {
-                options.ServerInstructions = ServerInstructions.Text;
-                options.ServerInfo = ServerIdentity.Create();
-            })
-            .WithCoercingTools()
-            .WithPrompts<ResharperPrompts>()
-            .WithResources<ResharperResources>()
-            .WithGlobalCallToolFilter()
-            .WithPreWarmTrigger()
+            .AddResharperMcpServer()
             .WithStreamServerTransport(
                 clientToServer.Reader.AsStream(), new WireTapStream(serverToClient.Writer.AsStream(), wire));
 

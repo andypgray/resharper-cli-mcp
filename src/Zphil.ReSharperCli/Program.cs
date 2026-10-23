@@ -6,8 +6,6 @@ using Zphil.ReSharperCli.Discovery;
 using Zphil.ReSharperCli.Execution;
 using Zphil.ReSharperCli.Infrastructure;
 using Zphil.ReSharperCli.Pipeline;
-using Zphil.ReSharperCli.Prompts;
-using Zphil.ReSharperCli.Resources;
 using Zphil.ReSharperCli.Services;
 
 if (args.Contains("--version"))
@@ -96,17 +94,8 @@ builder.Services.AddSingleton<CacheWarmer>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<CacheWarmer>());
 
 builder.Services
-    .AddMcpServer(options =>
-    {
-        options.ServerInstructions = ServerInstructions.Text;
-        options.ServerInfo = ServerIdentity.Create();
-    })
-    .WithStdioServerTransport()
-    .WithCoercingTools()
-    .WithPrompts<ResharperPrompts>()
-    .WithResources<ResharperResources>()
-    .WithGlobalCallToolFilter()
-    .WithPreWarmTrigger();
+    .AddResharperMcpServer()
+    .WithStdioServerTransport();
 
 IHost host = builder.Build();
 await host.RunAsync();

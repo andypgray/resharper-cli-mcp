@@ -163,7 +163,8 @@ public sealed class GlobalCallToolFilterIntegrationTests
         await using McpPipelineHarness harness = await McpPipelineHarness.StartAsync(Ct);
 
         // Assert — ServerInfo.Name identifies the server; the embedded instructions come across non-empty.
-        harness.Client.ServerInfo.Name.ShouldBe("resharper-cli-mcp");
+        Implementation serverInfo = harness.Client.ServerInfo.ShouldNotBeNull();
+        serverInfo.Name.ShouldBe("resharper-cli-mcp");
         harness.Client.ServerInstructions.ShouldNotBeNullOrEmpty();
     }
 
@@ -175,7 +176,8 @@ public sealed class GlobalCallToolFilterIntegrationTests
 
         // Assert — the icon is only worth embedding if it survives serialization and the client's own
         // parse. ServerIdentityTests pins what goes in; this pins what a client is handed.
-        Icon icon = harness.Client.ServerInfo.Icons.ShouldHaveSingleItem();
+        Implementation serverInfo = harness.Client.ServerInfo.ShouldNotBeNull();
+        Icon icon = serverInfo.Icons.ShouldHaveSingleItem();
         icon.MimeType.ShouldBe("image/png");
         icon.Source.ShouldStartWith("data:image/png;base64,");
     }

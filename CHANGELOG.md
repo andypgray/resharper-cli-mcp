@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A solution filter (`.slnf`) given as `solutionPath` or `JB_SOLUTION_PATH` reads its settings file and
+  declared cleanup profile from the solution its `solution.path` names, which is the solution whose settings
+  `jb` mounts. It used to look for a `.slnf.DotSettings` that never exists, so cleanup fell back to
+  `Built-in: Full Cleanup`, which strips named arguments. A filter that will not parse, or that names a
+  solution that is not there, is now an error naming the file. Working-directory discovery still picks only a
+  `.sln` or `.slnx`.
+
 - An inspection report's `Generated` line is written in the invariant culture, so it reads the same on every
   machine. Under th-TH it gave the year in the Buddhist calendar (2569 for 2026), and under da-DK and fi-FI it
   gave the time as `09.30.15`. The character counts in the detail-reduction and truncation notes and the

@@ -42,9 +42,11 @@ internal sealed record ResolvedConfig(
     ///     Gets the directory holding the solution, the root a relative <c>files</c> entry resolves against.
     /// </summary>
     /// <remarks>
-    ///     Never null, because <see cref="SolutionPath" /> is always absolute. The directory exists for every
-    ///     config the analysis tools see; a config from <see cref="ConfigResolver.ResolveForCacheResetAsync" />
-    ///     may name the solution of a deleted checkout, whose directory need not exist.
+    ///     For a solution filter, the filter's own directory rather than the solution's, because that is where
+    ///     <c>jb</c> anchors <c>--include</c>. Never null, because <see cref="SolutionPath" /> is always absolute.
+    ///     The directory exists for every config the analysis tools see; a config from
+    ///     <see cref="ConfigResolver.ResolveForCacheResetAsync" /> may name the solution of a deleted checkout,
+    ///     whose directory need not exist.
     /// </remarks>
     public string SolutionDirectory => Path.GetDirectoryName(SolutionPath)!;
 }
@@ -92,7 +94,13 @@ internal sealed class ConfigResolver(JbLocator jbLocator, IEnvironment environme
         // jb first, then the solution: a missing toolchain surfaces before any solution-discovery error.
         JbInstallation installation = await jbLocator.LocateAsync(cancellationToken);
         SolutionResolution solution = ResolveSolutionPath(solutionPathOverride, overrideMayBeMissing);
-        SettingsResolution settings = ResolveSettingsPath(solution.Path);
+
+        // jb mounts the settings of the solution a filter names, so the chain anchors there too. A reset runs no
+        // jb and reads no settings that matter to it, and may be reclaiming a filter that is no longer on disk.
+        string settingsAnchor = SolutionFilterFile.IsFilter(solution.Path) && !overrideMayBeMissing
+            ? SolutionFilterFile.ReadSolutionPath(solution.Path)
+            : solution.Path;
+        SettingsResolution settings = ResolveSettingsPath(settingsAnchor);
         DeclaredCleanupProfile declaredProfile = CleanupProfileReader.Read(settings.Path, logger);
 
         ResolvedConfig config = new(

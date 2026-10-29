@@ -119,7 +119,7 @@ Set these in the client config's `env` block. All are optional. The `JB_` variab
 | `RESHARPER_MCP_LOG_LEVEL` | `Warning` | Level for the rolling file log: `Verbose`, `Debug`, `Information`, `Warning`, `Error` or `Fatal`. The Microsoft names `Trace` and `Critical` also work, and any value it does not recognise falls back to `Warning`. |
 | `MAX_MCP_OUTPUT_TOKENS` | 25,000 characters | Client output budget that responses are reduced to fit, at 2.5 characters per token. |
 
-The solution comes from the `solutionPath` argument, then `JB_SOLUTION_PATH`, then the one `.sln` or `.slnx` in the working directory, with no walk up to a parent. Logs roll daily under `%LOCALAPPDATA%\Zphil.ReSharperCli\logs` on Windows, and the platform equivalent elsewhere.
+The solution comes from the `solutionPath` argument, then `JB_SOLUTION_PATH`, then the one `.sln` or `.slnx` in the working directory, with no walk up to a parent. The first two also accept a solution filter (`.slnf`), whose settings are read from the solution it names. Logs roll daily under `%LOCALAPPDATA%\Zphil.ReSharperCli\logs` on Windows, and the platform equivalent elsewhere.
 
 Two guides go deeper, and the server serves both as MCP resources for an agent to read. The [setup guide](https://github.com/andypgray/resharper-cli-mcp/blob/main/src/Zphil.ReSharperCli/Resources/setup-guide.md) (`resharper://guides/setup`) covers discovery, the cache, run times and output limits. The [configuration guide](https://github.com/andypgray/resharper-cli-mcp/blob/main/src/Zphil.ReSharperCli/Resources/configuration-guide.md) (`resharper://guides/configuration`) covers settings layers, cleanup profiles, and keeping a deliberate style from being reverted.
 

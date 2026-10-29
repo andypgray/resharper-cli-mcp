@@ -125,6 +125,10 @@ the whole stack. Passing a discovered file along would therefore demote every pr
 still matter to this server, because the declared cleanup profile below is read from the resolved file, but
 `jb` applies them on its own.
 
+When the solution is a solution filter (`.slnf`), "the solution" in level 2 is the one the filter's
+`solution.path` names, because that is the file whose settings `jb` mounts. A `.DotSettings` beside the
+filter itself is not read.
+
 `jb` also applies `.editorconfig` from the source tree, with no flag and no `--settings`. StyleCop.Analyzers,
 Roslyn, `dotnet format` and Rider read `.editorconfig` too, so it is the portable home for style rules. Use
 `.sln.DotSettings` only for what it cannot express, which is ReSharper-only settings and cleanup-profile

@@ -46,7 +46,8 @@ Resolved in this order:
 3. a single `.sln` or `.slnx` in the working directory — **top level only, no parent walk**.
 
 Levels 1 and 2 are assertions, not hints: a path that does not exist is an error, never a fall-through to
-the next level. Level 3 fails when the directory holds zero or several solution files, and the error names
+the next level. Levels 1 and 2 also take a solution filter (`.slnf`), and the settings come from the solution
+its `solution.path` names; discovery at level 3 never picks a filter. Level 3 fails when the directory holds zero or several solution files, and the error names
 `JB_SOLUTION_PATH`. So a solution one directory below the server's working directory, or a directory
 holding two `.sln` files, needs one of the first two levers — discovery will not find it on its own.
 

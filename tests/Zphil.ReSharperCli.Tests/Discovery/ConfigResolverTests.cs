@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Shouldly;
@@ -473,6 +474,124 @@ public sealed class ConfigResolverTests : IDisposable
         config.Warnings.ShouldBe(new ConfigWarnings(null, null));
     }
 
+    // A solution filter: jb mounts the settings of the solution the filter names, never a file beside the
+    // filter, so the chain follows solution.path. Each filter whose settings are read sits in a directory of its
+    // own, so a lookup anchored on the filter would find nothing.
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ResolveAsync_SolutionFilterArgument_ReadsSettingsAndProfileFromTheSolutionItNames(bool absoluteSolutionPath)
+    {
+        // Arrange
+        string solution = _environment.PlantSolution("App.sln");
+        string adjacent = DotSettingsFixtures.PlantBeside(_environment.CurrentDirectory, DotSettingsFixtures.Declaring("House: Keep Named Arguments"));
+        string filterDirectory = _environment.CreateTempDirectory();
+        string written = absoluteSolutionPath ? solution : Path.GetRelativePath(filterDirectory, solution);
+        string filter = PlantFilter(filterDirectory, written);
+
+        // Act
+        ResolvedConfig config = await _resolver.ResolveAsync(filter, Ct);
+
+        // Assert — the filter stays the solution jb is handed and the root files resolve against.
+        config.SolutionPath.ShouldBe(filter);
+        config.SolutionDirectory.ShouldBe(filterDirectory);
+        config.SettingsPath.ShouldBe(adjacent);
+        config.SettingsPathIsCustomLayer.ShouldBeFalse();
+        config.CleanupProfile.ShouldBe("House: Keep Named Arguments");
+    }
+
+    [Fact]
+    public async Task ResolveAsync_SolutionFilterInJbSolutionPath_ReadsTheProfileFromTheSolutionItNames()
+    {
+        // Arrange
+        string solution = _environment.PlantSolution("App.sln");
+        DotSettingsFixtures.PlantBeside(_environment.CurrentDirectory, DotSettingsFixtures.Declaring("House: Keep Named Arguments"));
+        _environment.SetVariable("JB_SOLUTION_PATH", PlantFilter(_environment.CreateTempDirectory(), solution));
+
+        // Act
+        ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
+
+        // Assert
+        config.CleanupProfile.ShouldBe("House: Keep Named Arguments");
+    }
+
+    [Fact]
+    public async Task ResolveAsync_JbSettingsPathNamesTheFilteredSolutionsDotSettings_IsNotACustomLayer()
+    {
+        // Arrange — jb mounts this file itself through the filter, so naming it as --settings would demote every
+        // project layer, as it would for the solution passed directly.
+        string solution = _environment.PlantSolution("App.sln");
+        string adjacent = DotSettingsFixtures.PlantBeside(_environment.CurrentDirectory, string.Empty);
+        _environment.SetVariable("JB_SETTINGS_PATH", adjacent);
+        string filter = PlantFilter(_environment.CreateTempDirectory(), solution);
+
+        // Act
+        ResolvedConfig config = await _resolver.ResolveAsync(filter, Ct);
+
+        // Assert
+        config.SettingsPath.ShouldBe(adjacent);
+        config.SettingsPathIsCustomLayer.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task ResolveAsync_SolutionFilterNamesAMissingSolution_ThrowsNamingBoth()
+    {
+        // Arrange
+        string filter = PlantFilter(_environment.CreateTempDirectory(), "Gone.sln");
+        string resolved = Path.Combine(Path.GetDirectoryName(filter)!, "Gone.sln");
+
+        // Act
+        var exception = await Should.ThrowAsync<UserErrorException>(() => _resolver.ResolveAsync(filter, Ct));
+
+        // Assert
+        exception.Message.ShouldBe(
+            $"The solution filter \"{filter}\" names the solution \"Gone.sln\", which does not exist (resolved to \"{resolved}\").");
+    }
+
+    [Theory]
+    [InlineData("not json")]
+    [InlineData("""{ "solution": { "projects": [] } }""")]
+    [InlineData("""{ "solution": "App.sln" }""")]
+    public async Task ResolveAsync_SolutionFilterWithoutASolutionPath_ThrowsNamingTheFilter(string content)
+    {
+        // Arrange
+        string filter = SolutionFiles.Plant(_environment.CreateTempDirectory(), "Broken.slnf", content);
+
+        // Act
+        var exception = await Should.ThrowAsync<UserErrorException>(() => _resolver.ResolveAsync(filter, Ct));
+
+        // Assert
+        exception.Message.ShouldStartWith($"The solution filter \"{filter}\" ");
+    }
+
+    [Fact]
+    public async Task ResolveForCacheResetAsync_SolutionFilterThatIsGone_ResolvesAnyway()
+    {
+        // Arrange — a reset reads no settings and may be reclaiming a filter's cache after the filter was deleted.
+        string missing = Path.Combine(_environment.CreateTempDirectory(), "Removed.slnf");
+
+        // Act
+        ResolvedConfig config = await _resolver.ResolveForCacheResetAsync(missing, Ct);
+
+        // Assert
+        config.SolutionPath.ShouldBe(missing);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_SolutionFilterBesideASolution_IsNotDiscovered()
+    {
+        // Arrange — a filter is a view of a solution, not a second one, so it must not make discovery ambiguous.
+        string solution = _environment.PlantSolution("App.slnx");
+        PlantFilter(_environment.CurrentDirectory, solution);
+
+        // Act
+        ResolvedConfig config = await _resolver.ResolveAsync(null, Ct);
+
+        // Assert
+        config.SolutionPath.ShouldBe(solution);
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")] // empty is treated as unset, not as the current directory
@@ -615,6 +734,16 @@ public sealed class ConfigResolverTests : IDisposable
         // Assert
         first.SolutionPath.ShouldBe(firstSolution);
         second.SolutionPath.ShouldBe(secondSolution);
+    }
+
+    /// <summary>
+    ///     Writes <c>App.slnf</c> into <paramref name="directory" /> naming <paramref name="solutionPath" />, spelt
+    ///     as given, and returns its path.
+    /// </summary>
+    private static string PlantFilter(string directory, string solutionPath)
+    {
+        string escaped = JsonSerializer.Serialize(solutionPath);
+        return SolutionFiles.Plant(directory, "App.slnf", $$"""{ "solution": { "path": {{escaped}}, "projects": [] } }""");
     }
 
     private string WriteSharedGlobalSettings()

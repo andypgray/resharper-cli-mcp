@@ -54,7 +54,7 @@ internal sealed class ResharperTools(
     // that decides whether to call at all, or a gate on a destructive follow-up goes here with its cure stated
     // inline, not in the always-resident server instructions.
     private const string SolutionPathDescription =
-        "Path to the .sln/.slnx to run against. Overrides JB_SOLUTION_PATH and working-directory discovery.";
+        "Path to the .sln, .slnx or .slnf to run against. Overrides JB_SOLUTION_PATH and working-directory discovery.";
 
     private const string JoinedPathsNote =
         " An element joining several paths with ; or , is split into separate paths.";

@@ -18,7 +18,7 @@ An agent can run `jb` from a shell. It then gets a report file that can list tho
 
 ## Run times
 
-Every run analyses the whole solution, because resolving symbols needs the full solution model. For inspect, `files` narrows what is reported, not what is analysed. For cleanup, it also sets how many files are rewritten, and on a warm cache a cleanup takes longer the more files it is given. The first run against a solution builds ReSharper's caches and typically takes minutes, then later runs against the same cache are several times faster.
+An inspect analyses the whole solution, because resolving symbols needs the full solution model, so `files` narrows what is reported, not what is analysed. A cleanup loads only the projects its files belong to and every project those reference, through a solution filter the server writes, and on a warm cache it takes longer the more files it is given. `RESHARPER_MCP_CLEANUP_FILTER=off` makes it load the whole solution. The first run against a solution builds ReSharper's caches and typically takes minutes, then later runs against the same cache are several times faster.
 
 Each run is capped at `RESHARPER_MCP_TIMEOUT_SECS`, defaulting to 10 minutes. If your client's own tool-call timeout is shorter than a cold run, raise that too.
 
@@ -116,6 +116,7 @@ Set these in the client config's `env` block. All are optional. The `JB_` variab
 | `JB_EXTENSION_SOURCE` | `jb`'s own | Custom NuGet source for those plugins. |
 | `RESHARPER_MCP_TIMEOUT_SECS` | `600` | Cap in seconds on one `jb` run, and on the wait for one already in flight, clamped to 60–86,400. |
 | `RESHARPER_MCP_PREWARM` | on | `off` disables the cache pre-warm when a client connects. |
+| `RESHARPER_MCP_CLEANUP_FILTER` | on | `off` makes every cleanup load the whole solution rather than a solution filter of the files' projects. |
 | `RESHARPER_MCP_LOG_LEVEL` | `Warning` | Level for the rolling file log: `Verbose`, `Debug`, `Information`, `Warning`, `Error` or `Fatal`. The Microsoft names `Trace` and `Critical` also work, and any value it does not recognise falls back to `Warning`. |
 | `MAX_MCP_OUTPUT_TOKENS` | 25,000 characters | Client output budget that responses are reduced to fit, at 2.5 characters per token. |
 

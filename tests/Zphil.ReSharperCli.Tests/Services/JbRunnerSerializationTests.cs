@@ -49,7 +49,7 @@ public sealed class JbRunnerSerializationTests : IDisposable
         // serialization lives entirely in JbRunner, so the only way either service escapes it is by bypassing
         // the runner, and one call through each is what catches either of them doing so.
         InspectService inspect = new(_runner);
-        CleanupService cleanup = new(_runner, NullLogger<CleanupService>.Instance);
+        CleanupService cleanup = new(_runner, JbRunners.Filter(_environment.CreateTempDirectory()), NullLogger<CleanupService>.Instance);
         SolutionFiles.Plant(_solutionDirectory, "src/A.cs", "content");
 
         // Act
@@ -69,7 +69,7 @@ public sealed class JbRunnerSerializationTests : IDisposable
         // generations and the lock lets both straight through. Run together, jb runs against different
         // solutions slow each other by multiples, enough to carry a one-file cleanup past the default cap.
         InspectService inspect = new(_runner);
-        CleanupService cleanup = new(_runner, NullLogger<CleanupService>.Instance);
+        CleanupService cleanup = new(_runner, JbRunners.Filter(_environment.CreateTempDirectory()), NullLogger<CleanupService>.Instance);
 
         string otherSolutionPath = _environment.CreateCheckout("Other.sln");
         ResolvedConfig otherConfig = Configs.Bare(otherSolutionPath, _environment.CreateTempDirectory());

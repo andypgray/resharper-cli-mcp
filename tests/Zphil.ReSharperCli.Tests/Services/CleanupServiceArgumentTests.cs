@@ -52,4 +52,38 @@ public sealed class CleanupServiceArgumentTests
             "--source=cfg-source"
         ]);
     }
+
+    [Fact]
+    public void BuildArguments_ThroughAFilter_NamesTheFilterWhereTheSolutionWouldBe()
+    {
+        // Act
+        List<string> arguments = CleanupService.BuildArguments(
+            Configs.Bare(SolutionPath, CacheHome), ["**/sln/src/A.cs"], CleanupService.DefaultProfile, "/tmp/App.cleanup-0123.slnf");
+
+        // Assert
+        arguments.ShouldBe(
+        [
+            "cleanupcode",
+            "/tmp/App.cleanup-0123.slnf",
+            "--profile=Built-in: Full Cleanup",
+            "--no-build",
+            "--include=**/sln/src/A.cs",
+            "--caches-home=/cache"
+        ]);
+    }
+
+    [Fact]
+    public void IncludePatterns_ThroughAFilter_AnchorsOnTheWholePathWhereASolutionWideRunStaysRelative()
+    {
+        // Arrange — rooted at whatever this platform's root is, so the anchored spelling is the same everywhere.
+        string solutionDirectory = Path.Combine(Path.GetPathRoot(Path.GetTempPath())!, "repo");
+
+        // Act
+        List<string> filtered = CleanupService.IncludePatterns(["src/A.cs"], solutionDirectory, true);
+        List<string> solutionWide = CleanupService.IncludePatterns(["src/A.cs"], solutionDirectory, false);
+
+        // Assert
+        filtered.ShouldBe(["**/repo/src/A.cs"]);
+        solutionWide.ShouldBe(["src/A.cs"]);
+    }
 }

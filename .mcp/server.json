@@ -74,6 +74,12 @@
           "isSecret": false
         },
         {
+          "name": "RESHARPER_MCP_CLEANUP_FILTER",
+          "description": "Set to off to run every cleanup against the whole solution rather than a filter of the files' projects.",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
           "name": "RESHARPER_MCP_LOG_LEVEL",
           "description": "Minimum level for the rolling file log. Defaults to Warning.",
           "isRequired": false,

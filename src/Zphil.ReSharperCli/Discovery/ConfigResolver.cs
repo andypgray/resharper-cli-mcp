@@ -248,7 +248,7 @@ internal sealed class ConfigResolver(JbLocator jbLocator, IEnvironment environme
     }
 
     /// <summary>
-    ///     Compares two settings paths, with the operating system standing in for the filesystem's case rules.
+    ///     Determines whether two settings paths name the same file, by <see cref="SolutionModel.PathComparer" />.
     /// </summary>
     /// <remarks>
     ///     Both operands are already absolute and normalized. A symlinked or 8.3-form spelling, or a
@@ -257,7 +257,7 @@ internal sealed class ConfigResolver(JbLocator jbLocator, IEnvironment environme
     /// </remarks>
     private static bool PathsEqual(string left, string right)
     {
-        return string.Equals(left, right, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+        return SolutionModel.PathComparer.Equals(left, right);
     }
 
     private string GlobalSettingsPath()

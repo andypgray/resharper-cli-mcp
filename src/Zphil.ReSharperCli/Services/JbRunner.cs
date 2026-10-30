@@ -77,6 +77,15 @@ internal sealed class JbRunner(
     /// <summary>What a <c>cleanupcode</c> killed at the cap cannot rule out, in every cache state.</summary>
     private const string RewrittenWarning = "Files this run reached before it was stopped may already have been rewritten.";
 
+    /// <summary>What a run that loaded the whole solution is told about narrowing <c>files</c>.</summary>
+    private const string ScopingCannotHelp =
+        "Scoping the next call with `files` will not help — jb analyses the whole solution whatever the report is narrowed to.";
+
+    /// <summary>
+    ///     Where a variable this server reads once at startup is set, and what makes a new value take effect.
+    /// </summary>
+    private const string InEnvBlockThenRestart = "in this server's env block in your MCP client config, then restart the server.";
+
     /// <summary>
     ///     Whether this server session has already said that <c>jb</c>'s cache-generation naming no longer
     ///     matches what <see cref="JbSolutionCacheHash" /> reproduces.
@@ -109,15 +118,24 @@ internal sealed class JbRunner(
     ///     caller's own post-checks.
     /// </summary>
     /// <remarks>
-    ///     Queues for the run slot and the lock, and throws on a non-zero exit or at the run cap.
-    ///     <paramref name="onProgress" /> receives the run's advance as rendered lines while it runs: plain
-    ///     strings, so no MCP type reaches this layer.
+    ///     <para>
+    ///         Queues for the run slot and the lock, and throws on a non-zero exit or at the run cap.
+    ///         <paramref name="onProgress" /> receives the run's advance as rendered lines while it runs: plain
+    ///         strings, so no MCP type reaches this layer.
+    ///     </para>
+    ///     <para>
+    ///         With a <paramref name="filter" />, which <paramref name="arguments" /> must name in place of the
+    ///         solution, the slot, the lock, the seeding and the cache state still key off the solution, because
+    ///         <c>jb</c> opens the cache generation of the solution a filter names. The filter is written once
+    ///         that lease is held, the one lease its path belongs to (<see cref="CleanupFilter.PathFor" />).
+    ///     </para>
     /// </remarks>
     public async Task<ProcessResult> RunAsync(
         ResolvedConfig config,
         IReadOnlyList<string> arguments,
         CancellationToken cancellationToken,
-        Action<string>? onProgress = null)
+        Action<string>? onProgress = null,
+        SolutionFilterPlan? filter = null)
     {
         var timedOut = false;
         try
@@ -157,14 +175,15 @@ internal sealed class JbRunner(
             using IDisposable runLease = await runLock.AcquireAsync(config.SolutionPath, config.CacheHome, cancellationToken);
             TimeSpan queueWait = queued.Elapsed;
 
+            if (filter is not null) WriteFilter(filter);
+
             progress?.Seeding();
             bool seeded = await transplanter.TryTransplantAsync(config, cancellationToken);
 
             // Read here rather than inside the spawn, and after the transplant decision: this is the state jb
             // is about to open, and it is quoted both by the run line inside the spawn and by the timeout
             // message outside it.
-            JbCacheState cache = JbCacheState.Read(
-                config.SolutionPath, config.CacheHome, seeded, config.JbVersion, logger);
+            JbCacheState cache = JbCacheState.Read(config.SolutionPath, config.CacheHome, seeded, config.JbVersion, logger);
 
             ProcessResult result;
             try
@@ -174,7 +193,7 @@ internal sealed class JbRunner(
             catch (ProcessTimeoutException exception)
             {
                 timedOut = true;
-                throw new UserErrorException(TimedOutMessage(arguments[0], progress?.FilesSeen ?? 0, cache), exception);
+                throw new UserErrorException(TimedOutMessage(arguments[0], progress?.FilesSeen ?? 0, cache, filter is not null), exception);
             }
 
             if (result.ExitCode != 0)
@@ -391,6 +410,31 @@ internal sealed class JbRunner(
             config.CacheHome);
     }
 
+    /// <summary>Writes the filter a cleanup runs through, under the lease the caller holds.</summary>
+    /// <remarks>
+    ///     A failure ends the call before any <c>jb</c> starts, naming the switch that takes the filter out of
+    ///     the path altogether, since nothing about a retry would change a directory that cannot be written.
+    /// </remarks>
+    private void WriteFilter(SolutionFilterPlan filter)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(filter.Path)!);
+            File.WriteAllText(filter.Path, filter.Content);
+        }
+        catch (Exception exception) when (FilesystemFailure.Covers(exception))
+        {
+            throw new UserErrorException(
+                $"Could not write the solution filter this cleanup runs through to \"{filter.Path}\" "
+                + $"({ConfigWarningBanner.SingleLine(exception.Message)}). To clean up through the whole solution "
+                + $"instead, set {CleanupFilter.EnableVariable}=off "
+                + InEnvBlockThenRestart,
+                exception);
+        }
+
+        logger.LogDebug("Wrote the solution filter {FilterPath}", filter.Path);
+    }
+
     /// <summary>
     ///     Composes what a foreground caller is told when its run hits the cap.
     /// </summary>
@@ -401,9 +445,10 @@ internal sealed class JbRunner(
     ///     </para>
     ///     <para>
     ///         The cause and the remedy depend on the <paramref name="cache" /> state the run opened. Any state
-    ///         but warm is read as the cold first run, which scoping cannot shorten and a retry resumes. A warm
-    ///         run was building no cache, so it is promised no resumption: a warm <c>inspectcode</c> is a
-    ///         whole-solution analysis that outgrew the cap, which only raising the cap cures, while a warm
+    ///         but warm is read as the cold first run, which a retry resumes, and which scoping cannot shorten
+    ///         except through a filter (<paramref name="throughFilter" />), where the run loads only its files'
+    ///         projects. A warm run was building no cache, so it is promised no resumption: a warm <c>inspectcode</c>
+    ///         is a whole-solution analysis that outgrew the cap, which only raising the cap cures, while a warm
     ///         <c>cleanupcode</c>'s time grows with the files it rewrites, so narrowing them is the first remedy.
     ///         Every <c>cleanupcode</c> is warned that files may already be rewritten, whatever the cache state:
     ///         a cold run analyses before it rewrites, but nothing here knows which side of that the cap fell on.
@@ -422,11 +467,12 @@ internal sealed class JbRunner(
     ///         comparable run has finished, which a warm state never has.
     ///     </para>
     /// </remarks>
-    private string TimedOutMessage(string subcommand, int filesSeen, JbCacheState cache)
+    private string TimedOutMessage(string subcommand, int filesSeen, JbCacheState cache, bool throughFilter)
     {
         string cap = $"jb {subcommand} timed out after {DurationFormatter.Format(runTimeout)} and was stopped.\n"
                      + $"That cap is this server's, not jb's own: raise it by setting {JbRunTimeout.Variable} (in seconds) "
-                     + "in this server's env block in your MCP client config, then restart the server.\n";
+                     + InEnvBlockThenRestart
+                     + "\n";
 
         if (cache.Kind == JbCacheKind.Warm)
             return subcommand == CleanupService.Subcommand
@@ -437,8 +483,8 @@ internal sealed class JbRunner(
                   + RewrittenWarning
                 : cap
                   + "The ReSharper cache was warm, so this was not the slow first run: a warm analysis of this "
-                  + "solution takes longer than the cap, and raising the cap is the fix. Scoping the next call with "
-                  + "`files` will not help — jb analyses the whole solution whatever the report is narrowed to.";
+                  + "solution takes longer than the cap, and raising the cap is the fix. "
+                  + ScopingCannotHelp;
 
         string reached = filesSeen > 0
             ? $"jb had reached {RunProgressFormatter.Files(filesSeen)} by the time it was stopped, and the cache keeps that work, so a "
@@ -453,11 +499,14 @@ internal sealed class JbRunner(
             ? " " + RewrittenWarning
             : string.Empty;
 
+        string scoping = throughFilter
+            ? string.Empty
+            : ScopingCannotHelp + " ";
+
         return cap
                + "A run that long is almost always a cold ReSharper cache. "
                + recorded
-               + "Scoping the next call with `files` will not help — jb analyses the whole solution whatever "
-               + "the report is narrowed to. "
+               + scoping
                + reached
                + rewritten;
     }
@@ -508,12 +557,19 @@ internal sealed class JbRunner(
     ///     relative to <paramref name="solutionDirectory" /> by <see cref="FilePathList.ToIncludePattern" />.
     /// </summary>
     /// <remarks>
-    ///     The translation is made here, at the <c>jb</c>-contract boundary every subcommand passes through,
-    ///     rather than at the tool edge.
+    ///     The translation is made here, at the <c>jb</c>-contract boundary, rather than at the tool edge.
     /// </remarks>
     internal static string IncludeArgument(IReadOnlyList<string> files, string solutionDirectory)
     {
         IEnumerable<string> patterns = files.Select(file => FilePathList.ToIncludePattern(file, solutionDirectory));
+        return IncludeArgument(patterns);
+    }
+
+    /// <summary>
+    ///     Builds the <c>--include</c> argument over <paramref name="patterns" />, each already spelt for <c>jb</c>.
+    /// </summary>
+    internal static string IncludeArgument(IEnumerable<string> patterns)
+    {
         return $"--include={string.Join(";", patterns)}";
     }
 

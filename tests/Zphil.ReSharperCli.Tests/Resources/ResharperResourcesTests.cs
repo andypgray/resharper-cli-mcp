@@ -143,6 +143,7 @@ public sealed class ResharperResourcesTests
     [InlineData("JB_EXTENSION_SOURCE")]
     [InlineData("RESHARPER_MCP_TIMEOUT_SECS")]
     [InlineData("RESHARPER_MCP_PREWARM")]
+    [InlineData("RESHARPER_MCP_CLEANUP_FILTER")]
     [InlineData("RESHARPER_MCP_LOG_LEVEL")]
     [InlineData("MAX_MCP_OUTPUT_TOKENS")]
     public void SetupGuide_DocumentsEveryEnvironmentVariable(string variable)

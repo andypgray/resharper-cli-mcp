@@ -21,8 +21,9 @@ namespace Zphil.ReSharperCli.Services;
 ///     <para>
 ///         Splitting and translation apply at different depths. Splitting happens at the tool edge, before
 ///         validation, so the error names the fragment that is wrong. Translating an entry into the spelling
-///         <c>jb</c> matches (<see cref="ToIncludePattern" />) happens at the <c>--include</c> boundary, so the
-///         caller's own path is what cleanup echoes back in its report.
+///         <c>jb</c> matches (<see cref="ToIncludePattern" />, or <see cref="ToFilterIncludePattern" /> through a
+///         solution filter) happens at the <c>--include</c> boundary, so the caller's own path is what cleanup
+///         echoes back in its report.
 ///     </para>
 /// </remarks>
 internal static class FilePathList
@@ -123,6 +124,26 @@ internal static class FilePathList
             // path limit surfaces from Windows as PathTooLongException, an IOException.
             return entry;
         }
+    }
+
+    /// <summary>
+    ///     Returns the spelling of <paramref name="entry" /> that <c>jb</c>'s <c>--include</c> matches through a
+    ///     solution filter stored outside the solution's directory: <c>**/</c> and then the absolute path without
+    ///     its root, forward-slashed.
+    /// </summary>
+    /// <remarks>
+    ///     Through such a filter <c>jb</c> matches neither a path relative to the solution nor a <c>../</c> path
+    ///     relative to the filter, while <c>**/</c> followed by the whole path matches the one file and nothing
+    ///     else. The root is left out so that one spelling serves a drive letter, a UNC share and <c>/</c> alike.
+    ///     The entry has to name a file, as every entry does by the time a filter is chosen.
+    /// </remarks>
+    public static string ToFilterIncludePattern(string entry, string solutionDirectory)
+    {
+        string resolved = Resolve(entry, solutionDirectory);
+        string root = Path.GetPathRoot(resolved) ?? string.Empty;
+        string belowRoot = resolved[root.Length..].TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+        return "**/" + belowRoot.Replace('\\', '/');
     }
 
     /// <summary>

@@ -201,6 +201,33 @@ public sealed class FilePathListTests : IDisposable
         pattern.ShouldBe("src/A.cs");
     }
 
+    [Theory]
+    [InlineData("src/A.cs", "**/repo/src/A.cs")]
+    [InlineData("../shared/B.cs", "**/shared/B.cs")]
+    public void ToFilterIncludePattern_AnyEntry_IsTheWholePathBelowTheRoot(string entry, string expected)
+    {
+        // Arrange — rooted at whatever this platform's root is, so the expected spelling is the same everywhere.
+        string solutionDirectory = Path.Combine(Path.GetPathRoot(_solutionDirectory)!, "repo");
+
+        // Act
+        string pattern = FilePathList.ToFilterIncludePattern(entry, solutionDirectory);
+
+        // Assert
+        pattern.ShouldBe(expected);
+    }
+
+    [Theory(Skip = "Only Windows spells a path with a drive letter or a share.", SkipUnless = nameof(OnWindows))]
+    [InlineData(@"D:\work\app\src\A.cs", "**/work/app/src/A.cs")]
+    [InlineData(@"\\server\share\app\src\A.cs", "**/app/src/A.cs")]
+    public void ToFilterIncludePattern_AnAbsoluteWindowsEntry_DropsTheRootAndTurnsTheSlashes(string entry, string expected)
+    {
+        // Act — a drive's root ends in a separator and a share's does not, and neither leaves one behind.
+        string pattern = FilePathList.ToFilterIncludePattern(entry, @"C:\repo");
+
+        // Assert
+        pattern.ShouldBe(expected);
+    }
+
     [Fact]
     public void ToIncludePattern_PathTheRuntimeRejects_IsKeptVerbatimRatherThanThrowing()
     {

@@ -164,6 +164,10 @@ internal sealed class McpPipelineHarness : IAsyncDisposable
                 logs: provider.GetRequiredService<ILoggerFactory>(),
                 heartbeat: BriskHeartbeat));
             builder.Services.AddSingleton<InspectService>();
+
+            string filterRoot = environment.CreateTempDirectory();
+            builder.Services.AddSingleton(provider => JbRunners.Filter(
+                filterRoot, logs: provider.GetRequiredService<ILoggerFactory>()));
             builder.Services.AddSingleton<CleanupService>();
 
             // By factory for the heartbeat alone: a reset reports the wait it is serving out, so registered by

@@ -17,6 +17,11 @@
         <GenerateDocumentationFile>false</GenerateDocumentationFile>
     </PropertyGroup>
 
+    <!-- The second project sits below this one, and its sources and generated files are its own. -->
+    <ItemGroup>
+        <Compile Remove="Other/**" />
+    </ItemGroup>
+
     <!-- A dependency-free fixture has no graph to lock, so this property does nothing here except
          satisfy Scorecard's Pinned-Dependencies check, which reads csproj files only and credits
          RestoreLockedMode all-or-nothing across every csproj in the tree — this one included.

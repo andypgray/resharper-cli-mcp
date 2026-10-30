@@ -13,8 +13,9 @@ namespace Zphil.ReSharperCli.Execution;
 ///     </para>
 ///     <para>
 ///         The default is sized for the run that approaches it, a cold whole-solution analysis.
-///         <c>--include</c> does not make a cold run cheaper, because <c>jb</c> analyses the whole solution and
-///         narrows only what it inspects, so there is no scoping lever to reach for instead of this one.
+///         <c>--include</c> does not make a cold run cheaper, because <c>jb</c> analyses every project it loads
+///         and narrows only what it inspects, so an inspection has no scoping lever to reach for instead of this
+///         one. A cleanup through a solution filter loads only its files' projects, so fewer files can shorten it.
 ///     </para>
 /// </remarks>
 internal static class JbRunTimeout

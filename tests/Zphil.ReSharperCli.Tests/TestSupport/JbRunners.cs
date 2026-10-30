@@ -49,6 +49,16 @@ internal static class JbRunners
         return new JbRunSlot(Logs.For<JbRunSlot>(logs));
     }
 
+    /// <summary>Builds the cleanup filter, on by default, rooted at <paramref name="root" />.</summary>
+    /// <remarks>
+    ///     The root is required, and is the test's own, because a cleanup that goes through a filter writes one
+    ///     there.
+    /// </remarks>
+    public static CleanupFilter Filter(string root, bool enabled = true, ILoggerFactory? logs = null)
+    {
+        return new CleanupFilter(root, enabled, Logs.For<CleanupFilter>(logs));
+    }
+
     /// <summary>
     ///     Builds a cache reset on the caller's lock and yield, sharing them with a runner as the composition
     ///     root does.

@@ -146,8 +146,17 @@ public sealed class JbContractFixture : IAsyncLifetime
     /// <summary>Gets a cleanup pass with the built-in profile literal, over a relative path.</summary>
     internal CleanupRun BuiltInProfileCleanup { get; private set; } = null!;
 
-    /// <summary>Gets a cleanup pass with no profile argument, over an absolute path.</summary>
+    /// <summary>
+    ///     Gets a cleanup pass with no profile argument, over an absolute path, through the solution filter the
+    ///     server builds.
+    /// </summary>
     internal CleanupRun DeclaredProfileCleanup { get; private set; } = null!;
+
+    /// <summary>Gets the same pass as <see cref="DeclaredProfileCleanup" /> with the cleanup filter off.</summary>
+    internal CleanupRun SolutionWideCleanup { get; private set; } = null!;
+
+    /// <summary>Gets where the server wrote the solution filter the filtered passes ran through.</summary>
+    internal string FilterPath { get; private set; } = "";
 
     /// <summary>Gets how each subcommand answered an absolute <c>--include</c>.</summary>
     internal RawIncludeProbe RawAbsoluteInclude { get; private set; } = null!;
@@ -221,7 +230,10 @@ public sealed class JbContractFixture : IAsyncLifetime
         ConfigResolver configResolver = new(locator, SeamEnvironment, NullLogger<ConfigResolver>.Instance);
         JbRunner jbRunner = JbRunners.Create(processRunner, logs: serverLog);
         InspectService inspectService = new(jbRunner);
-        CleanupService cleanupService = new(jbRunner, serverLog.CreateLogger<CleanupService>());
+        CleanupFilter cleanupFilter = JbRunners.Filter(SeamEnvironment.CreateTempDirectory(), logs: serverLog);
+        CleanupService cleanupService = new(jbRunner, cleanupFilter, serverLog.CreateLogger<CleanupService>());
+        CleanupService solutionWideCleanupService = new(
+            jbRunner, JbRunners.Filter(SeamEnvironment.CreateTempDirectory(), false, serverLog), serverLog.CreateLogger<CleanupService>());
 
         Installation = await locator.LocateAsync(cancellationToken);
         Config = await configResolver.ResolveAsync(null, cancellationToken);
@@ -231,13 +243,20 @@ public sealed class JbContractFixture : IAsyncLifetime
         Issues = await inspectService.RunAsync(Config, null, InspectSeverity.Suggestion, cancellationToken);
         SarifArtifacts = ObserveSarifArtifacts(_runs.LastReport, _runs.LastResult);
 
+        // After the inspection, so a setting only the filter contract reads cannot change what inspect reports.
+        await DeclareTypeBracesAtEndOfLineAsync(cancellationToken);
+
+        FilterPath = cleanupFilter.PathFor(SolutionPath, Config.CacheHome);
+
         BuiltInProfileCleanup = await CleanUpAsync(
             cleanupService, [MisformattedFileName], CleanupService.DefaultProfile, cancellationToken);
 
-        // Absolute, and with no profile argument: one pass answers the declared-profile contract and the
-        // absolute-path translation at once, because CleanupService does both on the way to the same run.
+        // Absolute, and with no profile argument, so each pass resolves the declared profile and translates the
+        // path. The filter contracts compare the first pass, through the server's filter, with the solution-wide
+        // second; the translation contract reads the second, whose include FilePathList.ToIncludePattern spells.
         string absoluteMisformatted = Path.Combine(Config.SolutionDirectory, MisformattedFileName);
         DeclaredProfileCleanup = await CleanUpAsync(cleanupService, [absoluteMisformatted], null, cancellationToken);
+        SolutionWideCleanup = await CleanUpAsync(solutionWideCleanupService, [absoluteMisformatted], null, cancellationToken);
 
         RawAbsoluteInclude = await ProbeRawAbsoluteIncludeAsync(jbRunner, absoluteMisformatted, cancellationToken);
 
@@ -264,6 +283,25 @@ public sealed class JbContractFixture : IAsyncLifetime
         CopyDirectory(FixtureDirectory, destination);
 
         return Path.Combine(destination, SolutionFileName);
+    }
+
+    /// <summary>
+    ///     Declares end-of-line type braces in the copy's solution settings, so a cleanup shows whether <c>jb</c>
+    ///     mounted that file.
+    /// </summary>
+    /// <remarks>
+    ///     The built-in profiles put a type's brace on its own line, so a brace at the end of the declaration line
+    ///     can only have come from this file.
+    /// </remarks>
+    private async Task DeclareTypeBracesAtEndOfLineAsync(CancellationToken cancellationToken)
+    {
+        const string closing = "</wpf:ResourceDictionary>";
+        const string entry =
+            """<s:String x:Key="/Default/CodeStyle/CodeFormatting/CSharpFormat/TYPE_DECLARATION_BRACES/@EntryValue">END_OF_LINE</s:String>""";
+
+        string settingsPath = SolutionPath + ".DotSettings";
+        string settings = await File.ReadAllTextAsync(settingsPath, cancellationToken);
+        await File.WriteAllTextAsync(settingsPath, settings.Replace(closing, $"\t{entry}\n{closing}"), cancellationToken);
     }
 
     /// <summary>Builds the copy.</summary>

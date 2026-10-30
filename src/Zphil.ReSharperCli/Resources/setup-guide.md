@@ -132,13 +132,47 @@ does not help**: `jb` analyses the whole solution whatever the report is narrowe
 is no faster than a solution-wide one. Measured over eight days of ordinary use on two solutions on one
 machine at 1.6.0, a scoped inspect ran to a median of 269 s (n=10) against 272 s solution-wide (n=27).
 
-Cleanup is different once the cache is warm: every call pays for the solution-wide analysis, then its
-time grows with the number of files it rewrites. Measured over 100 warm cleanups of one solution on one
-machine at 1.7.1, between 2026-10-05 and 2026-10-21, the median was 50 s for one to three files, 105 s for
-11 to 30 and 160 s for more than 30, and a cleanup of every file in the solution took 779 s. When a warm
-cleanup hits the cap, narrow `files` to the files that changed, or split them across several calls, before
-raising the cap. The timeout message says which case a run was in, and names the warm cache when there was
-one.
+Cleanup is different once the cache is warm: every call pays to load the solution, or the part of it a
+filter keeps (below), then its time grows with the number of files it rewrites. Measured over 100 warm
+cleanups of one solution on one machine at 1.7.1, between 2026-10-05 and 2026-10-21, the median was 50 s for
+one to three files, 105 s for 11 to 30 and 160 s for more than 30, and a cleanup of every file in the solution
+took 779 s. When a warm cleanup hits the cap, narrow `files` to the files that changed, or split them across
+several calls, before raising the cap. The timeout message says which case a run was in, and names the warm
+cache when there was one.
+
+### What a cleanup loads
+
+A cleanup loads only what its files need. The server writes a solution filter (`.slnf`) holding the project
+that owns each file and every project those reference, transitively, and runs `jb cleanupcode` against the
+filter rather than the solution. Every type the files can see is still loaded from source, so the rewritten
+bytes are the same, and the load is smaller. Measured on one machine on 2026-10-30, a warm one-file cleanup of
+a 25-project solution that loaded 4 projects through the filter took a median of 30 s, against 38 s for the
+whole solution, over four alternating runs of each, with the same bytes written every time.
+
+The filter is one file per solution and cache home, under the temp directory in
+`Zphil.ReSharperCli/cleanup-filters/`, rewritten on each call with that call's projects. `jb` opens the cache
+of the solution a filter names, so a filtered cleanup shares the solution's cache: it queues behind any other
+run against the solution, and `resharper_reset_cache` drops what it built along with everything else.
+
+A file's owner is the one project in the nearest directory above it that holds any. References are read
+from each project file, every `Directory.Build.props` and `Directory.Build.targets` above it, and any file
+those import by a literal path or one built from `$(MSBuildThisFileDirectory)`. Conditions are ignored, so a
+reference only some configuration takes is loaded anyway. An import that needs any other property, which is
+how a NuGet package's targets are wired by hand, is not followed; a project reference declared only there is
+resolved by `jb` from that project's build output instead.
+
+A cleanup loads the whole solution when:
+
+- `RESHARPER_MCP_CLEANUP_FILTER` is `off`,
+- the solution is already a `.slnf`,
+- any `files` entry is a wildcard,
+- a file has no owning project, or its nearest project directory holds more than one,
+- the solution or a project file cannot be read, or a `ProjectReference` needs MSBuild to evaluate it (a
+  property, an item list or a wildcard),
+- the files' projects and their references are every project in the solution.
+
+With `RESHARPER_MCP_LOG_LEVEL=Information`, the log records each decision: the filter and how many of the
+solution's projects it loads, or the reason the cleanup loaded the whole solution.
 
 What a killed cold run does leave behind is a partly-built cache that a retry picks up rather than starting
 over — though not from exactly where it stopped, because whatever was in flight when it was killed is
@@ -420,6 +454,7 @@ something `jb` itself is told; the `RESHARPER_MCP_` ones govern this server's ow
 | `JB_EXTENSION_SOURCE` | Custom NuGet source for those plugins. |
 | `RESHARPER_MCP_TIMEOUT_SECS` | Cap in seconds on one `jb` run, and on the wait for one already in flight (default `600`). Clamped to 60…86,400; anything unreadable falls back to `600`. |
 | `RESHARPER_MCP_PREWARM` | Set to `off` to stop the background pre-warm above. Anything else, including unset, leaves it on. |
+| `RESHARPER_MCP_CLEANUP_FILTER` | Set to `off` to have every cleanup load the whole solution rather than a solution filter of its files' projects — see "What a cleanup loads" above. Anything else, including unset, leaves the filter on. |
 | `RESHARPER_MCP_LOG_LEVEL` | Minimum level for the file log (default `Warning`). Accepts Serilog or Microsoft level names; anything unrecognised falls back to `Warning`. Set it to `Information` to record what each call did to the cache — see "Logs" below. |
 | `MAX_MCP_OUTPUT_TOKENS` | Set by the MCP client, not by you — the output budget above. |
 

@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using ModelContextProtocol.Protocol;
 using Shouldly;
@@ -164,7 +165,7 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
     [Fact(Skip = NoJb, SkipUnless = nameof(JbIsInstalled))]
     public void IncludePattern_TranslatedFromAnAbsolutePath_Matches()
     {
-        // Arrange — the entry the declared-profile pass was given, which is the form an agent tends to send.
+        // Arrange — the entry the solution-wide pass was given, which is the form an agent tends to send.
         string absolute = Path.Combine(fixture.Config.SolutionDirectory, JbContractFixture.MisformattedFileName);
 
         // Act
@@ -174,8 +175,39 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
         // file it named was rewritten. Its own report echoes the caller's absolute path back untranslated,
         // which is the half a unit test cannot check.
         pattern.ShouldBe("Misformatted.cs");
-        fixture.DeclaredProfileCleanup.Outcome.Entries.ShouldHaveSingleItem().Display.ShouldBe(absolute);
-        fixture.DeclaredProfileCleanup.ShouldHaveRewrittenTheFile();
+        fixture.SolutionWideCleanup.Outcome.Entries.ShouldHaveSingleItem().Display.ShouldBe(absolute);
+        fixture.SolutionWideCleanup.ShouldHaveRewrittenTheFile();
+    }
+
+    [Fact(Skip = NoJb, SkipUnless = nameof(JbIsInstalled))]
+    public void CleanupThroughTheServersFilter_RewritesWhatTheWholeSolutionDoes()
+    {
+        // Arrange
+        CleanupRun filtered = fixture.DeclaredProfileCleanup;
+        string solutionWide = fixture.SolutionWideCleanup.Evidence.AfterPass.Text
+                              ?? throw new InvalidOperationException(fixture.SolutionWideCleanup.Describe());
+
+        // Act
+        IReadOnlyList<string> filterProjects = SolutionFilterProjects(fixture.FilterPath);
+
+        // Assert — the filter left the second project out, and jb still found the file through it, by the
+        // anchored include spelling, and rewrote it to the same text a solution-wide pass does.
+        filterProjects.ShouldBe(["ContractFixture.csproj"]);
+        filtered.ShouldHaveRewrittenTheFile();
+        filtered.Evidence.AfterPass.Text.ShouldBe(solutionWide, filtered.Describe());
+    }
+
+    [Fact(Skip = NoJb, SkipUnless = nameof(JbIsInstalled))]
+    public void CleanupThroughAFilterInAnotherDirectory_AppliesTheSolutionsSettings()
+    {
+        // Act
+        string? filtered = fixture.DeclaredProfileCleanup.Evidence.AfterPass.Text;
+
+        // Assert — the brace style is declared only in the solution's .DotSettings, beside the solution rather
+        // than beside the filter, so jb mounted that file through the filter's solution.path.
+        Path.GetDirectoryName(fixture.FilterPath).ShouldNotBe(fixture.Config.SolutionDirectory);
+        filtered.ShouldNotBeNull(fixture.DeclaredProfileCleanup.Describe());
+        filtered.ShouldContain("internal class Misformatted {", fixture.DeclaredProfileCleanup.Describe());
     }
 
     [Fact(Skip = NoJb, SkipUnless = nameof(JbIsInstalled))]
@@ -219,14 +251,24 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
         // Hash drift costs a skipped optimisation, never a wrong delete: a computed hash matching no
         // directory means "nothing here is known to be ours". Cache reset then drops nothing and transplanting
         // stops seeding, both silently — which is why it is watched at all.
-        string generation = Path.Combine(
-            fixture.CacheHome, JbSolutionCacheHash.FirstGenerationDirectoryName(fixture.SolutionPath));
+        string generation = CacheHomes.GenerationPathFor(fixture.CacheHome, fixture.SolutionPath);
 
         if (!Directory.Exists(generation))
             findings.Add(
                 $"Cache generation naming has drifted: nothing at \"{Path.GetFileName(generation)}\" under the "
                 + "run's cache home. resharper_reset_cache will drop nothing and CacheTransplanter will stop "
                 + "seeding, both without an error.");
+
+        // A filtered cleanup queues on the solution's lock because jb opens the solution's generation through a
+        // filter. Keyed by the filter instead, those runs would build a cache that resharper_reset_cache never drops,
+        // and the lock, though it would still keep that cache from forking, would queue more than it needs to.
+        string filterGeneration = CacheHomes.GenerationPathFor(fixture.CacheHome, fixture.FilterPath);
+
+        if (Directory.Exists(filterGeneration))
+            findings.Add(
+                $"A cleanup through a solution filter built a cache generation of its own, "
+                + $"\"{Path.GetFileName(filterGeneration)}\", rather than opening the solution's. "
+                + "resharper_reset_cache will not drop it.");
 
         // The leading dot on the rule id is jb's own and nothing documents it. CompilationErrorNote already
         // matches the undotted spelling too, so a rename here is cosmetic rather than a break.
@@ -435,6 +477,18 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
             .Split('\n')
             .Where(line => line.StartsWith(VersionPrefix, StringComparison.Ordinal))
             .Select(line => line[VersionPrefix.Length..].Trim())
+            .ToList();
+    }
+
+    private static List<string> SolutionFilterProjects(string filterPath)
+    {
+        using JsonDocument filter = JsonDocument.Parse(File.ReadAllText(filterPath));
+
+        return filter.RootElement
+            .GetProperty("solution")
+            .GetProperty("projects")
+            .EnumerateArray()
+            .Select(project => project.GetString()!)
             .ToList();
     }
 }

@@ -17,8 +17,8 @@ internal sealed record JbRunSlotHolder(string Subcommand, string SolutionPath);
 ///     <para>
 ///         Process-wide rather than keyed per cache generation. <see cref="JbRunLock" /> partitions a
 ///         directory, because a directory is what two <c>jb</c> processes ruin between them, while this
-///         partitions the machine, because a <c>jb</c> run is a multi-core analysis of a whole solution however
-///         narrow its report. Two runs against different solutions pass the lock and share the machine rather
+///         partitions the machine, because a <c>jb</c> run is a multi-core analysis of every project it loads
+///         however narrow its report. Two runs against different solutions pass the lock and share the machine rather
 ///         than the work: run together, each slows by multiples, enough to carry a one-file cleanup past the
 ///         default cap, while in sequence each finishes sooner.
 ///     </para>

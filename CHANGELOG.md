@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `resharper_cleanup` loads only the projects its files belong to and every project those reference, through a
+  solution filter the server writes, rather than the whole solution. The rewritten bytes are the same, and the
+  load is smaller: measured on one machine on 2026-10-30, a warm one-file cleanup of a 25-project solution that
+  loaded 4 projects took a median of 30 s against 38 s for the whole solution, over four alternating runs of
+  each. `RESHARPER_MCP_CLEANUP_FILTER=off` turns it off. A cleanup with a wildcard entry, a file no project
+  owns, or a project reference that needs MSBuild to evaluate still loads the whole solution; the setup guide
+  lists every such case.
+
 ### Fixed
 
 - A solution filter (`.slnf`) given as `solutionPath` or `JB_SOLUTION_PATH` reads its settings file and

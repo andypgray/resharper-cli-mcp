@@ -53,7 +53,7 @@ internal sealed class ServerLifecycle(
             // Pre-formatted, like the run-cap message a timeout reports with: a TimeSpan property renders as
             // a quoted "00:20:00" under this output template, where "20 minutes" is what a reader wants.
             DurationFormatter.Format(runTimeout),
-            CacheWarmer.IsEnabled(environment.GetVariable(CacheWarmer.EnableVariable)) ? "on" : "off",
+            EnvironmentSwitch.IsOn(environment.GetVariable(CacheWarmer.EnableVariable)) ? "on" : "off",
             childLifetime.Guarantee,
             logLevel,
             SerilogConfiguration.SessionIdIsClientSupplied ? "from CLAUDE_CODE_SESSION_ID" : "generated");

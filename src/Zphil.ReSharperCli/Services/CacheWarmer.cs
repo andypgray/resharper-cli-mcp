@@ -63,8 +63,6 @@ internal sealed class CacheWarmer(
     /// </summary>
     private static readonly TimeSpan DrainTimeout = TimeSpan.FromSeconds(10);
 
-    private static readonly string[] OffSpellings = ["off", "false", "0", "no", "disabled"];
-
     /// <summary>
     ///     Guards <see cref="_finished" />, <see cref="_passInFlight" /> and <see cref="_stopped" /> as one.
     /// </summary>
@@ -214,19 +212,6 @@ internal sealed class CacheWarmer(
         Start(config);
     }
 
-    /// <summary>
-    ///     Determines whether the pre-warm is on: a value in <see cref="OffSpellings" /> turns it off, and
-    ///     anything else, unset and unrecognised included, leaves the shipped default in place.
-    /// </summary>
-    /// <remarks>
-    ///     Unrecognised values fall back to the default as
-    ///     <see cref="Infrastructure.SerilogConfiguration.ParseLogLevel" /> does with its own variable.
-    /// </remarks>
-    internal static bool IsEnabled(string? envValue)
-    {
-        return !OffSpellings.Contains(envValue?.Trim(), StringComparer.OrdinalIgnoreCase);
-    }
-
     /// <summary>Runs one pass and records how it ended.</summary>
     /// <remarks>
     ///     Never throws: it is the top of a fire-and-forget task, so an escape would be an unobserved exception.
@@ -245,7 +230,7 @@ internal sealed class CacheWarmer(
         ResolvedConfig? config = target;
         try
         {
-            if (!IsEnabled(environment.GetVariable(EnableVariable)))
+            if (!EnvironmentSwitch.IsOn(environment.GetVariable(EnableVariable)))
             {
                 outcome = WarmUpOutcome.Disabled;
             }

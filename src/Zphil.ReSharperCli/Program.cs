@@ -69,6 +69,12 @@ builder.Services.AddSingleton(provider => new JbRunner(
     runTimeout,
     provider.GetRequiredService<ILogger<JbRunner>>()));
 builder.Services.AddSingleton<InspectService>();
+
+// By factory, like the report writer below: the root is the temp path, and the switch is read once here, as the
+// run cap is, so a server's cleanups do not change scope mid-session.
+bool cleanupFilterEnabled = EnvironmentSwitch.IsOn(Environment.GetEnvironmentVariable(CleanupFilter.EnableVariable));
+builder.Services.AddSingleton(provider => new CleanupFilter(
+    Path.GetTempPath(), cleanupFilterEnabled, provider.GetRequiredService<ILogger<CleanupFilter>>()));
 builder.Services.AddSingleton<CleanupService>();
 builder.Services.AddSingleton<CacheResetService>();
 

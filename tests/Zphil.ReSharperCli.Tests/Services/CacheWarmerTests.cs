@@ -556,27 +556,6 @@ public sealed class CacheWarmerTests : IDisposable
         warmer.Outcome.ShouldBe(WarmUpOutcome.NotRun);
     }
 
-    [Theory]
-    [InlineData(null, true)]
-    [InlineData("", true)]
-    [InlineData("on", true)]
-    [InlineData("1", true)]
-    [InlineData("yes", true)]
-    [InlineData("something unrecognised", true)]
-    [InlineData("off", false)]
-    [InlineData("OFF", false)]
-    [InlineData("  off  ", false)]
-    [InlineData("false", false)]
-    [InlineData("0", false)]
-    [InlineData("no", false)]
-    [InlineData("disabled", false)]
-    public void IsEnabled_TreatsTheDocumentedSpellingsAsOffAndEverythingElseAsOn(string? value, bool expected)
-    {
-        // Assert — unrecognised falls back to the shipped default, in the same register as the log-level
-        // variable. `off` is the spelling the docs teach; the rest are what a user might reasonably try.
-        CacheWarmer.IsEnabled(value).ShouldBe(expected);
-    }
-
     /// <summary>
     ///     The pre-warm records how it ended, at <see cref="LogLevel.Information" />, pairing with the
     ///     <c>Information</c> start it already wrote.

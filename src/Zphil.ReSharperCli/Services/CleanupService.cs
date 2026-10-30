@@ -12,7 +12,7 @@ namespace Zphil.ReSharperCli.Services;
 ///     A non-zero exit (an unknown profile, say, or an <c>--include</c> set that matched nothing) surfaces from
 ///     <see cref="JbRunner" /> and is restated as a failed pass by <see cref="FailedPassMessage" />.
 /// </remarks>
-internal sealed class CleanupService(JbRunner jbRunner, ILogger<CleanupService> logger)
+internal sealed class CleanupService(JbRunner jbRunner, CleanupFilter cleanupFilter, ILogger<CleanupService> logger)
 {
     /// <summary>The profile applied when the caller does not specify one.</summary>
     public const string DefaultProfile = "Built-in: Full Cleanup";
@@ -57,15 +57,19 @@ internal sealed class CleanupService(JbRunner jbRunner, ILogger<CleanupService> 
             beforeHashes.Add(
                 FilePathList.IsPattern(entry) ? null : HashFile(FilePathList.Resolve(entry, solutionDirectory)));
 
-        List<string> arguments = BuildArguments(config, files, resolvedProfile);
+        // After validation, which Decide relies on. config keeps naming the solution the files resolve against: a
+        // filter changes only what jb loads and how --include has to spell the files.
+        SolutionFilterPlan? filter = cleanupFilter.Decide(config, files).Filter;
+        List<string> patterns = IncludePatterns(files, solutionDirectory, filter is not null);
+        List<string> arguments = BuildArguments(config, patterns, resolvedProfile, filter?.Path);
 
         try
         {
-            await jbRunner.RunAsync(config, arguments, cancellationToken, onProgress);
+            await jbRunner.RunAsync(config, arguments, cancellationToken, onProgress, filter);
         }
         catch (JbExitCodeException exception)
         {
-            throw new UserErrorException(FailedPassMessage(exception, files, solutionDirectory), exception);
+            throw new UserErrorException(FailedPassMessage(exception, patterns), exception);
         }
 
         // jb has exited (ProcessRunner awaits WaitForExitAsync), so the files are settled for re-hashing.
@@ -85,24 +89,46 @@ internal sealed class CleanupService(JbRunner jbRunner, ILogger<CleanupService> 
         return new CleanupOutcome(resolvedProfile, entries);
     }
 
-    /// <summary>Builds the <c>jb cleanupcode</c> argument list. Order is pinned by tests.</summary>
+    /// <summary>
+    ///     Builds the <c>jb cleanupcode</c> argument list over <paramref name="includePatterns" />, already spelt
+    ///     for <c>jb</c>, against <paramref name="filterPath" /> when there is one and the solution otherwise.
+    ///     Order is pinned by tests.
+    /// </summary>
     internal static List<string> BuildArguments(
         ResolvedConfig config,
-        IReadOnlyList<string> files,
-        string profile)
+        IReadOnlyList<string> includePatterns,
+        string profile,
+        string? filterPath = null)
     {
         List<string> arguments =
         [
             Subcommand,
-            config.SolutionPath,
+            filterPath ?? config.SolutionPath,
             $"--profile={profile}",
             "--no-build",
-            JbRunner.IncludeArgument(files, config.SolutionDirectory)
+            JbRunner.IncludeArgument(includePatterns)
         ];
 
         JbRunner.AppendConfigArguments(arguments, config);
 
         return arguments;
+    }
+
+    /// <summary>
+    ///     Returns each of <paramref name="files" /> spelt the way <c>jb</c>'s <c>--include</c> matches it: relative
+    ///     to the solution for a solution-wide run, and anchored on the whole path when
+    ///     <paramref name="throughFilter" /> is set, since the filter lives in another directory.
+    /// </summary>
+    internal static List<string> IncludePatterns(
+        IReadOnlyList<string> files,
+        string solutionDirectory,
+        bool throughFilter)
+    {
+        Func<string, string, string> spell = throughFilter
+            ? FilePathList.ToFilterIncludePattern
+            : FilePathList.ToIncludePattern;
+
+        return files.Select(entry => spell(entry, solutionDirectory)).ToList();
     }
 
     /// <summary>
@@ -115,13 +141,9 @@ internal sealed class CleanupService(JbRunner jbRunner, ILogger<CleanupService> 
     ///     this class can say so, and it lists the patterns <c>jb</c> was given (translated, unlike the report's
     ///     own entries) because that spelling is the thing the caller cannot see.
     /// </remarks>
-    private static string FailedPassMessage(
-        JbExitCodeException failure,
-        IReadOnlyList<string> files,
-        string solutionDirectory)
+    private static string FailedPassMessage(JbExitCodeException failure, IReadOnlyList<string> patterns)
     {
         // Unbounded, as the missing-files error is: a caller that named the files is owed every one of them.
-        IEnumerable<string> patterns = files.Select(entry => FilePathList.ToIncludePattern(entry, solutionDirectory));
         IEnumerable<string> lines = patterns.Select(pattern => $"  - {pattern}");
         string listed = string.Join("\n", lines);
 
@@ -132,7 +154,7 @@ internal sealed class CleanupService(JbRunner jbRunner, ILogger<CleanupService> 
         return $"jb cleanupcode exited with code {failure.ExitCode}. No file was cleaned up — treat this as a "
                + "failed pass, not as \"nothing needed changing\".\n"
                + reported
-               + $"The {files.Count} --include pattern(s) it was given:\n"
+               + $"The {patterns.Count} --include pattern(s) it was given:\n"
                + listed
                + "\njb matches --include against the files that belong to a project in the solution. A file "
                + "that is on disk but in no project matches nothing.";

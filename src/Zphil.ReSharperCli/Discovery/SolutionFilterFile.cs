@@ -4,8 +4,8 @@ using Zphil.ReSharperCli.Execution;
 namespace Zphil.ReSharperCli.Discovery;
 
 /// <summary>
-///     Reads a solution filter (<c>.slnf</c>): the JSON file naming a solution and the subset of its projects to
-///     load.
+///     Reads and composes a solution filter (<c>.slnf</c>): the JSON file naming a solution and the subset of its
+///     projects to load.
 /// </summary>
 /// <remarks>
 ///     <c>jb</c> takes a filter wherever it takes a solution, and mounts the settings of the solution the filter
@@ -22,6 +22,8 @@ internal static class SolutionFilterFile
         AllowTrailingCommas = true,
         CommentHandling = JsonCommentHandling.Skip
     };
+
+    private static readonly JsonSerializerOptions WriteOptions = new() { WriteIndented = true };
 
     /// <summary>Determines whether <paramref name="path" /> names a solution filter, by its extension.</summary>
     public static bool IsFilter(string path)
@@ -61,14 +63,25 @@ internal static class SolutionFilterFile
         if (string.IsNullOrWhiteSpace(declared))
             throw new UserErrorException($"The solution filter \"{filterPath}\" names no solution: it has no \"solution.path\" string.");
 
-        // A filter written on Windows spells the path with backslashes, which a Unix path would keep as part of a
-        // file name.
-        string portable = declared.Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar);
-        string resolved = Path.GetFullPath(portable, Path.GetDirectoryName(filterPath)!);
+        string resolved = SolutionModel.ResolveSpelling(declared, Path.GetDirectoryName(filterPath)!);
         if (!File.Exists(resolved))
             throw new UserErrorException(
                 $"The solution filter \"{filterPath}\" names the solution \"{declared}\", which does not exist (resolved to \"{resolved}\").");
 
         return resolved;
+    }
+
+    /// <summary>
+    ///     Returns the content of a filter that loads <paramref name="projects" /> of the solution at
+    ///     <paramref name="solutionPath" />, which it names by its absolute path so the filter can live anywhere.
+    /// </summary>
+    /// <remarks>
+    ///     Each project is written as the solution spells it, which is how a filter Visual Studio saves names one.
+    ///     The output depends on nothing but the arguments, so an unchanged project set composes unchanged text.
+    /// </remarks>
+    public static string Compose(string solutionPath, IEnumerable<SolutionProject> projects)
+    {
+        var filter = new { solution = new { path = solutionPath, projects = projects.Select(project => project.Spelling) } };
+        return JsonSerializer.Serialize(filter, WriteOptions);
     }
 }

@@ -1,0 +1,15 @@
+<!-- A second project, so the contract suite has one a cleanup filter can leave out. Nothing references it,
+     and it holds no source, so it adds nothing to what inspection reports. -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <IsPackable>false</IsPackable>
+    </PropertyGroup>
+
+    <!-- Inert here, as in ContractFixture.csproj, which explains why every csproj in the tree carries it. -->
+    <PropertyGroup Condition="'$(CI)' == 'true'">
+        <RestoreLockedMode>true</RestoreLockedMode>
+    </PropertyGroup>
+
+</Project>

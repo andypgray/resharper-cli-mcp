@@ -38,7 +38,8 @@ internal static class ToolHarness
         JbRunner jbRunner = JbRunners.Create(processRunner, runLock, runYield);
 
         InspectService inspectService = new(jbRunner);
-        CleanupService cleanupService = new(jbRunner, NullLogger<CleanupService>.Instance);
+        CleanupService cleanupService = new(
+            jbRunner, JbRunners.Filter(environment.CreateTempDirectory()), NullLogger<CleanupService>.Instance);
         CacheResetService cacheResetService = JbRunners.Reset(runLock, runYield);
         InspectReportWriter reportWriter = new(
             reportRoot ?? environment.CreateTempDirectory(), NullLogger<InspectReportWriter>.Instance);

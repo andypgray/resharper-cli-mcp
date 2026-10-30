@@ -21,6 +21,7 @@ public sealed class CleanupServiceTests : IDisposable
 {
     private readonly ResolvedConfig _config;
     private readonly FakeEnvironment _environment = new();
+    private readonly CleanupFilter _filter;
     private readonly IProcessRunner _processRunner = Substitute.For<IProcessRunner>();
     private readonly CleanupService _service;
     private readonly string _solutionDirectory;
@@ -33,7 +34,8 @@ public sealed class CleanupServiceTests : IDisposable
         // The cache home is a real directory: JbRunLock creates it and takes its lock file there, so a
         // literal like "/cache" would leave a stray folder at the drive root.
         _config = Configs.Bare(solutionPath, _environment.CreateTempDirectory());
-        _service = new CleanupService(JbRunners.Create(_processRunner), NullLogger<CleanupService>.Instance);
+        _filter = JbRunners.Filter(_environment.CreateTempDirectory());
+        _service = new CleanupService(JbRunners.Create(_processRunner), _filter, NullLogger<CleanupService>.Instance);
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -161,6 +163,48 @@ public sealed class CleanupServiceTests : IDisposable
         // Assert
         arguments.ShouldNotBeNull();
         arguments.ShouldContain("--include=src/A.cs");
+    }
+
+    [Fact]
+    public async Task RunAsync_FileInASolutionAFilterNarrows_SendsJbTheFilterAndAnAnchoredPattern()
+    {
+        // Arrange
+        string root = _environment.CreateTempDirectory();
+        ResolvedConfig config = Configs.Bare(SolutionFiles.PlantThreeProjects(root), _environment.CreateTempDirectory());
+        string filterPath = _filter.PathFor(config.SolutionPath, config.CacheHome);
+        List<string>? arguments = null;
+        _processRunner
+            .AnyRunOf("jb")
+            .Returns(call =>
+            {
+                arguments = [.. call.Arguments()];
+                return JbStubs.Success;
+            });
+
+        // Act
+        await _service.RunAsync(config, ["A/Foo.cs"], CleanupService.DefaultProfile, Ct);
+
+        // Assert — the filter in place of the solution and written to disk, and the file reached by the spelling
+        // jb matches through a filter in another directory.
+        arguments.ShouldNotBeNull();
+        arguments[1].ShouldBe(filterPath);
+        arguments.ShouldContain($"--include={FilePathList.ToFilterIncludePattern("A/Foo.cs", root)}");
+        File.Exists(filterPath).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task RunAsync_JbMatchedNothingThroughAFilter_ListsThePatternsItWasActuallyGiven()
+    {
+        // Arrange
+        string root = _environment.CreateTempDirectory();
+        ResolvedConfig config = Configs.Bare(SolutionFiles.PlantThreeProjects(root), _environment.CreateTempDirectory());
+        StubExit(3);
+
+        // Act
+        var exception = await Should.ThrowAsync<UserErrorException>(() => _service.RunAsync(config, ["A/Foo.cs"], CleanupService.DefaultProfile, Ct));
+
+        // Assert
+        exception.Message.ShouldContain($"The 1 --include pattern(s) it was given:\n  - {FilePathList.ToFilterIncludePattern("A/Foo.cs", root)}");
     }
 
     [Fact]

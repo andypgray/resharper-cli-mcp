@@ -18,6 +18,7 @@ public sealed class JbRunnerTests : IDisposable
 {
     private static readonly TimeSpan RecentlyEnough = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan Generous = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan Brisk = TimeSpan.FromMilliseconds(40);
 
     private readonly ResolvedConfig _config;
     private readonly FakeEnvironment _environment = new();
@@ -446,8 +447,8 @@ public sealed class JbRunnerTests : IDisposable
     public async Task RunAsync_ColdCleanupHitsTheCap_KeepsTheColdCacheDiagnosisAndWarnsOfRewrittenFiles()
     {
         // Arrange — a cold cleanup builds the whole solution's cache before it rewrites anything, so the cold
-        // wording still holds for it: only the warm state changes the advice. The cap can still fall after
-        // the rewriting began, so the caller is told to check the working tree before retrying.
+        // wording still holds for it: of the cache states, only warm changes the advice. The cap can still fall
+        // after the rewriting began, so the caller is told to check the working tree before retrying.
         StubTimeout();
 
         // Act
@@ -463,6 +464,83 @@ public sealed class JbRunnerTests : IDisposable
             + "the report is narrowed to. "
             + "The cache keeps most of what this run built, so a retry resumes rather than starting over. "
             + "Files this run reached before it was stopped may already have been rewritten.");
+    }
+
+    [Fact]
+    public async Task RunAsync_CleanupThroughAFilterHitsTheCapCold_DropsTheScopingClaimAndRearmsThePreWarm()
+    {
+        // Arrange — a cold cache. A run through a filter opens the solution's own generation, so it gets the cold
+        // diagnosis and the pre-warm is worth re-arming, but it loaded only its files' projects, so scoping helps.
+        SolutionFilterPlan filter = FilterIn(_environment.CreateTempDirectory());
+        StubTimeout();
+        List<ResolvedConfig> announced = [];
+        _runner.ForegroundRunTimedOut += announced.Add;
+
+        // Act
+        var exception = await Should.ThrowAsync<UserErrorException>(() => _runner.RunAsync(_config, [CleanupService.Subcommand, filter.Path], Ct, filter: filter));
+
+        // Assert
+        exception.Message.ShouldBe(
+            "jb cleanupcode timed out after 10 minutes and was stopped.\n"
+            + "That cap is this server's, not jb's own: raise it by setting RESHARPER_MCP_TIMEOUT_SECS (in seconds) "
+            + "in this server's env block in your MCP client config, then restart the server.\n"
+            + "A run that long is almost always a cold ReSharper cache. "
+            + "The cache keeps most of what this run built, so a retry resumes rather than starting over. "
+            + "Files this run reached before it was stopped may already have been rewritten.");
+        announced.ShouldHaveSingleItem().ShouldBe(_config);
+    }
+
+    [Fact]
+    public async Task RunAsync_WithAFilter_WritesItUnderTheSolutionsLeaseBeforeJbStarts()
+    {
+        // Arrange — the solution's lease held by another run, which is the only state in which a second session
+        // could be rewriting the same file: jb opens the solution's generation through a filter, so that lease is
+        // the one a filtered run queues on.
+        SolutionFilterPlan filter = FilterIn(_environment.CreateTempDirectory());
+        string? atSpawn = null;
+        _processRunner
+            .AnyRunOf("jb")
+            .Returns(_ =>
+            {
+                atSpawn = File.ReadAllText(filter.Path);
+                return JbStubs.Success;
+            });
+        JbRunner runner = JbRunners.Create(_processRunner, _runLock, JbRunners.Yield(), heartbeat: Brisk);
+        RecordingSink<string> lines = new(Generous);
+
+        // Act — waits for the beat that says the run is queued on the lease, which comes only once the wait has
+        // outlasted JbRunLock.NotableWait, rather than for an interval that may end before the run gets there.
+        Task run;
+        await using (CacheHomes.HoldLockFile(_config.CacheHome, _config.SolutionPath))
+        {
+            run = runner.RunAsync(_config, [CleanupService.Subcommand, filter.Path], Ct, lines.Record, filter);
+            await lines.FirstAsync(line => line.Contains("waiting for another run"), "a beat naming the queue wait", Ct);
+
+            // Assert — nothing written while the lease was someone else's.
+            File.Exists(filter.Path).ShouldBeFalse("the filter was written before its lease was held");
+        }
+
+        await run;
+
+        // Assert — and in place by the time jb opened it.
+        atSpawn.ShouldBe(filter.Content);
+    }
+
+    [Fact]
+    public async Task RunAsync_FilterThatCannotBeWritten_FailsNamingTheSwitchThatTurnsItOff()
+    {
+        // Arrange — the filter's directory would have to be created where a file already is.
+        SolutionFilterPlan filter = FilterIn(CacheHomes.BlockedCacheHome(_environment));
+
+        // Act
+        var exception = await Should.ThrowAsync<UserErrorException>(() => _runner.RunAsync(_config, [CleanupService.Subcommand, filter.Path], Ct, filter: filter));
+
+        // Assert
+        exception.Message.ShouldStartWith($"Could not write the solution filter this cleanup runs through to \"{filter.Path}\" (");
+        exception.Message.ShouldEndWith(
+            "). To clean up through the whole solution instead, set RESHARPER_MCP_CLEANUP_FILTER=off in this server's "
+            + "env block in your MCP client config, then restart the server.");
+        await _processRunner.DidNotReceive().AnyRunOf("jb");
     }
 
     [Fact]
@@ -721,6 +799,16 @@ public sealed class JbRunnerTests : IDisposable
 
         // Assert
         await _processRunner.DidNotReceive().AnyRun();
+    }
+
+    /// <summary>Returns a filter of one project of two, to be written under <paramref name="directory" />.</summary>
+    private static SolutionFilterPlan FilterIn(string directory)
+    {
+        return new SolutionFilterPlan(
+            Path.Combine(directory, "cleanup-filters", "App.cleanup-0123456789abcdef.slnf"),
+            """{ "solution": { "path": "/sln/App.sln", "projects": [ "A/A.csproj" ] } }""",
+            1,
+            2);
     }
 
     /// <summary>

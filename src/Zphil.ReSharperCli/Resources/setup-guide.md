@@ -155,11 +155,13 @@ of the solution a filter names, so a filtered cleanup shares the solution's cach
 run against the solution, and `resharper_reset_cache` drops what it built along with everything else.
 
 A file's owner is the one project in the nearest directory above it that holds any. References are read
-from each project file, every `Directory.Build.props` and `Directory.Build.targets` above it, and any file
-those import by a literal path or one built from `$(MSBuildThisFileDirectory)`. Conditions are ignored, so a
-reference only some configuration takes is loaded anyway. An import that needs any other property, which is
-how a NuGet package's targets are wired by hand, is not followed; a project reference declared only there is
-resolved by `jb` from that project's build output instead.
+from each project file, every `Directory.Build.props` and `Directory.Build.targets` above it, and every file
+those import. A path may use `$(MSBuildThisFileDirectory)`, `$(MSBuildProjectDirectory)`, `$(SolutionDir)`,
+and any property the files read define in a `PropertyGroup`. Conditions are ignored, so a reference only some
+configuration takes is loaded anyway, and a property given two values names both. An import under the NuGet
+package folder or the MSBuild toolset (`$(NuGetPackageRoot)`, `$(MSBuildExtensionsPath)`, `$(MSBuildToolsPath)`,
+`$(MSBuildBinPath)`, `$(MSBuildSDKsPath)`, `$(VSToolsPath)`) is not followed, since neither holds a solution's
+projects.
 
 A cleanup loads the whole solution when:
 
@@ -168,7 +170,9 @@ A cleanup loads the whole solution when:
 - any `files` entry is a wildcard,
 - a file has no owning project, or its nearest project directory holds more than one,
 - the solution or a project file cannot be read, or a `ProjectReference` needs MSBuild to evaluate it (a
-  property, an item list or a wildcard),
+  property none of those files defines, an item list or a wildcard),
+- an import needs MSBuild to evaluate it and is not under the package folder or the toolset, because a
+  project reference declared inside it could not be seen,
 - the files' projects and their references are every project in the solution.
 
 With `RESHARPER_MCP_LOG_LEVEL=Information`, the log records each decision: the filter and how many of the

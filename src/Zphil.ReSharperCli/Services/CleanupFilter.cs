@@ -124,7 +124,7 @@ internal sealed class CleanupFilter(string rootDirectory, bool enabled, ILogger<
             owners.Add(owner.Value);
         }
 
-        ModelReading<IReadOnlyList<SolutionProject>> closure = ProjectGraph.Closure(solution.Value, owners);
+        ModelReading<IReadOnlyList<SolutionProject>> closure = ProjectGraph.Closure(solution.Value, owners, config.SolutionDirectory);
         if (closure.Value is null) return CleanupScope.SolutionWide(closure.Declined!);
 
         int total = solution.Value.Count;

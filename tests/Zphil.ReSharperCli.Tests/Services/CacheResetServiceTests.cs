@@ -282,6 +282,7 @@ public sealed class CacheResetServiceTests : IDisposable
 
         // Assert
         LeftAloneGeneration reported = outcome.LeftAlone.ShouldHaveSingleItem();
+        reported.Name.ShouldBe(Path.GetFileName(theirs));
         reported.Attribution.ShouldBe(LeftAloneAttribution.PathNotRecorded);
         reported.LastWarmedFor.ShouldBeNull();
     }
@@ -313,11 +314,11 @@ public sealed class CacheResetServiceTests : IDisposable
         // outside the reporter's scope, so however long they take, nothing beats over them.
         string ours = CacheHomes.PlantGenerationFor(_cacheHome, _config.SolutionPath);
         using IDisposable held = CacheHomes.BlockDeletionOf(ours);
-        RecordingSink<string> lines = new(Generous);
+        GenerationProbe beats = new(ours);
         CacheResetService service = JbRunners.StandaloneReset(TimeSpan.FromSeconds(1), heartbeat: Brisk);
 
         // Act
-        CacheResetOutcome outcome = await service.RunAsync(_config, Ct, lines.Record);
+        CacheResetOutcome outcome = await service.RunAsync(_config, Ct, beats.Record);
 
         // Assert — named, carrying the filesystem's own reason; fitting it onto the report's one line is the
         // formatter's job.
@@ -326,10 +327,10 @@ public sealed class CacheResetServiceTests : IDisposable
         failure.Name.ShouldBe(Path.GetFileName(ours));
         failure.Reason.ShouldNotBeEmpty();
 
-        // At most the immediate first beat, which disposal can outrun under load.
-        IReadOnlyList<string> beats = lines.Items;
-        beats.ShouldAllBe(line => line == Starting);
-        beats.Skip(1).ShouldBeEmpty();
+        // However many beats the acquire admits, which a loaded machine stretches, every one of them landed
+        // before the deletes began.
+        beats.Items.ShouldAllBe(beat => beat.Line == Starting);
+        beats.Items.ShouldAllBe(beat => beat.GenerationIntact);
     }
 
     [Fact]
@@ -413,23 +414,20 @@ public sealed class CacheResetServiceTests : IDisposable
     [Fact]
     public async Task RunAsync_UncontendedCall_SaysOnlyStarting()
     {
-        // Arrange — an uncontended acquire is sub-millisecond, so the immediate first beat is the only one
-        // that can fit, and it must not blame another session for a wait that never happened.
-        RecordingSink<string> lines = new(Generous);
-        CacheHomes.PlantGenerationFor(_cacheHome, _config.SolutionPath);
+        // Arrange — nobody holds the lock, so whatever beats land must not blame another session for a wait
+        // that never happened.
+        string ours = CacheHomes.PlantGenerationFor(_cacheHome, _config.SolutionPath);
+        GenerationProbe beats = new(ours);
         CacheResetService service = JbRunners.StandaloneReset(TimeSpan.FromSeconds(1), heartbeat: Brisk);
 
-        // Act
-        CacheResetOutcome outcome = await service.RunAsync(_config, Ct, lines.Record);
+        // Act — then several intervals more, in which a reporter left running would beat again.
+        CacheResetOutcome outcome = await service.RunAsync(_config, Ct, beats.Record);
         await Task.Delay(Brisk * 5, Ct);
 
-        // Assert — the reset did its work and said at most one thing about it. At most, because the first
-        // beat is queued on the thread pool and disposal can outrun it under load; the pin is that nothing
-        // other than "starting" is reachable on this path.
+        // Assert — the reset did its work, said nothing but "starting", and stopped saying it before the delete.
         outcome.Dropped.ShouldHaveSingleItem();
-        IReadOnlyList<string> beats = lines.Items;
-        beats.ShouldAllBe(line => line == Starting);
-        beats.Skip(1).ShouldBeEmpty();
+        beats.Items.ShouldAllBe(beat => beat.Line == Starting);
+        beats.Items.ShouldAllBe(beat => beat.GenerationIntact);
     }
 
     /// <summary>
@@ -494,5 +492,33 @@ public sealed class CacheResetServiceTests : IDisposable
     private ResolvedConfig RemovedCheckout()
     {
         return Configs.Bare(_environment.CreateSolutionPath("App.sln"), _cacheHome);
+    }
+
+    /// <summary>One progress line, and whether the generation was still untouched when it arrived.</summary>
+    private sealed record Beat(string Line, bool GenerationIntact);
+
+    /// <summary>
+    ///     Records each progress line with whether the reset had started deleting <c>generation</c> by then,
+    ///     which a beat count can only approximate: a loaded machine stretches the acquire over several beats.
+    /// </summary>
+    /// <remarks>
+    ///     The sentinel sits beside the generation's <c>Db</c> directory rather than inside it, so a recursive
+    ///     delete removes it on its first attempt even when <see cref="CacheHomes.BlockDeletionOf" /> keeps the
+    ///     rest of the generation in place.
+    /// </remarks>
+    private sealed class GenerationProbe : RecordingSink<Beat>
+    {
+        private readonly string _sentinel;
+
+        public GenerationProbe(string generation) : base(Generous)
+        {
+            _sentinel = Path.Combine(generation, "sentinel");
+            File.WriteAllText(_sentinel, string.Empty);
+        }
+
+        public void Record(string line)
+        {
+            Record(new Beat(line, File.Exists(_sentinel)));
+        }
     }
 }

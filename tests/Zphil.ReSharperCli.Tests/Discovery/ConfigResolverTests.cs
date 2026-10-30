@@ -549,6 +549,21 @@ public sealed class ConfigResolverTests : IDisposable
             $"The solution filter \"{filter}\" names the solution \"Gone.sln\", which does not exist (resolved to \"{resolved}\").");
     }
 
+    [Fact]
+    public async Task ResolveAsync_SolutionFilterNamesAnInvalidPath_ThrowsNamingBoth()
+    {
+        // Arrange
+        string filter = PlantFilter(_environment.CreateTempDirectory(), "Gone\0.sln");
+
+        // Act
+        var exception = await Should.ThrowAsync<UserErrorException>(() => _resolver.ResolveAsync(filter, Ct));
+
+        // Assert
+        Exception rejection = exception.InnerException.ShouldBeAssignableTo<ArgumentException>().ShouldNotBeNull();
+        exception.Message.ShouldBe(
+            $"The solution filter \"{filter}\" names the solution \"Gone\0.sln\", which is not a valid path: {rejection.Message}");
+    }
+
     [Theory]
     [InlineData("not json")]
     [InlineData("""{ "solution": { "projects": [] } }""")]

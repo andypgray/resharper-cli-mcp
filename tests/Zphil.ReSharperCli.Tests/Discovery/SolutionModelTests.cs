@@ -78,6 +78,7 @@ public sealed class SolutionModelTests : IDisposable
     [Theory]
     [InlineData("App.slnx", "<Solution><Project Path=", "the solution file could not be read")]
     [InlineData("App.slnx", "<Solution />", "the solution file lists no projects")]
+    [InlineData("App.sln", "Project(\"{X}\") = \"A\", \"A\0\\A.csproj\", \"{Y}\"", "the solution file lists a project path that is not valid")]
     [InlineData("App.slnf", "{}", "App.slnf is neither a .sln nor a .slnx")]
     public void ReadProjects_UnusableSolution_DeclinesWithAReason(string fileName, string content, string reason)
     {

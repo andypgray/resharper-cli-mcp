@@ -36,8 +36,9 @@ internal static class SolutionFilterFile
     ///     <c>solution.path</c>, resolved against the filter's own directory unless it is already absolute.
     /// </summary>
     /// <exception cref="UserErrorException">
-    ///     The filter cannot be read or parsed, names no solution, or names one that does not exist. Each is a
-    ///     filter <c>jb</c> could not load either, so failing here names the file before a run is spent on it.
+    ///     The filter cannot be read or parsed, names no solution, or names one that is not a valid path or does not
+    ///     exist. Each is a filter <c>jb</c> could not load either, so failing here names the file before a run is
+    ///     spent on it.
     /// </exception>
     public static string ReadSolutionPath(string filterPath)
     {
@@ -63,7 +64,17 @@ internal static class SolutionFilterFile
         if (string.IsNullOrWhiteSpace(declared))
             throw new UserErrorException($"The solution filter \"{filterPath}\" names no solution: it has no \"solution.path\" string.");
 
-        string resolved = SolutionModel.ResolveSpelling(declared, Path.GetDirectoryName(filterPath)!);
+        string resolved;
+        try
+        {
+            resolved = SolutionModel.ResolveSpelling(declared, Path.GetDirectoryName(filterPath)!);
+        }
+        catch (Exception exception) when (FilesystemFailure.Covers(exception))
+        {
+            throw new UserErrorException(
+                $"The solution filter \"{filterPath}\" names the solution \"{declared}\", which is not a valid path: {exception.Message}", exception);
+        }
+
         if (!File.Exists(resolved))
             throw new UserErrorException(
                 $"The solution filter \"{filterPath}\" names the solution \"{declared}\", which does not exist (resolved to \"{resolved}\").");

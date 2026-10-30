@@ -76,10 +76,18 @@ internal static partial class SolutionModel
 
         if (spellings.Count == 0) return ModelReading<IReadOnlyList<SolutionProject>>.Decline("the solution file lists no projects");
 
-        List<SolutionProject> projects = spellings
-            .Select(spelling => new SolutionProject(spelling, ResolveSpelling(spelling, solutionDirectory)))
-            .DistinctBy(project => project.FullPath, PathComparer)
-            .ToList();
+        List<SolutionProject> projects;
+        try
+        {
+            projects = spellings
+                .Select(spelling => new SolutionProject(spelling, ResolveSpelling(spelling, solutionDirectory)))
+                .DistinctBy(project => project.FullPath, PathComparer)
+                .ToList();
+        }
+        catch (Exception exception) when (FilesystemFailure.Covers(exception))
+        {
+            return ModelReading<IReadOnlyList<SolutionProject>>.Decline($"the solution file lists a project path that is not valid ({exception.Message})");
+        }
 
         return ModelReading<IReadOnlyList<SolutionProject>>.Of(projects);
     }

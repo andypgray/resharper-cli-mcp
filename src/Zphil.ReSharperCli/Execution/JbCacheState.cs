@@ -60,9 +60,10 @@ internal enum JbCacheKind
 ///     unvalidated until <c>jb</c> opens it.
 /// </param>
 /// <param name="LastComparableCost">
-///     What the last run starting from this same <see cref="CostBand" /> took, or <see langword="null" /> when
-///     none has finished or the state falls in no band. <see cref="Read" /> fills it from
-///     <see cref="JbCostRecord" />, so no caller of the summary has to know the record exists.
+///     What the last <see cref="ComparableRun" /> run starting from this same <see cref="CostBand" /> took, or
+///     <see langword="null" /> when none has finished, the state falls in no band, or no run is comparable.
+///     <see cref="Read" /> fills it from <see cref="JbCostRecord" />, so no caller of the summary has to know the
+///     record exists.
 /// </param>
 /// <param name="MarkerJbVersion">
 ///     Which <c>jb</c> build the warm marker says left this generation warm, or <see langword="null" /> when
@@ -72,6 +73,11 @@ internal enum JbCacheKind
 ///     Which <c>jb</c> build is about to open it, or <see langword="null" /> when the caller cannot say, which
 ///     switches the staleness judgement off (<see cref="JbWarmMarker.WrittenByAnotherBuild" />).
 /// </param>
+/// <param name="ComparableRun">
+///     The subcommand whose recorded figures the run about to start is comparable with, and under which its own
+///     is recorded, or <see langword="null" /> when no run predicts it, as for a cleanup through a solution
+///     filter, whose projects differ from call to call.
+/// </param>
 internal sealed record JbCacheState(
     IReadOnlyList<string>? Generations,
     TimeSpan? WarmMarkerAge,
@@ -79,7 +85,8 @@ internal sealed record JbCacheState(
     bool Seeded,
     TimeSpan? LastComparableCost = null,
     string? MarkerJbVersion = null,
-    string? CurrentJbVersion = null)
+    string? CurrentJbVersion = null,
+    string? ComparableRun = null)
 {
     /// <summary>What every reading that could not be made looks like.</summary>
     private static readonly JbCacheState Unreadable = new(null, null, false, false);
@@ -193,17 +200,19 @@ internal sealed record JbCacheState(
 
     /// <summary>
     ///     Reads the state of <paramref name="solutionPath" />'s cache under <paramref name="cacheHome" /> right
-    ///     now, as <paramref name="jbVersion" /> is about to open it.
+    ///     now, as <paramref name="jbVersion" /> is about to open it for a <paramref name="comparableRun" /> run.
     /// </summary>
     /// <remarks>
     ///     Cheap beside the <c>jb</c> run it precedes: one directory enumeration and a few small file reads, the
-    ///     recorded cost read only where the state falls in a band.
+    ///     recorded cost read only where the state falls in a band and <paramref name="comparableRun" /> names a
+    ///     run to compare with.
     /// </remarks>
     internal static JbCacheState Read(
         string solutionPath,
         string cacheHome,
         bool seeded,
         string? jbVersion,
+        string? comparableRun,
         ILogger logger)
     {
         try
@@ -220,12 +229,13 @@ internal sealed record JbCacheState(
                 JbColdTombstone.Exists(solutionPath, cacheHome, logger),
                 seeded,
                 MarkerJbVersion: JbWarmMarker.TryReadJbVersion(markerPath, logger),
-                CurrentJbVersion: jbVersion);
+                CurrentJbVersion: jbVersion,
+                ComparableRun: comparableRun);
 
             // After the rest is settled, because the band the figure is keyed by is derived from it.
-            if (state.CostBand is not { } band) return state;
+            if (state.CostBand is not { } band || comparableRun is null) return state;
 
-            return state with { LastComparableCost = JbCostRecord.TryRead(solutionPath, cacheHome, band, logger) };
+            return state with { LastComparableCost = JbCostRecord.TryRead(solutionPath, cacheHome, comparableRun, band, logger) };
         }
         catch (Exception exception) when (FilesystemFailure.Covers(exception))
         {

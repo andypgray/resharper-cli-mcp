@@ -79,7 +79,7 @@ public sealed class JbCacheStateReadingTests : IDisposable
     public void Read_ColdWithAColdRunRecorded_CarriesWhatThatRunTook()
     {
         // Arrange
-        JbCostRecord.Stamp(SolutionPath, _cacheHome, JbCostBand.Cold, SevenMinutes, NullLogger.Instance);
+        JbCostRecord.Stamp(SolutionPath, _cacheHome, "inspectcode", JbCostBand.Cold, SevenMinutes, NullLogger.Instance);
 
         // Act
         JbCacheState state = Read();
@@ -88,12 +88,28 @@ public sealed class JbCacheStateReadingTests : IDisposable
         state.LastComparableCost.ShouldBe(SevenMinutes);
     }
 
+    [Theory]
+    [InlineData("cleanupcode")]
+    [InlineData(null)]
+    public void Read_ColdWithOnlyAnotherKindOfRunRecorded_CarriesNoFigure(string? comparableRun)
+    {
+        // Arrange — an inspection's cold figure, read for a cleanup, and for a run nothing is comparable with.
+        JbCostRecord.Stamp(SolutionPath, _cacheHome, "inspectcode", JbCostBand.Cold, SevenMinutes, NullLogger.Instance);
+
+        // Act
+        JbCacheState state = Read(comparableRun);
+
+        // Assert
+        state.Kind.ShouldBe(JbCacheKind.Cold);
+        state.LastComparableCost.ShouldBeNull();
+    }
+
     [Fact]
     public void Read_WarmWithAColdRunRecorded_CarriesNoFigure()
     {
         // Arrange — a warm state falls in no band, so the cold figure beside it predicts nothing about it.
         CacheHomes.PlantWarmDonor(_cacheHome, SolutionPath, ThisJb);
-        JbCostRecord.Stamp(SolutionPath, _cacheHome, JbCostBand.Cold, SevenMinutes, NullLogger.Instance);
+        JbCostRecord.Stamp(SolutionPath, _cacheHome, "inspectcode", JbCostBand.Cold, SevenMinutes, NullLogger.Instance);
 
         // Act
         JbCacheState state = Read();
@@ -142,9 +158,9 @@ public sealed class JbCacheStateReadingTests : IDisposable
         state.TryMeasure(_cacheHome).ShouldBeNull();
     }
 
-    private JbCacheState Read()
+    private JbCacheState Read(string? comparableRun = "inspectcode")
     {
-        return JbCacheState.Read(SolutionPath, _cacheHome, false, ThisJb, NullLogger.Instance);
+        return JbCacheState.Read(SolutionPath, _cacheHome, false, ThisJb, comparableRun, NullLogger.Instance);
     }
 
     private void PlantFile(string generation, string relativePath, int length)

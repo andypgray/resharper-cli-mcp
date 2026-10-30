@@ -128,14 +128,14 @@ public sealed class CacheResetServiceTests : IDisposable
         // to a cache copied from a sibling, which the reset has just deleted, so leaving it behind would have
         // the next call quote the seeding premium at a caller about to build the cache from nothing.
         CacheHomes.PlantWarmDonor(_cacheHome, _config.SolutionPath);
-        JbCostRecord.Stamp(_config.SolutionPath, _cacheHome, JbCostBand.Seeded, TimeSpan.FromSeconds(456), NullLogger.Instance);
-        JbCostRecord.TryRead(_config.SolutionPath, _cacheHome, JbCostBand.Seeded, NullLogger.Instance).ShouldBe(TimeSpan.FromSeconds(456));
+        JbCostRecord.Stamp(_config.SolutionPath, _cacheHome, "inspectcode", JbCostBand.Seeded, TimeSpan.FromSeconds(456), NullLogger.Instance);
+        JbCostRecord.TryRead(_config.SolutionPath, _cacheHome, "inspectcode", JbCostBand.Seeded, NullLogger.Instance).ShouldBe(TimeSpan.FromSeconds(456));
 
         // Act
         await _service.RunAsync(_config, Ct);
 
         // Assert
-        JbCostRecord.TryRead(_config.SolutionPath, _cacheHome, JbCostBand.Seeded, NullLogger.Instance).ShouldBeNull();
+        JbCostRecord.TryRead(_config.SolutionPath, _cacheHome, "inspectcode", JbCostBand.Seeded, NullLogger.Instance).ShouldBeNull();
     }
 
     [Fact]

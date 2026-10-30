@@ -31,13 +31,19 @@ internal enum JbCostBand
 }
 
 /// <summary>
-///     Records how long the last <c>jb</c> run against this solution took, per <see cref="JbCostBand" />, in a
-///     file beside the warm marker.
+///     Records how long the last <c>jb</c> run against this solution took, per subcommand and
+///     <see cref="JbCostBand" />, in a file beside the warm marker.
 /// </summary>
 /// <remarks>
 ///     <para>
 ///         The heartbeat says how long a run has been going against the cap; this lets the same line say how
 ///         long the last run like it took, which is the other half of telling slow from stuck.
+///     </para>
+///     <para>
+///         Keyed by subcommand as well as band, because a cold cleanup and a cold inspection of one solution
+///         differ by minutes, so one quoted to the other would mislead. An <c>inspectcode</c> figure is written
+///         under the band alone, the way a version that recorded no subcommand wrote every figure, so a figure
+///         such a version left is read as an inspection's, which nearly all of them are.
 ///     </para>
 ///     <para>
 ///         Every failure (an unwritable cache home, a file this build cannot parse, a key that cannot be
@@ -54,6 +60,9 @@ internal enum JbCostBand
 internal static class JbCostRecord
 {
     private const string Extension = "cost";
+
+    /// <summary>The subcommand whose figures are written under the band alone.</summary>
+    private const string UnqualifiedSubcommand = "inspectcode";
 
     internal static string PathFor(string solutionPath, string cacheHome)
     {
@@ -75,20 +84,27 @@ internal static class JbCostRecord
     }
 
     /// <summary>
-    ///     Records that a run starting from <paramref name="band" /> took <paramref name="cost" />, replacing
-    ///     whatever that band last cost and leaving every other band's figure where it was.
+    ///     Records that a <paramref name="subcommand" /> run starting from <paramref name="band" /> took
+    ///     <paramref name="cost" />, replacing whatever that pair last cost and leaving every other figure where
+    ///     it was.
     /// </summary>
     /// <remarks>Whole seconds, the resolution a figure is rendered at.</remarks>
-    internal static void Stamp(string solutionPath, string cacheHome, JbCostBand band, TimeSpan cost, ILogger logger)
+    internal static void Stamp(
+        string solutionPath,
+        string cacheHome,
+        string subcommand,
+        JbCostBand band,
+        TimeSpan cost,
+        ILogger logger)
     {
         try
         {
-            string label = Label(band);
+            string token = Token(subcommand, band);
             var seconds = (long)Math.Round(cost.TotalSeconds, MidpointRounding.AwayFromZero);
 
             List<string> lines = ExistingLines(PathFor(solutionPath, cacheHome));
-            lines.RemoveAll(line => Records(line, label));
-            lines.Add($"{label} {seconds.ToString(CultureInfo.InvariantCulture)}");
+            lines.RemoveAll(line => Records(line, token));
+            lines.Add($"{token} {seconds.ToString(CultureInfo.InvariantCulture)}");
 
             using FileStream record = JbSidecar.OpenToWrite(solutionPath, cacheHome, Extension);
             record.Write(Encoding.UTF8.GetBytes(string.Join('\n', lines) + '\n'));
@@ -104,18 +120,18 @@ internal static class JbCostRecord
     }
 
     /// <summary>
-    ///     Returns what the last run starting from <paramref name="band" /> cost, or <see langword="null" /> when
-    ///     no figure this build can read is recorded for it.
+    ///     Returns what the last <paramref name="subcommand" /> run starting from <paramref name="band" /> cost, or
+    ///     <see langword="null" /> when no figure this build can read is recorded for it.
     /// </summary>
-    internal static TimeSpan? TryRead(string solutionPath, string cacheHome, JbCostBand band, ILogger logger)
+    internal static TimeSpan? TryRead(string solutionPath, string cacheHome, string subcommand, JbCostBand band, ILogger logger)
     {
         try
         {
-            string label = Label(band);
+            string token = Token(subcommand, band);
 
             return ExistingLines(PathFor(solutionPath, cacheHome))
-                .Where(line => Records(line, label))
-                .Select(line => Seconds(line, label))
+                .Where(line => Records(line, token))
+                .Select(line => Seconds(line, token))
                 .FirstOrDefault(seconds => seconds is not null);
         }
         catch (Exception exception) when (FilesystemFailure.Covers(exception))
@@ -147,10 +163,20 @@ internal static class JbCostRecord
         return JbSidecar.ReadLines(recordPath);
     }
 
-    /// <summary>Determines whether <paramref name="line" /> is the entry for <paramref name="label" />'s band.</summary>
-    private static bool Records(string line, string label)
+    /// <summary>
+    ///     Returns the token that opens the line recording <paramref name="subcommand" />'s figure for
+    ///     <paramref name="band" />.
+    /// </summary>
+    private static string Token(string subcommand, JbCostBand band)
     {
-        return line.StartsWith(label + ' ', StringComparison.Ordinal);
+        string label = Label(band);
+        return subcommand == UnqualifiedSubcommand ? label : $"{subcommand} {label}";
+    }
+
+    /// <summary>Determines whether <paramref name="line" /> is the entry <paramref name="token" /> opens.</summary>
+    private static bool Records(string line, string token)
+    {
+        return line.StartsWith(token + ' ', StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -161,9 +187,9 @@ internal static class JbCostRecord
     ///     <see cref="NumberStyles.None" /> is the whole guard: it refuses a sign, a separator and surrounding
     ///     space, so a hand-edited or half-written file quotes nothing rather than quoting nonsense.
     /// </remarks>
-    private static TimeSpan? Seconds(string line, string label)
+    private static TimeSpan? Seconds(string line, string token)
     {
-        string value = line[(label.Length + 1)..];
+        string value = line[(token.Length + 1)..];
 
         return long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out long seconds)
             ? TimeSpan.FromSeconds(seconds)

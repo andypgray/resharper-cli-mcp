@@ -211,7 +211,7 @@ public sealed class CacheWarmerTests : IDisposable
         using CacheWarmer warmer = BuildWarmer();
 
         // Read before the pass, which restamps the marker.
-        JbCacheState state = JbCacheState.Read(_solutionPath, _cacheHome, false, JbStubs.Version, NullLogger.Instance);
+        JbCacheState state = JbCacheState.Read(_solutionPath, _cacheHome, false, JbStubs.Version, "inspectcode", NullLogger.Instance);
         state.Summary.ShouldStartWith("stale");
 
         // Act

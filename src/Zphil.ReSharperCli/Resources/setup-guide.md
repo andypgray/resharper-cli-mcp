@@ -106,9 +106,11 @@ invisible when nothing else is running, which is the normal case.
 the token the client sent with the call. The messages track the stages above, in order: the wait for this
 server's own other run, then the wait for another run on the same cache, then the cache state `jb` opened (`cold (none on disk)`, `warm`, `stale`,
 `part-built`, `seeded from a sibling checkout`), then a running count of files as `jb` analyses them.
-Where this solution has already finished a cold or seeded run, that clause names what it cost —
-`cold (none on disk; the last cold run took 8 minutes 17 seconds)` — which is the other half of telling a
-slow run from a stuck one. A warm run quotes nothing: measured over 31 warm runs on two solutions, the last
+Where the same tool has already finished a cold or seeded run of this solution, that clause names what it
+cost — `cold (none on disk; the last cold run took 8 minutes 17 seconds)` — which is the other half of telling
+a slow run from a stuck one. An inspection is compared only with inspections and a cleanup only with
+cleanups, and a cleanup through a solution filter quotes and records nothing, because the projects it loads
+change from call to call. A warm run quotes nothing: measured over 31 warm runs on two solutions, the last
 warm run's duration predicted the next one's within a factor of two 9 times, because what a warm run costs
 is set by how much source changed since the last one and nothing here observes that. Cold and seeded keep
 their figure, where the claim is minutes against seconds and either answer tells you whether to wait. A

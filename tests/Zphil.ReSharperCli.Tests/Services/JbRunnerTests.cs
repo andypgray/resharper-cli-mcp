@@ -276,19 +276,38 @@ public sealed class JbRunnerTests : IDisposable
         JbWarmMarker.IsFreshWithin(_config.SolutionPath, _config.CacheHome, RecentlyEnough, NullLogger.Instance).ShouldBeTrue();
     }
 
-    [Fact]
-    public async Task RunAsync_SucceedingRun_RecordsWhatItCostUnderTheBandItStartedIn()
+    [Theory]
+    [InlineData("inspectcode", CleanupService.Subcommand)]
+    [InlineData(CleanupService.Subcommand, "inspectcode")]
+    public async Task RunAsync_SucceedingRun_RecordsWhatItCostUnderItsSubcommandAndTheBandItStartedIn(string subcommand, string other)
     {
         // Arrange — a cold solution whose run leaves a generation behind, which is the ordinary first run. The
         // band is read before jb starts, so what gets recorded is what a cold run costs — not what the warm
-        // cache this run has just produced would.
+        // cache this run has just produced would. A cold cleanup and a cold inspection differ by minutes, so
+        // the figure is the run's own subcommand's and no other's.
         StubExit(0, string.Empty, () => CacheHomes.PlantGenerationFor(_config.CacheHome, _config.SolutionPath));
 
         // Act
-        await _runner.RunAsync(_config, ["inspectcode", _config.SolutionPath], Ct);
+        await _runner.RunAsync(_config, [subcommand, _config.SolutionPath], Ct);
 
         // Assert
-        Recorded(JbCostBand.Cold).ShouldNotBeNull();
+        Recorded(subcommand, JbCostBand.Cold).ShouldNotBeNull();
+        Recorded(other, JbCostBand.Cold).ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task RunAsync_CleanupThroughAFilter_RecordsNoCost()
+    {
+        // Arrange — a filter's projects follow from the call's files, so the next filtered cleanup can load a
+        // different set and this one's figure would predict nothing about it.
+        SolutionFilterPlan filter = FilterIn(_environment.CreateTempDirectory());
+        StubExit(0, string.Empty, () => CacheHomes.PlantGenerationFor(_config.CacheHome, _config.SolutionPath));
+
+        // Act
+        await _runner.RunAsync(_config, [CleanupService.Subcommand, filter.Path], Ct, filter: filter);
+
+        // Assert
+        File.Exists(JbCostRecord.PathFor(_config.SolutionPath, _config.CacheHome)).ShouldBeFalse();
     }
 
     [Fact]
@@ -360,7 +379,7 @@ public sealed class JbRunnerTests : IDisposable
         // Arrange — the figure that turns "the cap was ten minutes" into evidence about whether raising it
         // will help. A solution recorded at eight minutes cold will fit in twelve; one that has never finished
         // will not, and the message can only say which if it knows.
-        JbCostRecord.Stamp(_config.SolutionPath, _config.CacheHome, JbCostBand.Cold, TimeSpan.FromSeconds(497), NullLogger.Instance);
+        JbCostRecord.Stamp(_config.SolutionPath, _config.CacheHome, "inspectcode", JbCostBand.Cold, TimeSpan.FromSeconds(497), NullLogger.Instance);
         StubTimeout();
 
         // Act
@@ -370,6 +389,21 @@ public sealed class JbRunnerTests : IDisposable
         exception.Message.ShouldContain(
             "A run that long is almost always a cold ReSharper cache. The last cold run of this solution took "
             + "8 minutes 17 seconds. Scoping the next call with `files` will not help");
+    }
+
+    [Fact]
+    public async Task RunAsync_CleanupHitsTheCapWithOnlyAnInspectionOnRecord_NamesNoFigure()
+    {
+        // Arrange — an inspection's cold figure is minutes longer than a cleanup's, so quoting it here would tell
+        // the caller a raised cap cannot help when it would.
+        JbCostRecord.Stamp(_config.SolutionPath, _config.CacheHome, "inspectcode", JbCostBand.Cold, TimeSpan.FromSeconds(497), NullLogger.Instance);
+        StubTimeout();
+
+        // Act
+        var exception = await Should.ThrowAsync<UserErrorException>(() => _runner.RunAsync(_config, [CleanupService.Subcommand, _config.SolutionPath], Ct));
+
+        // Assert
+        exception.Message.ShouldNotContain("The last cold run of this solution took");
     }
 
     [Fact]
@@ -852,15 +886,24 @@ public sealed class JbRunnerTests : IDisposable
     }
 
     /// <summary>
-    ///     Returns what this solution has on record for <paramref name="band" />.
+    ///     Returns what this solution has on record for an inspection's runs in <paramref name="band" />.
+    /// </summary>
+    private TimeSpan? Recorded(JbCostBand band)
+    {
+        return Recorded("inspectcode", band);
+    }
+
+    /// <summary>
+    ///     Returns what this solution has on record for <paramref name="subcommand" />'s runs in
+    ///     <paramref name="band" />.
     /// </summary>
     /// <remarks>
     ///     A stubbed run finishes in microseconds, so presence is the assertable fact and the figure itself is
     ///     not.
     /// </remarks>
-    private TimeSpan? Recorded(JbCostBand band)
+    private TimeSpan? Recorded(string subcommand, JbCostBand band)
     {
-        return JbCostRecord.TryRead(_config.SolutionPath, _config.CacheHome, band, NullLogger.Instance);
+        return JbCostRecord.TryRead(_config.SolutionPath, _config.CacheHome, subcommand, band, NullLogger.Instance);
     }
 
     /// <summary>Returns a same-named solution path in another checkout, whose warm cache can be a donor.</summary>

@@ -183,7 +183,8 @@ internal sealed class JbRunner(
             // Read here rather than inside the spawn, and after the transplant decision: this is the state jb
             // is about to open, and it is quoted both by the run line inside the spawn and by the timeout
             // message outside it.
-            JbCacheState cache = JbCacheState.Read(config.SolutionPath, config.CacheHome, seeded, config.JbVersion, logger);
+            JbCacheState cache = JbCacheState.Read(
+                config.SolutionPath, config.CacheHome, seeded, config.JbVersion, filter is null ? arguments[0] : null, logger);
 
             ProcessResult result;
             try
@@ -261,7 +262,7 @@ internal sealed class JbRunner(
             speculative.Token.ThrowIfCancellationRequested();
 
             JbCacheState cache = JbCacheState.Read(
-                config.SolutionPath, config.CacheHome, seeded, config.JbVersion, logger);
+                config.SolutionPath, config.CacheHome, seeded, config.JbVersion, arguments[0], logger);
 
             // Zero queue wait: TryAcquire does not wait, so a lease in hand was uncontended. No progress
             // reporter: nobody is waiting on this run.
@@ -293,9 +294,11 @@ internal sealed class JbRunner(
     /// <remarks>
     ///     <para>
     ///         A clean exit, and only a clean exit, stamps the warm marker, clears any cold tombstone a reset
-    ///         left (the cache this run rebuilt is the solution's own) and records what the run cost under the
-    ///         band it started in. Every subcommand reaches them, since each analyses the whole solution into the
-    ///         same cache generation. A run killed at the cap or one that exited non-zero reaches none of them.
+    ///         left (the cache this run rebuilt is the solution's own) and records what the run cost under its
+    ///         subcommand and the band it started in, unless no run is comparable with it. Every subcommand reaches
+    ///         them: an inspection or a solution-wide cleanup analyses the whole solution into this generation, and a
+    ///         cleanup through a filter builds its own projects' share of the same one. A run killed at the cap or
+    ///         one that exited non-zero reaches none of them.
     ///     </para>
     ///     <para>
     ///         The opening line is written before the spawn because the cache state and queue wait it carries
@@ -384,8 +387,8 @@ internal sealed class JbRunner(
         // seeded run costs, not what the warm cache it has become would. The stopwatch is armed after the lease
         // and the transplant, so the queue wait is outside this figure, which is what makes it comparable to the
         // elapsed time a progress line names.
-        if (cache.CostBand is { } band)
-            JbCostRecord.Stamp(config.SolutionPath, config.CacheHome, band, elapsed.Elapsed, logger);
+        if (cache is { CostBand: { } band, ComparableRun: { } comparableRun })
+            JbCostRecord.Stamp(config.SolutionPath, config.CacheHome, comparableRun, band, elapsed.Elapsed, logger);
 
         return result;
     }

@@ -26,6 +26,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   solution that is not there, is now an error naming the file. Working-directory discovery still picks only a
   `.sln` or `.slnx`.
 
+- The duration a run's progress and timeout messages quote for the last cold or seeded run comes from a run of
+  the same tool. A cold cleanup's duration used to be quoted to a cold inspection and the other way round,
+  though the two differ by minutes on the same solution. A cleanup through a solution filter records and
+  quotes no duration, since the projects it loads change from call to call. Durations recorded by earlier
+  versions are read as an inspection's.
+
 - An inspection report's `Generated` line is written in the invariant culture, so it reads the same on every
   machine. Under th-TH it gave the year in the Buddhist calendar (2569 for 2026), and under da-DK and fi-FI it
   gave the time as `09.30.15`. The character counts in the detail-reduction and truncation notes and the

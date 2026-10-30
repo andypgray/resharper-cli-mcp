@@ -400,13 +400,16 @@ public sealed class CacheResetServiceTests : IDisposable
         RecordingSink<string> lines = new(Generous);
         CacheResetService service = JbRunners.StandaloneReset(TimeSpan.FromMilliseconds(250), heartbeat: Brisk);
 
-        // Act — beats first, so this pins a reporter that stopped rather than one that never started.
+        // Act — with no wait for a first beat: that beat is queued on the thread pool, and a pool starved past the
+        // cap lets the refusal dispose the reporter before it runs, which drops it. That the reporter starts at
+        // all is the queued-behind-another-run test's claim; this one claims only the silence after the refusal.
         Task<CacheResetOutcome> refused = service.RunAsync(_config, Ct, lines.Record);
-        await lines.WaitForAsync(1, Ct);
         await Should.ThrowAsync<UserErrorException>(() => refused);
         IReadOnlyList<string> atFailure = lines.Items;
 
-        // Assert — many would-be beats fit in this delay at the interval above, and none of them land.
+        // Assert — many would-be beats fit in this delay at the interval above, and none of them land. That holds
+        // with no beat recorded too: a reporter left running beats once the pool frees, which this delay sees
+        // unless the starvation outlasts it.
         await Task.Delay(Brisk * 10, Ct);
         lines.Items.ShouldBe(atFailure);
     }

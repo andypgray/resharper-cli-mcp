@@ -1,11 +1,11 @@
 namespace Zphil.ReSharperCli.Infrastructure;
 
 /// <summary>
-///     Defines the single seam through which product code reads process environment variables, the current
-///     working directory, and the user's home directory.
+///     Defines the seam through which services read process environment variables, the current working
+///     directory, and the user's home directory.
 /// </summary>
 /// <remarks>
-///     Everything else is a pure function of these values, which is what lets the xUnit suite run in
+///     A test hands a service its own values through a double, which is what lets the xUnit suite run in
 ///     parallel without ever mutating real process state.
 /// </remarks>
 internal interface IEnvironment

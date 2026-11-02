@@ -51,9 +51,7 @@ internal sealed record WarmMarkerContent(string? GenerationName, string? JbVersi
 /// <remarks>
 ///     <para>
 ///         Every successful <c>jb</c> run stamps it, so its existence alone distinguishes a cache some run
-///         produced from the part-built remnant of one that never finished. It is a file of its own rather
-///         than the <see cref="JbRunLock" /> lock file's timestamp, which moves when a run starts and again
-///         when one fails, while freshness turns on when one last succeeded.
+///         produced from the part-built remnant of one that never finished.
 ///     </para>
 ///     <para>
 ///         Every failure is swallowed at <c>Debug</c> and reads as the answer that can only cost work: a

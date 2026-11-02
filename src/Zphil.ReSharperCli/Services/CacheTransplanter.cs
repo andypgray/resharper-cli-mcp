@@ -21,9 +21,7 @@ namespace Zphil.ReSharperCli.Services;
 ///         version and rebuilds it in place when that does not match, so a copy under another hash is either
 ///         accepted and re-keyed by the run that opens it, or wiped and rebuilt as an absent one would be. That
 ///         is what makes this safe to build on a naming scheme nobody documents: a copy <c>jb</c> refuses costs
-///         the copy and nothing else. No size threshold guards it, because a generation's size tracks how much
-///         analysis has accumulated against its path rather than how heavy the solution is, so nothing on disk
-///         predicts which side of the seeding trade a run lands on.
+///         the copy and nothing else.
 ///     </para>
 ///     <para>
 ///         Every step may decline, and every decline ends the same way: no seed, no error, and the cold run the
@@ -363,7 +361,7 @@ internal sealed class CacheTransplanter(
     ///     contains one, so skipping costs nothing, and following one in a cache home somebody has been
     ///     rearranging could copy a directory tree into itself.
     /// </remarks>
-    /// <returns>The bytes and file count copied, tallied from the same enumeration rather than by a second walk.</returns>
+    /// <returns>The bytes and file count copied.</returns>
     private static (long Bytes, int Files) CopyTree(
         string sourcePath,
         string destinationPath,

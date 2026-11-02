@@ -319,8 +319,8 @@ internal sealed class CacheWarmer(
     }
 
     /// <summary>
-    ///     Whether a run against this cache generation succeeded within <see cref="RecentlyWarmWindow" />, by
-    ///     the <c>jb</c> build this pass would start.
+    ///     Determines whether a run against this cache generation succeeded within
+    ///     <see cref="RecentlyWarmWindow" />, by the <c>jb</c> build this pass would start.
     /// </summary>
     /// <remarks>
     ///     The build half is <see cref="JbWarmMarker.WrittenByAnotherBuild" />'s judgement, the same one the

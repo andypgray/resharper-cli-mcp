@@ -9,14 +9,14 @@ namespace Zphil.ReSharperCli.Services;
 ///         An enum rather than a <c>bool</c>. There is no boolean coercer in <c>Pipeline/</c>, so a client that
 ///         sends <c>"true"</c> as a string, as clients do, would fail binding, while
 ///         <see cref="Pipeline.EnumValidationConverterFactory" /> parses a string case-insensitively and answers
-///         with the valid names. The axis that may grow is the format: <c>jb</c>'s own SARIF is the other
-///         artifact this server could hand over for nothing, since it is the file <c>jb</c> already wrote.
+///         with the valid names.
 ///     </para>
 ///     <para>
 ///         <c>jb inspectcode</c>'s other formats (<c>--format [Xml, Html, Text, Sarif]</c>) are left off: it
 ///         writes one report per run, and this server needs the SARIF for its own response, so any other format
 ///         costs a second full <c>jb</c> run, whereas <see cref="Markdown" /> is rendered from issues that are
-///         already parsed and costs nothing.
+///         already parsed and costs nothing. The SARIF itself would cost nothing either, since it is the file
+///         <c>jb</c> already wrote.
 ///     </para>
 /// </remarks>
 internal enum InspectReport

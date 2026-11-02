@@ -23,9 +23,7 @@ namespace Zphil.ReSharperCli.Formatting;
 ///     <para>
 ///         The reset is gated and its cost named because on a checkout that was never built it is the expensive
 ///         wrong move: it drops the generation, writes a cold tombstone that blocks seeding from a sibling
-///         checkout, and buys a cold rebuild on top of the build that was needed anyway. Nothing here detects
-///         which case applies, since no signal this server can read tells them apart, so the note names both
-///         and chooses neither.
+///         checkout, and buys a cold rebuild on top of the build that was needed anyway.
 ///     </para>
 ///     <para>
 ///         It sits outside the reduction ladder, so it cannot vanish at <c>Minimal</c> when a wall of phantom

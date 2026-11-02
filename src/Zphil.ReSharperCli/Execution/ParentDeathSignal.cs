@@ -26,7 +26,9 @@ namespace Zphil.ReSharperCli.Execution;
 /// </remarks>
 internal static class ParentDeathSignal
 {
-    /// <summary>The util-linux helper that arms the signal. Absent on a minimal image, which is an ordinary outcome.</summary>
+    /// <summary>
+    ///     The util-linux helper that arms the signal. Absent on a minimal image, which is an ordinary outcome.
+    /// </summary>
     private const string Executable = "setpriv";
 
     /// <summary>Added in util-linux 2.33; older builds carry <c>setpriv</c> and reject this option outright.</summary>

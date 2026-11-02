@@ -30,7 +30,7 @@ internal sealed class JbExitCodeException(string message, int exitCode, string s
 }
 
 /// <summary>
-///     Runs every <c>jb</c> subcommand this server starts: it takes the run slot and the cross-process
+///     Runs every <c>jb</c> analysis this server starts: it takes the run slot and the cross-process
 ///     <see cref="JbRunLock" /> for the solution's cache generation, spawns <c>jb</c> under the run timeout,
 ///     and turns a non-zero exit into a <see cref="JbExitCodeException" /> quoting the tail of standard error.
 /// </summary>
@@ -38,7 +38,8 @@ internal sealed class JbExitCodeException(string message, int exitCode, string s
 ///     <para>
 ///         Every subcommand opens the same cache generation, so the slot, the lock and the cache seeding are
 ///         taken on this spawn path rather than by each service. <see cref="SpawnAsync" /> is the only place a
-///         <c>jb</c> subcommand starts, and a new entry point has to reach it rather than spawn its own.
+///         <c>jb</c> run starts, and a new entry point has to reach it rather than spawn its own. The version
+///         probe <see cref="JbLocator" /> makes is not a run, and goes to the process runner directly.
 ///     </para>
 ///     <para>
 ///         <paramref name="runTimeout" /> caps one run's wall clock, after which its process tree is killed,
@@ -559,9 +560,6 @@ internal sealed class JbRunner(
     ///     Builds the <c>--include</c> argument: one argument joining the patterns with <c>;</c>, each made
     ///     relative to <paramref name="solutionDirectory" /> by <see cref="FilePathList.ToIncludePattern" />.
     /// </summary>
-    /// <remarks>
-    ///     The translation is made here, at the <c>jb</c>-contract boundary, rather than at the tool edge.
-    /// </remarks>
     internal static string IncludeArgument(IReadOnlyList<string> files, string solutionDirectory)
     {
         IEnumerable<string> patterns = files.Select(file => FilePathList.ToIncludePattern(file, solutionDirectory));

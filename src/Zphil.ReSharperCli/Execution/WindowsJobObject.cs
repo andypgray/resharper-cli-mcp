@@ -23,9 +23,7 @@ namespace Zphil.ReSharperCli.Execution;
 ///     </para>
 ///     <para>
 ///         There is a window of a few microseconds between <c>CreateProcess</c> returning and the assignment
-///         landing, in which a kill of this server would still strand the child. Closing it would need
-///         <c>PROC_THREAD_ATTRIBUTE_JOB_LIST</c> at creation time, which means re-implementing
-///         <see cref="Process.Start()" /> over <c>CreateProcess</c>.
+///         landing, in which a kill of this server would still strand the child.
 ///     </para>
 ///     <para>
 ///         <c>DllImport</c> rather than <c>LibraryImport</c>: the source generator emits <c>unsafe</c> stubs, so
@@ -166,7 +164,10 @@ internal sealed class WindowsJobObject : IDisposable
         public ulong OtherTransferCount;
     }
 
-    /// <summary><c>JOBOBJECT_EXTENDED_LIMIT_INFORMATION</c>, the shape <see cref="ExtendedLimitInformationClass" /> expects.</summary>
+    /// <summary>
+    ///     <c>JOBOBJECT_EXTENDED_LIMIT_INFORMATION</c>, the shape <see cref="ExtendedLimitInformationClass" />
+    ///     expects.
+    /// </summary>
     [StructLayout(LayoutKind.Sequential)]
     private struct JobObjectExtendedLimitInformation
     {

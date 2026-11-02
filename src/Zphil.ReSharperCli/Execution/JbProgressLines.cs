@@ -77,7 +77,9 @@ internal static class JbProgressLines
     /// <summary><c>inspectcode</c>'s announcement that the inspection sweep is starting.</summary>
     internal const string InspectingPhaseLine = "Running inspections";
 
-    /// <summary><c>cleanupcode</c>'s announcement that it is about to rewrite files, which the profile name follows.</summary>
+    /// <summary>
+    ///     <c>cleanupcode</c>'s announcement that it is about to rewrite files, which the profile name follows.
+    /// </summary>
     internal const string CleaningPhasePrefix = "Cleaning up using profile";
 
     /// <summary>What precedes the file name on <c>inspectcode</c>'s per-file line during the analysis sweep.</summary>

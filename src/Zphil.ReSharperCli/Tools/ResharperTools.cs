@@ -284,8 +284,8 @@ internal sealed class ResharperTools(
         // cache be reclaimed.
         ResolvedConfig config = await configResolver.ResolveForCacheResetAsync(solutionPath, cancellationToken);
 
-        // The one thing this tool can be slow at is queueing behind another session's jb, and it spawns no
-        // process of its own to stream — so that wait is the whole of what there is to report.
+        // The one thing this tool can be slow at is queueing for the run lock behind a jb on the same cache
+        // generation, and it spawns no process of its own to stream, so that wait is all there is to report.
         CacheResetOutcome outcome = await cacheResetService.RunAsync(
             config, cancellationToken, onProgress);
 

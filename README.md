@@ -24,7 +24,7 @@ Each run is capped at `RESHARPER_MCP_TIMEOUT_SECS`, defaulting to 10 minutes. If
 
 ## Quickstart
 
-The server needs the .NET 10 SDK and JetBrains' [ReSharper Command Line Tools](https://www.jetbrains.com/help/resharper/ReSharper_Command_Line_Tools.html), which are free and need no ReSharper license. Both install as .NET global tools:
+The server needs the .NET 10 SDK or later and JetBrains' [ReSharper Command Line Tools](https://www.jetbrains.com/help/resharper/ReSharper_Command_Line_Tools.html), which are free and need no ReSharper license. Both install as .NET global tools:
 
 ```bash
 dotnet tool install -g JetBrains.ReSharper.GlobalTools
@@ -73,11 +73,11 @@ This repository is also a Claude Code plugin marketplace with one plugin:
 /plugin install resharper-cli-mcp@resharper-cli-mcp
 ```
 
-The plugin starts the server with `dotnet dnx`, pinned to one release, and `claude plugin update resharper-cli-mcp@resharper-cli-mcp` moves the pin to the latest. You still install the .NET 10 SDK and `jb`, and ReSharper's caches live in the plugin's data directory.
+The plugin starts the server with `dotnet dnx`, pinned to one release, and `claude plugin update resharper-cli-mcp@resharper-cli-mcp` moves the pin to the latest. You still install the .NET 10 SDK or later and `jb`, and ReSharper's caches live in the plugin's data directory.
 
 ### Install as a Claude Desktop extension
 
-Download `resharper-cli-mcp-<version>.mcpb` from the [latest release](https://github.com/andypgray/resharper-cli-mcp/releases/latest), double-click it, and set **Solution file** to the `.sln` or `.slnx` to analyse. Claude Desktop starts the server outside your repository, so it has no working directory to find a solution in. The bundle carries only the server, so install the .NET 10 runtime and the ReSharper Command Line Tools first. **Run cap** moves the 10-minute limit on one run.
+Download `resharper-cli-mcp-<version>.mcpb` from the [latest release](https://github.com/andypgray/resharper-cli-mcp/releases/latest), double-click it, and set **Solution file** to the `.sln` or `.slnx` to analyse. Claude Desktop starts the server outside your repository, so it has no working directory to find a solution in. The bundle carries only the server, so install the .NET 10 runtime or later and the ReSharper Command Line Tools first. **Run cap** moves the 10-minute limit on one run.
 
 ## Tools
 

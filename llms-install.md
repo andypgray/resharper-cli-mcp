@@ -10,7 +10,7 @@ does once it is running.
 
 ## Prerequisites
 
-The .NET 10 SDK. The server and the ReSharper tools it drives are both .NET global tools, so the
+The .NET 10 SDK or later. The server and the ReSharper tools it drives are both .NET global tools, so the
 SDK is the only prerequisite; neither needs an IDE, and neither needs a ReSharper license, because
 the [ReSharper Command Line Tools](https://www.jetbrains.com/help/resharper/ReSharper_Command_Line_Tools.html)
 are free.

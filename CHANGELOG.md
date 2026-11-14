@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The install docs name .NET 10 or later as the requirement. The package targets .NET 10 with
+  `RollForward=Major`, so a machine with only a newer major runtime runs it on that one, and CI runs the test
+  suite on .NET 11 as well as .NET 10.
+
 ### Fixed
 
 - `resharper_cleanup` loads the whole solution when a file's directory does not prove which project compiles

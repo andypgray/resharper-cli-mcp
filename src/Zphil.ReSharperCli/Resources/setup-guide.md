@@ -530,4 +530,4 @@ ended. The line closing a run killed at the cap also names how many files `jb` h
 only record of how much a capped run left behind in the cache.
 
 Nothing is written to stdout, because that channel carries the MCP JSON-RPC stream and any stray write
-would corrupt the protocol; diagnostics go to stderr and the file. Nothing leaves the machine.
+would corrupt the protocol. The file is the server's only log. Nothing leaves the machine.

@@ -126,21 +126,17 @@ internal static class SerilogConfiguration
     }
 
     /// <summary>
-    ///     Adds Serilog and console (stderr) logging to the host builder.
+    ///     Makes Serilog the host's <see cref="ILoggerFactory" />, so every <c>ILogger&lt;T&gt;</c> writes through
+    ///     the static file logger.
     /// </summary>
     /// <remarks>
-    ///     The category filters here govern the console and nothing else; <see cref="Configure" />'s overrides
-    ///     are the other half of the same policy. <c>AddSerilog</c> registers a provider-scoped <c>Trace</c> rule
-    ///     of its own, and a rule naming a provider outranks one naming only a category however specific it is,
-    ///     so a category filter added here can never reach the file sink. Serilog's overrides quiet the file;
-    ///     these quiet the stderr stream the MCP client captures.
+    ///     The parameterless <c>AddSerilog</c> registers a factory that forwards to no
+    ///     <see cref="ILoggerProvider" />, so a provider or <c>AddFilter</c> rule added on
+    ///     <c>builder.Logging</c> receives nothing, and <see cref="Configure" />'s overrides are the whole level
+    ///     policy. The server writes no log to stderr.
     /// </remarks>
     public static void AddSerilogLogging(this HostApplicationBuilder builder)
     {
-        builder.Logging.AddConsole(options => options.LogToStandardErrorThreshold = LogLevel.Trace);
-
-        foreach (string category in QuietedCategories) builder.Logging.AddFilter(category, LogLevel.Warning);
-
         builder.Services.AddSerilog();
     }
 

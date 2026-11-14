@@ -1,3 +1,5 @@
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Serilog;
 using Serilog.Core;
@@ -12,8 +14,9 @@ namespace Zphil.ReSharperCli.Tests.Infrastructure;
 
 /// <summary>
 ///     Pins the level policy of the file log, driven through the real
-///     <see cref="SerilogConfiguration.Configure" /> against an in-memory sink, and
-///     <see cref="SerilogConfiguration.ParseLogLevel" />.
+///     <see cref="SerilogConfiguration.Configure" /> against an in-memory sink,
+///     <see cref="SerilogConfiguration.ParseLogLevel" />, and the factory registration
+///     <see cref="SerilogConfiguration.AddSerilogLogging" /> makes.
 /// </summary>
 /// <remarks>
 ///     <para>
@@ -150,6 +153,22 @@ public sealed class SerilogConfigurationTests
         inside.ShouldNotBe(RunIdScope.OutsideARun);
         inside.Length.ShouldBe(RunIdScope.OutsideARun.Length);
         sink.Events.Select(RunIdOf).ShouldBe([inside, RunIdScope.OutsideARun]);
+    }
+
+    [Fact]
+    public void AddSerilogLogging_MakesSerilogTheWholeFactory_WithNoProviderBesideIt()
+    {
+        // Arrange — the factory is resolved and never logged through, so the static Log.Logger is untouched.
+        HostApplicationBuilder builder = ServerHostBuilder.Create();
+        builder.AddSerilogLogging();
+
+        // Act
+        using ServiceProvider services = builder.Services.BuildServiceProvider();
+
+        // Assert — a provider registered beside Serilog's factory would receive nothing, so its presence is a
+        // log that looks configured and never writes a line.
+        services.GetRequiredService<ILoggerFactory>().ShouldBeOfType<SerilogLoggerFactory>();
+        services.GetServices<ILoggerProvider>().ShouldBeEmpty();
     }
 
     [Fact]

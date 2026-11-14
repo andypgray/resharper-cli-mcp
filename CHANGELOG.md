@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The setup guide names the file as the server's only log. It said diagnostics also go to stderr, where the
+  server has never written a line.
 - The server no longer reads or watches `appsettings.json` and the host's other default settings files in
   the directory it is started from, which for an MCP client is the repository. The host starts with its
   defaults off, since the server reads none of that configuration. The watch was a recursive file watcher

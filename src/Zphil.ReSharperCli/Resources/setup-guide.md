@@ -402,6 +402,16 @@ and copies of one repository" — a reset is honoured until a run succeeds — a
 of the build that was needed anyway. Reach for `resharper_reset_cache` only once the build is green and an
 inspect still reports the errors.
 
+**Once the build is green, check the `jb` version.** A `jb` release reads the C# versions that existed when it
+shipped, so a project using newer syntax gets `.CSharpErrors` the compiler does not report. Measured on
+2026-11-14 over a net11.0 project that the .NET SDK 11.0.100 builds with no warnings, one file using each C# 15
+form: `jb` 2026.2.4.1 reported nine — `; expected` and `Cannot resolve symbol` on a labeled `break` and
+`continue`, a union's case types that "cannot be handled by a pattern", an extension indexer as a member "not
+allowed in an extension block", and its use as indexing that cannot apply — and 2026.3.0 reported none. The
+note names the `jb` version the server resolved. The cure is to update that `jb`, which for the global tool is
+`dotnet tool update -g JetBrains.ReSharper.GlobalTools`. A reset does not help, because a cold index built by
+the same `jb` misreads the same syntax.
+
 ## Output size: reduction, and truncation as a last resort
 
 Responses are capped at the client's `MAX_MCP_OUTPUT_TOKENS` × 2.5 characters, or 25,000 characters when

@@ -47,6 +47,9 @@ internal sealed record JbInstallation(string ExecutablePath, string Version);
 /// </remarks>
 internal sealed class JbLocator(IProcessRunner processRunner, IEnvironment environment, ILogger<JbLocator> logger)
 {
+    /// <summary>The NuGet id <c>jb</c> is installed and updated by as a .NET global tool.</summary>
+    internal const string GlobalToolPackageId = "JetBrains.ReSharper.GlobalTools";
+
     /// <summary>
     ///     What a probe runs against a candidate. Shared, with <see cref="ProbeTimeout" /> and
     ///     <see cref="Candidates" />, so anything else that probes for <c>jb</c> finds every <c>jb</c> this
@@ -277,7 +280,7 @@ internal sealed class JbLocator(IProcessRunner processRunner, IEnvironment envir
             _ => "JetBrains ReSharper CLI tools not found.\n\n"
                  + tried
                  + "Install with:\n"
-                 + "  dotnet tool install JetBrains.ReSharper.GlobalTools -g\n\n"
+                 + $"  dotnet tool install {GlobalToolPackageId} -g\n\n"
                  + "Then restart your terminal to update PATH.\n"
                  + "Requires .NET SDK 8.0+ (https://dotnet.microsoft.com/download)."
         };

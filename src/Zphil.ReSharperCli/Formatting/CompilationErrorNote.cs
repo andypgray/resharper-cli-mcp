@@ -1,3 +1,4 @@
+using Zphil.ReSharperCli.Discovery;
 using Zphil.ReSharperCli.Resources;
 using Zphil.ReSharperCli.Sarif;
 using Zphil.ReSharperCli.Tools;
@@ -9,16 +10,19 @@ namespace Zphil.ReSharperCli.Formatting;
 /// </summary>
 /// <remarks>
 ///     <para>
-///         Two causes produce them, and the cheap one is the commoner: a checkout that has not been built, or
+///         Three causes produce them, and the cheap one is the commoner: a checkout that has not been built, or
 ///         whose packages were never restored, where every unresolved reference reports here at once. The other
-///         is a stale ReSharper index, which serves errors for symbols the compiler resolves and stays wrong
-///         across re-runs until the cache generation is dropped.
+///         two serve errors for code the compiler accepts. A <c>jb</c> that predates the project's C# version
+///         misreads the newer syntax, and only an update cures it, since a rebuilt index misreads it again. A
+///         stale ReSharper index stays wrong across re-runs until the cache generation is dropped.
 ///     </para>
 ///     <para>
-///         The note states the test that separates the two (build, and see whether the compiler agrees) and
-///         makes the cure conditional on its answer, because this server cannot tell a phantom from a genuine
-///         error: both arrive as <see cref="RuleId" />, and an agent halfway through an edit usually has the
-///         genuine kind. Telling it to drop its cache would be worse than saying nothing.
+///         The note states the test that separates the first from the other two (build, and see whether the
+///         compiler agrees) and makes each cure conditional on its answer, because this server cannot tell a
+///         phantom from a genuine error: all arrive as <see cref="RuleId" />, and an agent halfway through an
+///         edit usually has the genuine kind. Telling it to drop its cache would be worse than saying nothing.
+///         The <c>jb</c> version is named so the agent can rule out the second cause before paying for the
+///         reset.
 ///     </para>
 ///     <para>
 ///         The reset is gated and its cost named because on a checkout that was never built it is the expensive
@@ -50,25 +54,33 @@ internal static class CompilationErrorNote
     /// </summary>
     private const string UndottedRuleId = "CSharpErrors";
 
+    private const string JbUpdateCommand = $"dotnet tool update -g {JbLocator.GlobalToolPackageId}";
+
     /// <summary>
     ///     Renders the note for <paramref name="issues" />, or <c>""</c> when none of them is a compilation
     ///     error.
     /// </summary>
     /// <remarks>
     ///     The resolved <paramref name="cacheHome" /> is named outright, because the caller cannot derive it —
-    ///     it comes from <c>JB_CACHE_HOME</c> or a default this server picked.
+    ///     it comes from <c>JB_CACHE_HOME</c> or a default this server picked. <paramref name="jbVersion" /> is
+    ///     the version the locator's probe reported; when it is <see langword="null" />, the note names the
+    ///     cause without a number.
     /// </remarks>
-    public static string For(IReadOnlyList<InspectIssue> issues, string cacheHome)
+    public static string For(IReadOnlyList<InspectIssue> issues, string cacheHome, string? jbVersion)
     {
         int errors = issues.Count(issue => IsCompilationError(issue.RuleId));
         if (errors == 0) return "";
 
+        string thisJb = jbVersion is null ? "this jb" : $"this jb ({jbVersion})";
+
         return $"NOTE: {errors} of these issue(s) are compilation errors (`{RuleId}`). Build the solution "
                + "first: on a checkout that was never built or never restored, every unrestored package "
                + "reference reports here. If the build succeeds and an inspect still reports them, they are "
-               + $"phantoms from a stale ReSharper index; run {ResharperTools.ResetCacheToolName} to drop this "
-               + $"solution's cache generation under \"{cacheHome}\", which costs the next call a cold "
-               + $"analysis. See the {ResharperResources.SetupGuideUri} resource.\n\n";
+               + $"phantoms. If {thisJb} predates the project's C# version, it misreads the newer syntax: update "
+               + $"it (as a global tool, `{JbUpdateCommand}`). Otherwise the ReSharper index is stale: run "
+               + $"{ResharperTools.ResetCacheToolName} to drop this solution's cache generation under "
+               + $"\"{cacheHome}\", which costs the next call a cold analysis. "
+               + $"See the {ResharperResources.SetupGuideUri} resource.\n\n";
     }
 
     private static bool IsCompilationError(string ruleId)

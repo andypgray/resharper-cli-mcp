@@ -45,7 +45,8 @@ internal sealed class ResharperTools(
     private const string ResetCacheDescription =
         "Delete this solution's ReSharper analysis cache so the next inspect or cleanup rebuilds it from "
         + "cold. The cure for inspect reporting compilation errors a successful build does not: a stale "
-        + "index serves those until the cache is dropped. Build first, because on a checkout that was never "
+        + "index serves those until the cache is dropped, unless jb predates the project's C# version, which "
+        + "only a jb update cures. Build first, because on a checkout that was never "
         + "built or restored the errors are real and a reset only adds a cold analysis to the build it "
         + "still needs. Costs the next call a full cold analysis, so it is not routine maintenance. A deleted "
         + "checkout's cache outlives it: pass its old solution path as solutionPath to reclaim it.";
@@ -145,7 +146,7 @@ internal sealed class ResharperTools(
         // Each can be empty.
         string banner = ConfigWarningBanner.ForInspect(config.Warnings)
                         + InspectScopeNote.For(missingScope, scope?.Count ?? 0, config.SolutionDirectory)
-                        + CompilationErrorNote.For(issues, config.CacheHome)
+                        + CompilationErrorNote.For(issues, config.CacheHome, config.JbVersion)
                         + InspectReportNote.For(written, issues.Count);
 
         // The level asked for suppresses the narrowing remedy only when the rendering settles there: below

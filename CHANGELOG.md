@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The note on an inspect that reports compilation errors names a third cause: a `jb` older than the project's
+  C# version reports the newer syntax as `.CSharpErrors` the compiler does not. The note names the `jb`
+  version in use and gives updating it as the cure (`dotnet tool update -g JetBrains.ReSharper.GlobalTools`
+  for the global tool), ahead of `resharper_reset_cache`, which cannot help there; the reset tool's
+  description says the same. On a net11.0 project using C# 15, `jb` 2026.2.4.1 reported
+  nine such errors and 2026.3.0 none (measured 2026-11-14).
 - `resharper_cleanup` loads the whole solution when a file's directory does not prove which project compiles
   it: another project compiles it too (a linked file, a shared project, a glob, or a project in a directory
   above), its own project removes or updates it with a `Compile` item, turns default items off or is not an

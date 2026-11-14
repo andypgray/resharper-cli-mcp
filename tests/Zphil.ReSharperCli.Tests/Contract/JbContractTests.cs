@@ -288,7 +288,8 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
                 $"A solution with a genuine compilation error reported no `{CompilationErrorNote.RuleId}` "
                 + $"issue. Rule ids seen: {RuleIdsOf(fixture.BrokenSolutionIssues)}.");
 
-        if (CompilationErrorNote.For(fixture.BrokenSolutionIssues, fixture.BrokenSolutionConfig.CacheHome).Length == 0)
+        ResolvedConfig broken = fixture.BrokenSolutionConfig;
+        if (CompilationErrorNote.For(fixture.BrokenSolutionIssues, broken.CacheHome, broken.JbVersion).Length == 0)
             findings.Add(
                 "CompilationErrorNote did not fire on a solution that does not compile, so an agent meeting "
                 + "phantom errors would not be told how to tell them from real ones.");

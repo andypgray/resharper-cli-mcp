@@ -275,9 +275,11 @@ public sealed class ResharperToolsInspectTests : IDisposable
         // Act
         string result = await tools.InspectAsync(cancellationToken: Ct);
 
-        // Assert — the discriminator, the cure, and the resolved cache home the caller could not derive.
+        // Assert — the discriminator, the cures, the version the locator resolved, and the resolved cache home
+        // the caller could not derive.
         result.ShouldStartWith("NOTE: 2 of these issue(s) are compilation errors (`.CSharpErrors`).");
         result.ShouldContain("Build the solution first");
+        result.ShouldContain($"If this jb ({JbStubs.Version}) predates the project's C# version");
         result.ShouldContain(ResharperTools.ResetCacheToolName);
         result.ShouldContain($"under \"{cacheHome}\"");
         result.ShouldContain("Found 3 issue(s) across 2 file(s)");

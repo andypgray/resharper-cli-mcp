@@ -71,7 +71,9 @@ internal static class SerilogConfiguration
             .WriteTo.File(
                 Path.Combine(LogDirectory, "resharper-cli-mcp-.log"),
                 rollingInterval: RollingInterval.Day,
-                retainedFileCountLimit: 7,
+                // The limit counts files, not days: a day on which nothing is logged writes none, so the files
+                // can span more days than their number. Sized to keep two weeks of logs with room to spare.
+                retainedFileCountLimit: 31,
                 // Concurrent server processes write to the same daily file (a shared mutex serialises
                 // writes); the [{SessionId}] field then disambiguates interleaved lines.
                 shared: true,

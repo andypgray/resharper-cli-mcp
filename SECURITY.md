@@ -17,7 +17,7 @@ resharper-cli-mcp is a local process, and its threat model follows from that:
 - It runs as a stdio subprocess launched by your MCP client, with your user privileges. It opens no network listener, makes no outbound calls, and sends no telemetry. The two tools are the whole surface; there is no plugin search or other network feature.
 - Each call shells out to `jb`, the ReSharper Command Line Tools you installed, which loads and analyzes your solution. `jb` reads and evaluates the solution's project files to do that, so inspect an untrusted solution with the same caution you would apply to opening it in an IDE.
 - `resharper_cleanup` is the one tool that writes to disk: it rewrites the files you pass, in place. `resharper_inspect` is read-only.
-- Logs under `%LOCALAPPDATA%\Zphil.ReSharperCli\logs` can contain absolute paths and the rule IDs and messages read from your solution. The sink keeps 7 daily rolling files, and nothing leaves the machine.
+- Logs under `%LOCALAPPDATA%\Zphil.ReSharperCli\logs` can contain absolute paths and the rule IDs and messages read from your solution. The sink keeps 31 daily rolling files, and nothing leaves the machine.
 
 ## Verify what you install
 

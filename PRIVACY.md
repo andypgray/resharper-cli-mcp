@@ -22,7 +22,7 @@ Diagnostic logs roll daily under `%LOCALAPPDATA%\Zphil.ReSharperCli\logs` on Win
 
 Everything this project writes stays on your machine, in three places:
 
-- The logs described above. The sink keeps 7 daily files and deletes the oldest as it rolls; deleting the directory yourself at any point is safe.
+- The logs described above. The sink keeps 31 daily files and deletes the oldest as it rolls. A day on which nothing is logged writes no file, so the files can span more than 31 days. Deleting the directory yourself at any point is safe.
 - Inspection reports, written only when a `resharper_inspect` call sets `report`, to a `resharper-cli-mcp-reports` directory under the system temp directory. A report lists the issues found in your solution with their paths and messages, and the server deletes reports older than seven days.
 - Bookkeeping files in ReSharper's cache directory (`~/.jb-cache` unless `JB_CACHE_HOME` moves it), named `.resharper-cli-mcp-*`. They record when a run against a solution last succeeded, the solution's path, which `jb` build ran it, how long runs took, and whether its cache was reset. When the server seeds a new checkout's cache, it also copies ReSharper's own cache files within that directory. These are kept until you delete them; `resharper_reset_cache` removes a solution's cache along with the records of its runs.
 

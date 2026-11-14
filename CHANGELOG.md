@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `global.json` pins an SDK older than .NET 10, `dotnet dnx` runs under that SDK, which has no `dnx` command,
   so the server does not start. The global tool, installed from a directory outside the repository, starts
   there.
+- The file log keeps 31 daily files rather than 7. The limit counts files, not days: a day on which nothing
+  is logged writes no file, so the files on disk can span more than 31 days.
 
 ### Fixed
 

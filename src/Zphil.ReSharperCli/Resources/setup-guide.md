@@ -495,7 +495,8 @@ something `jb` itself is told; the `RESHARPER_MCP_` ones govern this server's ow
 ## Logs
 
 One daily-rolling file under `%LOCALAPPDATA%\Zphil.ReSharperCli\logs` on Windows, or the platform
-equivalent elsewhere, keeping the last 7 days. `RESHARPER_MCP_LOG_LEVEL` chooses the level; the default is
+equivalent elsewhere, keeping the last 31 files: a day on which nothing is logged writes none, so they can
+span more than 31 days. `RESHARPER_MCP_LOG_LEVEL` chooses the level; the default is
 `Warning`, which records unexpected failures only. An expected error — a missing `jb`, an undiscoverable
 solution, a bad path, a non-zero `jb` exit — is returned to you in the tool result and is never written to
 the log at any level.

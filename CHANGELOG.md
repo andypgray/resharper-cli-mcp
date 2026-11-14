@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   there.
 - The file log keeps 31 daily files rather than 7. The limit counts files, not days: a day on which nothing
   is logged writes no file, so the files on disk can span more than 31 days.
+- A failure writing a cleanup's solution filter is logged at `Warning`, with the filter's path and the
+  exception. Before, only the tool result recorded it; that result is unchanged.
 
 ### Fixed
 

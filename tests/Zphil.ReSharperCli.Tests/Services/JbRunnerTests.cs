@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
@@ -561,20 +562,27 @@ public sealed class JbRunnerTests : IDisposable
     }
 
     [Fact]
-    public async Task RunAsync_FilterThatCannotBeWritten_FailsNamingTheSwitchThatTurnsItOff()
+    public async Task RunAsync_FilterThatCannotBeWritten_FailsNamingTheSwitchThatTurnsItOffAndLogsAWarning()
     {
         // Arrange — the filter's directory would have to be created where a file already is.
         SolutionFilterPlan filter = FilterIn(CacheHomes.BlockedCacheHome(_environment));
+        CapturingLoggerProvider logs = new();
+        JbRunner runner = JbRunners.Create(_processRunner, _runLock, logs: Logs.Capturing(logs));
 
         // Act
-        var exception = await Should.ThrowAsync<UserErrorException>(() => _runner.RunAsync(_config, [CleanupService.Subcommand, filter.Path], Ct, filter: filter));
+        var exception = await Should.ThrowAsync<UserErrorException>(() => runner.RunAsync(_config, [CleanupService.Subcommand, filter.Path], Ct, filter: filter));
 
-        // Assert
+        // Assert — the caller's text, then the server's own record: the call filter logs nothing for a user
+        // error, so this line is the only trace the log keeps.
         exception.Message.ShouldStartWith($"Could not write the solution filter this cleanup runs through to \"{filter.Path}\" (");
         exception.Message.ShouldEndWith(
             "). To clean up through the whole solution instead, set RESHARPER_MCP_CLEANUP_FILTER=off in this server's "
             + "env block in your MCP client config, then restart the server.");
         await _processRunner.DidNotReceive().AnyRunOf("jb");
+        LogEntry failed = logs.ShouldHaveSingleLineWith("FilterPath");
+        failed.Level.ShouldBe(LogLevel.Warning);
+        failed.Property("FilterPath").ShouldBe(filter.Path);
+        failed.Exception.ShouldNotBeNull().ShouldBeSameAs(exception.InnerException);
     }
 
     [Fact]

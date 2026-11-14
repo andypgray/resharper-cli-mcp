@@ -428,6 +428,10 @@ internal sealed class JbRunner(
         }
         catch (Exception exception) when (FilesystemFailure.Covers(exception))
         {
+            // Logged here because the fault is in this server's own temp directory, not the caller's input,
+            // and the call filter writes nothing for a UserErrorException.
+            logger.LogWarning(exception, "Could not write the solution filter {FilterPath}; the cleanup ends before jb starts", filter.Path);
+
             throw new UserErrorException(
                 $"Could not write the solution filter this cleanup runs through to \"{filter.Path}\" "
                 + $"({ConfigWarningBanner.SingleLine(exception.Message)}). To clean up through the whole solution "

@@ -146,8 +146,8 @@ cache when there was one.
 
 A cleanup loads only what its files need. The server writes a solution filter (`.slnf`) holding the project
 that owns each file and every project those reference, transitively, and runs `jb cleanupcode` against the
-filter rather than the solution. Every type the files can see is still loaded from source, so the rewritten
-bytes are the same, and the load is smaller. Measured on one machine on 2026-10-30, a warm one-file cleanup of
+filter rather than the solution. Every type the files can see is still loaded from source, and each file is
+compiled by no project but its owner, so the rewritten bytes are the same, and the load is smaller. Measured on one machine on 2026-10-30, a warm one-file cleanup of
 a 25-project solution that loaded 4 projects through the filter took a median of 30 s, against 38 s for the
 whole solution, over four alternating runs of each, with the same bytes written every time.
 
@@ -156,12 +156,18 @@ The filter is one file per solution and cache home, under the temp directory in
 of the solution a filter names, so a filtered cleanup shares the solution's cache: it queues behind any other
 run against the solution, and `resharper_reset_cache` drops what it built along with everything else.
 
-A file's owner is the one project in the nearest directory above it that holds any. References are read
-from each project file, every `Directory.Build.props` and `Directory.Build.targets` above it, and every file
-those import. A path may use `$(MSBuildThisFileDirectory)`, `$(MSBuildProjectDirectory)`, `$(SolutionDir)`,
-and any property the files read define in a `PropertyGroup`. Conditions are ignored, so a reference only some
-configuration takes is loaded anyway, and a property given two values names both. An import under the NuGet
-package folder or the MSBuild toolset (`$(NuGetPackageRoot)`, `$(MSBuildExtensionsPath)`, `$(MSBuildToolsPath)`,
+A file's owner is the one project in the nearest directory above it that holds any, and the filter is used
+only when that project is provably the only one compiling the file. Every project's `Compile` items are read
+for that proof, and so are the owner's switches for default items. References and items are read from each
+project file, its `.user` file, every `Directory.Build.props`, `Directory.Build.targets` and
+`Directory.Packages.props` above it, every file those import, and the file each of the SDK's import hooks
+names (`DirectoryBuildPropsPath`, `DirectoryBuildTargetsPath`, and the `CustomBefore…`/`CustomAfter…` and
+`Before`/`AfterMicrosoftNETSdkTargets` properties). A path may use `$(MSBuildThisFileDirectory)`, `$(MSBuildProjectDirectory)`, `$(SolutionDir)`, and any
+property the files read define in a `PropertyGroup`. Conditions are ignored, so a reference only some
+configuration takes is loaded anyway, a property given two values names both, and a property set only under a
+condition, or in a file MSBuild may not import, also names the spelling it has unset. A `Compile` item with a wildcard counts as naming every file
+under the directory before its first wildcard, and its `Exclude` is ignored. An import under the NuGet package
+folder or the MSBuild toolset (`$(NuGetPackageRoot)`, `$(MSBuildExtensionsPath)`, `$(MSBuildToolsPath)`,
 `$(MSBuildBinPath)`, `$(MSBuildSDKsPath)`, `$(VSToolsPath)`) is not followed, since neither holds a solution's
 projects.
 
@@ -171,11 +177,23 @@ A cleanup loads the whole solution when:
 - the solution is already a `.slnf`,
 - any `files` entry is a wildcard,
 - a file has no owning project, or its nearest project directory holds more than one,
-- the solution or a project file cannot be read, or a `ProjectReference` needs MSBuild to evaluate it (a
-  property none of those files defines, an item list or a wildcard),
+- a file's owner is not an SDK project, sets `EnableDefaultCompileItems` or `EnableDefaultItems` to anything
+  but `true`, or has a `Compile Remove` or `Compile Update` that could name the file,
+- another project could compile a file too: a `Compile Include` that could name it (a link, a shared
+  project's `.projitems`, a glob), or a project in a directory above the owner's, whose default items could,
+- any project imports a file from the NuGet package folder, which is not read and could declare a `Compile`
+  item,
+- the solution or a project file cannot be read, a `ProjectReference` needs MSBuild to evaluate it (a
+  property none of those files defines, an item list or a wildcard), or so does a `Compile` item (a property
+  or an item list), or an import hook names a relative path,
 - an import needs MSBuild to evaluate it and is not under the package folder or the toolset, because a
-  project reference declared inside it could not be seen,
+  reference or item declared inside it could not be seen,
 - the files' projects and their references are every project in the solution.
+
+A file two projects compile is still cleaned as one of them sees it. Measured on 2026-11-14 with `jb`
+2026.2.4.1, `Built-in: Full Cleanup` removed a `using` that only the project linking the file needed, under
+that project's own `#if`, whether or not the linking project was loaded. Build after cleaning a linked or
+shared file, or clean it with a profile that leaves usings alone, such as `Built-in: Reformat Code`.
 
 With `RESHARPER_MCP_LOG_LEVEL=Information`, the log records each decision: the filter and how many of the
 solution's projects it loads, or the reason the cleanup loaded the whole solution.

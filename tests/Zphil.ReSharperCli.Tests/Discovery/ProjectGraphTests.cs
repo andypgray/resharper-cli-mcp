@@ -33,7 +33,7 @@ public sealed class ProjectGraphTests : IDisposable
         IReadOnlyList<SolutionProject> solution = Solution("E/E.csproj", "C/C.csproj", "A/A.csproj", "D/D.csproj", "B/B.csproj");
 
         // Act
-        ModelReading<IReadOnlyList<SolutionProject>> closure = ProjectGraph.Closure(solution, [solution[2]], _root);
+        ModelReading<IReadOnlyList<SolutionProject>> closure = ProjectGraph.Closure(solution, [solution[2]], new ProjectReadings(_root));
 
         // Assert
         ShouldHaveClosed(closure).ShouldBe(["C/C.csproj", "A/A.csproj", "B/B.csproj"]);
@@ -51,7 +51,7 @@ public sealed class ProjectGraphTests : IDisposable
         IReadOnlyList<SolutionProject> solution = Solution("src/A/A.csproj", "src/Shared/Shared.csproj", "src/Other/Other.csproj");
 
         // Act
-        ModelReading<IReadOnlyList<SolutionProject>> closure = ProjectGraph.Closure(solution, [solution[0]], _root);
+        ModelReading<IReadOnlyList<SolutionProject>> closure = ProjectGraph.Closure(solution, [solution[0]], new ProjectReadings(_root));
 
         // Assert
         ShouldHaveClosed(closure).ShouldBe(["src/A/A.csproj", "src/Shared/Shared.csproj"]);
@@ -74,7 +74,7 @@ public sealed class ProjectGraphTests : IDisposable
         IReadOnlyList<SolutionProject> solution = Solution("src/A/A.csproj", "src/B/B.csproj", "src/C/C.csproj");
 
         // Act
-        ModelReading<IReadOnlyList<SolutionProject>> closure = ProjectGraph.Closure(solution, [solution[0]], _root);
+        ModelReading<IReadOnlyList<SolutionProject>> closure = ProjectGraph.Closure(solution, [solution[0]], new ProjectReadings(_root));
 
         // Assert
         ShouldHaveClosed(closure).ShouldBe(["src/A/A.csproj", "src/B/B.csproj"]);
@@ -92,7 +92,7 @@ public sealed class ProjectGraphTests : IDisposable
         IReadOnlyList<SolutionProject> solution = Solution("src/A/A.csproj", "src/B/B.csproj", "src/C/C.csproj");
 
         // Act
-        ModelReading<IReadOnlyList<SolutionProject>> closure = ProjectGraph.Closure(solution, [solution[0]], _root);
+        ModelReading<IReadOnlyList<SolutionProject>> closure = ProjectGraph.Closure(solution, [solution[0]], new ProjectReadings(_root));
 
         // Assert
         ShouldHaveClosed(closure).ShouldBe(["src/A/A.csproj", "src/B/B.csproj"]);
@@ -116,10 +116,31 @@ public sealed class ProjectGraphTests : IDisposable
         IReadOnlyList<SolutionProject> solution = Solution("src/A/A.csproj", "src/B/B.csproj", "src/C/C.csproj");
 
         // Act
-        ModelReading<IReadOnlyList<SolutionProject>> closure = ProjectGraph.Closure(solution, [solution[0]], _root);
+        ModelReading<IReadOnlyList<SolutionProject>> closure = ProjectGraph.Closure(solution, [solution[0]], new ProjectReadings(_root));
 
         // Assert
         ShouldHaveClosed(closure).ShouldBe(["src/A/A.csproj", "src/B/B.csproj"]);
+    }
+
+    [Fact]
+    public void Read_CompileItemsInADirectoryBuildFileAndAnImport_ResolveAgainstTheProject()
+    {
+        // Arrange — the relative include is written in src/ but names a file in the project's directory, while the
+        // removal is spelt from the imported file's own directory.
+        string project = SolutionFiles.Plant(_root, "src/A/A.csproj", FileWith("""<Import Project="$(MSBuildThisFileDirectory)..\..\build\items.props" />"""));
+        SolutionFiles.Plant(_root, "src/Directory.Build.props", ProjectWith("""<Compile Include="Shared\Common.cs" />"""));
+        SolutionFiles.Plant(_root, "build/items.props", ProjectWith("""<Compile Remove="$(MSBuildThisFileDirectory)Generated\**" />"""));
+
+        // Act
+        ModelReading<ProjectDeclarations> reading = new ProjectReadings(_root).Of(Path.GetFullPath(project));
+
+        // Assert
+        IReadOnlyList<CompileItem> items = reading.ShouldHaveValue().CompileItems.ShouldHaveValue();
+        items.Select(item => $"{item.Operation} {string.Join(";", item.Paths)}").ShouldBe(
+        [
+            $"Include {Path.GetFullPath(Path.Combine(_root, "src", "A", "Shared", "Common.cs"))}",
+            $"Remove {Path.GetFullPath(Path.Combine(_root, "build", "Generated", "**"))}"
+        ]);
     }
 
     [Theory]
@@ -143,7 +164,7 @@ public sealed class ProjectGraphTests : IDisposable
         IReadOnlyList<SolutionProject> solution = Solution("A/A.csproj", "B/B.csproj");
 
         // Act
-        ModelReading<IReadOnlyList<SolutionProject>> closure = ProjectGraph.Closure(solution, [solution[0]], _root);
+        ModelReading<IReadOnlyList<SolutionProject>> closure = ProjectGraph.Closure(solution, [solution[0]], new ProjectReadings(_root));
 
         // Assert
         ShouldHaveClosed(closure).ShouldBe(["A/A.csproj"]);
@@ -167,7 +188,7 @@ public sealed class ProjectGraphTests : IDisposable
         IReadOnlyList<SolutionProject> solution = Solution("A/A.csproj", "B/B.csproj");
 
         // Act
-        ModelReading<IReadOnlyList<SolutionProject>> closure = ProjectGraph.Closure(solution, [solution[0]], _root);
+        ModelReading<IReadOnlyList<SolutionProject>> closure = ProjectGraph.Closure(solution, [solution[0]], new ProjectReadings(_root));
 
         // Assert
         closure.ShouldHaveDeclined().ShouldBe($"{declaring} imports \"{project}\", which needs MSBuild to evaluate");
@@ -190,9 +211,15 @@ public sealed class ProjectGraphTests : IDisposable
         """<ItemGroup><ProjectReference Include="$(MSBuildProjectDirectory)\..\B\B.csproj" /></ItemGroup>""",
         "",
         new[] { "A/A.csproj", "B/B.csproj" })]
+    [InlineData(
+        """<PropertyGroup Condition="'$(Mode)' == 'other'"><Prefix>Other</Prefix></PropertyGroup>""",
+        """<ProjectReference Include="..\$(Prefix)B\B.csproj" />""",
+        new[] { "A/A.csproj", "B/B.csproj" })]
+    [InlineData("", """<ProjectReference Include="..\%42\B.csproj" />""", new[] { "A/A.csproj", "B/B.csproj" })]
     public void Closure_ReferenceThroughAKnownProperty_ReachesEveryValue(string directoryBuildProps, string reference, string[] expected)
     {
-        // Arrange — conditions are ignored, so a property given two values names two projects.
+        // Arrange — conditions are ignored, so a property given two values names two projects, and one set only
+        // under a condition names the spelling it has unset as well.
         if (directoryBuildProps.Length > 0) SolutionFiles.Plant(_root, "Directory.Build.props", FileWith(directoryBuildProps));
         SolutionFiles.Plant(_root, "A/A.csproj", ProjectWith(reference));
         SolutionFiles.PlantProject(_root, "B/B.csproj");
@@ -201,10 +228,90 @@ public sealed class ProjectGraphTests : IDisposable
         IReadOnlyList<SolutionProject> solution = Solution("A/A.csproj", "B/B.csproj", "C/C.csproj", "D/D.csproj");
 
         // Act
-        ModelReading<IReadOnlyList<SolutionProject>> closure = ProjectGraph.Closure(solution, [solution[0]], _root);
+        ModelReading<IReadOnlyList<SolutionProject>> closure = ProjectGraph.Closure(solution, [solution[0]], new ProjectReadings(_root));
 
         // Assert
         ShouldHaveClosed(closure).ShouldBe(expected);
+    }
+
+    [Theory]
+    [InlineData(
+        "conditional import",
+        "A/A.csproj",
+        """<Import Project="$(MSBuildThisFileDirectory)..\build\prefix.props" Condition="'$(Mode)' == 'other'" />""",
+        "build/prefix.props",
+        """<PropertyGroup><Prefix>Other</Prefix></PropertyGroup>""")]
+    [InlineData(
+        "shadowed Directory.Build file",
+        "A/Directory.Build.props",
+        "",
+        "Directory.Build.props",
+        """<PropertyGroup><Prefix>Other</Prefix></PropertyGroup>""")]
+    [InlineData(
+        "one of an import's spellings",
+        "A/A.csproj",
+        """
+        <PropertyGroup Condition="'$(Mode)' == 'other'"><ImportPrefix>Other\</ImportPrefix></PropertyGroup>
+        <Import Project="$(MSBuildThisFileDirectory)..\build\$(ImportPrefix)prefix.props" />
+        """,
+        "build/Other/prefix.props",
+        """<PropertyGroup><Prefix>Other</Prefix></PropertyGroup>""")]
+    public void Closure_PropertyFromAFileMSBuildMayNotImport_ReachesTheUnsetSpellingToo(
+        string shape, string firstFile, string firstBody, string secondFile, string secondBody)
+    {
+        // Arrange — the reference is planted last, so a row naming A's project file gets the reference added after
+        // its own body. Prefix unset names B; Prefix=Other names a project that does not exist.
+        SolutionFiles.Plant(_root, "build/prefix.props", FileWith(""));
+        SolutionFiles.Plant(_root, firstFile, FileWith(firstBody));
+        SolutionFiles.Plant(_root, secondFile, FileWith(secondBody));
+        var reference = """<ItemGroup><ProjectReference Include="..\$(Prefix)B\B.csproj" /></ItemGroup>""";
+        string projectBody = firstFile == "A/A.csproj" ? $"{firstBody}\n{reference}" : reference;
+        SolutionFiles.Plant(_root, "A/A.csproj", FileWith(projectBody));
+        SolutionFiles.PlantProject(_root, "B/B.csproj");
+        IReadOnlyList<SolutionProject> solution = Solution("A/A.csproj", "B/B.csproj");
+
+        // Act
+        ModelReading<IReadOnlyList<SolutionProject>> closure = ProjectGraph.Closure(solution, [solution[0]], new ProjectReadings(_root));
+
+        // Assert
+        ShouldHaveClosed(closure).ShouldBe(["A/A.csproj", "B/B.csproj"], shape);
+    }
+
+    [Theory]
+    [InlineData("""<PropertyGroup><DirectoryBuildTargetsPath>$(MSBuildThisFileDirectory)..\build\refs.targets</DirectoryBuildTargetsPath></PropertyGroup>""", "build/refs.targets")]
+    [InlineData("""<PropertyGroup><CustomAfterMicrosoftCommonTargets>$(MSBuildThisFileDirectory)..\build\refs.targets</CustomAfterMicrosoftCommonTargets></PropertyGroup>""", "build/refs.targets")]
+    [InlineData("", "A/A.csproj.user")]
+    [InlineData("", "Directory.Packages.props")]
+    public void Closure_ReferenceInAFileTheSdkImportsWithoutAnImportElement_IsFollowed(string projectBody, string file)
+    {
+        // Arrange
+        SolutionFiles.Plant(_root, "A/A.csproj", FileWith(projectBody));
+        SolutionFiles.Plant(_root, file, ProjectWith("""<ProjectReference Include="$(MSBuildProjectDirectory)\..\B\B.csproj" />"""));
+        SolutionFiles.PlantProject(_root, "B/B.csproj");
+        SolutionFiles.PlantProject(_root, "C/C.csproj");
+        IReadOnlyList<SolutionProject> solution = Solution("A/A.csproj", "B/B.csproj", "C/C.csproj");
+
+        // Act
+        ModelReading<IReadOnlyList<SolutionProject>> closure = ProjectGraph.Closure(solution, [solution[0]], new ProjectReadings(_root));
+
+        // Assert
+        ShouldHaveClosed(closure).ShouldBe(["A/A.csproj", "B/B.csproj"]);
+    }
+
+    [Fact]
+    public void Closure_HookPropertySetToARelativePath_DeclinesNamingTheFileAndTheValue()
+    {
+        // Arrange — the SDK imports a hook property's file from its own targets, so a relative value names a file
+        // beside the SDK rather than beside the project.
+        string project = Path.GetFullPath(SolutionFiles.Plant(
+            _root, "A/A.csproj", FileWith("""<PropertyGroup><DirectoryBuildTargetsPath>build\refs.targets</DirectoryBuildTargetsPath></PropertyGroup>""")));
+        IReadOnlyList<SolutionProject> solution = Solution("A/A.csproj");
+
+        // Act
+        ModelReading<IReadOnlyList<SolutionProject>> closure = ProjectGraph.Closure(solution, [solution[0]], new ProjectReadings(_root));
+
+        // Assert
+        closure.ShouldHaveDeclined().ShouldBe($"{project} imports \"build\\refs.targets\" through DirectoryBuildTargetsPath, which MSBuild resolves from the SDK's own directory");
     }
 
     [Theory]
@@ -220,7 +327,7 @@ public sealed class ProjectGraphTests : IDisposable
         IReadOnlyList<SolutionProject> solution = Solution("A/A.csproj", "B/B.csproj");
 
         // Act
-        ModelReading<IReadOnlyList<SolutionProject>> closure = ProjectGraph.Closure(solution, [solution[0]], _root);
+        ModelReading<IReadOnlyList<SolutionProject>> closure = ProjectGraph.Closure(solution, [solution[0]], new ProjectReadings(_root));
 
         // Assert
         closure.ShouldHaveDeclined().ShouldBe($"{declaring} references a project as \"{entry}\", which needs MSBuild to evaluate");
@@ -234,7 +341,7 @@ public sealed class ProjectGraphTests : IDisposable
         IReadOnlyList<SolutionProject> solution = Solution("A/A.csproj");
 
         // Act
-        ModelReading<IReadOnlyList<SolutionProject>> closure = ProjectGraph.Closure(solution, [solution[0]], _root);
+        ModelReading<IReadOnlyList<SolutionProject>> closure = ProjectGraph.Closure(solution, [solution[0]], new ProjectReadings(_root));
 
         // Assert
         closure.ShouldHaveDeclined().ShouldStartWith($"{broken} could not be read (");

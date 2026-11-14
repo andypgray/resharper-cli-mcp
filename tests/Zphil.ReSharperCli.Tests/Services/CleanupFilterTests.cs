@@ -57,6 +57,20 @@ public sealed class CleanupFilterTests : IDisposable
     [InlineData("unreadable solution", "the solution file could not be read")]
     [InlineData("unreadable reference", "references a project as \"$(Root)/B/B.csproj\"")]
     [InlineData("every project", "the files' projects and their references are all 2 of the solution's projects")]
+    [InlineData("linked", "\"A/Foo.cs\": C/C.csproj may compile it too, through Compile Include \"../A/Foo.cs\"")]
+    [InlineData("linked by glob", "\"A/Foo.cs\": C/C.csproj may compile it too, through Compile Include \"../A/**/*.cs\"")]
+    [InlineData("conditional prefix", "\"A/Foo.cs\": C/C.csproj may compile it too, through Compile Include \"../$(Prefix)A/Foo.cs\"")]
+    [InlineData("compile remove", "\"A/Foo.cs\": A/A.csproj may not compile it as its directory implies, through Compile Remove \"Foo.cs\"")]
+    [InlineData("compile update", "\"A/Foo.cs\": A/A.csproj may not compile it as its directory implies, through Compile Update \"Foo.cs\"")]
+    [InlineData("default items off", "\"A/Foo.cs\": A/A.csproj sets EnableDefaultCompileItems to \"false\", so its directory may not say what it compiles")]
+    [InlineData("non-SDK owner", "\"A/Foo.cs\": A/A.csproj is not an SDK project, so only its own item list says what it compiles")]
+    [InlineData("nested under another project", "\"A/Foo.cs\": Root.csproj is in a directory above A/A.csproj, so its default items may compile it too")]
+    [InlineData("unreadable other project", "C.csproj could not be read (")]
+    [InlineData("unevaluable include", "C.csproj declares Compile Include \"@(Shared)\", which needs MSBuild to evaluate")]
+    [InlineData("escaped link", "\"A/Foo.cs\": C/C.csproj may compile it too, through Compile Include \"../A/Foo%2Ecs\"")]
+    [InlineData("hooked targets file", "\"A/Foo.cs\": C/C.csproj may compile it too, through Compile Include \"../A/Foo.cs\"")]
+    [InlineData("default items cleared", "\"A/Foo.cs\": A/A.csproj sets EnableDefaultCompileItems to \"\", so its directory may not say what it compiles")]
+    [InlineData("package import", "C.csproj imports \"$(NuGetPackageRoot)x/build/x.targets\" from the package folder, which is not read")]
     public void Decide_NoFilterCouldNarrowIt_RunsSolutionWideSayingWhy(string shape, string reason)
     {
         // Arrange
@@ -92,6 +106,80 @@ public sealed class CleanupFilterTests : IDisposable
             case "every project":
                 solution = SolutionFiles.PlantSlnx(_root, "App.slnx", "A/A.csproj", "B/B.csproj");
                 break;
+            case "linked":
+                SolutionFiles.PlantSdkProject(_root, "C/C.csproj", """<ItemGroup><Compile Include="../A/Foo.cs" Link="Foo.cs" /></ItemGroup>""");
+                break;
+            case "linked by glob":
+                SolutionFiles.PlantSdkProject(_root, "C/C.csproj", """<ItemGroup><Compile Include="../A/**/*.cs" /></ItemGroup>""");
+                break;
+            case "conditional prefix":
+                // Set only under a condition, so unset is a spelling too, and that one names A's file.
+                SolutionFiles.PlantSdkProject(
+                    _root,
+                    "C/C.csproj",
+                    """
+                    <PropertyGroup Condition="'$(Mode)' == 'other'"><Prefix>Other</Prefix></PropertyGroup>
+                    <ItemGroup><Compile Include="../$(Prefix)A/Foo.cs" /></ItemGroup>
+                    """);
+                break;
+            case "compile remove":
+                PlantAWith("""<Compile Remove="Foo.cs" />""");
+                break;
+            case "compile update":
+                PlantAWith("""<Compile Update="Foo.cs" DependentUpon="Bar.cs" />""");
+                break;
+            case "default items off":
+                SolutionFiles.PlantSdkProject(
+                    _root,
+                    "A/A.csproj",
+                    """
+                    <PropertyGroup><EnableDefaultCompileItems>false</EnableDefaultCompileItems></PropertyGroup>
+                    <ItemGroup><ProjectReference Include="../B/B.csproj" /><Compile Include="Foo.cs" /></ItemGroup>
+                    """);
+                break;
+            case "non-SDK owner":
+                SolutionFiles.Plant(
+                    _root,
+                    "A/A.csproj",
+                    """
+                    <Project ToolsVersion="15.0">
+                      <ItemGroup><ProjectReference Include="../B/B.csproj" /><Compile Include="Foo.cs" /></ItemGroup>
+                      <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+                    </Project>
+                    """);
+                break;
+            case "nested under another project":
+                SolutionFiles.PlantProject(_root, "Root.csproj");
+                solution = SolutionFiles.PlantSlnx(_root, "App.slnx", "A/A.csproj", "B/B.csproj", "C/C.csproj", "Root.csproj");
+                break;
+            case "unreadable other project":
+                SolutionFiles.Plant(_root, "C/C.csproj", "<Project>");
+                break;
+            case "unevaluable include":
+                SolutionFiles.PlantSdkProject(_root, "C/C.csproj", """<ItemGroup><Compile Include="@(Shared)" /></ItemGroup>""");
+                break;
+            case "escaped link":
+                SolutionFiles.PlantSdkProject(_root, "C/C.csproj", """<ItemGroup><Compile Include="../A/Foo%2Ecs" /></ItemGroup>""");
+                break;
+            case "hooked targets file":
+                SolutionFiles.PlantSdkProject(
+                    _root,
+                    "C/C.csproj",
+                    """<PropertyGroup><DirectoryBuildTargetsPath>$(MSBuildProjectDirectory)/../build/C.targets</DirectoryBuildTargetsPath></PropertyGroup>""");
+                SolutionFiles.Plant(_root, "build/C.targets", """<Project><ItemGroup><Compile Include="../A/Foo.cs" /></ItemGroup></Project>""");
+                break;
+            case "default items cleared":
+                SolutionFiles.PlantSdkProject(
+                    _root,
+                    "A/A.csproj",
+                    """
+                    <PropertyGroup><EnableDefaultCompileItems></EnableDefaultCompileItems></PropertyGroup>
+                    <ItemGroup><ProjectReference Include="../B/B.csproj" /></ItemGroup>
+                    """);
+                break;
+            case "package import":
+                SolutionFiles.PlantSdkProject(_root, "C/C.csproj", """<Import Project="$(NuGetPackageRoot)x/build/x.targets" />""");
+                break;
         }
 
         // Act
@@ -100,6 +188,28 @@ public sealed class CleanupFilterTests : IDisposable
         // Assert
         scope.Filter.ShouldBeNull();
         scope.SolutionWideBecause.ShouldNotBeNull().ShouldContain(reason);
+    }
+
+    [Theory]
+    [InlineData("A/A.csproj", """<ItemGroup><ProjectReference Include="../B/B.csproj" /><Compile Remove="Other/**" /></ItemGroup>""")]
+    [InlineData("C/C.csproj", """<ItemGroup><Compile Include="../A/Bar.cs" Link="Bar.cs" /></ItemGroup>""")]
+    public void Decide_CompileItemsThatCannotNameTheFile_StillFilter(string project, string body)
+    {
+        // Arrange — A's removal and C's link each name a file beside Foo.cs, never Foo.cs itself.
+        string solution = SolutionFiles.PlantThreeProjects(_root);
+        SolutionFiles.PlantSdkProject(_root, project, body);
+
+        // Act
+        CleanupScope scope = _filter.Decide(Configs.Bare(solution, _environment.CreateTempDirectory()), ["A/Foo.cs"]);
+
+        // Assert
+        scope.Filter.ShouldNotBeNull(scope.SolutionWideBecause).ProjectCount.ShouldBe(2);
+    }
+
+    /// <summary>Replaces project A with one that keeps its reference to B and adds <paramref name="items" />.</summary>
+    private void PlantAWith(string items)
+    {
+        SolutionFiles.PlantSdkProject(_root, "A/A.csproj", $"""<ItemGroup><ProjectReference Include="../B/B.csproj" />{items}</ItemGroup>""");
     }
 
     [Fact]

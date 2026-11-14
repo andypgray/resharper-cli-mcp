@@ -1,0 +1,17 @@
+<!-- Owns Shared.cs by directory. Its using of System.Text is needed only where LINKER_NEEDS_TEXT is defined,
+     which this project does not define, so a cleanup that loads this project alone sees the using as unused. -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>disable</ImplicitUsings>
+        <IsPackable>false</IsPackable>
+    </PropertyGroup>
+
+    <!-- Inert here, as in ContractSolution/ContractFixture.csproj, which explains why every csproj in the tree
+         carries it. -->
+    <PropertyGroup Condition="'$(CI)' == 'true'">
+        <RestoreLockedMode>true</RestoreLockedMode>
+    </PropertyGroup>
+
+</Project>

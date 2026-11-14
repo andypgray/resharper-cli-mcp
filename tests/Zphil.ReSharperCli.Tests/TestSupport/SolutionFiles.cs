@@ -26,15 +26,17 @@ internal static class SolutionFiles
     public static void PlantProject(string root, string relativePath, params string[] references)
     {
         IEnumerable<string> items = references.Select(reference => $"""    <ProjectReference Include="{reference}" />""");
-        var content = $"""
-                       <Project Sdk="Microsoft.NET.Sdk">
-                         <ItemGroup>
-                       {string.Join("\n", items)}
-                         </ItemGroup>
-                       </Project>
-                       """;
 
-        Plant(root, relativePath, content);
+        PlantSdkProject(root, relativePath, $"<ItemGroup>\n{string.Join("\n", items)}\n</ItemGroup>");
+    }
+
+    /// <summary>
+    ///     Writes an SDK project at <paramref name="relativePath" /> under <paramref name="root" /> holding
+    ///     <paramref name="body" />, the XML inside its <c>Project</c> element.
+    /// </summary>
+    public static void PlantSdkProject(string root, string relativePath, string body)
+    {
+        Plant(root, relativePath, $"<Project Sdk=\"Microsoft.NET.Sdk\">\n{body}\n</Project>\n");
     }
 
     /// <summary>

@@ -68,6 +68,20 @@ public sealed class JbContractFixture : IAsyncLifetime
     private const string FixtureDirectoryName = "ContractSolution";
     private const string SolutionFileName = "ContractFixture.slnx";
 
+    /// <summary>The solution with one file two projects compile, only one of which defines the symbol it tests.</summary>
+    private const string LinkedFixtureDirectoryName = "LinkedSourceSolution";
+
+    private const string LinkedSolutionFileName = "LinkedSource.slnx";
+
+    /// <summary>The linked file, relative to its solution.</summary>
+    private const string LinkedFileName = "Owner/Shared.cs";
+
+    /// <summary>The project that owns <see cref="LinkedFileName" /> by directory, as the solution spells it.</summary>
+    private const string LinkedFileOwner = "Owner/Owner.csproj";
+
+    /// <summary>The using the linked file needs only in the project that links it.</summary>
+    private const string LinkedUsingDirective = "using System.Text;";
+
     /// <summary>A file that does not compile, planted only in the broken copy.</summary>
     private const string BrokenFileName = "Broken.cs";
 
@@ -158,6 +172,9 @@ public sealed class JbContractFixture : IAsyncLifetime
     /// <summary>Gets where the server wrote the solution filter the filtered passes ran through.</summary>
     internal string FilterPath { get; private set; } = "";
 
+    /// <summary>Gets what cleanup made of a file another project links, as the server decides and owner alone.</summary>
+    internal LinkedUsingProbe LinkedUsing { get; private set; } = null!;
+
     /// <summary>Gets how each subcommand answered an absolute <c>--include</c>.</summary>
     internal RawIncludeProbe RawAbsoluteInclude { get; private set; } = null!;
 
@@ -213,12 +230,12 @@ public sealed class JbContractFixture : IAsyncLifetime
         _runs = new LineRecordingRunner(realProcessRunner, RecordProgressLine);
         IProcessRunner processRunner = _runs;
 
-        SolutionPath = PlantSolution("solution");
+        SolutionPath = PlantSolution(FixtureDirectoryName, SolutionFileName, "solution");
         await BuildAsync(processRunner, SolutionPath, cancellationToken);
 
         // The second copy is deliberately never built: it carries a file that does not compile, which is
         // how the compilation-error rule id gets provoked at all.
-        string brokenSolutionPath = PlantSolution("broken");
+        string brokenSolutionPath = PlantSolution(FixtureDirectoryName, SolutionFileName, "broken");
         await File.WriteAllTextAsync(
             Path.Combine(Path.GetDirectoryName(brokenSolutionPath)!, BrokenFileName),
             BrokenFileContent,
@@ -263,6 +280,8 @@ public sealed class JbContractFixture : IAsyncLifetime
         BrokenSolutionConfig = await ResolveBrokenSolutionAsync(configResolver, brokenSolutionPath, cancellationToken);
         BrokenSolutionIssues = await inspectService.RunAsync(
             BrokenSolutionConfig, null, InspectSeverity.Suggestion, cancellationToken);
+
+        LinkedUsing = await ProbeLinkedUsingAsync(processRunner, configResolver, cleanupFilter, cleanupService, cancellationToken);
     }
 
     public ValueTask DisposeAsync()
@@ -275,14 +294,74 @@ public sealed class JbContractFixture : IAsyncLifetime
     }
 
     /// <summary>
-    ///     Copies the fixture solution into a directory of its own, and returns the copied solution file's path.
+    ///     Copies the fixture solution under <paramref name="fixture" /> into a directory of its own called
+    ///     <paramref name="name" />, and returns the copied <paramref name="solutionFileName" />'s path.
     /// </summary>
-    private string PlantSolution(string name)
+    private string PlantSolution(string fixture, string solutionFileName, string name)
     {
         string destination = Path.Combine(SeamEnvironment.CreateTempDirectory(), name);
-        CopyDirectory(FixtureDirectory, destination);
+        CopyDirectory(Fixtures.PathTo(fixture), destination);
 
-        return Path.Combine(destination, SolutionFileName);
+        return Path.Combine(destination, solutionFileName);
+    }
+
+    /// <summary>
+    ///     Cleans the linked fixture's shared file twice with a profile that removes unused usings: once as the
+    ///     server decides, and once through a filter holding only the file's owner, the narrowing a filter that
+    ///     read directories alone would choose.
+    /// </summary>
+    /// <remarks>
+    ///     The second pass resolves its configuration on that filter, so the server's own filter stands down as it
+    ///     does for any solution filter, and <c>jb</c> loads exactly the projects the filter names.
+    /// </remarks>
+    private async Task<LinkedUsingProbe> ProbeLinkedUsingAsync(
+        IProcessRunner processRunner,
+        ConfigResolver configResolver,
+        CleanupFilter cleanupFilter,
+        CleanupService cleanupService,
+        CancellationToken cancellationToken)
+    {
+        string solutionPath = PlantSolution(LinkedFixtureDirectoryName, LinkedSolutionFileName, "linked");
+        await BuildAsync(processRunner, solutionPath, cancellationToken);
+        ResolvedConfig config = await configResolver.ResolveAsync(solutionPath, cancellationToken);
+
+        CleanupScope scope = cleanupFilter.Decide(config, [LinkedFileName]);
+        LinkedUsingPass asDecided = await CleanLinkedFileAsync(cleanupService, config, cancellationToken);
+
+        string ownerOnlyPath = Path.Combine(config.SolutionDirectory, "OwnerOnly.slnf");
+        IEnumerable<SolutionProject> owner = SolutionModel.ReadProjects(solutionPath).Value!
+            .Where(project => project.Spelling == LinkedFileOwner);
+        await File.WriteAllTextAsync(ownerOnlyPath, SolutionFilterFile.Compose(solutionPath, owner), cancellationToken);
+        ResolvedConfig ownerOnlyConfig = await configResolver.ResolveAsync(ownerOnlyPath, cancellationToken);
+        LinkedUsingPass ownerOnly = await CleanLinkedFileAsync(cleanupService, ownerOnlyConfig, cancellationToken);
+
+        return new LinkedUsingProbe(scope.SolutionWideBecause, asDecided, ownerOnly);
+    }
+
+    /// <summary>
+    ///     Restores the linked file, cleans it with the built-in full profile, and records whether its using
+    ///     survived, or why the pass could not say.
+    /// </summary>
+    private static async Task<LinkedUsingPass> CleanLinkedFileAsync(
+        CleanupService cleanupService, ResolvedConfig config, CancellationToken cancellationToken)
+    {
+        string path = Path.Combine(config.SolutionDirectory, LinkedFileName);
+        File.Copy(Fixtures.PathTo(LinkedFixtureDirectoryName, LinkedFileName), path, true);
+
+        // A pass that fails is an observation like any other: a throw here would fail every contract in the class.
+        try
+        {
+            CleanupOutcome outcome = await cleanupService.RunAsync(
+                config, [LinkedFileName], CleanupService.DefaultProfile, cancellationToken);
+            string text = await File.ReadAllTextAsync(path, cancellationToken);
+            CleanupFileStatus? status = outcome.Entries.FirstOrDefault()?.Status;
+
+            return new LinkedUsingPass(status, text.Contains(LinkedUsingDirective, StringComparison.Ordinal), null);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return new LinkedUsingPass(null, null, DescribeFailure(exception));
+        }
     }
 
     /// <summary>

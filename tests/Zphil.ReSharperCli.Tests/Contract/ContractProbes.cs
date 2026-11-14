@@ -1,5 +1,6 @@
 using Zphil.ReSharperCli.Execution;
 using Zphil.ReSharperCli.Sarif;
+using Zphil.ReSharperCli.Services;
 
 namespace Zphil.ReSharperCli.Tests.Contract;
 
@@ -99,4 +100,33 @@ internal sealed record SarifArtifactsProbe(
                    + SoftReport.YesNo(CleanFileListed);
         }
     }
+}
+
+/// <summary>
+///     Records what cleanup did to a file two projects compile, where only the project that links it defines the
+///     symbol under which the file needs one of its usings.
+/// </summary>
+/// <remarks>
+///     On <c>jb</c> 2026.2.4.1 the built-in full profile strips that using in both passes, with the linking project
+///     loaded and without it, so the linking project stops building either way. The server's filter is therefore
+///     not what decides that outcome, and the soft tier reports either pass keeping the using as drift.
+/// </remarks>
+/// <param name="SolutionWideBecause">
+///     Why the server's filter ran the cleanup solution-wide, or <see langword="null" /> when it narrowed it.
+/// </param>
+/// <param name="AsDecided">The pass the server's own filter decision shaped.</param>
+/// <param name="OwnerOnly">The pass through a filter holding only the project that owns the file by directory.</param>
+internal sealed record LinkedUsingProbe(string? SolutionWideBecause, LinkedUsingPass AsDecided, LinkedUsingPass OwnerOnly);
+
+/// <summary>Records one cleanup pass over the linked file.</summary>
+/// <param name="Status">What the product classified the file as, or <see langword="null" /> when the pass failed.</param>
+/// <param name="UsingKept">Whether the using survived, or <see langword="null" /> when the pass failed.</param>
+/// <param name="Failure">Why the pass failed, or <see langword="null" /> when it ran.</param>
+internal sealed record LinkedUsingPass(CleanupFileStatus? Status, bool? UsingKept, string? Failure)
+{
+    /// <summary>What each part of <see cref="Signature" /> says, in its order, for whatever labels the row.</summary>
+    internal const string SignatureColumns = "classified / using kept";
+
+    /// <summary>Gets the pass as one row of the soft report, in <see cref="SignatureColumns" /> order.</summary>
+    public string Signature => Failure is null ? $"{Status} / {SoftReport.YesNo(UsingKept)}" : $"failed: {Failure}";
 }

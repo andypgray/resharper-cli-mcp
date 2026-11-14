@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="Owner/Owner.csproj" />
+  <Project Path="Linker/Linker.csproj" />
+</Solution>

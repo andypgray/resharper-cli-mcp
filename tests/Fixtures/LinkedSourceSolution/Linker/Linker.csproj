@@ -1,0 +1,21 @@
+<!-- Compiles Owner/Shared.cs through a link, with the define under which that file needs System.Text. -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>disable</ImplicitUsings>
+        <IsPackable>false</IsPackable>
+        <DefineConstants>$(DefineConstants);LINKER_NEEDS_TEXT</DefineConstants>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <Compile Include="../Owner/Shared.cs" Link="Shared.cs" />
+    </ItemGroup>
+
+    <!-- Inert here, as in ContractSolution/ContractFixture.csproj, which explains why every csproj in the tree
+         carries it. -->
+    <PropertyGroup Condition="'$(CI)' == 'true'">
+        <RestoreLockedMode>true</RestoreLockedMode>
+    </PropertyGroup>
+
+</Project>

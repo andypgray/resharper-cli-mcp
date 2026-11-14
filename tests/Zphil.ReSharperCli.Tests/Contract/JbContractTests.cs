@@ -198,6 +198,17 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
     }
 
     [Fact(Skip = NoJb, SkipUnless = nameof(JbIsInstalled))]
+    public void CleanupOfAFileAnotherProjectLinks_LoadsTheWholeSolution()
+    {
+        // Act
+        LinkedUsingProbe probe = fixture.LinkedUsing;
+
+        // Assert — whatever jb makes of the file in one context, the server never narrows it to one.
+        probe.SolutionWideBecause.ShouldBe(
+            "\"Owner/Shared.cs\": Linker/Linker.csproj may compile it too, through Compile Include \"../Owner/Shared.cs\"");
+    }
+
+    [Fact(Skip = NoJb, SkipUnless = nameof(JbIsInstalled))]
     public void CleanupThroughAFilterInAnotherDirectory_AppliesTheSolutionsSettings()
     {
         // Act
@@ -345,6 +356,15 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
                 "jb cleanupcode no longer announces its profile, which is the only line of its output this "
                 + "server recognises. A long cleanup now reports elapsed time and nothing else.");
 
+        // LinkedUsingProbe records the shape this jb was read at. A change in either pass changes what a cleanup of
+        // a linked file is worth, and a failed pass means the probe stopped watching.
+        LinkedUsingProbe linked = fixture.LinkedUsing;
+        if (linked.AsDecided.UsingKept != false || linked.OwnerOnly.UsingKept != false)
+            findings.Add(
+                "Cleanup of a file another project links no longer strips the using only the linking project needs "
+                + $"in both passes ({LinkedUsingPass.SignatureColumns}: as decided {linked.AsDecided.Signature}; "
+                + $"owner only {linked.OwnerOnly.Signature}). Re-read LinkedUsingProbe and the setup guide's note.");
+
         string majorLine = MajorLineOf(fixture.Installation.Version);
         if (majorLine != JbContractFixture.LastVerifiedMajorLine)
             findings.Add(
@@ -405,6 +425,14 @@ public sealed class JbContractTests(JbContractFixture fixture, ITestOutputHelper
                      ("declared profile", fixture.DeclaredProfileCleanup)
                  })
             builder.Append($"| Cleanup, {profile} ({CleanupRun.SignatureColumns}) | {run.Signature} |\n");
+
+        // What a filter that trusted the file's directory would have cost, beside what the server does instead.
+        foreach ((string pass, LinkedUsingPass run) in new[]
+                 {
+                     ("as the server decides", fixture.LinkedUsing.AsDecided),
+                     ("owner's project only", fixture.LinkedUsing.OwnerOnly)
+                 })
+            builder.Append($"| Linked file cleanup, {pass} ({LinkedUsingPass.SignatureColumns}) | {run.Signature} |\n");
 
         foreach ((string subcommand, ProgressVocabulary vocabulary) in fixture.ProgressVocabularies.OrderBy(entry => entry.Key, StringComparer.Ordinal))
             builder.Append(

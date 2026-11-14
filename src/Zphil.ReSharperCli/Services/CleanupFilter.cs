@@ -36,8 +36,9 @@ internal sealed record CleanupScope(SolutionFilterPlan? Filter, string? Solution
 ///     <para>
 ///         Most of a cleanup's time is <c>jb</c> loading the solution, a cost that tracks the projects loaded
 ///         rather than the files rewritten. A filter holding the projects that own the files, and every project
-///         they reference transitively, loads less and rewrites the same bytes, because every type those files
-///         can see is still loaded from source.
+///         they reference transitively, loads less and rewrites the same bytes when each file has one compilation
+///         context, because every type those files can see is still loaded from source. So a filter is used only
+///         where <see cref="CompileOwnership" /> proves each file's project is the only one compiling it.
 ///     </para>
 ///     <para>
 ///         The filter is one file per run-lock lease, at <see cref="PathFor" />, written by <see cref="JbRunner" />
@@ -115,16 +116,19 @@ internal sealed class CleanupFilter(string rootDirectory, bool enabled, ILogger<
         ILookup<string, SolutionProject> byDirectory = solution.Value.ToLookup(
             project => Path.GetDirectoryName(project.FullPath)!, SolutionModel.PathComparer);
 
+        ProjectReadings readings = new(config.SolutionDirectory);
         HashSet<SolutionProject> owners = [];
         foreach (string entry in files)
         {
-            ModelReading<SolutionProject> owner = OwnerOf(FilePathList.Resolve(entry, config.SolutionDirectory), byDirectory);
+            string file = FilePathList.Resolve(entry, config.SolutionDirectory);
+            ModelReading<SolutionProject> owner = OwnerOf(file, byDirectory);
+            if (owner.Value is not null) owner = CompileOwnership.Prove(solution.Value, owner.Value, file, readings);
             if (owner.Value is null) return CleanupScope.SolutionWide($"\"{entry}\": {owner.Declined}");
 
             owners.Add(owner.Value);
         }
 
-        ModelReading<IReadOnlyList<SolutionProject>> closure = ProjectGraph.Closure(solution.Value, owners, config.SolutionDirectory);
+        ModelReading<IReadOnlyList<SolutionProject>> closure = ProjectGraph.Closure(solution.Value, owners, readings);
         if (closure.Value is null) return CleanupScope.SolutionWide(closure.Declined!);
 
         int total = solution.Value.Count;

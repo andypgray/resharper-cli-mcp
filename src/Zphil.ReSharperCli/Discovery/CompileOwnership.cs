@@ -17,9 +17,22 @@ namespace Zphil.ReSharperCli.Discovery;
 ///         resolves to, and one with a wildcard names every file under the directory its wildcard-free prefix
 ///         spells. <c>Exclude</c> is ignored for the same reason.
 ///     </para>
+///     <para>
+///         Only <c>Compile</c> items are read, and an SDK project's default <c>Compile</c> glob names its own
+///         language's source files, so only a <c>.cs</c> file under a <c>.csproj</c> or a <c>.vb</c> file under a
+///         <c>.vbproj</c> can be proved. Any other file can reach compilation through items this proof does not
+///         read, a <c>.razor</c> file through <c>Content</c> and <c>RazorComponent</c> or a <c>.xaml</c> file
+///         through <c>Page</c>, so it declines.
+///     </para>
 /// </remarks>
 internal static class CompileOwnership
 {
+    private static readonly Dictionary<string, string> SourceExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        [".csproj"] = ".cs",
+        [".vbproj"] = ".vb"
+    };
+
     private static readonly char[] Wildcards = ['*', '?'];
 
     /// <summary>
@@ -32,6 +45,13 @@ internal static class CompileOwnership
         string file,
         ProjectReadings readings)
     {
+        string projectExtension = Path.GetExtension(owner.FullPath);
+        if (!SourceExtensions.TryGetValue(projectExtension, out string? sourceExtension))
+            return Decline($"{owner.Spelling} is not a C# or Visual Basic project, whose default Compile items are the only ones read");
+
+        if (!Path.GetExtension(file).Equals(sourceExtension, StringComparison.OrdinalIgnoreCase))
+            return Decline($"only a {sourceExtension} file is compiled through the Compile items of {owner.Spelling}, the only items read to prove its owner");
+
         ModelReading<ProjectDeclarations> ownerReading = readings.Of(owner.FullPath);
         if (ownerReading.Value is not { } declarations) return Decline(ownerReading.Declined!);
 

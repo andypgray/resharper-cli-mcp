@@ -177,6 +177,9 @@ A cleanup loads the whole solution when:
 - the solution is already a `.slnf`,
 - any `files` entry is a wildcard,
 - a file has no owning project, or its nearest project directory holds more than one,
+- a file is not a `.cs` file under a `.csproj` or a `.vb` file under a `.vbproj`: a project's default
+  `Compile` items name only its own language's files, and a `.razor`, `.cshtml` or `.xaml` file reaches
+  compilation through items other than `Compile`, which are not read,
 - a file's owner is not an SDK project, sets `EnableDefaultCompileItems` or `EnableDefaultItems` to anything
   but `true`, or has a `Compile Remove` or `Compile Update` that could name the file,
 - another project could compile a file too: a `Compile Include` that could name it (a link, a shared

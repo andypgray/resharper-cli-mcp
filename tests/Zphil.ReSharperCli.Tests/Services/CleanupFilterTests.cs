@@ -71,6 +71,9 @@ public sealed class CleanupFilterTests : IDisposable
     [InlineData("hooked targets file", "\"A/Foo.cs\": C/C.csproj may compile it too, through Compile Include \"../A/Foo.cs\"")]
     [InlineData("default items cleared", "\"A/Foo.cs\": A/A.csproj sets EnableDefaultCompileItems to \"\", so its directory may not say what it compiles")]
     [InlineData("package import", "C.csproj imports \"$(NuGetPackageRoot)x/build/x.targets\" from the package folder, which is not read")]
+    [InlineData("razor file", "\"A/Counter.razor\": only a .cs file is compiled through the Compile items of A/A.csproj, the only items read to prove its owner")]
+    [InlineData("vb file under a C# project", "\"A/Foo.vb\": only a .cs file is compiled through the Compile items of A/A.csproj, the only items read to prove its owner")]
+    [InlineData("F# owner", "\"A/Foo.cs\": A/A.fsproj is not a C# or Visual Basic project, whose default Compile items are the only ones read")]
     public void Decide_NoFilterCouldNarrowIt_RunsSolutionWideSayingWhy(string shape, string reason)
     {
         // Arrange
@@ -180,6 +183,18 @@ public sealed class CleanupFilterTests : IDisposable
             case "package import":
                 SolutionFiles.PlantSdkProject(_root, "C/C.csproj", """<Import Project="$(NuGetPackageRoot)x/build/x.targets" />""");
                 break;
+            case "razor file":
+                SolutionFiles.Plant(_root, "A/Counter.razor");
+                files = ["A/Counter.razor"];
+                break;
+            case "vb file under a C# project":
+                SolutionFiles.Plant(_root, "A/Foo.vb");
+                files = ["A/Foo.vb"];
+                break;
+            case "F# owner":
+                SolutionFiles.PlantProject(_root, "A/A.fsproj", "../B/B.csproj");
+                solution = SolutionFiles.PlantSlnx(_root, "App.slnx", "A/A.fsproj", "B/B.csproj", "C/C.csproj");
+                break;
         }
 
         // Act
@@ -201,6 +216,24 @@ public sealed class CleanupFilterTests : IDisposable
 
         // Act
         CleanupScope scope = _filter.Decide(Configs.Bare(solution, _environment.CreateTempDirectory()), ["A/Foo.cs"]);
+
+        // Assert
+        scope.Filter.ShouldNotBeNull(scope.SolutionWideBecause).ProjectCount.ShouldBe(2);
+    }
+
+    [Theory]
+    [InlineData("A/A.csproj", "A/Bar.CS")]
+    [InlineData("A/A.vbproj", "A/Foo.vb")]
+    public void Decide_ASourceFileInItsProjectsLanguage_Filters(string project, string file)
+    {
+        // Arrange — project A in the row's language, still referencing B.
+        SolutionFiles.PlantThreeProjects(_root);
+        SolutionFiles.PlantProject(_root, project, "../B/B.csproj");
+        string solution = SolutionFiles.PlantSlnx(_root, "App.slnx", project, "B/B.csproj", "C/C.csproj");
+        SolutionFiles.Plant(_root, file);
+
+        // Act
+        CleanupScope scope = _filter.Decide(Configs.Bare(solution, _environment.CreateTempDirectory()), [file]);
 
         // Assert
         scope.Filter.ShouldNotBeNull(scope.SolutionWideBecause).ProjectCount.ShouldBe(2);

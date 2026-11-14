@@ -38,7 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `resharper_cleanup` loads the whole solution when a file's directory does not prove which project compiles
   it: another project compiles it too (a linked file, a shared project, a glob, or a project in a directory
   above), its own project removes or updates it with a `Compile` item, turns default items off or is not an
-  SDK project, or a project imports a file from the NuGet package folder. A filtered cleanup of such a file
+  SDK project, the file is not a `.cs` file under a `.csproj` or a `.vb` file under a `.vbproj` (a `.razor`
+  file reaches compilation through `Content` items, which are not read), or a project imports a file from the NuGet package folder. A filtered cleanup of such a file
   could load a project that does not compile it and rewrite nothing. The setup guide lists every case, and
   notes that a cleanup of a file two projects compile can still remove a `using` only one of them needs.
 

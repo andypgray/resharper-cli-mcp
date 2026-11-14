@@ -52,7 +52,7 @@ internal readonly record struct JbProgressStep(JbRunPhase Phase, bool NamesAFile
 ///         of a real run.
 ///     </para>
 ///     <para>
-///         The vocabulary, as observed on <c>jb</c> 2026.2.1. <c>inspectcode</c> announces
+///         The vocabulary, as observed on <c>jb</c> 2026.2.1 and 2026.3.0. <c>inspectcode</c> announces
 ///         <c>Analyzing files</c> and then prints one <c>Analyzing &lt;file&gt;</c> line per file, then
 ///         announces <c>Running inspections</c> and prints one <c>Inspecting &lt;file&gt;</c> line per file.
 ///         Cold on a large solution the analysis phase is nearly the whole run and the inspection phase takes

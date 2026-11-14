@@ -48,9 +48,9 @@ jobs:
     # the matrix merge names the same version.
     outputs:
       jb-version: ${{ steps.jb.outputs.version }}
-    # The suite takes about seven minutes on a warm developer machine (jb 2026.2, six real analyses of a
-    # four-file solution, plus one dotnet build). The cap leaves room for a slower runner and a cold NuGet
-    # cache without letting a genuinely stuck jb hold the runner all day.
+    # The suite takes about four minutes on a warm developer machine (jb 2026.3.0, measured 2026-11-14: the
+    # real analyses of the fixture solution, plus one dotnet build). The cap leaves room for a slower runner
+    # and a cold NuGet cache without letting a genuinely stuck jb hold the runner all day.
     timeout-minutes: 30
 
     # One script body serves both runners. linkcheck.yml is ubuntu-only and never needed this.

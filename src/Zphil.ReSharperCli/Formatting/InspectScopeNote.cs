@@ -16,16 +16,16 @@ namespace Zphil.ReSharperCli.Formatting;
 ///     </para>
 ///     <para>
 ///         <c>inspectcode</c> through 2026.1 exits 0 reporting nothing when every entry misses, so there this
-///         note is the only sign; 2026.2 exits 3, which fails the call by itself. No release reports the
-///         partial case: some entries match, <c>jb</c> exits 0 with their findings, and says nothing about the
-///         rest.
+///         note is the only sign; 2026.2 and 2026.3 exit 3, which fails the call by itself. No release reports
+///         the partial case: some entries match, <c>jb</c> exits 0 with their findings, and says nothing about
+///         the rest.
 ///     </para>
 ///     <para>
 ///         It vouches for nothing. <c>jb</c> matches <c>--include</c> against the solution model, so a path
 ///         that resolves on disk can match nothing there, and SARIF's <c>run.artifacts</c> lists only the files
-///         that drew a finding (<c>jb</c> 2026.2.3.1; the <c>JbContract</c> suite watches it), so an entry that
-///         matched nothing reads as a clean file. The note's tail states that limit for the entries it lists
-///         rather than as a caveat on every clean scoped run.
+///         that drew a finding (<c>jb</c> 2026.2.3.1 and 2026.3.0; the <c>JbContract</c> suite watches it), so
+///         an entry that matched nothing reads as a clean file. The note's tail states that limit for the
+///         entries it lists rather than as a caveat on every clean scoped run.
 ///     </para>
 /// </remarks>
 internal static class InspectScopeNote

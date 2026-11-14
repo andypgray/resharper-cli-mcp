@@ -191,9 +191,9 @@ A cleanup loads the whole solution when:
 - the files' projects and their references are every project in the solution.
 
 A file two projects compile is still cleaned as one of them sees it. Measured on 2026-11-14 with `jb`
-2026.2.4.1, `Built-in: Full Cleanup` removed a `using` that only the project linking the file needed, under
-that project's own `#if`, whether or not the linking project was loaded. Build after cleaning a linked or
-shared file, or clean it with a profile that leaves usings alone, such as `Built-in: Reformat Code`.
+2026.2.4.1 and 2026.3.0, `Built-in: Full Cleanup` removed a `using` that only the project linking the file
+needed, under that project's own `#if`, whether or not the linking project was loaded. Build after cleaning a
+linked or shared file, or clean it with a profile that leaves usings alone, such as `Built-in: Reformat Code`.
 
 With `RESHARPER_MCP_LOG_LEVEL=Information`, the log records each decision: the filter and how many of the
 solution's projects it loads, or the reason the cleanup loaded the whole solution.

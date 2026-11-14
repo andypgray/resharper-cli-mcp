@@ -45,8 +45,8 @@ internal sealed record RawIncludeProbe(int CleanupExitCode, RawIncludeInspect In
 /// <summary>Records what <c>inspectcode</c> did with an absolute <c>--include</c>.</summary>
 /// <remarks>
 ///     It refuses the argument in a shape that varies by release: 2026.1 and earlier exit 0 with an empty
-///     report, and 2026.2 exits non-zero without writing a report file. So the probe records the exit code and
-///     the issue count rather than pinning either shape.
+///     report, and 2026.2 and 2026.3 exit non-zero without writing a report file. So the probe records the exit
+///     code and the issue count rather than pinning either shape.
 /// </remarks>
 internal sealed record RawIncludeInspect(int ExitCode, int IssueCount);
 
@@ -55,10 +55,10 @@ internal sealed record RawIncludeInspect(int ExitCode, int IssueCount);
 ///     <see cref="JbContractFixture.CleanFileName" />, a file the same run inspected and found nothing in.
 /// </summary>
 /// <remarks>
-///     On <c>jb</c> 2026.2.3.1 the array holds one entry per file with a finding and leaves the clean file out,
-///     so it cannot tell a <c>files</c> entry that matched nothing from a file that came out clean, and
-///     <see cref="SarifParser" /> leaves it unread. A report that lists the clean file would make that
-///     distinction possible, so the soft tier reports it as drift.
+///     On <c>jb</c> 2026.2.3.1 and 2026.3.0 the array holds one entry per file with a finding and leaves the
+///     clean file out, so it cannot tell a <c>files</c> entry that matched nothing from a file that came out
+///     clean, and <see cref="SarifParser" /> leaves it unread. A report that lists the clean file would make
+///     that distinction possible, so the soft tier reports it as drift.
 /// </remarks>
 /// <param name="Unreadable">Why the report could not be read, or <see langword="null" /> when it was.</param>
 /// <param name="ArtifactCount">
@@ -107,9 +107,10 @@ internal sealed record SarifArtifactsProbe(
 ///     symbol under which the file needs one of its usings.
 /// </summary>
 /// <remarks>
-///     On <c>jb</c> 2026.2.4.1 the built-in full profile strips that using in both passes, with the linking project
-///     loaded and without it, so the linking project stops building either way. The server's filter is therefore
-///     not what decides that outcome, and the soft tier reports either pass keeping the using as drift.
+///     On <c>jb</c> 2026.2.4.1 and 2026.3.0 the built-in full profile strips that using in both passes, with the
+///     linking project loaded and without it, so the linking project stops building either way. The server's
+///     filter is therefore not what decides that outcome, and the soft tier reports either pass keeping the using
+///     as drift.
 /// </remarks>
 /// <param name="SolutionWideBecause">
 ///     Why the server's filter ran the cleanup solution-wide, or <see langword="null" /> when it narrowed it.

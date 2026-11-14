@@ -5,7 +5,7 @@ namespace Zphil.ReSharperCli.Sarif;
 // System.Text.Json. Deserialized with JsonSerializerDefaults.Web, so camelCase JSON binds to these
 // PascalCase members case-insensitively.
 //
-// artifacts is left out because on jb 2026.2.3.1 it lists only the files the results already name, so it
+// artifacts is left out because on jb 2026.2.3.1 and 2026.3.0 it lists only the files the results already name, so it
 // cannot vouch for a file that was inspected and drew nothing. The JbContract suite reports if that changes.
 
 internal sealed record SarifReport(List<SarifRun>? Runs);

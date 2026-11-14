@@ -43,7 +43,7 @@ public sealed class JbContractFixture : IAsyncLifetime
     ///     JetBrains ships patch releases far more often than major lines, and a finding on every patch would
     ///     drown the signal, so only a change of major line is reported.
     /// </remarks>
-    internal const string LastVerifiedMajorLine = "2026.2";
+    internal const string LastVerifiedMajorLine = "2026.3";
 
     /// <summary>
     ///     The environment variable naming a file the soft-tier report is also written to, for a workflow to
@@ -188,6 +188,9 @@ public sealed class JbContractFixture : IAsyncLifetime
     ///     The progress heartbeat's phase and file count come from that classification, which reads someone
     ///     else's undocumented output, so it is watched here rather than assumed.
     /// </remarks>
+    // The lock guards the runs' output callbacks while InitializeAsync awaits them; xUnit hands the fixture to a
+    // test only after it returns, so a reader never races a writer.
+    // ReSharper disable once InconsistentlySynchronizedField
     internal IReadOnlyDictionary<string, ProgressVocabulary> ProgressVocabularies => _progressVocabularies;
 
     /// <summary>Gets the solution file the runs above analysed.</summary>

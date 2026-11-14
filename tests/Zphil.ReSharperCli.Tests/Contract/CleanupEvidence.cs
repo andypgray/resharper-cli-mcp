@@ -17,7 +17,7 @@ namespace Zphil.ReSharperCli.Tests.Contract;
 ///     Whether <c>jb</c> printed the file's path; <see langword="null" /> when no output was captured.
 ///     <c>cleanupcode</c> prints it for every file it processes and writes that file back even when nothing in
 ///     it changed, so this and <see cref="WriteTimeMoved" /> say that <c>jb</c> reached the file, not that it
-///     changed it. On <c>jb</c> 2026.2.1 a pass over already-clean text reads "named, written, unchanged".
+///     changed it. On <c>jb</c> 2026.2.1 and 2026.3.0 a pass over already-clean text reads "named, written, unchanged".
 /// </param>
 /// <param name="Details">
 ///     The rest, rendered: the cache generations either side, the solution directory, <c>jb</c>'s output, and

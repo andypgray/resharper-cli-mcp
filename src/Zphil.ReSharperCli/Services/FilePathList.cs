@@ -96,7 +96,7 @@ internal static class FilePathList
     ///         becomes an Ant pattern that matches nothing. Both subcommands refuse one, in ways that vary by
     ///         release: <c>cleanupcode</c> exits 3 with "No items were found to cleanup", while
     ///         <c>inspectcode</c> exited 0 and reported no issues at all, a silent false negative, through
-    ///         2026.1, and exits 3 with "No files to inspect were found." in 2026.2. Both tools document an
+    ///         2026.1, and exits 3 with "No files to inspect were found." in 2026.2 and 2026.3. Both tools document an
     ///         absolute path as accepted, so this translation is what makes that true rather than a new
     ///         restriction.
     ///     </para>

@@ -61,7 +61,9 @@ Add the server to `.mcp.json` in the project root:
 ```
 
 Claude Code can also install the server as a plugin, which starts it through `dotnet dnx` with no
-`dotnet tool install` of its own. See [README.md](README.md#install-as-a-claude-code-plugin).
+`dotnet tool install` of its own. See [README.md](README.md#install-as-a-claude-code-plugin). The plugin
+does not start in a repository whose `global.json` pins an SDK older than .NET 10. Use the global tool there,
+installed from a directory outside the repository.
 
 ### Visual Studio
 

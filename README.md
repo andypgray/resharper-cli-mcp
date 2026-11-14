@@ -75,6 +75,8 @@ This repository is also a Claude Code plugin marketplace with one plugin:
 
 The plugin starts the server with `dotnet dnx`, pinned to one release, and `claude plugin update resharper-cli-mcp@resharper-cli-mcp` moves the pin to the latest. You still install the .NET 10 SDK or later and `jb`, and ReSharper's caches live in the plugin's data directory.
 
+The plugin does not start in a repository whose `global.json` pins an SDK older than .NET 10, because `dotnet dnx` runs under the pinned SDK and that SDK has no `dnx` command. For such a repository, run `dotnet tool install -g Zphil.ReSharperCli` from a directory outside it, since the install fails under the same pin, and register `resharper-cli-mcp` as shown above. The installed command ignores `global.json`.
+
 ### Install as a Claude Desktop extension
 
 Download `resharper-cli-mcp-<version>.mcpb` from the [latest release](https://github.com/andypgray/resharper-cli-mcp/releases/latest), double-click it, and set **Solution file** to the `.sln` or `.slnx` to analyse. Claude Desktop starts the server outside your repository, so it has no working directory to find a solution in. The bundle carries only the server, so install the .NET 10 runtime or later and the ReSharper Command Line Tools first. **Run cap** moves the 10-minute limit on one run.

@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The install docs name .NET 10 or later as the requirement. The package targets .NET 10 with
   `RollForward=Major`, so a machine with only a newer major runtime runs it on that one, and CI runs the test
   suite on .NET 11 as well as .NET 10.
+- The README and `llms-install.md` name a limit of the Claude Code plugin. In a repository whose
+  `global.json` pins an SDK older than .NET 10, `dotnet dnx` runs under that SDK, which has no `dnx` command,
+  so the server does not start. The global tool, installed from a directory outside the repository, starts
+  there.
 
 ### Fixed
 

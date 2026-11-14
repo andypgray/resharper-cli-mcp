@@ -58,6 +58,69 @@ jobs:
         # `dotnet test` stops with exit code 5 before discovering a single test.
         run: dotnet test tests/Zphil.ReSharperCli.Tests/Zphil.ReSharperCli.Tests.csproj --no-build --filter "Category!=ExternalLinks&Category!=JbContract" --output Detailed
 
+  # The package targets net10.0 with RollForward=Major, so a machine with only the .NET 11 runtime runs
+  # it on .NET 11. This job reproduces that: it builds with the pinned 10.0 SDK, then runs the every-PR
+  # suite under DOTNET_ROLL_FORWARD=LatestMajor, which every process the suite spawns inherits as well.
+  # One Ubuntu leg covers it, because the code that differs per platform is the same on either runtime.
+  test-on-latest-runtime:
+    runs-on: ubuntu-latest
+
+    env:
+      TEST_APP: tests/Zphil.ReSharperCli.Tests/bin/Debug/net10.0/Zphil.ReSharperCli.Tests
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: |
+            10.0.x
+            11.0.x
+
+      - name: Show the .NET SDK
+        run: dotnet --info
+
+      # Re-evaluates on Dependabot's own PRs for the reason build-and-test's Restore step gives.
+      - name: Restore
+        run: >
+          dotnet restore tests/Zphil.ReSharperCli.Tests/Zphil.ReSharperCli.Tests.csproj
+          ${{ github.event.pull_request.user.login == 'dependabot[bot]' && '--force-evaluate' || '' }}
+
+      - name: Build
+        run: dotnet build tests/Zphil.ReSharperCli.Tests/Zphil.ReSharperCli.Tests.csproj --no-restore
+
+      # Run directly, the test app is xUnit's in-process runner, whose banner names the runtime it got.
+      # A roll-forward that did not happen would otherwise pass the whole suite on .NET 10.
+      - name: Check the tests run on .NET 11
+        env:
+          DOTNET_ROLL_FORWARD: LatestMajor
+        run: |
+          listing="$("$TEST_APP" -list classes)"
+          banner="${listing%%$'\n'*}"
+          printf '%s\n' "$banner"
+          grep -Eq '64-bit \.NET 11\.' <<<"$banner" || {
+            echo "::error::The test app did not start on the .NET 11 runtime"
+            exit 1
+          }
+
+      # Prints, never fails: the app-local assemblies the host replaces with the higher-versioned copy
+      # that the .NET 11 shared framework carries, such as the Microsoft.Extensions abstractions.
+      - name: Show which app assemblies the shared framework replaces
+        env:
+          DOTNET_ROLL_FORWARD: LatestMajor
+          COREHOST_TRACE: '1'
+          COREHOST_TRACEFILE: ${{ runner.temp }}/host-trace.txt
+        run: |
+          "$TEST_APP" -list classes > /dev/null
+          grep -F "Replacing deps entry" "$COREHOST_TRACEFILE" || echo "The host replaced no app-local assembly."
+
+      - name: Test
+        env:
+          DOTNET_ROLL_FORWARD: LatestMajor
+        run: dotnet test tests/Zphil.ReSharperCli.Tests/Zphil.ReSharperCli.Tests.csproj --no-build --filter "Category!=ExternalLinks&Category!=JbContract" --output Detailed
+
   # Packs on Linux and asserts the MCP manifest lands at exactly `.mcp/server.json` — the
   # path nuget.org scans to generate the VS Code MCP config. A backslash PackagePath
   # mis-packs only on non-Windows (1.0.0 shipped `.mcp//server.json`), so a single

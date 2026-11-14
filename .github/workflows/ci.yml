@@ -26,6 +26,11 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      # global.json pins the 10.0 SDK band, which an SDK 11 preinstalled on the image does not satisfy.
+      # The Base Path line of `dotnet --info` names the SDK this job resolved.
+      - name: Show the .NET SDK
+        run: dotnet --info
+
       # Dependabot regenerates packages.lock.json only for the project whose PackageReference it
       # edited. The test project reaches src's packages through a ProjectReference, so a bump in
       # src/ leaves the test project's lock file stale and the locked restore stops the run with
@@ -67,6 +72,9 @@ jobs:
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: '10.0.x'
+
+      - name: Show the .NET SDK
+        run: dotnet --info
 
       - name: Pack
         run: dotnet pack src/Zphil.ReSharperCli/Zphil.ReSharperCli.csproj -c Release -o artifacts

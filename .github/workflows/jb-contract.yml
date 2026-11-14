@@ -67,6 +67,9 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      - name: Show the .NET SDK
+        run: dotnet --info
+
       # The dispatch inputs reach the script through env, never interpolated into the body: direct
       # ${{ }} interpolation into a run: block is what Scorecard's Dangerous-Workflow check flags.
       # The tools directory is added to PATH in its native spelling — a Windows runner's bash writes

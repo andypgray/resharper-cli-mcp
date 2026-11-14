@@ -26,6 +26,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # Buildless extraction still restores the projects with whatever `dotnet` is on PATH, and
+      # global.json pins the 10.0 SDK band, so the runner needs one installed.
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Show the .NET SDK
+        run: dotnet --info
+
       # init and analyze must be pinned to the SAME version: analyze reads the config file init
       # wrote and aborts on a version mismatch ("Loaded a configuration file for version X, but
       # running version Y"). Bump them together — the dependabot group in .github/dependabot.yml

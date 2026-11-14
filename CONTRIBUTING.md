@@ -11,7 +11,7 @@ resharper-cli-mcp is an MCP stdio server that wraps JetBrains' ReSharper command
 
 ## Development setup
 
-- The .NET 10 SDK is required. The solution file is `Zphil.ReSharperCli.slnx` (`.slnx`, not `.sln`), which needs a current SDK to load.
+- The .NET 10 SDK is required. `global.json` pins the 10.0 band with `rollForward: latestFeature`, so any 10.0 SDK builds the repository and an SDK 11 on its own does not. The solution file is `Zphil.ReSharperCli.slnx` (`.slnx`, not `.sln`), which needs a current SDK to load.
 - Windows, macOS, and Linux are supported. The server resolves the JetBrains shared settings directory per platform.
 - The unit tests do not need `jb` installed. Running the server against a real solution does: `dotnet tool install -g JetBrains.ReSharper.GlobalTools`.
 

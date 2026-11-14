@@ -25,6 +25,9 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      - name: Show the .NET SDK
+        run: dotnet --info
+
       - name: Restore
         run: dotnet restore tests/Zphil.ReSharperCli.Tests/Zphil.ReSharperCli.Tests.csproj
 

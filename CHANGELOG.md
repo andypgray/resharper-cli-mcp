@@ -23,6 +23,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The server no longer reads or watches `appsettings.json` and the host's other default settings files in
+  the directory it is started from, which for an MCP client is the repository. The host starts with its
+  defaults off, since the server reads none of that configuration. The watch was a recursive file watcher
+  over that directory, and a burst of writes there could make it raise an unobserved
+  `InvalidOperationException` ("Somebody else set the _disposable field"), which the log recorded as an
+  error.
 - The note on an inspect that reports compilation errors names a third cause: a `jb` older than the project's
   C# version reports the newer syntax as `.CSharpErrors` the compiler does not. The note names the `jb`
   version in use and gives updating it as the cure (`dotnet tool update -g JetBrains.ReSharper.GlobalTools`

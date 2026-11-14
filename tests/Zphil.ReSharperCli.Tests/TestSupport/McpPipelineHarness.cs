@@ -142,7 +142,7 @@ internal sealed class McpPipelineHarness : IAsyncDisposable
             Pipe serverToClient = new();
             WireLog wire = new();
 
-            HostApplicationBuilder builder = Host.CreateApplicationBuilder();
+            HostApplicationBuilder builder = ServerHostBuilder.Create();
 
             builder.Logging.CaptureInto(logs);
 

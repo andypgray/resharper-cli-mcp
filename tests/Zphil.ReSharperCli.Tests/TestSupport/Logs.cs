@@ -1,4 +1,3 @@
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Zphil.ReSharperCli.Tests.TestDoubles;
@@ -25,18 +24,13 @@ internal static class Logs
     ///     down to <see cref="LogLevel.Trace" />.
     /// </summary>
     /// <remarks>
-    ///     For a host that builds its own logging, so its assertions see what the code under test wrote rather
-    ///     than what the default console and debug providers add.
+    ///     Clears nothing first, because a bare <see cref="LoggerFactory" /> and the host <c>ServerHostBuilder</c>
+    ///     builds both start with no provider and no configuration to read filter rules from.
     /// </remarks>
     public static void CaptureInto(this ILoggingBuilder builder, CapturingLoggerProvider provider)
     {
-        builder.ClearProviders();
         builder.SetMinimumLevel(LogLevel.Trace);
         builder.AddProvider(provider);
-
-        // A host built from the default configuration adds filter rules from any Logging section, a developer's
-        // Logging__LogLevel__Default included, and a rule outranks the minimum level for every category it names.
-        builder.Services.Configure<LoggerFilterOptions>(options => options.Rules.Clear());
     }
 
     /// <summary>

@@ -33,7 +33,7 @@ if (!args.Contains("--stdio") && !Console.IsInputRedirected)
 LogEventLevel logLevel = SerilogConfiguration.InitializeFileLogger();
 SerilogConfiguration.RegisterCrashHandlers();
 
-HostApplicationBuilder builder = Host.CreateApplicationBuilder(args);
+HostApplicationBuilder builder = ServerHostBuilder.Create();
 builder.AddSerilogLogging();
 
 // Resolved once here and passed to everything that needs it: a call is bounded by its queue wait plus its

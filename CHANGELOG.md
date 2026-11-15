@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.1] - 2026-11-15
+
 ### Changed
 
 - The install docs name .NET 10 or later as the requirement. The package targets .NET 10 with
@@ -41,8 +43,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it: another project compiles it too (a linked file, a shared project, a glob, or a project in a directory
   above), its own project removes or updates it with a `Compile` item, turns default items off or is not an
   SDK project, the file is not a `.cs` file under a `.csproj` or a `.vb` file under a `.vbproj` (a `.razor`
-  file reaches compilation through `Content` items, which are not read), or a project imports a file from the NuGet package folder. A filtered cleanup of such a file
-  could load a project that does not compile it and rewrite nothing. The setup guide lists every case, and
+  file reaches compilation through `Content` items, which are not read), or a project imports a file from the
+  NuGet package folder. A filtered cleanup of such a file could load a project that does not compile it and
+  rewrite nothing. The setup guide lists every case, and
   notes that a cleanup of a file two projects compile can still remove a `using` only one of them needs.
 
 ## [1.8.0] - 2026-10-31
@@ -959,7 +962,8 @@ Unofficial; not affiliated with or endorsed by JetBrains.
 - Ships as a .NET global tool and MCP server (`PackAsTool` + `PackageType=McpServer`), published to
   NuGet with SLSA build provenance and registered on the MCP registry.
 
-[Unreleased]: https://github.com/andypgray/resharper-cli-mcp/compare/v1.8.0...HEAD
+[Unreleased]: https://github.com/andypgray/resharper-cli-mcp/compare/v1.8.1...HEAD
+[1.8.1]: https://github.com/andypgray/resharper-cli-mcp/releases/tag/v1.8.1
 [1.8.0]: https://github.com/andypgray/resharper-cli-mcp/releases/tag/v1.8.0
 [1.7.2]: https://github.com/andypgray/resharper-cli-mcp/releases/tag/v1.7.2
 [1.7.1]: https://github.com/andypgray/resharper-cli-mcp/releases/tag/v1.7.1
